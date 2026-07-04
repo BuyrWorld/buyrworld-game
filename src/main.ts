@@ -309,7 +309,7 @@ const WANDERERS = [
       "Heaviest thing I ever lifted? A Cargo Turtle. True story.",
     ]},
 ];
-const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down" };
+const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting"]);
 const STATION_DEFS = {
@@ -637,7 +637,7 @@ function drawObjects(ctx, t){
       // drop shadow
       ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x+4, r.y+r.h, r.w-2, 5);
       // try Kenney sprite; fall back to procedural canvas building
-      const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, Math.round(r.w * 2.8));
+      const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, r.w + 16);
       if (!_spriteDrawn){
         // stone foundation strip
         ctx.fillStyle="#5a4030"; ctx.fillRect(r.x, r.y+r.h-5, r.w, 5);
@@ -1101,6 +1101,18 @@ function villageFrame(ts){
     drawTitleFX(t);
   } else if (S.tab==="village"){
     moveActor(VP, dt, 104);
+    // walk-in building entry — fires when VP feet reach door bottom edge
+    if (VP.enterCooldown > 0) VP.enterCooldown--;
+    else if (!VP.pending) {
+      for (const o of V_OBJECTS) {
+        if (o.kind !== "bld") continue;
+        const r = objRect(o);
+        const doorX = r.x + r.w/2, doorY = r.y + r.h;
+        if (Math.abs(VP.x - doorX) < TILE*0.7 && VP.y > doorY - TILE*0.6 && VP.y < doorY + TILE*0.6) {
+          interactObj(o); VP.enterCooldown = 90; break;
+        }
+      }
+    }
     // auto-cancel action when player walks away from station
     if (S.action && VP.moving) {
       const sp = stationPos(S.action.skill, S.action.id);
@@ -1125,6 +1137,7 @@ function villageFrame(ts){
     // exit building if player walks to the bottom door
     if (IP.y > VIEW_H - 18) {
       IP.x = VIEW_W/2; IP.y = VIEW_H*0.68; IP.tx = null; IP.ty = null; IP.moving = false;
+      VP.enterCooldown = 90; // prevent stepping straight back in
       S.tab = "village"; renderNav(); renderMain();
     } else {
       drawInterior(t);
