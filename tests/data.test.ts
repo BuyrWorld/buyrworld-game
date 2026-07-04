@@ -10,8 +10,8 @@ import { VMAP, V_OBJECTS, VCOLS, VROWS, TILE, VIEW_W, VIEW_H } from '../src/worl
 
 /* ---- items ---- */
 describe('ITEMS', () => {
-  it('has exactly 17 items', () => {
-    expect(Object.keys(ITEMS).length).toBe(17);
+  it('has exactly 19 items', () => {
+    expect(Object.keys(ITEMS).length).toBe(19);
   });
 
   it('every item has a non-empty name', () => {
@@ -37,8 +37,8 @@ describe('ITEMS', () => {
 describe('SKILLS', () => {
   const SKILL_IDS = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading'];
 
-  it('has exactly 5 skills', () => {
-    expect(Object.keys(SKILLS).length).toBe(5);
+  it('has exactly 6 skills', () => {
+    expect(Object.keys(SKILLS).length).toBe(6);
   });
 
   it('contains all expected skill IDs', () => {
@@ -248,7 +248,7 @@ describe('VMAP', () => {
   });
 
   it('only uses valid tile characters', () => {
-    const valid = new Set(['T', 'C', 'D', 'G', 'P', 'W', 'S']);
+    const valid = new Set(['T', 'C', 'D', 'G', 'P', 'W', 'S', 'F']);
     for (let r = 0; r < VMAP.length; r++) {
       for (const ch of VMAP[r]) {
         expect(valid.has(ch), `row ${r} char '${ch}'`).toBe(true);
