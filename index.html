@@ -163,6 +163,19 @@ textarea{ width:100%; background:var(--panel2); color:var(--text); border:2px so
 .row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
 footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px; }
 
+/* ---------- pixel loading screen (M2) ---------- */
+#loading{
+  position:fixed; inset:0; z-index:200;
+  background:var(--bg); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px;
+}
+#loading .ld-logo{ font-family:'Press Start 2P',monospace; font-size:16px; color:var(--amber); letter-spacing:2px; }
+#loading .ld-sub{ font-family:'Press Start 2P',monospace; font-size:8px; color:var(--dim); }
+#ld-bar-wrap{ width:200px; height:14px; background:var(--panel2); border:2px solid var(--edge); }
+#ld-bar{ height:100%; background:var(--mint); width:0%; }
+@keyframes ldOut{ to{ opacity:0; pointer-events:none; } }
+#loading.done{ animation:ldOut .5s forwards; }
+
 /* ---------- title screen ---------- */
 #title{
   position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
@@ -173,13 +186,19 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 @keyframes bobY{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-6px); } }
 @keyframes pulseBtn{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
 #title .box{ position:relative; animation:boxIn .7s cubic-bezier(.34,1.56,.64,1); }
-#title .box > svg{ animation:bobY 3s ease-in-out infinite; }
+.logo-wrap{ animation:bobY 3s ease-in-out infinite; }
 #title .btn.big{ animation:pulseBtn 1.8s ease-in-out infinite; }
 #title .box{
   background:var(--panel); border:3px solid var(--edge); box-shadow:6px 6px 0 var(--shadow);
   padding:22px; max-width:420px; width:100%; text-align:center;
 }
-#title h1{ font-size:20px; color:var(--orange); text-shadow:2px 2px 0 var(--panel2), 4px 4px 0 var(--edge); }
+#title h1{
+  font-size:20px; color:var(--orange);
+  background:linear-gradient(90deg, var(--orange) 0%, var(--amber) 28%, #fff8e6 48%, var(--amber) 52%, var(--orange) 100%);
+  background-size:200% auto;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  animation:logoShine 2.8s ease-in-out infinite;
+}
 #title .sub{ font-size:10px; color:var(--dim); margin:10px 0 16px; letter-spacing:1px; }
 #title input{
   width:100%; padding:10px; font-family:inherit; font-size:14px; text-align:center;
@@ -188,6 +207,50 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 #title .frostwrap{ display:flex; gap:12px; align-items:center; text-align:left; background:var(--panel2); border:2px solid var(--edge); padding:10px; margin-bottom:14px; }
 #title .frostwrap p{ font-size:12px; }
 .btn.big{ font-size:14px; padding:12px 22px; }
+
+/* ---------- M1 Identity Pack ---------- */
+@keyframes logoShine{
+  0%,100%{ background-position:-200% center; }
+  50%{ background-position:200% center; }
+}
+@keyframes orbitPath{
+  from{ transform:rotate(0deg) translateX(46px) rotate(0deg); }
+  to  { transform:rotate(360deg) translateX(46px) rotate(-360deg); }
+}
+.logo-wrap{
+  position:relative; display:inline-flex; align-items:center; justify-content:center;
+  width:80px; height:80px; margin-bottom:4px;
+}
+.orbit-arrow{
+  position:absolute; top:50%; left:50%;
+  width:20px; height:20px; margin:-10px 0 0 -10px;
+  font-size:15px; line-height:20px; text-align:center;
+  animation:orbitPath 3.2s linear infinite;
+  transform-origin:0 0;
+}
+@keyframes badgeSlap{
+  0%{ transform:scale(.3) rotate(-20deg); opacity:0; }
+  60%{ transform:scale(1.12) rotate(4deg); opacity:1; }
+  80%{ transform:scale(.97) rotate(-2deg); }
+  100%{ transform:scale(1) rotate(0deg); opacity:1; }
+}
+#name-badge{
+  display:none; background:#fff; border:3px solid #1a3a6a; border-radius:3px;
+  padding:8px 16px; margin:12px auto 0; text-align:center; width:fit-content;
+  box-shadow:3px 3px 0 #1a3a6a; pointer-events:none;
+}
+#name-badge.show{ display:block; animation:badgeSlap .65s cubic-bezier(.34,1.56,.64,1) forwards; }
+#name-badge .bhi{ font-family:'Press Start 2P',monospace; font-size:7px; color:#1a3a6a; letter-spacing:2px; }
+#name-badge .bnm{ font-family:'Press Start 2P',monospace; font-size:13px; color:var(--red); margin-top:5px; word-break:break-all; }
+@keyframes hudBadgeIn{
+  from{ transform:scale(.5) rotate(-10deg); opacity:0; }
+  to  { transform:scale(1) rotate(0deg); opacity:1; }
+}
+#hud-name-stat.named{
+  background:#fff; border:2px solid #1a3a6a; padding:2px 8px; border-radius:2px;
+  box-shadow:2px 2px 0 #1a3a6a;
+}
+#hud-name-stat.named-anim{ animation:hudBadgeIn .45s cubic-bezier(.34,1.56,.64,1); }
 
 /* ---------- Frost tutorial banner ---------- */
 .frost{
@@ -216,9 +279,9 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
     <circle cx="16" cy="19" r="6" fill="#5db3d8"/><rect x="12" y="16" width="4" height="3" fill="#3aa66a"/><rect x="17" y="19" width="4" height="3" fill="#3aa66a"/>
     <rect x="3" y="4" width="11" height="5" fill="#c9955a"/><rect x="18" y="4" width="11" height="5" fill="#c9955a"/>
   </svg>
-  <h1>BUYRWORLD<span>THE SUPPLY CHAIN GAME — v0.6</span></h1>
+  <h1>BUYRWORLD<span>THE SUPPLY CHAIN GAME — v0.8</span></h1>
   <div class="stats">
-    <div class="stat"><div class="v" id="hud-name" style="color:var(--orange)">—</div><div class="l">Founder</div></div>
+    <div class="stat" id="hud-name-stat"><div class="v" id="hud-name" style="color:var(--orange)">—</div><div class="l" style="font-size:7px;letter-spacing:0;line-height:1.2;">HI MY NAME IS</div></div>
     <div class="stat coins"><div class="v" id="hud-coins">0</div><div class="l">Coins</div></div>
     <div class="stat"><div class="v" id="hud-total">5</div><div class="l">Total Lvl</div></div>
     <div class="stat"><div class="v" id="hud-pet">—</div><div class="l">Companion</div></div>
@@ -229,17 +292,26 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 <nav id="nav"></nav>
 <main id="main"></main>
 
+<div id="loading" aria-live="polite" aria-label="Loading BuyrWorld">
+  <div class="ld-logo">BUYRWORLD</div>
+  <div class="ld-sub">LOADING...</div>
+  <div id="ld-bar-wrap"><div id="ld-bar"></div></div>
+</div>
+
 <div id="log" aria-live="polite"></div>
 <div id="toast" role="status"></div>
 
 <div id="title" style="display:none;">
   <canvas id="titlefx"></canvas>
   <div class="box">
-    <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true" style="image-rendering:pixelated;">
-      <rect x="4" y="8" width="24" height="20" rx="2" fill="#d9a86a"/><rect x="14" y="8" width="4" height="20" fill="#f6ecd2"/>
-      <circle cx="16" cy="19" r="6" fill="#5db3d8"/><rect x="12" y="16" width="4" height="3" fill="#3aa66a"/><rect x="17" y="19" width="4" height="3" fill="#3aa66a"/>
-      <rect x="3" y="4" width="11" height="5" fill="#c9955a"/><rect x="18" y="4" width="11" height="5" fill="#c9955a"/>
-    </svg>
+    <div class="logo-wrap">
+      <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true" style="image-rendering:pixelated;">
+        <rect x="4" y="8" width="24" height="20" rx="2" fill="#d9a86a"/><rect x="14" y="8" width="4" height="20" fill="#f6ecd2"/>
+        <circle cx="16" cy="19" r="6" fill="#5db3d8"/><rect x="12" y="16" width="4" height="3" fill="#3aa66a"/><rect x="17" y="19" width="4" height="3" fill="#3aa66a"/>
+        <rect x="3" y="4" width="11" height="5" fill="#c9955a"/><rect x="18" y="4" width="11" height="5" fill="#c9955a"/>
+      </svg>
+      <span class="orbit-arrow" aria-hidden="true">🚛</span>
+    </div>
     <h1>BUYRWORLD</h1>
     <div class="sub">BUILD A LEGENDARY SUPPLY CHAIN</div>
     <div class="frostwrap">
@@ -247,6 +319,10 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
       <p><b>Frost:</b> "Hey! Welcome to the valley. What should everyone call you, boss?"</p>
     </div>
     <input id="name-input" maxlength="16" placeholder="Your founder name" autocomplete="off">
+    <div id="name-badge" aria-hidden="true">
+      <div class="bhi">HI, MY NAME IS</div>
+      <div class="bnm" id="badge-name-val">FOUNDER</div>
+    </div>
     <div class="row" style="justify-content:center;">
       <button class="btn big" id="btn-start">START SHIFT ▶</button>
       <button class="btn alt" id="btn-preview">♪ Theme</button>
@@ -254,10 +330,12 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
   </div>
 </div>
 
-<footer class="credit">BuyrWorld v0.6 — a game about supply chains, by someone who actually runs them.</footer>
+<footer class="credit">BuyrWorld v0.8 — a game about supply chains, by someone who actually runs them.</footer>
 
 <script>
 "use strict";
+/* advance loading bar to 60% immediately so the screen feels alive */
+(function(){ const b = document.getElementById('ld-bar'); if (b) b.style.width = '60%'; })();
 /* =====================================================
    BuyrWorld v0.2 — single-file idle supply chain game
    Engine: pure tick(state, dt). No backend. No tracking.
@@ -1404,13 +1482,33 @@ function showTitle(){
   document.getElementById("btn-start").onclick = () => {
     let n = input.value.trim().replace(/[<>"'&]/g, "").slice(0, 16);
     S.playerName = n || "Founder";
-    t.style.display = "none";
-    MUSIC.unlocked = true;
-    updateMusicZone();
-    log(`❄️ Frost: "Welcome aboard, <b>${pName()}</b>! Follow my lead and you'll run this valley by teatime."`, "good");
-    updateHud(); renderMain(); save();
+    // Badge sticker moment
+    const badge = document.getElementById("name-badge");
+    const badgeVal = document.getElementById("badge-name-val");
+    if (badge && badgeVal){
+      badgeVal.textContent = S.playerName.toUpperCase();
+      badge.classList.add("show");
+    }
+    setTimeout(()=>{
+      t.style.display = "none";
+      MUSIC.unlocked = true;
+      updateMusicZone();
+      const stat = document.getElementById("hud-name-stat");
+      if (stat){ stat.classList.add("named","named-anim"); setTimeout(()=>stat.classList.remove("named-anim"),500); }
+      log(`❄️ Frost: "Welcome aboard, <b>${pName()}</b>! Follow my lead and you'll run this valley by teatime."`, "good");
+      updateHud(); renderMain(); save();
+    }, 1100);
   };
   input.onkeydown = e => { if (e.key === "Enter") document.getElementById("btn-start").click(); };
+  // Parallax tilt on the title box
+  const box = t.querySelector(".box");
+  t.onmousemove = (e) => {
+    const r = t.getBoundingClientRect();
+    const dx = (e.clientX-(r.left+r.width/2))/r.width;
+    const dy = (e.clientY-(r.top+r.height/2))/r.height;
+    box.style.transform = `translate(${(dx*10).toFixed(1)}px,${(dy*6).toFixed(1)}px)`;
+  };
+  t.onmouseleave = () => { box.style.transform = ""; };
 }
 const SAVE_KEY = "buyrworld_game_save_v1";
 const OFFLINE_CAP_MS = 8 * 3600 * 1000;
@@ -1911,6 +2009,11 @@ function updateHud(){
   $("#hud-total").textContent = totalLvl();
   const nameEl = document.getElementById("hud-name");
   if (nameEl) nameEl.textContent = S.playerName ? S.playerName : "—";
+  const stat = document.getElementById("hud-name-stat");
+  if (stat){
+    if (S.playerName) stat.classList.add("named");
+    else stat.classList.remove("named");
+  }
   const pet = PETS.find(p=>p.id===S.pets.active);
   $("#hud-pet").textContent = pet ? pet.ic+" "+pet.n.split(" ")[1] : "—";
 }
@@ -1968,6 +2071,16 @@ setInterval(()=>{
 setInterval(save, 15000);
 window.addEventListener("beforeunload", save);
 document.addEventListener("visibilitychange", ()=>{ if (document.visibilityState==="hidden") save(); });
+
+/* dismiss pixel loading screen */
+(function(){
+  const b = document.getElementById('ld-bar');
+  if (b) { b.style.transition = 'width 0.25s'; b.style.width = '100%'; }
+  setTimeout(() => {
+    const ld = document.getElementById('loading');
+    if (ld) { ld.classList.add('done'); setTimeout(() => ld.remove(), 550); }
+  }, 280);
+})();
 </script>
 </body>
 </html>
