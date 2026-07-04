@@ -11,6 +11,7 @@ import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS } from './world/map
 import { nightAlpha, lampGlow, isNight, skyTint } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS } from './player/customisation.ts';
+import { preloadAll, drawSprite } from './world/assets.ts';
 
 /* =====================================================
    BuyrWorld v0.8 — Vite+TS modular entry point
@@ -309,6 +310,8 @@ const WANDERERS = [
     ]},
 ];
 const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down" };
+const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach"]);
 const VKEYS = {};
 const VFX = [];
 const DUST = [];
@@ -336,13 +339,13 @@ function solidAt(px, py){
   }
   return false;
 }
-function moveActor(a, dt, speed){
+function moveActor(a, dt, speed, free=false){
   let dx=0, dy=0;
-  if (a===VP && (VKEYS.ArrowLeft||VKEYS.a)) dx-=1;
-  if (a===VP && (VKEYS.ArrowRight||VKEYS.d)) dx+=1;
-  if (a===VP && (VKEYS.ArrowUp||VKEYS.w)) dy-=1;
-  if (a===VP && (VKEYS.ArrowDown||VKEYS.s)) dy+=1;
-  if (dx||dy){ a.tx=null; a.ty=null; a.pending=null; }
+  if ((a===VP||a===IP) && (VKEYS.ArrowLeft||VKEYS.a)) dx-=1;
+  if ((a===VP||a===IP) && (VKEYS.ArrowRight||VKEYS.d)) dx+=1;
+  if ((a===VP||a===IP) && (VKEYS.ArrowUp||VKEYS.w)) dy-=1;
+  if ((a===VP||a===IP) && (VKEYS.ArrowDown||VKEYS.s)) dy+=1;
+  if (dx||dy){ a.tx=null; a.ty=null; if (a.pending!==undefined) a.pending=null; }
   else if (a.tx!==null && a.tx!==undefined){
     const vx=a.tx-a.x, vy=a.ty-a.y, d=Math.hypot(vx,vy);
     if (d < 4){ a.tx=null; a.ty=null; }
@@ -352,13 +355,19 @@ function moveActor(a, dt, speed){
   if (!a.moving) return;
   if (dx) a.facing = dx>0?1:-1;
   a.dir = Math.abs(dx) >= Math.abs(dy) ? (dx>0 ? "right" : "left") : (dy>0 ? "down" : "up");
-  const st = speed*dt, half=6, feet=2;
-  const nx = a.x + dx*st;
-  if (!solidAt(nx-half, a.y+feet) && !solidAt(nx+half, a.y+feet)) a.x = nx;
-  else if (!dy){ a.tx=null; a.ty=null; }
-  const ny = a.y + dy*st;
-  if (!solidAt(a.x-half, ny+feet) && !solidAt(a.x+half, ny+feet)) a.y = ny;
-  else if (!dx){ a.tx=null; a.ty=null; }
+  const st = speed*dt;
+  if (free){
+    a.x = Math.max(16, Math.min(VIEW_W-16, a.x + dx*st));
+    a.y = Math.max(24, Math.min(VIEW_H-16, a.y + dy*st));
+  } else {
+    const half=6, feet=2;
+    const nx = a.x + dx*st;
+    if (!solidAt(nx-half, a.y+feet) && !solidAt(nx+half, a.y+feet)) a.x = nx;
+    else if (!dy){ a.tx=null; a.ty=null; }
+    const ny = a.y + dy*st;
+    if (!solidAt(a.x-half, ny+feet) && !solidAt(a.x+half, ny+feet)) a.y = ny;
+    else if (!dx){ a.tx=null; a.ty=null; }
+  }
 }
 function stationPos(skill, actId){
   if (skill==="mining"){
@@ -404,6 +413,7 @@ function interactObj(o){
     toast(`${o.w.id==="frost"?"❄️":"💬"} ${o.w.n.toUpperCase()}: ` + o.w.tips[Math.floor(Math.random()*o.w.tips.length)]);
     return;
   }
+  IP.x = VIEW_W/2; IP.y = VIEW_H*0.62; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
   S.tab = o.tab; renderNav(); renderMain();
 }
 function villageClick(e){
@@ -579,20 +589,24 @@ function drawObjects(ctx, t){
     if (o.kind==="bld"){
       // drop shadow
       ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x+4, r.y+r.h, r.w-2, 5);
-      // stone foundation strip
-      ctx.fillStyle="#5a4030"; ctx.fillRect(r.x, r.y+r.h-5, r.w, 5);
-      ctx.fillStyle=o.wall; ctx.fillRect(r.x, r.y+10, r.w, r.h-15);
-      ctx.fillStyle=o.roof;
-      ctx.beginPath(); ctx.moveTo(r.x-4, r.y+12); ctx.lineTo(r.x+r.w/2, r.y-4); ctx.lineTo(r.x+r.w+4, r.y+12); ctx.closePath(); ctx.fill();
-      // door with knob
-      ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+r.w/2-6, r.y+r.h-18, 12, 18);
-      ctx.fillStyle="#c8a060"; ctx.fillRect(r.x+r.w/2-1, r.y+r.h-12, 2, 2);
-      if (r.w >= 3*TILE){
-        ctx.fillStyle="#bfe8f7"; ctx.fillRect(r.x+8, r.y+20, 10, 8); ctx.fillRect(r.x+r.w-18, r.y+20, 10, 8);
-        ctx.strokeStyle="#8c6947"; ctx.lineWidth=1; ctx.strokeRect(r.x+8, r.y+20, 10, 8); ctx.strokeRect(r.x+r.w-18, r.y+20, 10, 8);
-        // top-left glint simulating reflected daylight
-        ctx.fillStyle="rgba(255,255,255,0.65)"; ctx.fillRect(r.x+9, r.y+21, 3, 2); ctx.fillRect(r.x+r.w-17, r.y+21, 3, 2);
+      // try Kenney sprite; fall back to procedural canvas building
+      const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, r.w+24);
+      if (!_spriteDrawn){
+        // stone foundation strip
+        ctx.fillStyle="#5a4030"; ctx.fillRect(r.x, r.y+r.h-5, r.w, 5);
+        ctx.fillStyle=o.wall; ctx.fillRect(r.x, r.y+10, r.w, r.h-15);
+        ctx.fillStyle=o.roof;
+        ctx.beginPath(); ctx.moveTo(r.x-4, r.y+12); ctx.lineTo(r.x+r.w/2, r.y-4); ctx.lineTo(r.x+r.w+4, r.y+12); ctx.closePath(); ctx.fill();
+        // door with knob
+        ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+r.w/2-6, r.y+r.h-18, 12, 18);
+        ctx.fillStyle="#c8a060"; ctx.fillRect(r.x+r.w/2-1, r.y+r.h-12, 2, 2);
+        if (r.w >= 3*TILE){
+          ctx.fillStyle="#bfe8f7"; ctx.fillRect(r.x+8, r.y+20, 10, 8); ctx.fillRect(r.x+r.w-18, r.y+20, 10, 8);
+          ctx.strokeStyle="#8c6947"; ctx.lineWidth=1; ctx.strokeRect(r.x+8, r.y+20, 10, 8); ctx.strokeRect(r.x+r.w-18, r.y+20, 10, 8);
+          ctx.fillStyle="rgba(255,255,255,0.65)"; ctx.fillRect(r.x+9, r.y+21, 3, 2); ctx.fillRect(r.x+r.w-17, r.y+21, 3, 2);
+        }
       }
+      // Always draw emoji label and dynamic effects on top of sprite or canvas building
       drawEmojiC(ctx, o.ic, r.x+r.w/2, r.y+16, 13);
       if (o.chimney){
         ctx.fillStyle="#7a5a45"; ctx.fillRect(r.x+r.w-16, r.y-10, 8, 14);
@@ -611,7 +625,8 @@ function drawObjects(ctx, t){
       ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+2, r.y+16, r.w-4, r.h-16);
       ctx.fillStyle="#a97f52"; ctx.fillRect(r.x, r.y+14, r.w, 5);
       for (let i=0;i<r.w;i+=8){ ctx.fillStyle = (i/8)%2 ? "#fff8e6" : o.awn; ctx.fillRect(r.x+i, r.y, 8, 10); }
-      drawPerson(ctx, r.x+r.w/2, r.y+12, o.hair, o.shirt, t+o.tx, false, 1);
+      if (!drawSprite(ctx, `npc_${o.id}`, r.x+r.w/2, r.y+14, 30))
+        drawPerson(ctx, r.x+r.w/2, r.y+12, o.hair, o.shirt, t+o.tx, false, 1);
       if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", r.x+r.w/2, r.y-6, 10);
     }
     if (o.kind==="sign"){
@@ -847,7 +862,6 @@ function drawInterior(t){
     ctx.fillStyle="#8d939c"; ctx.fillRect(46,H-30,58,10);
     ctx.fillStyle="#2a2a2a"; ctx.beginPath(); ctx.arc(56,H-8,7,0,7); ctx.arc(94,H-8,7,0,7); ctx.fill();
     for (let i=0;i<3;i++){ const lx=170+i*160; ctx.fillStyle="rgba(255,214,102,.25)"; ctx.beginPath(); ctx.arc(lx,26,16,0,7); ctx.fill(); drawEmojiC(ctx,"🏮",lx,26,14); }
-    drawPerson(ctx, W-60, H-24, plHair(), plShirt(), t, false, -1, active==="mining" ? "⛏️" : null, null, plSkin(), plTrousers());
   } else if (S.tab==="steelworks"){
     ctx.fillStyle="#4a3f3a"; ctx.fillRect(0,0,W,H);
     for(let r=0;r<7;r++) for(let c=0;c<20;c++){ ctx.strokeStyle="#3a312d"; ctx.strokeRect(c*30+(r%2?15:0), r*18, 30, 18); }
@@ -861,7 +875,6 @@ function drawInterior(t){
     }
     ctx.fillStyle="#3a3a3a"; ctx.fillRect(W-170, H-36, 90, 12); ctx.fillRect(W-140,H-24,30,18);
     if (active==="steelworks"){ ctx.fillStyle="#ff9a4c"; ctx.fillRect(W-160, H-42, 44, 8); }
-    drawPerson(ctx, W-60, H-24, plHair(), plShirt(), t, false, -1, active==="steelworks" ? "🔨" : null, null, plSkin(), plTrousers());
   } else if (S.tab==="manufacturing"){
     ctx.fillStyle="#55606e"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#49535f"; ctx.fillRect(0,0,W,26);
@@ -872,7 +885,6 @@ function drawInterior(t){
     ctx.fillStyle="#7a8494"; ctx.fillRect(150, 30, 14, 46);
     ctx.save(); ctx.translate(157, 34); ctx.rotate(Math.sin(t*3)*0.5);
     ctx.fillStyle="#95a0b0"; ctx.fillRect(-5, 0, 10, 34); ctx.fillStyle="#ffd666"; ctx.fillRect(-7, 30, 14, 8); ctx.restore();
-    drawPerson(ctx, W-60, H-24, plHair(), plShirt(), t, false, -1, active==="manufacturing" ? "🔧" : null, null, plSkin(), plTrousers());
   } else if (S.tab==="contracts"){
     ctx.fillStyle="#6e5f4a"; ctx.fillRect(0,0,W,H);
     const stock = Math.min(24, Math.floor(Object.values(S.items).reduce((a,b)=>a+b,0)/12));
@@ -886,7 +898,6 @@ function drawInterior(t){
     ctx.fillStyle="#2f3e35"; ctx.fillRect(W-140, 30, 100, 50);
     ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(W-130,96,10,0,7); ctx.arc(W-50,96,10,0,7); ctx.fill();
     drawEmojiC(ctx,"📋", W-190, H-40, 18);
-    drawPerson(ctx, W-210, H-24, plHair(), plShirt(), t, false, 1, null, null, plSkin(), plTrousers());
   } else if (S.tab==="trade"){
     ctx.fillStyle="#7a5a3a"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#6a4c30"; for(let i=0;i<8;i++) ctx.fillRect(0,i*16,W,3);
@@ -898,7 +909,6 @@ function drawInterior(t){
       drawPerson(ctx, sx, 62, o.hair, o.shirt, t+i, false, 1);
       if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", sx, 34, 12);
     });
-    drawPerson(ctx, 30, H-24, plHair(), plShirt(), t, false, 1, null, null, plSkin(), plTrousers());
   } else if (S.tab==="pets"){
     ctx.fillStyle="#8a6a45"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#7a5c3a"; for(let i=0;i<10;i++) ctx.fillRect(i*60,0,4,H);
@@ -926,6 +936,15 @@ function drawInterior(t){
     drawEmojiC(ctx,"🏳️", 540, 34, 20);
     drawPerson(ctx, 260, H-24, "#8a8a8a", "#b0574f", t, false, 1);
   }
+  // exit door — bottom centre; player walks to bottom edge to leave
+  ctx.fillStyle="#6a4a2f"; ctx.fillRect(W/2-14, H-26, 28, 26);
+  ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-14, 3, 3);
+  drawEmojiC(ctx, "🚪", W/2, H-13, 13);
+  ctx.fillStyle="rgba(255,248,230,.85)"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
+  ctx.fillText("EXIT ↓", W/2, H-32);
+  // player drawn last so they render above furniture
+  const _iTool = active==="mining" ? "⛏️" : active==="steelworks" ? "🔨" : active==="manufacturing" ? "🔧" : null;
+  drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers());
 }
 function drawTitleFX(t){
   const cv = document.getElementById("titlefx");
@@ -974,6 +993,11 @@ function villageFrame(ts){
     drawTitleFX(t);
   } else if (S.tab==="village"){
     moveActor(VP, dt, 104);
+    // auto-cancel action when player walks away from station
+    if (S.action && VP.moving) {
+      const sp = stationPos(S.action.skill, S.action.id);
+      if (sp && Math.hypot(VP.x-sp.x, VP.y-sp.y) > 3*TILE) { S.action = null; renderNav(); }
+    }
     if (VP.moving && t-lastDust > 0.16){
       lastDust = t;
       DUST.push({ x:VP.x+(Math.random()*6-3), y:VP.y+9, born:Date.now() });
@@ -988,6 +1012,15 @@ function villageFrame(ts){
       } else if (VP.tx===null && !VP.moving){ VP.pending=null; }
     }
     drawVillage(t);
+  } else if (INTERIOR_TABS.has(S.tab)){
+    moveActor(IP, dt, 80, true);
+    // exit building if player walks to the bottom door
+    if (IP.y > VIEW_H - 18) {
+      IP.x = VIEW_W/2; IP.y = VIEW_H*0.68; IP.tx = null; IP.ty = null; IP.moving = false;
+      S.tab = "village"; renderNav(); renderMain();
+    } else {
+      drawInterior(t);
+    }
   } else {
     drawInterior(t);
   }
@@ -996,6 +1029,17 @@ function villageFrame(ts){
 function setupVillage(){
   const cv = document.getElementById("village");
   if (cv) cv.onclick = villageClick;
+}
+function interiorClick(e){
+  const cv = document.getElementById("interior");
+  if (!cv) return;
+  const rect = cv.getBoundingClientRect();
+  IP.tx = Math.max(16, Math.min(VIEW_W-16, (e.clientX - rect.left) * (VIEW_W / rect.width)));
+  IP.ty = Math.max(24, Math.min(VIEW_H-16, (e.clientY - rect.top) * (VIEW_H / rect.height)));
+}
+function setupInterior(){
+  const cv = document.getElementById("interior");
+  if (cv) cv.onclick = interiorClick;
 }
 
 function showTitle(){
@@ -1455,8 +1499,8 @@ function renderCharacterCustomisation(){
 }
 function interiorHtml(title){
   return `<div class="panel" style="padding:8px;">
-    <canvas id="interior" width="${VIEW_W*pixelScale()}" height="${120*pixelScale()}" style="width:100%;height:120px;display:block;image-rendering:pixelated;border:2px solid var(--edge);"></canvas>
-    <div class="vhint">${title}</div></div>`;
+    <canvas id="interior" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${VIEW_W}/${VIEW_H};"></canvas>
+    <div class="vhint">${title} · WASD/tap to move · walk to the 🚪 to exit</div></div>`;
 }
 function renderAch(){
   if (!S.ach) S.ach = {};
@@ -1493,6 +1537,7 @@ function renderMain(){
   else m.innerHTML = banner + interiorHtml(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop") + renderSkillPanel(S.tab);
   bindMain();
   setupVillage();
+  setupInterior();
   updateMusicZone();
   if (S.tab==="character") drawCharPreview("char-preview");
 }
@@ -1584,10 +1629,11 @@ applyOffline();
 ensureMarket(); rollMarket(false);
 fillContracts();
 if (!TABS.some(t=>t.id===S.tab)) S.tab = "village";
+preloadAll();
 renderNav(); renderMain(); updateHud(); syncMusicButton();
 document.getElementById("btn-music").onclick = () => setMusic(!S.settings.music);
 window.addEventListener("keydown", e => {
-  if (S.tab !== "village") return;
+  if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){
     VKEYS[e.key] = true;
     if (e.key.startsWith("Arrow")) e.preventDefault();
