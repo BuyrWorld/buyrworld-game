@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BuyrWorld — The Supply Chain Game</title>
+<meta name="description" content="BuyrWorld: a retro idle game where you mine, smelt, manufacture, trade and ship your way to a legendary supply chain empire.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#9fd6a8;      /* meadow green */
+  --panel:#fff8e6;   /* warm cream */
+  --panel2:#f6ecd2;  /* sand */
+  --edge:#8c6947;    /* soft wood brown */
+  --amber:#e8961e;   /* sunshine */
+  --orange:#ff8a5c;  /* coral */
+  --mint:#3aa66a;    /* leaf green */
+  --red:#e05d5d;
+  --text:#453423;    /* dark cocoa */
+  --dim:#8a7a63;
+  --shadow:#7c9a72;  /* leafy shadow */
+  --sky:#a6dff5;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html{ -webkit-text-size-adjust:100%; }
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'IBM Plex Mono', ui-monospace, monospace;
+  font-size:14px; line-height:1.5;
+  min-height:100vh; display:flex; flex-direction:column;
+  image-rendering:pixelated;
+}
+h1,h2,h3,.px{ font-family:'Press Start 2P', monospace; }
+button{ font-family:inherit; cursor:pointer; }
+button:focus-visible, [tabindex]:focus-visible{ outline:3px solid var(--amber); outline-offset:2px; }
+@media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
+
+/* ---------- header ---------- */
+header{
+  background:var(--panel2); border-bottom:2px solid var(--edge);
+  padding:10px 14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+}
+header h1{ font-size:14px; color:var(--amber); letter-spacing:1px; }
+header h1 span{ color:var(--dim); font-size:8px; display:block; margin-top:4px; letter-spacing:0; }
+.stats{ display:flex; gap:14px; margin-left:auto; flex-wrap:wrap; }
+.stat{ text-align:right; }
+.stat .v{ font-family:'Press Start 2P',monospace; font-size:11px; color:var(--mint); }
+.stat .l{ font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; }
+.stat.coins .v{ color:var(--amber); }
+
+/* ---------- nav ---------- */
+nav{ display:flex; overflow-x:auto; background:var(--panel2); border-bottom:2px solid var(--edge); }
+nav button{
+  background:none; border:none; border-right:2px solid var(--edge);
+  color:var(--dim); padding:10px 14px; font-size:12px; white-space:nowrap;
+  display:flex; gap:8px; align-items:center;
+}
+nav button .lvl{ font-size:10px; color:var(--dim); }
+nav button.active{ background:var(--panel); color:var(--amber); box-shadow:inset 0 -3px 0 var(--amber); }
+nav button.working::before{ content:"▶"; color:var(--mint); font-size:9px; }
+
+/* ---------- layout ---------- */
+main{ flex:1; width:100%; max-width:980px; margin:0 auto; padding:14px; }
+.panel{
+  background:var(--panel); border:2px solid var(--edge);
+  box-shadow:4px 4px 0 var(--shadow); padding:14px; margin-bottom:14px;
+}
+.panel h2{ font-size:11px; color:var(--amber); margin-bottom:10px; }
+.panel h2 small{ display:block; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--dim); margin-top:6px; font-weight:400; }
+
+/* ---------- skill xp bar ---------- */
+.xpwrap{ margin-bottom:12px; }
+.xprow{ display:flex; justify-content:space-between; font-size:11px; color:var(--dim); margin-bottom:4px; }
+.bar{ height:14px; background:var(--panel2); border:2px solid var(--edge); position:relative; overflow:hidden; }
+.bar .fill{
+  height:100%; background:var(--mint); width:0%;
+  background-image:repeating-linear-gradient(90deg, rgba(0,0,0,.25) 0 2px, transparent 2px 8px);
+}
+.bar.xp .fill{ background-color:var(--amber); }
+
+/* ---------- action grid ---------- */
+.actions{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+.action{
+  background:var(--panel2); border:2px solid var(--edge); padding:10px;
+  text-align:left; color:var(--text); position:relative;
+}
+.action:hover:not(:disabled){ border-color:var(--amber); }
+.action:disabled{ opacity:.45; cursor:not-allowed; }
+.action.running{ border-color:var(--mint); }
+.action .nm{ font-size:12px; font-weight:600; display:flex; gap:8px; align-items:center; }
+.action .nm .ic{ font-size:18px; }
+.action .meta{ font-size:11px; color:var(--dim); margin-top:4px; }
+.action .io{ font-size:11px; margin-top:4px; }
+.action .io .need{ color:var(--orange); }
+.action .io .have{ color:var(--mint); }
+.action .prog{ height:8px; background:var(--bg); margin-top:8px; border:1px solid var(--edge); }
+.action .prog .fill{ height:100%; background:var(--mint); width:0%; }
+.action .stopbtn{ position:absolute; top:8px; right:8px; background:var(--red); color:#fff; border:none; font-size:10px; padding:2px 6px; }
+
+/* ---------- inventory chips ---------- */
+.inv{ display:flex; flex-wrap:wrap; gap:8px; }
+.chip{
+  background:var(--panel2); border:2px solid var(--edge); padding:5px 9px;
+  font-size:12px; display:flex; gap:6px; align-items:center;
+}
+.chip b{ color:var(--amber); }
+
+/* ---------- contracts ---------- */
+.contract{
+  background:var(--panel2); border:2px solid var(--edge); padding:12px; margin-bottom:10px;
+  display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+}
+.contract .who{ font-size:12px; font-weight:600; }
+.contract .req{ font-size:12px; color:var(--dim); width:100%; }
+.contract .req .have{ color:var(--mint); } .contract .req .short{ color:var(--orange); }
+.contract .pay{ font-size:12px; color:var(--amber); }
+.btn{
+  background:var(--orange); color:#1a0d05; border:none; padding:8px 14px;
+  font-size:12px; font-weight:600; box-shadow:3px 3px 0 var(--shadow);
+}
+.btn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--shadow); }
+.btn.alt{ background:var(--panel2); color:var(--dim); border:2px solid var(--edge); box-shadow:none; }
+.btn:disabled{ opacity:.4; cursor:not-allowed; }
+.btn.deliver{ background:var(--mint); }
+
+/* ---------- upgrades / companions ---------- */
+.card{
+  background:var(--panel2); border:2px solid var(--edge); padding:12px; margin-bottom:10px;
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+}
+.card .ic{ font-size:26px; }
+.card .body{ flex:1; min-width:180px; }
+.card .body .nm{ font-size:12px; font-weight:600; }
+.card .body .ds{ font-size:11px; color:var(--dim); }
+.card.owned{ border-color:var(--mint); }
+.card.locked{ opacity:.55; }
+.card.activepet{ border-color:var(--amber); box-shadow:0 0 0 2px var(--amber) inset; }
+.rar-common{ color:var(--dim);} .rar-rare{ color:#6fb7ff;} .rar-legendary{ color:var(--amber);}
+
+/* ---------- log ---------- */
+#log{
+  background:var(--panel2); border-top:2px solid var(--edge);
+  height:88px; overflow-y:auto; padding:8px 14px; font-size:11px;
+}
+#log .t{ color:var(--dim); margin-right:8px; }
+#log .good{ color:var(--mint);} #log .rare{ color:var(--amber); font-weight:600;}
+#log p{ margin-bottom:2px; }
+
+/* ---------- toast / levelup ---------- */
+#toast{
+  position:fixed; left:50%; top:18px; transform:translateX(-50%);
+  background:var(--amber); color:#1a0d05; border:2px solid #fff;
+  padding:12px 18px; font-family:'Press Start 2P',monospace; font-size:11px;
+  box-shadow:5px 5px 0 var(--shadow); display:none; z-index:50; text-align:center; max-width:92vw;
+}
+@keyframes pop{ 0%{transform:translateX(-50%) scale(.6);} 100%{transform:translateX(-50%) scale(1);} }
+#toast.show{ display:block; animation:pop .25s; }
+
+textarea{ width:100%; background:var(--panel2); color:var(--text); border:2px solid var(--edge); padding:8px; font-family:inherit; font-size:11px; min-height:70px; }
+.row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px; }
+
+/* ---------- title screen ---------- */
+#title{
+  position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(180deg, var(--sky) 0 45%, var(--bg) 45% 100%); padding:16px;
+}
+#title .box{
+  background:var(--panel); border:3px solid var(--edge); box-shadow:6px 6px 0 var(--shadow);
+  padding:22px; max-width:420px; width:100%; text-align:center;
+}
+#title h1{ font-size:20px; color:var(--orange); text-shadow:2px 2px 0 var(--panel2), 4px 4px 0 var(--edge); }
+#title .sub{ font-size:10px; color:var(--dim); margin:10px 0 16px; letter-spacing:1px; }
+#title input{
+  width:100%; padding:10px; font-family:inherit; font-size:14px; text-align:center;
+  background:#fff; border:2px solid var(--edge); color:var(--text); margin-bottom:12px;
+}
+#title .frostwrap{ display:flex; gap:12px; align-items:center; text-align:left; background:var(--panel2); border:2px solid var(--edge); padding:10px; margin-bottom:14px; }
+#title .frostwrap p{ font-size:12px; }
+.btn.big{ font-size:14px; padding:12px 22px; }
+
+/* ---------- Frost tutorial banner ---------- */
+.frost{
+  background:var(--sky); border:2px solid var(--edge); box-shadow:4px 4px 0 var(--shadow);
+  padding:12px; margin-bottom:14px; display:flex; gap:12px; align-items:center;
+}
+.frost .say{ flex:1; min-width:200px; }
+.frost .say .who{ font-family:'Press Start 2P',monospace; font-size:9px; color:var(--text); margin-bottom:6px; }
+.frost .say p{ font-size:12px; }
+.frost .say .obj{ font-size:11px; color:var(--text); margin-top:6px; font-weight:600; }
+.frost svg{ flex-shrink:0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BUYRWORLD<span>THE SUPPLY CHAIN GAME — v0.3</span></h1>
+  <div class="stats">
+    <div class="stat"><div class="v" id="hud-name" style="color:var(--orange)">—</div><div class="l">Founder</div></div>
+    <div class="stat coins"><div class="v" id="hud-coins">0</div><div class="l">Coins</div></div>
+    <div class="stat"><div class="v" id="hud-total">5</div><div class="l">Total Lvl</div></div>
+    <div class="stat"><div class="v" id="hud-pet">—</div><div class="l">Companion</div></div>
+    <button id="btn-music" class="btn alt" title="Toggle music" aria-label="Toggle music" style="padding:6px 10px;">🔊</button>
+  </div>
+</header>
+
+<nav id="nav"></nav>
+<main id="main"></main>
+
+<div id="log" aria-live="polite"></div>
+<div id="toast" role="status"></div>
+
+<div id="title" style="display:none;">
+  <div class="box">
+    <h1>BUYRWORLD</h1>
+    <div class="sub">BUILD A LEGENDARY SUPPLY CHAIN</div>
+    <div class="frostwrap">
+      <span id="frost-avatar-title"></span>
+      <p><b>Frost:</b> "Hey! Welcome to the valley. What should everyone call you, boss?"</p>
+    </div>
+    <input id="name-input" maxlength="16" placeholder="Your founder name" autocomplete="off">
+    <div class="row" style="justify-content:center;">
+      <button class="btn big" id="btn-start">START SHIFT ▶</button>
+      <button class="btn alt" id="btn-preview">♪ Theme</button>
+    </div>
+  </div>
+</div>
+
+<footer class="credit">BuyrWorld v0.3 — a game about supply chains, by someone who actually runs them.</footer>
+
+<script>
+"use strict";
+/* =====================================================
+   BuyrWorld v0.2 — single-file idle supply chain game
+   Engine: pure tick(state, dt). No backend. No tracking.
+   ===================================================== */
+
+/* ---------- XP curve (RuneScape-style, 1–99) ---------- */
+const XP_TABLE = (() => {
+  const t = [0, 0]; let pts = 0;
+  for (let l = 1; l < 99; l++) {
+    pts += Math.floor(l + 300 * Math.pow(2, l / 7));
+    t.push(Math.floor(pts / 4));
+  }
+  return t; // t[level] = xp required to BE that level
+})();
+function levelFromXp(xp){ let l = 1; while (l < 99 && xp >= XP_TABLE[l + 1]) l++; return l; }
+
+/* ---------- items ---------- */
+const ITEMS = {
+  iron_ore:   { n:"Iron Ore",      ic:"🪨", v:4  },
+  copper_ore: { n:"Copper Ore",    ic:"🟤", v:6  },
+  coal:       { n:"Coal",          ic:"⚫", v:7  },
+  bauxite:    { n:"Bauxite",       ic:"🟠", v:12 },
+  rare_earth: { n:"Rare Earths",   ic:"💎", v:40 },
+  iron_bar:   { n:"Iron Bar",      ic:"🔩", v:14 },
+  copper_wire:{ n:"Copper Wire",   ic:"🧵", v:12 },
+  steel_bar:  { n:"Steel Bar",     ic:"⛓️", v:30 },
+  alu_ingot:  { n:"Aluminium Ingot",ic:"🥈", v:38 },
+  tech_alloy: { n:"Tech Alloy",    ic:"✨", v:110},
+  bracket:    { n:"Bracket",       ic:"🧱", v:26 },
+  wiring_loom:{ n:"Wiring Loom",   ic:"🔌", v:42 },
+  gearbox:    { n:"Gearbox",       ic:"⚙️", v:90 },
+  chassis:    { n:"Chassis",       ic:"🛠️", v:150},
+  servo_unit: { n:"Servo Unit",    ic:"🤖", v:320},
+};
+
+/* ---------- skills & actions ---------- */
+const SKILLS = {
+  mining: {
+    n:"Mining", ic:"⛏️", desc:"Extract raw materials from the Greenfield Valley seams.",
+    actions:[
+      { id:"iron_ore",   n:"Mine Iron Ore",    lvl:1,  ms:3000, xp:10, out:{iron_ore:1} },
+      { id:"copper_ore", n:"Mine Copper Ore",  lvl:5,  ms:3500, xp:14, out:{copper_ore:1} },
+      { id:"coal",       n:"Dig Coal",         lvl:10, ms:4000, xp:18, out:{coal:1} },
+      { id:"bauxite",    n:"Quarry Bauxite",   lvl:20, ms:5000, xp:26, out:{bauxite:1} },
+      { id:"rare_earth", n:"Extract Rare Earths",lvl:40, ms:7000, xp:48, out:{rare_earth:1} },
+    ]
+  },
+  steelworks: {
+    n:"Steelworks", ic:"🔥", desc:"Smelt and alloy. The furnace does not care about your KPIs.",
+    actions:[
+      { id:"iron_bar",   n:"Smelt Iron Bar",     lvl:1,  ms:4000, xp:15, in:{iron_ore:2},            out:{iron_bar:1} },
+      { id:"copper_wire",n:"Draw Copper Wire",   lvl:5,  ms:3000, xp:11, in:{copper_ore:1},          out:{copper_wire:1} },
+      { id:"steel_bar",  n:"Smelt Steel Bar",    lvl:10, ms:5000, xp:24, in:{iron_ore:2, coal:1},    out:{steel_bar:1} },
+      { id:"alu_ingot",  n:"Refine Aluminium",   lvl:20, ms:5500, xp:30, in:{bauxite:2},             out:{alu_ingot:1} },
+      { id:"tech_alloy", n:"Forge Tech Alloy",   lvl:40, ms:8000, xp:58, in:{steel_bar:1, rare_earth:1}, out:{tech_alloy:1} },
+    ]
+  },
+  manufacturing: {
+    n:"Manufacturing", ic:"🏭", desc:"Turn metal into product. Product into contracts. Contracts into glory.",
+    actions:[
+      { id:"bracket",    n:"Press Brackets",   lvl:1,  ms:4000, xp:16, in:{iron_bar:1},                 out:{bracket:1} },
+      { id:"wiring_loom",n:"Build Wiring Loom",lvl:5,  ms:4500, xp:21, in:{copper_wire:2},              out:{wiring_loom:1} },
+      { id:"gearbox",    n:"Assemble Gearbox", lvl:12, ms:6000, xp:34, in:{steel_bar:2},                out:{gearbox:1} },
+      { id:"chassis",    n:"Weld Chassis",     lvl:25, ms:7500, xp:48, in:{steel_bar:1, alu_ingot:2},   out:{chassis:1} },
+      { id:"servo_unit", n:"Build Servo Unit", lvl:45, ms:9000, xp:75, in:{tech_alloy:1, wiring_loom:1},out:{servo_unit:1} },
+    ]
+  },
+  logistics: {
+    n:"Logistics", ic:"🚚", desc:"Deliver contracts to earn coins and Logistics XP. Higher levels unlock bigger clients.",
+    actions:[] // logistics levels via contract delivery
+  },
+  trading: {
+    n:"Trading", ic:"⚖️", desc:"Buy low, sell high with the valley's traders. Levels via trades.",
+    actions:[] // trading levels via NPC deals
+  },
+};
+
+/* ---------- NPC traders ---------- */
+const NPCS = [
+  { id:"marge", n:"Marge", ic:"👩‍🌾", title:"Greenfield Ore Broker", lvl:1,
+    quip:"Cash for rocks, rocks for cash. No invoices, no drama.",
+    stock:["iron_ore","copper_ore","coal","bauxite"] },
+  { id:"bolt",  n:"Bolt",  ic:"🧑‍🏭", title:"Rustbelt Scrap Dealer", lvl:10,
+    quip:"Everything's refurbished. Even the refurbishments.",
+    stock:["iron_bar","copper_wire","steel_bar","alu_ingot"] },
+  { id:"perry", n:"Perry", ic:"🧑‍✈️", title:"Port Salvo Freight Agent", lvl:25,
+    quip:"If it fits in a container, I know someone who wants it.",
+    stock:["bracket","wiring_loom","gearbox","chassis","rare_earth"] },
+];
+const MARKET_ROLL_MS = 3 * 60 * 1000; // prices drift every 3 minutes
+
+function ensureMarket(){
+  if (!S.market) S.market = { drift:{}, last:Date.now() };
+  NPCS.forEach(n => {
+    if (!S.market.drift[n.id]) S.market.drift[n.id] = {};
+    n.stock.forEach(it => {
+      if (typeof S.market.drift[n.id][it] !== "number")
+        S.market.drift[n.id][it] = 0.85 + Math.random()*0.4; // 0.85–1.25 start
+    });
+  });
+}
+function rollMarket(force){
+  ensureMarket();
+  const steps = force ? 1 : Math.floor((Date.now() - S.market.last) / MARKET_ROLL_MS);
+  if (steps <= 0) return false;
+  for (let s = 0; s < Math.min(steps, 24); s++){
+    NPCS.forEach(n => n.stock.forEach(it => {
+      let d = S.market.drift[n.id][it];
+      d = d * (0.93 + Math.random()*0.14);              // gentle random walk
+      S.market.drift[n.id][it] = Math.min(1.45, Math.max(0.65, d));
+    }));
+  }
+  S.market.last = Date.now();
+  return true;
+}
+function tradeBonus(){ // better prices from Trading level + Warehouse Panda
+  let b = skillLvl("trading") * 0.002;                   // up to ~20% at 99
+  if (S.pets.active === "warehouse_panda") b += 0.05;
+  return Math.min(b, 0.25);
+}
+function buyPrice(npc, it){
+  ensureMarket();
+  const d = S.market.drift[npc.id][it];
+  return Math.max(1, Math.round(ITEMS[it].v * d * 1.35 * (1 - tradeBonus())));
+}
+function sellPrice(npc, it){
+  ensureMarket();
+  const d = S.market.drift[npc.id][it];
+  const p = Math.round(ITEMS[it].v * d * 0.80 * (1 + tradeBonus()));
+  return Math.max(1, Math.min(p, buyPrice(npc, it) - 1)); // never a same-NPC money pump
+}
+function doTrade(npcId, it, qty, mode){
+  const npc = NPCS.find(n=>n.id===npcId);
+  if (!npc || skillLvl("trading") < npc.lvl) return;
+  if (mode === "buy"){
+    const unit = buyPrice(npc, it);
+    const q = qty === "max" ? Math.floor(S.coins / unit) : Math.min(qty, Math.floor(S.coins / unit));
+    if (q <= 0){ toast("Not enough coins."); return; }
+    S.coins -= unit * q; addItem(it, q);
+    grantXp("trading", Math.max(1, Math.round(unit * q * 0.06)));
+    log(`⚖️ Bought ${q}× ${ITEMS[it].n} from ${npc.n} (−${fmt(unit*q)} coins)`);
+  } else {
+    const unit = sellPrice(npc, it);
+    const q = qty === "max" ? itemCount(it) : Math.min(qty, itemCount(it));
+    if (q <= 0){ toast("Nothing to sell."); return; }
+    S.items[it] -= q; S.coins += unit * q;
+    grantXp("trading", Math.max(2, Math.round(unit * q * 0.22)));
+    rollPet("trading");
+    log(`⚖️ Sold ${q}× ${ITEMS[it].n} to ${npc.n} → <b>+${fmt(unit*q)} coins</b>`, "good");
+  }
+  renderMain(); updateHud(); save();
+}
+
+/* ---------- upgrades ---------- */
+const UPGRADES = [
+  { id:"pick1",  skill:"mining",        n:"Steel Pickaxe",     ic:"⛏️", cost:250,   mult:0.85, ds:"Mining actions 15% faster." },
+  { id:"pick2",  skill:"mining",        n:"Hydraulic Drill",   ic:"🛠️", cost:2500,  mult:0.70, ds:"Mining actions 30% faster.", req:"pick1" },
+  { id:"pick3",  skill:"mining",        n:"Plasma Bore",       ic:"⚡", cost:20000, mult:0.55, ds:"Mining actions 45% faster.", req:"pick2" },
+  { id:"furn1",  skill:"steelworks",    n:"Blast Furnace",     ic:"🔥", cost:400,   mult:0.85, ds:"Steelworks 15% faster." },
+  { id:"furn2",  skill:"steelworks",    n:"Induction Furnace", ic:"🌡️", cost:3500,  mult:0.70, ds:"Steelworks 30% faster.", req:"furn1" },
+  { id:"line1",  skill:"manufacturing", n:"Assembly Line",     ic:"🏭", cost:600,   mult:0.85, ds:"Manufacturing 15% faster." },
+  { id:"line2",  skill:"manufacturing", n:"Robotic Cell",      ic:"🤖", cost:5000,  mult:0.70, ds:"Manufacturing 30% faster.", req:"line1" },
+  { id:"fleet1", skill:"logistics",     n:"Van Fleet",         ic:"🚐", cost:500,   pay:1.15,  ds:"Contract payouts +15%." },
+  { id:"fleet2", skill:"logistics",     n:"HGV Fleet",         ic:"🚛", cost:4500,  pay:1.30,  ds:"Contract payouts +30%.", req:"fleet1" },
+  { id:"fleet3", skill:"logistics",     n:"Rail Freight Deal", ic:"🚆", cost:32000, pay:1.55,  ds:"Contract payouts +55%.", req:"fleet2" },
+];
+
+/* ---------- companions ---------- */
+const PETS = [
+  { id:"forklift_fox",  n:"Forklift Fox",  ic:"🦊", rar:"rare",      src:"mining",        chance:1/350, ds:"+12% Mining speed while active." },
+  { id:"drone_owl",     n:"Drone Owl",     ic:"🦉", rar:"rare",      src:"manufacturing", chance:1/350, ds:"+12% Manufacturing speed while active." },
+  { id:"container_crab",n:"Container Crab",ic:"🦀", rar:"rare",      src:"contract",      chance:1/45,  ds:"+15% contract payouts while active." },
+  { id:"rail_rhino",    n:"Rail Rhino",    ic:"🦏", rar:"legendary", src:"contract",      chance:1/250, ds:"+30% contract payouts while active." },
+  { id:"cargo_turtle",  n:"Cargo Turtle",  ic:"🐢", rar:"legendary", src:"steelworks",    chance:1/900, ds:"Steelworks actions cost 1 less input (min 1)." },
+  { id:"warehouse_panda",n:"Warehouse Panda",ic:"🐼", rar:"rare",     src:"trading",       chance:1/120, ds:"+5% better buy & sell prices while active." },
+];
+
+/* ---------- contract clients ---------- */
+const CLIENTS = [
+  "Greenfield Growers Co-op","Port Salvo Chandlers","Valley Rail Maintenance","Bramble & Sons Ironmongers",
+  "OmniProcure PLC (they pay late)","The Night Shift Collective","Dockside Repair Guild","Frostline Advance Party",
+];
+const CONTRACT_POOL = [
+  { item:"bracket",     minLvl:1  },
+  { item:"iron_bar",    minLvl:1  },
+  { item:"wiring_loom", minLvl:6  },
+  { item:"steel_bar",   minLvl:10 },
+  { item:"gearbox",     minLvl:14 },
+  { item:"alu_ingot",   minLvl:20 },
+  { item:"chassis",     minLvl:26 },
+  { item:"tech_alloy",  minLvl:40 },
+  { item:"servo_unit",  minLvl:46 },
+];
+
+/* ---------- Frost, the tutorial guide ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function pName(){ return S.playerName ? esc(S.playerName) : "boss"; }
+function frostSvg(size){
+  // Pixel Frost: black hair, ice-blue tee that says STAYFROSTY
+  return `<svg width="${size}" height="${size}" viewBox="0 0 32 40" style="image-rendering:pixelated" role="img" aria-label="Frost, your guide">
+    <rect x="7" y="2" width="18" height="7" fill="#17161a"/>
+    <rect x="5" y="4" width="4" height="9" fill="#17161a"/><rect x="23" y="4" width="4" height="9" fill="#17161a"/>
+    <rect x="9" y="7" width="14" height="9" fill="#f2c49a"/>
+    <rect x="12" y="10" width="2" height="2" fill="#17161a"/><rect x="18" y="10" width="2" height="2" fill="#17161a"/>
+    <rect x="14" y="13" width="4" height="1" fill="#c96f4a"/>
+    <rect x="8" y="17" width="16" height="14" fill="#bfe8f7"/>
+    <rect x="5" y="17" width="3" height="9" fill="#bfe8f7"/><rect x="24" y="17" width="3" height="9" fill="#bfe8f7"/>
+    <rect x="5" y="26" width="3" height="3" fill="#f2c49a"/><rect x="24" y="26" width="3" height="3" fill="#f2c49a"/>
+    <text x="16" y="23" text-anchor="middle" font-family="monospace" font-weight="bold" font-size="4" fill="#1c6ea4">STAY</text>
+    <text x="16" y="28" text-anchor="middle" font-family="monospace" font-weight="bold" font-size="4" fill="#1c6ea4">FROSTY</text>
+    <rect x="10" y="31" width="5" height="7" fill="#4a6ea9"/><rect x="17" y="31" width="5" height="7" fill="#4a6ea9"/>
+    <rect x="9" y="38" width="6" height="2" fill="#17161a"/><rect x="17" y="38" width="6" height="2" fill="#17161a"/>
+  </svg>`;
+}
+const TUT = [
+  { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. First job: grab your pickaxe and mine <b>5 Iron Ore</b> in the Mining tab.`,
+    obj:"Mine 5 Iron Ore", cond:()=> (S.prod.iron_ore||0) >= 5, reward:25 },
+  { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Head to the <b>Steelworks</b> and smelt <b>2 Iron Bars</b>.`,
+    obj:"Smelt 2 Iron Bars", cond:()=> (S.prod.iron_bar||0) >= 2, reward:25 },
+  { say:()=>`Toasty! Now make something someone will pay for — press <b>1 Bracket</b> in Manufacturing.`,
+    obj:"Press 1 Bracket", cond:()=> (S.prod.bracket||0) >= 1, reward:30 },
+  { say:()=>`Last step: open <b>Contracts</b> and deliver an order. Clients round here love punctuality almost as much as I love this t-shirt.`,
+    obj:"Deliver 1 contract", cond:()=> S.counters.contracts >= 1, reward:60 },
+];
+function tutCheck(){
+  if (!S.tut || S.tut.done) return;
+  let advanced = false;
+  while (S.tut.step < TUT.length && TUT[S.tut.step].cond()){
+    const st = TUT[S.tut.step];
+    S.coins += st.reward;
+    toast(`❄️ FROST: NICE ONE! +${st.reward} COINS`);
+    log(`❄️ Frost approves — objective complete (<b>+${st.reward} coins</b>).`, "good");
+    S.tut.step++; advanced = true;
+  }
+  if (S.tut.step >= TUT.length && !S.tut.done){
+    S.tut.done = true;
+    log(`❄️ Frost: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
+  }
+  if (advanced){ updateHud(); save(); }
+}
+function tutBannerHtml(){
+  if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
+  const st = TUT[S.tut.step];
+  return `<div class="frost">${frostSvg(64)}
+    <div class="say"><div class="who">FROST — YOUR GUIDE (${S.tut.step+1}/${TUT.length})</div>
+    <p>${st.say()}</p><div class="obj">▸ Objective: ${st.obj} · Reward: ${st.reward} coins</div></div>
+  </div>`;
+}
+
+/* ---------- original theme song (Web Audio chiptune) ---------- */
+const MUSIC = (() => {
+  const TEMPO = 116, BEAT = 60 / TEMPO, LOOP_BEATS = 16;
+  // "Valley Shift" — original melody, C major, square lead + triangle bass
+  const LEAD = [ // [midi, beats] 0 = rest
+    [64,.5],[67,.5],[69,.5],[67,.5],[64,.5],[67,.5],[69,1],
+    [64,.5],[67,.5],[69,.5],[72,.5],[74,.5],[72,.5],[69,1],
+    [76,.5],[74,.5],[72,.5],[69,.5],[67,.5],[69,.5],[72,1],
+    [69,.5],[67,.5],[64,.5],[62,.5],[64,1.5],[0,.5],
+  ];
+  const BASS = [
+    [48,1],[48,1],[43,1],[43,1],[45,1],[45,1],[41,1],[41,1],
+    [48,1],[48,1],[43,1],[43,1],[41,1],[43,1],[48,2],
+  ];
+  let ctx = null, timer = null, loopStart = 0;
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  function blip(midi, t, dur, type, vol){
+    if (!midi) return;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = mtof(midi);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * BEAT * 0.9);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t); o.stop(t + dur * BEAT);
+  }
+  function scheduleLoop(t0){
+    let t = t0;
+    LEAD.forEach(([m,d]) => { blip(m, t, d, "square", 0.055); t += d * BEAT; });
+    t = t0;
+    BASS.forEach(([m,d]) => { blip(m, t, d, "triangle", 0.09); t += d * BEAT; });
+  }
+  function pump(){
+    if (!ctx) return;
+    if (ctx.currentTime > loopStart + LOOP_BEATS * BEAT - 0.25){
+      loopStart += LOOP_BEATS * BEAT;
+      scheduleLoop(loopStart);
+    }
+  }
+  return {
+    start(){
+      try{
+        if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === "suspended") ctx.resume();
+        if (timer) return;
+        loopStart = ctx.currentTime + 0.05;
+        scheduleLoop(loopStart);
+        timer = setInterval(pump, 120);
+      }catch(e){}
+    },
+    stop(){ if (timer){ clearInterval(timer); timer = null; } if (ctx && ctx.state === "running") ctx.suspend(); },
+    playing(){ return !!timer && ctx && ctx.state === "running"; }
+  };
+})();
+function syncMusicButton(){
+  const b = document.getElementById("btn-music");
+  if (b) b.textContent = (S.settings && S.settings.music) ? "🔊" : "🔇";
+}
+function setMusic(on){
+  S.settings.music = on;
+  if (on) MUSIC.start(); else MUSIC.stop();
+  syncMusicButton(); save();
+}
+
+/* ---------- title screen ---------- */
+function showTitle(){
+  const t = document.getElementById("title");
+  t.style.display = "flex";
+  document.getElementById("frost-avatar-title").innerHTML = frostSvg(72);
+  const input = document.getElementById("name-input");
+  document.getElementById("btn-preview").onclick = () => MUSIC.start();
+  document.getElementById("btn-start").onclick = () => {
+    let n = input.value.trim().replace(/[<>"'&]/g, "").slice(0, 16);
+    S.playerName = n || "Founder";
+    t.style.display = "none";
+    if (S.settings.music) MUSIC.start();
+    log(`❄️ Frost: "Welcome aboard, <b>${pName()}</b>! Follow my lead and you'll run this valley by teatime."`, "good");
+    updateHud(); renderMain(); save();
+  };
+  input.onkeydown = e => { if (e.key === "Enter") document.getElementById("btn-start").click(); };
+}
+const SAVE_KEY = "buyrworld_game_save_v1";
+const OFFLINE_CAP_MS = 8 * 3600 * 1000;
+
+function freshState(){
+  return {
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null,
+    playerName:"", settings:{ music:true }, prod:{}, tut:{ step:0, done:false },
+    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0} },
+    upgrades:{}, pets:{ owned:[], active:null },
+    counters:{ actions:0, contracts:0 },
+    action:null,           // {skill, id, progress}
+    contracts:[],          // {client, item, qty, coins, xp}
+    tab:"mining",
+  };
+}
+let S = freshState();
+
+/* ---------- storage (guarded — works when deployed, degrades in previews) ---------- */
+function storageOK(){ try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } }
+const HAS_LS = storageOK();
+function save(){ S.lastSeen = Date.now(); if (HAS_LS) { try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} } }
+function load(){
+  if (!HAS_LS) return false;
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.v === 1) {
+      S = Object.assign(freshState(), parsed);
+      if (!parsed.skills || !parsed.skills.trading) S.skills.trading = { xp:0 }; // migrate pre-trading saves
+      if (!("settings" in parsed)) S.settings = { music:true };
+      if (!("prod" in parsed)) S.prod = {};
+      if (!("tut" in parsed)) S.tut = { step:99, done:true };   // pre-tutorial veterans skip it
+      if (typeof S.playerName !== "string") S.playerName = "";
+      return true;
+    }
+  } catch(e){}
+  return false;
+}
+
+/* ---------- helpers ---------- */
+const $ = sel => document.querySelector(sel);
+function fmt(n){ return n >= 1e6 ? (n/1e6).toFixed(2)+"M" : n >= 1e4 ? (n/1e3).toFixed(1)+"k" : Math.floor(n).toLocaleString(); }
+function skillLvl(k){ return levelFromXp(S.skills[k].xp); }
+function totalLvl(){ return Object.keys(S.skills).reduce((a,k)=>a+skillLvl(k),0); }
+function itemCount(id){ return S.items[id] || 0; }
+function addItem(id, q){ S.items[id] = (S.items[id]||0) + q; }
+function findAction(skill, id){ return SKILLS[skill].actions.find(a=>a.id===id); }
+
+function speedMult(skill){
+  let m = 1;
+  UPGRADES.forEach(u => { if (u.skill===skill && u.mult && S.upgrades[u.id]) m = Math.min(m, u.mult); });
+  const pet = PETS.find(p=>p.id===S.pets.active);
+  if (pet){
+    if (pet.id==="forklift_fox" && skill==="mining") m *= 0.88;
+    if (pet.id==="drone_owl" && skill==="manufacturing") m *= 0.88;
+  }
+  return m;
+}
+function payMult(){
+  let m = 1;
+  UPGRADES.forEach(u => { if (u.pay && S.upgrades[u.id]) m = Math.max(m, u.pay); });
+  const pet = PETS.find(p=>p.id===S.pets.active);
+  if (pet && pet.id==="container_crab") m *= 1.15;
+  if (pet && pet.id==="rail_rhino") m *= 1.30;
+  return m;
+}
+function inputsFor(act){
+  if (!act.in) return null;
+  const pet = PETS.find(p=>p.id===S.pets.active);
+  if (pet && pet.id==="cargo_turtle" && act.skill==="steelworks"){ /* handled at consume time */ }
+  return act.in;
+}
+function canAfford(act){
+  if (!act.in) return true;
+  return Object.entries(act.in).every(([id,q]) => itemCount(id) >= effCost(act, id, q));
+}
+function effCost(act, id, q){
+  const turtleActive = S.pets.active === "cargo_turtle";
+  if (turtleActive && SKILLS.steelworks.actions.some(a => a===act)) return Math.max(1, q-1);
+  return q;
+}
+
+/* ---------- logging & toast ---------- */
+function log(msg, cls){
+  const el = document.createElement("p");
+  const t = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  el.innerHTML = `<span class="t">[${t}]</span><span class="${cls||""}">${msg}</span>`;
+  const box = $("#log"); box.prepend(el);
+  while (box.children.length > 60) box.removeChild(box.lastChild);
+}
+let toastTimer = null;
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.remove("show");
+  void t.offsetWidth; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove("show"), 2600);
+}
+
+/* ---------- XP / pets ---------- */
+function grantXp(skill, xp){
+  const before = skillLvl(skill);
+  S.skills[skill].xp += xp;
+  const after = skillLvl(skill);
+  if (after > before){
+    toast(`${SKILLS[skill].ic} ${SKILLS[skill].n} LEVEL ${after}!`);
+    log(`${SKILLS[skill].n} reached level <b>${after}</b>.`, "good");
+    renderNav();
+  }
+}
+function rollPet(src){
+  PETS.forEach(p => {
+    if (p.src !== src) return;
+    if (S.pets.owned.includes(p.id)) return;
+    if (Math.random() < p.chance){
+      S.pets.owned.push(p.id);
+      if (!S.pets.active) S.pets.active = p.id;
+      toast(`${p.ic} A ${p.rar.toUpperCase()} companion joins you: ${p.n}!`);
+      log(`${p.ic} <b>${p.n}</b> has joined your operation! (${p.ds})`, "rare");
+      updateHud();
+    }
+  });
+}
+
+/* ---------- core action completion ---------- */
+function completeAction(act, skill, silent){
+  // consume
+  if (act.in){
+    for (const [id,q] of Object.entries(act.in)){
+      const cost = effCost(act, id, q);
+      if (itemCount(id) < cost) return false;
+    }
+    for (const [id,q] of Object.entries(act.in)) S.items[id] -= effCost(act, id, q);
+  }
+  // produce
+  for (const [id,q] of Object.entries(act.out)){ addItem(id, q); S.prod[id] = (S.prod[id]||0) + q; }
+  grantXp(skill, act.xp);
+  S.counters.actions++;
+  rollPet(skill);
+  tutCheck();
+  if (!silent){
+    const outName = Object.keys(act.out).map(id=>ITEMS[id].n).join(", ");
+    // keep the log calm: only log every completion for slow actions
+    log(`${SKILLS[skill].ic} ${act.n} → +${outName}`);
+  }
+  return true;
+}
+
+/* ---------- tick engine ---------- */
+function tick(dt){
+  if (!S.action) return;
+  const act = findAction(S.action.skill, S.action.id);
+  if (!act){ S.action = null; return; }
+  const dur = act.ms * speedMult(S.action.skill);
+  S.action.progress += dt;
+  while (S.action && S.action.progress >= dur){
+    S.action.progress -= dur;
+    const ok = completeAction(act, S.action.skill, false);
+    if (!ok){
+      log(`⏸️ ${act.n} stopped — out of materials.`, "");
+      S.action = null;
+      renderMain();
+      break;
+    }
+  }
+}
+
+/* ---------- offline progress ---------- */
+function applyOffline(){
+  const elapsed = Math.min(Date.now() - (S.lastSeen || Date.now()), OFFLINE_CAP_MS);
+  if (elapsed < 5000 || !S.action) return;
+  const act = findAction(S.action.skill, S.action.id);
+  if (!act) { S.action = null; return; }
+  const dur = act.ms * speedMult(S.action.skill);
+  let possible = Math.floor(elapsed / dur);
+  let done = 0;
+  while (possible > 0){
+    if (!completeAction(act, S.action.skill, true)) { S.action = null; break; }
+    done++; possible--;
+  }
+  if (done > 0){
+    const hrs = (elapsed/3600000);
+    const dur_str = hrs >= 1 ? hrs.toFixed(1)+"h" : Math.round(elapsed/60000)+"m";
+    toast(`🌙 NIGHT SHIFT: ${done}× ${act.n} while you were away (${dur_str}).`);
+    log(`🌙 Night shift report: <b>${done}×</b> ${act.n} completed while away.`, "good");
+  }
+}
+
+/* ---------- contracts ---------- */
+function contractSlots(){ return 2 + (skillLvl("logistics") >= 20 ? 1 : 0); }
+function genContract(){
+  const mLvl = skillLvl("manufacturing");
+  const opts = CONTRACT_POOL.filter(c => c.minLvl <= Math.max(mLvl, skillLvl("steelworks")));
+  const pick = opts[Math.floor(Math.random()*opts.length)];
+  const item = ITEMS[pick.item];
+  const qty = Math.max(2, Math.floor(2 + Math.random()*4 + mLvl/8));
+  const coins = Math.round(item.v * qty * (1.5 + Math.random()*0.5));
+  const xp = Math.round(item.v * qty * 0.45) + 10;
+  return { client: CLIENTS[Math.floor(Math.random()*CLIENTS.length)], item: pick.item, qty, coins, xp };
+}
+function fillContracts(){ while (S.contracts.length < contractSlots()) S.contracts.push(genContract()); }
+function deliverContract(i){
+  const c = S.contracts[i];
+  if (!c || itemCount(c.item) < c.qty) return;
+  S.items[c.item] -= c.qty;
+  const payout = Math.round(c.coins * payMult());
+  S.coins += payout;
+  grantXp("logistics", c.xp);
+  S.counters.contracts++;
+  rollPet("contract");
+  tutCheck();
+  log(`🚚 Delivered ${c.qty}× ${ITEMS[c.item].n} to ${c.client} → <b>+${fmt(payout)} coins</b>`, "good");
+  S.contracts.splice(i,1);
+  fillContracts(); renderMain(); updateHud(); save();
+}
+function rerollContract(i){
+  const cost = 25;
+  if (S.coins < cost) { toast("Need 25 coins to re-tender."); return; }
+  S.coins -= cost;
+  S.contracts[i] = genContract();
+  log("📋 Contract re-tendered (−25 coins).");
+  renderMain(); updateHud(); save();
+}
+
+/* ---------- UI: nav ---------- */
+const TABS = [
+  { id:"mining", n:"Mining", ic:"⛏️", skill:true },
+  { id:"steelworks", n:"Steelworks", ic:"🔥", skill:true },
+  { id:"manufacturing", n:"Manufacturing", ic:"🏭", skill:true },
+  { id:"contracts", n:"Contracts", ic:"📋" },
+  { id:"trade", n:"Trade", ic:"⚖️" },
+  { id:"upgrades", n:"Upgrades", ic:"🛒" },
+  { id:"pets", n:"Companions", ic:"🦊" },
+  { id:"settings", n:"Save", ic:"💾" },
+];
+function renderNav(){
+  const nav = $("#nav"); nav.innerHTML = "";
+  TABS.forEach(t => {
+    const b = document.createElement("button");
+    let label = `${t.ic} ${t.n}`;
+    if (t.skill) label += ` <span class="lvl">${skillLvl(t.id)}</span>`;
+    if (t.id==="contracts") label += ` <span class="lvl">Log ${skillLvl("logistics")}</span>`;
+    if (t.id==="trade") label += ` <span class="lvl">${skillLvl("trading")}</span>`;
+    b.innerHTML = label;
+    if (S.tab === t.id) b.classList.add("active");
+    if (S.action && S.action.skill === t.id) b.classList.add("working");
+    b.onclick = () => { S.tab = t.id; renderNav(); renderMain(); };
+    nav.appendChild(b);
+  });
+}
+
+/* ---------- UI: main panels ---------- */
+function xpBarHtml(skill){
+  const lvl = skillLvl(skill), xp = S.skills[skill].xp;
+  const lo = XP_TABLE[lvl], hi = lvl >= 99 ? lo : XP_TABLE[lvl+1];
+  const pct = lvl >= 99 ? 100 : ((xp - lo) / (hi - lo) * 100);
+  return `<div class="xpwrap">
+    <div class="xprow"><span>Level ${lvl} / 99</span><span>${fmt(xp)} / ${lvl>=99?"MAX":fmt(hi)} XP</span></div>
+    <div class="bar xp"><div class="fill" style="width:${pct.toFixed(1)}%"></div></div>
+  </div>`;
+}
+function ioHtml(act){
+  let s = "";
+  if (act.in){
+    s += Object.entries(act.in).map(([id,q])=>{
+      const have = itemCount(id) >= q;
+      return `<span class="${have?'have':'need'}">${q}× ${ITEMS[id].n} (${itemCount(id)})</span>`;
+    }).join(" + ");
+    s += " → ";
+  }
+  s += Object.entries(act.out).map(([id,q])=>`${q}× ${ITEMS[id].n}`).join(", ");
+  return s;
+}
+function renderSkillPanel(skill){
+  const sk = SKILLS[skill];
+  const lvl = skillLvl(skill);
+  let html = `<div class="panel"><h2>${sk.ic} ${sk.n}<small>${sk.desc}</small></h2>${xpBarHtml(skill)}<div class="actions">`;
+  sk.actions.forEach(act => {
+    const locked = lvl < act.lvl;
+    const running = S.action && S.action.skill===skill && S.action.id===act.id;
+    const dur = (act.ms * speedMult(skill) / 1000).toFixed(1);
+    html += `<button class="action ${running?'running':''}" data-skill="${skill}" data-act="${act.id}" ${locked?'disabled':''}>
+      <div class="nm"><span class="ic">${ITEMS[Object.keys(act.out)[0]].ic}</span>${act.n}</div>
+      <div class="meta">${locked ? `Requires level ${act.lvl}` : `${dur}s · ${act.xp} XP`}</div>
+      <div class="io">${ioHtml(act)}</div>
+      ${running ? `<div class="prog"><div class="fill" id="prog-${act.id}"></div></div><span class="stopbtn" data-stop="1">STOP</span>` : ""}
+    </button>`;
+  });
+  html += `</div></div>`;
+  html += renderInventoryPanel();
+  return html;
+}
+function renderInventoryPanel(){
+  const entries = Object.entries(S.items).filter(([,q])=>q>0);
+  let html = `<div class="panel"><h2>📦 Warehouse</h2><div class="inv">`;
+  if (!entries.length) html += `<span style="color:var(--dim);font-size:12px;">Empty. The auditors would approve. Go mine something.</span>`;
+  entries.forEach(([id,q])=>{ html += `<span class="chip">${ITEMS[id].ic} ${ITEMS[id].n} <b>${fmt(q)}</b></span>`; });
+  html += `</div></div>`;
+  return html;
+}
+function renderContracts(){
+  fillContracts();
+  let html = `<div class="panel"><h2>📋 Open Contracts<small>Deliver goods, earn coins, level Logistics. Slots: ${contractSlots()}${skillLvl("logistics")<20?" (3rd slot at Logistics 20)":""}</small></h2>${xpBarHtml("logistics")}`;
+  S.contracts.forEach((c,i)=>{
+    const have = itemCount(c.item);
+    const ok = have >= c.qty;
+    const payout = Math.round(c.coins * payMult());
+    html += `<div class="contract">
+      <div class="who">🏢 ${c.client}</div>
+      <div class="pay">💰 ${fmt(payout)} coins · +${c.xp} Logistics XP</div>
+      <div class="req">Needs <span class="${ok?'have':'short'}">${c.qty}× ${ITEMS[c.item].ic} ${ITEMS[c.item].n}</span> — you have ${have}</div>
+      <button class="btn deliver" data-deliver="${i}" ${ok?'':'disabled'}>DELIVER</button>
+      <button class="btn alt" data-reroll="${i}">Re-tender (25c)</button>
+    </div>`;
+  });
+  html += `</div>` + renderInventoryPanel();
+  return html;
+}
+function trendArrow(d){
+  if (d >= 1.12) return `<span style="color:var(--mint)">▲ high</span>`;
+  if (d <= 0.88) return `<span style="color:var(--red)">▼ low</span>`;
+  return `<span style="color:var(--dim)">▬ fair</span>`;
+}
+function renderTrade(){
+  ensureMarket();
+  const tLvl = skillLvl("trading");
+  let html = `<div class="panel"><h2>⚖️ Traders<small>Prices drift every few minutes — buy low, sell high. Better prices as Trading levels up (current bonus: ${(tradeBonus()*100).toFixed(1)}%).</small></h2>${xpBarHtml("trading")}</div>`;
+  NPCS.forEach(npc=>{
+    const locked = tLvl < npc.lvl;
+    html += `<div class="panel" ${locked?'style="opacity:.55"':''}>
+      <h2>${npc.ic} ${npc.n} — ${npc.title}<small>${locked ? `Requires Trading level ${npc.lvl}.` : `“${npc.quip}”`}</small></h2>`;
+    if (!locked){
+      npc.stock.forEach(it=>{
+        const d = S.market.drift[npc.id][it];
+        html += `<div class="contract">
+          <div class="who">${ITEMS[it].ic} ${ITEMS[it].n} <span style="font-size:11px;">${trendArrow(d)}</span></div>
+          <div class="pay">Buy ${fmt(buyPrice(npc,it))} · Sell ${fmt(sellPrice(npc,it))} <span style="color:var(--dim)">· you have ${fmt(itemCount(it))}</span></div>
+          <div class="row" style="margin-top:0;width:100%;">
+            <button class="btn alt" data-trade="${npc.id}|${it}|1|buy">Buy 1</button>
+            <button class="btn alt" data-trade="${npc.id}|${it}|10|buy">Buy 10</button>
+            <button class="btn" data-trade="${npc.id}|${it}|1|sell" ${itemCount(it)<1?'disabled':''}>Sell 1</button>
+            <button class="btn" data-trade="${npc.id}|${it}|10|sell" ${itemCount(it)<10?'disabled':''}>Sell 10</button>
+            <button class="btn deliver" data-trade="${npc.id}|${it}|max|sell" ${itemCount(it)<1?'disabled':''}>Sell all</button>
+          </div>
+        </div>`;
+      });
+    }
+    html += `</div>`;
+  });
+  html += renderInventoryPanel();
+  return html;
+}
+function renderUpgrades(){
+  let html = `<div class="panel"><h2>🛒 Capital Expenditure<small>One-off purchases. Business case: numbers go up faster.</small></h2>`;
+  UPGRADES.forEach(u=>{
+    const owned = !!S.upgrades[u.id];
+    const gated = u.req && !S.upgrades[u.req];
+    html += `<div class="card ${owned?'owned':''} ${gated?'locked':''}">
+      <span class="ic">${u.ic}</span>
+      <div class="body"><div class="nm">${u.n}</div><div class="ds">${u.ds}${gated ? " — requires "+UPGRADES.find(x=>x.id===u.req).n : ""}</div></div>
+      ${owned ? `<span style="color:var(--mint);font-size:11px;">OWNED ✔</span>`
+              : `<button class="btn" data-buy="${u.id}" ${(S.coins<u.cost||gated)?'disabled':''}>${fmt(u.cost)} coins</button>`}
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+function renderPets(){
+  let html = `<div class="panel"><h2>🦊 Logistics Companions<small>Rare colleagues found through honest work. One active at a time.</small></h2>`;
+  PETS.forEach(p=>{
+    const owned = S.pets.owned.includes(p.id);
+    const active = S.pets.active === p.id;
+    html += `<div class="card ${owned?'owned':''} ${active?'activepet':''}">
+      <span class="ic">${owned?p.ic:"❓"}</span>
+      <div class="body">
+        <div class="nm">${owned?p.n:"???"} <span class="rar-${p.rar}">[${p.rar}]</span></div>
+        <div class="ds">${owned ? p.ds : "Found via "+(p.src==="contract"?"delivering contracts":p.src+" actions")+"."}</div>
+      </div>
+      ${owned ? (active ? `<span style="color:var(--amber);font-size:11px;">ON SHIFT</span>`
+                        : `<button class="btn" data-pet="${p.id}">Put on shift</button>`) : ""}
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+function renderSettings(){
+  return `<div class="panel"><h2>💾 Save & Data<small>${HAS_LS ? "Auto-saves to this browser every 15s." : "⚠️ Browser storage unavailable here — use export/import save strings."}</small></h2>
+    <p style="font-size:12px;color:var(--dim);">Export your save string and keep it somewhere safe. Import it on any device.</p>
+    <div class="row">
+      <button class="btn" id="btn-export">Export save</button>
+      <button class="btn alt" id="btn-import">Import save</button>
+      <button class="btn alt" id="btn-wipe" style="color:var(--red);border-color:var(--red);">Wipe save</button>
+    </div>
+    <textarea id="savebox" placeholder="Save string appears here / paste one here to import" style="margin-top:10px;"></textarea>
+    <p style="font-size:11px;color:var(--dim);margin-top:10px;">Stats: ${fmt(S.counters.actions)} actions · ${fmt(S.counters.contracts)} contracts delivered · Total level ${totalLvl()}</p>
+  </div>`;
+}
+function renderMain(){
+  const m = $("#main");
+  const banner = tutBannerHtml();
+  if (S.tab==="contracts") m.innerHTML = banner + renderContracts();
+  else if (S.tab==="trade") m.innerHTML = banner + renderTrade();
+  else if (S.tab==="upgrades") m.innerHTML = banner + renderUpgrades();
+  else if (S.tab==="pets") m.innerHTML = banner + renderPets();
+  else if (S.tab==="settings") m.innerHTML = banner + renderSettings();
+  else m.innerHTML = banner + renderSkillPanel(S.tab);
+  bindMain();
+}
+function bindMain(){
+  document.querySelectorAll(".action").forEach(el=>{
+    el.onclick = (e)=>{
+      if (e.target.dataset.stop){ S.action = null; renderMain(); renderNav(); save(); return; }
+      const skill = el.dataset.skill, id = el.dataset.act;
+      if (S.action && S.action.skill===skill && S.action.id===id) return;
+      const act = findAction(skill,id);
+      if (act.in && !canAfford(act)){ toast("Not enough materials."); return; }
+      S.action = { skill, id, progress:0 };
+      log(`▶ Started: ${act.n}`);
+      renderMain(); renderNav(); save();
+    };
+  });
+  document.querySelectorAll("[data-trade]").forEach(b=> b.onclick = ()=>{
+    const [npc, it, q, mode] = b.dataset.trade.split("|");
+    doTrade(npc, it, q==="max" ? "max" : +q, mode);
+  });
+  document.querySelectorAll("[data-deliver]").forEach(b=> b.onclick = ()=> deliverContract(+b.dataset.deliver));
+  document.querySelectorAll("[data-reroll]").forEach(b=> b.onclick = ()=> rerollContract(+b.dataset.reroll));
+  document.querySelectorAll("[data-buy]").forEach(b=> b.onclick = ()=>{
+    const u = UPGRADES.find(x=>x.id===b.dataset.buy);
+    if (S.coins < u.cost) return;
+    S.coins -= u.cost; S.upgrades[u.id] = true;
+    toast(`${u.ic} ${u.n} PURCHASED`); log(`🛒 CapEx approved: <b>${u.n}</b>`, "good");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-pet]").forEach(b=> b.onclick = ()=>{
+    S.pets.active = b.dataset.pet; renderMain(); updateHud(); save();
+  });
+  const ex = $("#btn-export");
+  if (ex){
+    ex.onclick = ()=>{ save(); $("#savebox").value = btoa(unescape(encodeURIComponent(JSON.stringify(S)))); toast("Save exported — copy the string."); };
+    $("#btn-import").onclick = ()=>{
+      try{
+        const parsed = JSON.parse(decodeURIComponent(escape(atob($("#savebox").value.trim()))));
+        if (parsed && parsed.v===1){ S = Object.assign(freshState(), parsed); toast("Save imported!"); log("💾 Save imported.","good"); renderNav(); renderMain(); updateHud(); save(); }
+        else toast("That save string isn't valid.");
+      }catch(e){ toast("That save string isn't valid."); }
+    };
+    $("#btn-wipe").onclick = ()=>{
+      if (confirm("Wipe your empire and start again? This cannot be undone.")){
+        S = freshState(); if (HAS_LS) try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+        renderNav(); renderMain(); updateHud(); log("🧹 Fresh start. The valley awaits.");
+        showTitle();
+      }
+    };
+  }
+}
+
+/* ---------- HUD & progress animation ---------- */
+function updateHud(){
+  $("#hud-coins").textContent = fmt(S.coins);
+  $("#hud-total").textContent = totalLvl();
+  const nameEl = document.getElementById("hud-name");
+  if (nameEl) nameEl.textContent = S.playerName ? S.playerName : "—";
+  const pet = PETS.find(p=>p.id===S.pets.active);
+  $("#hud-pet").textContent = pet ? pet.ic+" "+pet.n.split(" ")[1] : "—";
+}
+function updateProgressBar(){
+  if (!S.action) return;
+  const act = findAction(S.action.skill, S.action.id);
+  if (!act) return;
+  const el = document.getElementById("prog-"+act.id);
+  if (el){
+    const dur = act.ms * speedMult(S.action.skill);
+    el.style.width = Math.min(100, S.action.progress / dur * 100) + "%";
+  }
+}
+
+/* ---------- boot ---------- */
+const hadSave = load();
+applyOffline();
+ensureMarket(); rollMarket(false);
+fillContracts();
+renderNav(); renderMain(); updateHud(); syncMusicButton();
+document.getElementById("btn-music").onclick = () => setMusic(!S.settings.music);
+if (!S.playerName){
+  showTitle();
+} else {
+  log(`👷 Back on shift, <b>${pName()}</b>. The supply chain never sleeps.`, "good");
+}
+if (!hadSave){
+  log("Mine Iron Ore, smelt it in the Steelworks, press Brackets, then deliver Contracts — or haggle with Marge in the Trade tab.");
+}
+
+let lastTick = Date.now();
+setInterval(()=>{
+  const now = Date.now();
+  const dt = now - lastTick; lastTick = now;
+  const beforeItems = JSON.stringify(S.items);
+  tick(dt);
+  updateProgressBar();
+  if (rollMarket(false) && S.tab === "trade") renderMain();
+  // cheap re-render of action panel numbers when something completed
+  if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
+    // update inventory counts without full re-render flicker: full render is fine at this scale
+    renderMain(); updateHud();
+  }
+}, 200);
+setInterval(save, 15000);
+window.addEventListener("beforeunload", save);
+document.addEventListener("visibilitychange", ()=>{ if (document.visibilityState==="hidden") save(); });
+</script>
+</body>
+</html>
