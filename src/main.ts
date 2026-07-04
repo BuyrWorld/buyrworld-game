@@ -333,36 +333,61 @@ const STATION_DEFS = {
     { fx:0.80, fy:0.44, sk:'tree_large',    skill:'woodcutting',   id:'hardwood',   ic:'🪵', lbl:'Hardwood' },
   ],
 };
-// Solid collision rects for interior rooms (pixel coords on 576×360 canvas)
+// Skill interior canvas size (mining/steelworks/manufacturing/woodcutting)
+const INT_W = 320;
+const INT_H = 200;
+// Returns the current interior canvas logical dimensions
+function icanvasW(){ return STATION_DEFS[S.tab] ? INT_W : VIEW_W; }
+function icanvasH(){ return STATION_DEFS[S.tab] ? INT_H : VIEW_H; }
+
+const ZONE_TIPS = {
+  mining:        { ic:"⛏️", n:"The Quarry",         tip:"Strike the vein to collect ore." },
+  steelworks:    { ic:"🔥", n:"The Furnace",         tip:"Smelt ore into bars." },
+  manufacturing: { ic:"⚙️", n:"The Workshop",        tip:"Craft components for the supply chain." },
+  woodcutting:   { ic:"🪓", n:"The Sawmill",         tip:"Chop timber and mill planks." },
+  contracts:     { ic:"📦", n:"The Depot",           tip:"Fulfil orders to earn Logistics XP." },
+  trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
+  upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
+  pets:          { ic:"🐾", n:"The Companion Barn",  tip:"Your crew lives here." },
+};
+function showZoneCard(tab){
+  const z = ZONE_TIPS[tab]; if (!z) return;
+  const card = document.getElementById("zone-card"); if (!card) return;
+  card.innerHTML = `<span class="zc-ic">${z.ic}</span><div><div class="zc-name">${z.n}</div><div class="zc-tip">${z.tip}</div></div>`;
+  card.className = "zc-show";
+  setTimeout(()=>{ card.className=""; card.innerHTML=""; }, 1300);
+}
+
+// Solid collision rects for interior rooms (pixel coords on 320×200 canvas)
 const INTERIOR_COLS = {
   mining: [
-    {x:30,  y:14, w:12, h:280},  // beam 1
-    {x:150, y:14, w:12, h:280},  // beam 2
-    {x:296, y:14, w:12, h:280},  // beam 3
-    {x:454, y:14, w:12, h:280},  // beam 4
-    {x:118, y:300,w:64, h:36},   // minecart
-    {x:400, y:298,w:26, h:26},   // crate a
-    {x:428, y:298,w:26, h:26},   // crate b
-    {x:14,  y:292,w:38, h:54},   // coal pile
+    {x:12,  y:8,  w:7,  h:156}, // beam 1 (left of iron_ore station x=45)
+    {x:78,  y:8,  w:7,  h:156}, // beam 2 (between iron x=45 and copper x=128)
+    {x:160, y:8,  w:7,  h:156}, // beam 3 (between copper x=128 and coal x=211)
+    {x:248, y:8,  w:7,  h:156}, // beam 4 (right of coal station x=211)
+    {x:66,  y:160,w:36, h:20},  // minecart
+    {x:222, y:158,w:14, h:14},  // crate a
+    {x:238, y:158,w:14, h:14},  // crate b
+    {x:4,   y:154,w:22, h:32},  // coal pile
   ],
   steelworks: [
-    {x:56,  y:18, w:68, h:68},   // furnace 1
-    {x:236, y:18, w:68, h:68},   // furnace 2
-    {x:356, y:202,w:52, h:22},   // anvil
-    {x:440, y:186,w:18, h:52},   // tool rack
-    {x:478, y:228,w:28, h:26},   // crate a
-    {x:478, y:256,w:28, h:26},   // crate b
-    {x:14,  y:240,w:40, h:50},   // coal pile
-    {x:14,  y:186,w:28, h:38},   // quench barrel
+    {x:31,  y:10, w:38, h:38},  // furnace 1
+    {x:131, y:10, w:38, h:38},  // furnace 2
+    {x:198, y:112,w:29, h:12},  // anvil
+    {x:244, y:103,w:10, h:29},  // tool rack
+    {x:266, y:127,w:16, h:14},  // crate a
+    {x:266, y:142,w:16, h:14},  // crate b
+    {x:8,   y:133,w:22, h:28},  // coal pile
+    {x:8,   y:103,w:16, h:21},  // quench barrel
   ],
   manufacturing: [
-    {x:60,  y:58, w:78, h:34},   // workbench 1
-    {x:238, y:58, w:78, h:34},   // workbench 2
-    {x:418, y:58, w:78, h:34},   // workbench 3
-    {x:14,  y:158,w:44, h:60},   // shelf unit
-    {x:498, y:158,w:62, h:50},   // pallet stack
-    {x:14,  y:52, w:28, h:80},   // cabinet left
-    {x:532, y:52, w:28, h:80},   // cabinet right
+    {x:33,  y:32, w:43, h:19},  // workbench 1
+    {x:132, y:32, w:43, h:19},  // workbench 2
+    {x:232, y:32, w:43, h:19},  // workbench 3
+    {x:8,   y:88, w:24, h:33},  // shelf unit
+    {x:277, y:88, w:34, h:28},  // pallet stack
+    {x:8,   y:29, w:16, h:44},  // cabinet left
+    {x:296, y:29, w:16, h:44},  // cabinet right
   ],
 };
 const VKEYS = {};
@@ -411,8 +436,8 @@ function moveActor(a, dt, speed, free=false){
   a.dir = Math.abs(dx) >= Math.abs(dy) ? (dx>0 ? "right" : "left") : (dy>0 ? "down" : "up");
   const st = speed*dt;
   if (free){
-    a.x = Math.max(16, Math.min(VIEW_W-16, a.x + dx*st));
-    a.y = Math.max(24, Math.min(VIEW_H-16, a.y + dy*st));
+    a.x = Math.max(16, Math.min(icanvasW()-16, a.x + dx*st));
+    a.y = Math.max(24, Math.min(icanvasH()-16, a.y + dy*st));
   } else {
     const half=6, feet=2;
     const nx = a.x + dx*st;
@@ -486,8 +511,9 @@ function interactObj(o){
     toast(`${o.w.id==="frost"?"❄️":"💬"} ${o.w.n.toUpperCase()}: ` + o.w.tips[Math.floor(Math.random()*o.w.tips.length)]);
     return;
   }
-  IP.x = VIEW_W/2; IP.y = VIEW_H*0.62; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
-  S.tab = o.tab; renderNav(); renderMain();
+  S.tab = o.tab;
+  IP.x = icanvasW()/2; IP.y = icanvasH()*0.62; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
+  renderNav(); renderMain(); showZoneCard(o.tab);
 }
 function villageClick(e){
   const cv = document.getElementById("village");
@@ -885,24 +911,31 @@ function drawVillage(t){
     ctx.beginPath(); ctx.arc(VP.tx, VP.ty, rad, 0, 7); ctx.stroke();
   }
   drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers());
-  if (S.playerName){
-    ctx.font="bold 9px monospace"; ctx.textAlign="center";
-    const nm = S.playerName, wdt = ctx.measureText(nm).width+8;
-    ctx.fillStyle="rgba(255,248,230,.85)"; ctx.fillRect(VP.x-wdt/2, VP.y-34, wdt, 12);
-    ctx.fillStyle="#453423"; ctx.fillText(nm, VP.x, VP.y-25);
-  }
-  const near = nearestInteractable();
-  if (near){
-    const isN = near.kind==="npc";
-    const r = isN ? {x:near.w.x-12, y:near.w.y-24, w:24} : objRect(near);
-    const label = isN ? ((near.w.id==="frost"?"❄️ ":"💬 ")+near.w.n) : villageTip(near);
-    ctx.font="bold 9px monospace";
-    const w = ctx.measureText(label).width+10;
-    const bx = Math.round(r.x+(r.w||24)/2), by = Math.round(r.y);
-    ctx.fillStyle="rgba(0,0,0,.72)"; ctx.fillRect(Math.round(bx-w/2), by-18, Math.ceil(w), 13);
-    ctx.fillStyle="#fff8e6"; ctx.textAlign="center"; ctx.fillText(label, bx, by-8);
-  }
   ctx.restore();
+  // HTML overlay: player name tag + nearest-interactable tooltip (crisp text, no canvas blurriness)
+  const overlay = document.getElementById("village-overlay");
+  if (overlay){
+    let html = "";
+    if (S.playerName){
+      const lx = (VP.x - CAM.x) / VIEW_W * 100;
+      const ly = (VP.y - 28 - CAM.y) / VIEW_H * 100;
+      if (lx > 0 && lx < 100 && ly > -2 && ly < 100)
+        html += `<div class="vlbl" style="left:${lx.toFixed(1)}%;top:${ly.toFixed(1)}%">${S.playerName}</div>`;
+    }
+    const near = nearestInteractable();
+    if (near){
+      const isN = near.kind==="npc";
+      const r = isN ? {x:near.w.x-12, y:near.w.y-36, w:24} : objRect(near);
+      const label = isN ? ((near.w.id==="frost"?"❄️ ":"💬 ")+near.w.n) : villageTip(near);
+      if (label){
+        const tx = (r.x+(r.w||24)/2 - CAM.x) / VIEW_W * 100;
+        const ty = (r.y - 18 - CAM.y) / VIEW_H * 100;
+        if (tx > -5 && tx < 105 && ty > -5 && ty < 100)
+          html += `<div class="vlbl" style="left:${tx.toFixed(1)}%;top:${ty.toFixed(1)}%">${label}</div>`;
+      }
+    }
+    overlay.innerHTML = html;
+  }
   // night/sunrise/sunset sky tint
   const alpha = nightAlpha();
   if (alpha > 0.01){
@@ -968,123 +1001,119 @@ function drawInterior(t){
   const W = cv.width / ratio, H = cv.height / ratio;
   const active = S.action ? S.action.skill : null;
   if (S.tab==="mining"){
-    // stone cave background
+    // stone cave — 320×200 canvas
     ctx.fillStyle="#3a2e26"; ctx.fillRect(0,0,W,H);
-    // ceiling rock texture
-    ctx.fillStyle="#2e2320"; for(let i=0;i<W;i+=18) ctx.fillRect(i,0,9,(i*7)%14+4);
-    // ore vein streaks in back wall
-    [{c:"#aab2bd",x:28,w:5,h:48},{c:"#c97b45",x:195,w:4,h:40},{c:"#2f2f38",x:352,w:6,h:52},{c:"#7ee0ff",x:500,w:4,h:36}].forEach(v=>{
+    ctx.fillStyle="#2e2320"; for(let i=0;i<W;i+=10) ctx.fillRect(i,0,5,(i*7)%8+3);
+    // ore vein streaks near back wall
+    [{c:"#aab2bd",x:15,w:3,h:26},{c:"#c97b45",x:106,w:3,h:22},{c:"#2f2f38",x:194,w:4,h:28},{c:"#7ee0ff",x:278,w:3,h:20}].forEach(v=>{
       ctx.fillStyle=v.c+"90"; ctx.fillRect(v.x,0,v.w,v.h);
     });
-    // floor + rail track
-    ctx.fillStyle="#211910"; ctx.fillRect(0,H-22,W,22);
-    ctx.fillStyle="#3d3020"; ctx.fillRect(108,H-22,2,22); ctx.fillRect(182,H-22,2,22);
-    for(let x=112;x<182;x+=10){ ctx.fillStyle="#4a3828"; ctx.fillRect(x,H-17,6,4); }
-    // support beams (4 vertical — positioned to avoid station x positions 81,230,380)
-    [[30],[150],[296],[454]].forEach(([bx])=>{
-      ctx.fillStyle="#5a3a1e"; ctx.fillRect(bx,14,12,H-36);
-      ctx.fillStyle="#7a5534"; ctx.fillRect(bx,14,12,8); ctx.fillRect(bx,H/2-3,12,6);
-      ctx.fillStyle="#6a4828"; for(const by of[90,185]) ctx.fillRect(bx-6,by,24,5);
+    // floor + mini rail track
+    ctx.fillStyle="#211910"; ctx.fillRect(0,H-12,W,12);
+    ctx.fillStyle="#3d3020"; ctx.fillRect(W*.36,H-12,2,12); ctx.fillRect(W*.55,H-12,2,12);
+    for(let x=W*.36+3;x<W*.55;x+=6){ ctx.fillStyle="#4a3828"; ctx.fillRect(x,H-7,3,3); }
+    // 4 support beams (between station x-positions: stations at x≈45,128,211)
+    [12,78,160,248].forEach(bx=>{
+      ctx.fillStyle="#5a3a1e"; ctx.fillRect(bx,8,7,H-20);
+      ctx.fillStyle="#7a5534"; ctx.fillRect(bx,8,7,5); ctx.fillRect(bx,H*.44,7,4);
+      ctx.fillStyle="#6a4828"; for(const by of[H*.26,H*.52]) ctx.fillRect(bx-4,by,15,3);
     });
     // minecart body + wheels
-    ctx.fillStyle="#4a3428"; ctx.fillRect(118,H-58,64,28);
-    ctx.fillStyle="#231810"; ctx.fillRect(122,H-54,56,16);
-    ctx.fillStyle="#1e1a18"; ctx.beginPath(); ctx.arc(132,H-24,7,0,7); ctx.arc(170,H-24,7,0,7); ctx.fill();
-    ctx.fillStyle="#3a2816"; ctx.fillRect(114,H-42,6,14); ctx.fillRect(178,H-42,6,14);
-    drawEmojiC(ctx,"⛏️",150,H-50,11);
-    // coal pile (left corner)
-    ctx.fillStyle="#1e1814"; ctx.fillRect(14,H-52,38,52); ctx.fillRect(18,H-64,26,14); ctx.fillRect(24,H-72,16,10);
-    ctx.fillStyle="#141210"; ctx.fillRect(16,H-48,10,6); ctx.fillRect(30,H-58,8,6);
-    // crates (right side)
-    [[400,H-56,24,24,"#8c6947"],[426,H-56,24,24,"#7a5a38"]].forEach(([x,y,w,h,c])=>{
-      ctx.fillStyle=c; ctx.fillRect(x,y,w,h); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
-      ctx.strokeRect(x,y,w,h); ctx.fillStyle="#5a3a20"; ctx.fillRect(x+11,y,2,h); ctx.fillRect(x,y+11,w,2);
+    ctx.fillStyle="#4a3428"; ctx.fillRect(W*.36,H*.75,W*.19,H*.14);
+    ctx.fillStyle="#231810"; ctx.fillRect(W*.38,H*.79,W*.15,H*.08);
+    ctx.fillStyle="#1e1a18"; ctx.beginPath(); ctx.arc(W*.41,H*.9,5,0,7); ctx.arc(W*.52,H*.9,5,0,7); ctx.fill();
+    drawEmojiC(ctx,"⛏️",W*.47,H*.76,9);
+    // coal pile (left)
+    ctx.fillStyle="#1e1814"; ctx.fillRect(4,H*.74,W*.09,H*.26); ctx.fillRect(5,H*.69,W*.07,H*.07); ctx.fillRect(6,H*.64,W*.04,H*.07);
+    // crates (right of coal station)
+    [[W*.72,H*.79],[W*.80,H*.79]].forEach(([x,y],i)=>{
+      const cw=W*.07,ch=H*.12,c=i?"#7a5a38":"#8c6947";
+      ctx.fillStyle=c; ctx.fillRect(x,y,cw,ch); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
+      ctx.strokeRect(x,y,cw,ch); ctx.fillStyle="#5a3a20"; ctx.fillRect(x+cw*.5-1,y,2,ch); ctx.fillRect(x,y+ch*.5-1,cw,2);
     });
-    // hanging lanterns with warm glow
-    for(const lx of[70,220,380]){
-      ctx.fillStyle="rgba(255,200,80,0.18)"; ctx.beginPath(); ctx.arc(lx,32,22,0,7); ctx.fill();
-      drawEmojiC(ctx,"🏮",lx,32,14);
+    // hanging lanterns above each station
+    for(const fx of[0.14,0.40,0.66]){
+      ctx.fillStyle="rgba(255,200,80,0.18)"; ctx.beginPath(); ctx.arc(W*fx,H*.12,W*.055,0,7); ctx.fill();
+      drawEmojiC(ctx,"🏮",W*fx,H*.14,10);
     }
   } else if (S.tab==="steelworks"){
-    // brick wall background
+    // brick wall — 320×200 canvas
     ctx.fillStyle="#4a3f3a"; ctx.fillRect(0,0,W,H);
-    for(let r=0;r<9;r++) for(let c=0;c<20;c++){ ctx.strokeStyle="#3a312d"; ctx.lineWidth=1; ctx.strokeRect(c*30+(r%2?15:0), r*18, 30, 18); }
-    // overhead pipes near ceiling
-    ctx.fillStyle="#5a5050"; ctx.fillRect(0,0,W,8);
-    ctx.fillStyle="#4a4040"; for(const px of[100,260,390]){ ctx.fillRect(px,8,8,44); }
+    for(let r=0;r<7;r++) for(let c=0;c<13;c++){ ctx.strokeStyle="#3a312d"; ctx.lineWidth=1; ctx.strokeRect(c*26+(r%2?13:0),r*16,26,16); }
+    // overhead pipes
+    ctx.fillStyle="#5a5050"; ctx.fillRect(0,0,W,5);
+    for(const px of[55,155,215]) { ctx.fillStyle="#4a4040"; ctx.fillRect(px,5,5,24); }
     // floor
-    ctx.fillStyle="#3a3030"; ctx.fillRect(0,H-18,W,18);
-    ctx.fillStyle="#2e2828"; for(let x=0;x<W;x+=28) ctx.fillRect(x,H-18,2,18);
-    // 2 furnaces with animated flame
+    ctx.fillStyle="#3a3030"; ctx.fillRect(0,H-10,W,10);
+    ctx.fillStyle="#2e2828"; for(let x=0;x<W;x+=16) ctx.fillRect(x,H-10,2,10);
+    // 2 furnaces with animated flame (stations iron_bar@x=90, steel_bar@x=205)
     for(let f=0;f<2;f++){
-      const fx=90+f*180, fy=18;
-      ctx.fillStyle="#5a4a42"; ctx.fillRect(fx-34,fy,68,68);
-      ctx.fillStyle="#3a2e2a"; ctx.fillRect(fx-24,fy+12,48,38);
-      ctx.fillStyle="#2b2320"; ctx.beginPath(); ctx.arc(fx,fy+56,22,Math.PI,0); ctx.fill(); ctx.fillRect(fx-22,fy+56,44,18);
+      const fx=31+f*100;
+      ctx.fillStyle="#5a4a42"; ctx.fillRect(fx,10,38,38);
+      ctx.fillStyle="#3a2e2a"; ctx.fillRect(fx+6,16,26,22);
+      ctx.fillStyle="#2b2320"; ctx.beginPath(); ctx.arc(fx+19,46,12,Math.PI,0); ctx.fill(); ctx.fillRect(fx+7,46,24,10);
       const fl=0.6+0.4*Math.sin(t*9+f*2);
-      ctx.fillStyle="#ff8a3c"; ctx.beginPath(); ctx.arc(fx,fy+60,16*fl+4,Math.PI,0); ctx.fill();
-      ctx.fillStyle="#ffd666"; ctx.beginPath(); ctx.arc(fx,fy+64,8*fl+2,Math.PI,0); ctx.fill();
-      ctx.fillStyle="#e05a20"; ctx.fillRect(fx-12,fy,8,14); ctx.fillRect(fx+4,fy,8,14);
+      ctx.fillStyle="#ff8a3c"; ctx.beginPath(); ctx.arc(fx+19,50,9*fl+2,Math.PI,0); ctx.fill();
+      ctx.fillStyle="#ffd666"; ctx.beginPath(); ctx.arc(fx+19,52,4*fl+1,Math.PI,0); ctx.fill();
+      ctx.fillStyle="#e05a20"; ctx.fillRect(fx+6,10,5,8); ctx.fillRect(fx+27,10,5,8);
     }
-    // anvil (below steel_bar station — station at x=368, y=158; anvil at y=202 so player walks past)
-    ctx.fillStyle="#808898"; ctx.fillRect(362,198,40,10); ctx.fillStyle="#6a7080"; ctx.fillRect(356,206,52,16);
-    ctx.fillStyle="#5a6070"; ctx.fillRect(364,222,10,10); ctx.fillRect(388,222,10,10);
-    drawEmojiC(ctx,"🔨",382,195,12);
-    // tool rack (right wall)
-    ctx.fillStyle="#6a4a28"; ctx.fillRect(440,186,12,52); ctx.fillStyle="#8c6947"; ctx.fillRect(434,186,24,5);
-    drawEmojiC(ctx,"🔧",448,206,10); drawEmojiC(ctx,"🪛",448,224,10);
+    // anvil (below steel_bar station at x=205, y=88 — anvil at y=112 so player passes above it)
+    ctx.fillStyle="#808898"; ctx.fillRect(201,106,26,6); ctx.fillStyle="#6a7080"; ctx.fillRect(198,112,32,8);
+    ctx.fillStyle="#5a6070"; ctx.fillRect(203,120,6,7); ctx.fillRect(218,120,6,7);
+    drawEmojiC(ctx,"🔨",213,104,10);
+    // tool rack (right)
+    ctx.fillStyle="#6a4a28"; ctx.fillRect(244,103,6,29); ctx.fillStyle="#8c6947"; ctx.fillRect(240,103,14,3);
+    drawEmojiC(ctx,"🔧",249,116,8); drawEmojiC(ctx,"🪛",249,126,8);
     // quench barrel (left)
-    ctx.fillStyle="#4a5a6a"; ctx.fillRect(14,186,28,38);
-    ctx.fillStyle="#5a7a8a"; ctx.fillRect(18,186,20,8);
-    ctx.strokeStyle="#3a4a5a"; ctx.lineWidth=1;
-    for(const by of[196,206,214]) ctx.strokeRect(14,by,28,10);
-    drawEmojiC(ctx,"💧",28,198,9);
+    ctx.fillStyle="#4a5a6a"; ctx.fillRect(8,103,16,21); ctx.fillStyle="#5a7a8a"; ctx.fillRect(10,103,12,5);
+    ctx.strokeStyle="#3a4a5a"; ctx.lineWidth=1; for(const by of[108,114,119]) ctx.strokeRect(8,by,16,7);
+    drawEmojiC(ctx,"💧",16,111,7);
     // coal pile (left)
-    ctx.fillStyle="#1a1814"; ctx.fillRect(14,242,40,50); ctx.fillRect(18,232,28,12); ctx.fillRect(22,224,18,10);
+    ctx.fillStyle="#1a1814"; ctx.fillRect(8,133,22,28); ctx.fillRect(10,127,16,8); ctx.fillRect(12,122,10,6);
     // crates (right)
-    [[478,228,26,24,"#8c6947"],[478,254,26,24,"#7a5a38"]].forEach(([x,y,w,h,c])=>{
-      ctx.fillStyle=c; ctx.fillRect(x,y,w,h); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
-      ctx.strokeRect(x,y,w,h); ctx.fillStyle="#5a3a20"; ctx.fillRect(x+12,y,2,h); ctx.fillRect(x,y+11,w,2);
+    [[266,127,"#8c6947"],[266,142,"#7a5a38"]].forEach(([x,y,c])=>{
+      ctx.fillStyle=c; ctx.fillRect(x,y,16,14); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
+      ctx.strokeRect(x,y,16,14); ctx.fillStyle="#5a3a20"; ctx.fillRect(x+7,y,2,14); ctx.fillRect(x,y+6,16,2);
     });
   } else if (S.tab==="manufacturing"){
-    // industrial grey floor + ceiling
+    // workshop — 320×200 canvas
     ctx.fillStyle="#55606e"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#49535f"; ctx.fillRect(0,0,W,18);
+    ctx.fillStyle="#49535f"; ctx.fillRect(0,0,W,10);
     // ceiling girders
-    ctx.fillStyle="#3d4650"; for(const gx of[0,144,288,432]) ctx.fillRect(gx,0,120,8);
-    ctx.fillStyle="#4a5460"; for(const gx of[0,210,420]) ctx.fillRect(gx,8,6,48);
+    ctx.fillStyle="#3d4650"; for(const gx of[0,80,160,240]) ctx.fillRect(gx,0,66,5);
+    ctx.fillStyle="#4a5460"; for(const gx of[0,116,233]) ctx.fillRect(gx,5,4,26);
     // floor
-    ctx.fillStyle="#3d4650"; ctx.fillRect(0,H-18,W,18);
-    ctx.fillStyle="#334048"; for(let x=0;x<W;x+=24) ctx.fillRect(x,H-18,2,18);
-    // animated conveyor belt (visual only, no collision so player can reach exit)
-    const off=(t*60)%24;
-    ctx.fillStyle="#2f363e"; ctx.fillRect(0,246,W,26);
-    ctx.fillStyle="#3d4650"; for(let x=-24;x<W;x+=24) ctx.fillRect(x+off,248,12,22);
-    ctx.fillStyle="#4a5460"; ctx.fillRect(0,244,W,4); ctx.fillRect(0,270,W,4);
-    for(let b=0;b<4;b++){ const bx=(b*150+t*60)%(W+60)-30; drawEmojiC(ctx,"📦",bx,258,14); }
-    // workbenches (3 — station nodes sit below them at y≈173, benches at y=58-92)
-    [[60,58,78,34,"#7a6a52"],[238,58,78,34,"#7a6a52"],[418,58,78,34,"#7a6a52"]].forEach(([x,y,w,h,c])=>{
-      ctx.fillStyle="#5a4a36"; ctx.fillRect(x,y+h,w,6);
-      ctx.fillStyle=c; ctx.fillRect(x,y,w,h);
+    ctx.fillStyle="#3d4650"; ctx.fillRect(0,H-10,W,10);
+    ctx.fillStyle="#334048"; for(let x=0;x<W;x+=14) ctx.fillRect(x,H-10,2,10);
+    // animated conveyor belt at y=136 (no collision — player exits through/past it)
+    const off=(t*60)%14;
+    ctx.fillStyle="#2f363e"; ctx.fillRect(0,136,W,14);
+    ctx.fillStyle="#3d4650"; for(let x=-14;x<W;x+=14) ctx.fillRect(x+off,137,7,12);
+    ctx.fillStyle="#4a5460"; ctx.fillRect(0,134,W,3); ctx.fillRect(0,149,W,3);
+    for(let b=0;b<4;b++){ const bx=(b*90+t*60)%(W+60)-30; drawEmojiC(ctx,"📦",bx,143,10); }
+    // 3 workbenches (station nodes sit below at y≈88-96, benches at y=32-51)
+    [[33,32,43,19],[132,32,43,19],[232,32,43,19]].forEach(([x,y,w,h])=>{
+      ctx.fillStyle="#5a4a36"; ctx.fillRect(x,y+h,w,4);
+      ctx.fillStyle="#7a6a52"; ctx.fillRect(x,y,w,h);
       ctx.strokeStyle="#5a4a36"; ctx.lineWidth=1; ctx.strokeRect(x,y,w,h);
-      ctx.fillStyle="#8a7a62"; ctx.fillRect(x+4,y+4,w-8,h-8);
-      ctx.fillStyle="#9a8a72"; ctx.fillRect(x+4,y+4,w-8,4);
+      ctx.fillStyle="#8a7a62"; ctx.fillRect(x+3,y+3,w-6,h-6);
+      ctx.fillStyle="#9a8a72"; ctx.fillRect(x+3,y+3,w-6,3);
     });
     // shelf unit (left wall)
-    ctx.fillStyle="#5a4a36"; ctx.fillRect(14,158,44,60);
-    for(const sy of[166,180,194,208]){ ctx.fillStyle="#7a6a52"; ctx.fillRect(16,sy,40,8); }
-    drawEmojiC(ctx,"📦",36,172,10); drawEmojiC(ctx,"📦",36,190,10);
+    ctx.fillStyle="#5a4a36"; ctx.fillRect(8,88,24,33);
+    for(const sy of[94,103,112,120]){ ctx.fillStyle="#7a6a52"; ctx.fillRect(9,sy,22,5); }
+    drawEmojiC(ctx,"📦",20,98,8); drawEmojiC(ctx,"📦",20,109,8);
     // pallet stack (right wall)
-    ctx.fillStyle="#7a6040"; ctx.fillRect(498,158,62,14);
-    [[502,174,56,14,"#8c6947"],[506,190,48,14,"#d9a86a"],[510,206,40,14,"#c98a5a"]].forEach(([x,y,w,h,c])=>{
+    ctx.fillStyle="#7a6040"; ctx.fillRect(277,88,34,8);
+    [[279,96,30,8,"#8c6947"],[281,104,26,8,"#d9a86a"],[283,112,22,8,"#c98a5a"]].forEach(([x,y,w,h,c])=>{
       ctx.fillStyle=c; ctx.fillRect(x,y,w,h); ctx.strokeStyle="#6a4820"; ctx.lineWidth=1; ctx.strokeRect(x,y,w,h);
     });
-    // machine cabinets (side walls)
-    [[14,52,28,80,"#4a5a6a"],[532,52,28,80,"#4a5a6a"]].forEach(([x,y,w,h,c])=>{
+    // machine cabinets on side walls
+    [[8,29,16,44,"#4a5a6a"],[296,29,16,44,"#4a5a6a"]].forEach(([x,y,w,h,c])=>{
       ctx.fillStyle=c; ctx.fillRect(x,y,w,h);
-      ctx.fillStyle="#3a4a58"; ctx.fillRect(x+4,y+4,w-8,h/2-4);
-      ctx.fillStyle="#5a8a9a"; ctx.fillRect(x+8,y+8,w-16,10);
-      if(Math.floor(t*2)%2){ ctx.fillStyle="#ffd666"; ctx.fillRect(x+8,y+8,(w-16)/2,4); }
+      ctx.fillStyle="#3a4a58"; ctx.fillRect(x+2,y+2,w-4,Math.floor(h/2)-2);
+      ctx.fillStyle="#5a8a9a"; ctx.fillRect(x+3,y+4,w-6,6);
+      if(Math.floor(t*2)%2){ ctx.fillStyle="#ffd666"; ctx.fillRect(x+3,y+4,Math.floor((w-6)/2),3); }
     });
   } else if (S.tab==="contracts"){
     ctx.fillStyle="#6e5f4a"; ctx.fillRect(0,0,W,H);
@@ -1123,12 +1152,16 @@ function drawInterior(t){
       if (S.pets.active===id) drawEmojiC(ctx,"⭐", px+12, py-14, 10);
     });
   } else if (S.tab==="woodcutting"){
+    // sawmill interior — 320×200 canvas
     ctx.fillStyle="#4a5a3a"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#3e4e30"; for(let i=0;i<7;i++) ctx.fillRect(0,i*16,W,3);
-    ctx.fillStyle="#6a5a40"; ctx.fillRect(0,H-40,W,40);
-    for(let i=0;i<6;i++){ ctx.fillStyle="#5a4a32"; ctx.fillRect(i*100,H-40,8,40); }
-    for (let i=0;i<3;i++){ const lx=150+i*160; ctx.fillStyle="rgba(255,214,102,.2)"; ctx.beginPath(); ctx.arc(lx,22,14,0,7); ctx.fill(); drawEmojiC(ctx,"🏮",lx,22,12); }
-    drawEmojiC(ctx,"🪵", 40, H-20, 18); drawEmojiC(ctx,"🪵", 60, H-14, 14); drawEmojiC(ctx,"🪵", W-50, H-18, 16);
+    ctx.fillStyle="#6a5a40"; ctx.fillRect(0,H-22,W,22);
+    // 6 pillars spaced across 320px width
+    for(let i=0;i<6;i++){ ctx.fillStyle="#5a4a32"; ctx.fillRect(i*54,H-22,7,22); }
+    // 3 hanging lanterns within 320px
+    for(const lx of[80,160,240]){ ctx.fillStyle="rgba(255,214,102,.2)"; ctx.beginPath(); ctx.arc(lx,18,12,0,7); ctx.fill(); drawEmojiC(ctx,"🏮",lx,18,10); }
+    // log piles
+    drawEmojiC(ctx,"🪵", 40, H-14, 14); drawEmojiC(ctx,"🪵", 54, H-10, 11); drawEmojiC(ctx,"🪵", W-44, H-12, 13);
   } else if (S.tab==="upgrades" || S.tab==="ach"){
     ctx.fillStyle="#6a6252"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#57503f"; ctx.fillRect(0,H-30,W,30);
@@ -1157,10 +1190,7 @@ function drawInterior(t){
         ctx.fillStyle = locked ? "#888" : isActive ? "#ffd666" : "#b09060";
         ctx.fillRect(sx-20, sy-16, 40, 32);
       }
-      drawEmojiC(ctx, st.ic, sx, sy-22, 14);
-      ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(sx-26, sy+14, 52, 12);
-      ctx.fillStyle = "#fff8e6"; ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
-      ctx.fillText(st.lbl, sx, sy+23);
+      drawEmojiC(ctx, st.ic, sx, sy-18, 14);
       if (locked) drawEmojiC(ctx, "🔒", sx+16, sy-28, 9);
       if (isActive){
         const p = S.action.progress || 0;
@@ -1171,12 +1201,9 @@ function drawInterior(t){
     });
   }
   // exit door — bottom centre; player walks to bottom edge to leave
-  ctx.fillStyle="#6a4a2f"; ctx.fillRect(W/2-14, H-26, 28, 26);
-  ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-14, 3, 3);
-  drawEmojiC(ctx, "🚪", W/2, H-13, 13);
-  ctx.fillStyle="rgba(0,0,0,.72)"; ctx.fillRect(W/2-22, H-44, 44, 13);
-  ctx.fillStyle="#fff8e6"; ctx.font="bold 8px monospace"; ctx.textAlign="center";
-  ctx.fillText("EXIT ↓", W/2, H-34);
+  ctx.fillStyle="#6a4a2f"; ctx.fillRect(W/2-14, H-20, 28, 20);
+  ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-10, 3, 3);
+  drawEmojiC(ctx, "🚪", W/2, H-9, 11);
   // player drawn last so they render above furniture
   const _iTool = active==="mining" ? "⛏️" : active==="steelworks" ? "🔨" : active==="manufacturing" ? "🔧" : active==="woodcutting" ? "🪓" : null;
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers());
@@ -1278,8 +1305,8 @@ function villageFrame(ts){
       }
     }
     // exit building if player walks to the bottom door
-    if (IP.y > VIEW_H - 18) {
-      IP.x = VIEW_W/2; IP.y = VIEW_H*0.68; IP.tx = null; IP.ty = null; IP.moving = false;
+    if (IP.y > icanvasH() - 18) {
+      IP.tx = null; IP.ty = null; IP.moving = false;
       VP.enterCooldown = 90; // prevent stepping straight back in
       S.tab = "village"; renderNav(); renderMain();
     } else {
@@ -1298,13 +1325,14 @@ function interiorClick(e){
   const cv = document.getElementById("interior");
   if (!cv) return;
   const rect = cv.getBoundingClientRect();
-  const cx = (e.clientX - rect.left) * (VIEW_W / rect.width);
-  const cy = (e.clientY - rect.top) * (VIEW_H / rect.height);
+  const cx = (e.clientX - rect.left) * (icanvasW() / rect.width);
+  const cy = (e.clientY - rect.top) * (icanvasH() / rect.height);
   // check if click hits a station node
   const stations = STATION_DEFS[S.tab];
   if (stations){
+    const cw = icanvasW(), ch = icanvasH();
     for (const st of stations){
-      const sx = st.fx * VIEW_W, sy = st.fy * VIEW_H;
+      const sx = st.fx * cw, sy = st.fy * ch;
       if (Math.abs(cx-sx) < 28 && Math.abs(cy-sy) < 28){
         const locked = skillLvl(st.skill) < (findAction(st.skill, st.id)?.lvl || 0);
         if (locked){ toast("Level too low."); return; }
@@ -1321,8 +1349,8 @@ function interiorClick(e){
       }
     }
   }
-  IP.tx = Math.max(16, Math.min(VIEW_W-16, cx));
-  IP.ty = Math.max(24, Math.min(VIEW_H-16, cy));
+  IP.tx = Math.max(16, Math.min(icanvasW()-16, cx));
+  IP.ty = Math.max(24, Math.min(icanvasH()-16, cy));
 }
 function setupInterior(){
   const cv = document.getElementById("interior");
@@ -1787,9 +1815,19 @@ function renderCharacterCustomisation(){
   </div>`;
 }
 function interiorHtml(title){
-  return `<div class="panel" style="padding:8px;">
-    <canvas id="interior" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${VIEW_W}/${VIEW_H};"></canvas>
-    <div class="vhint">${title} · WASD/tap to move · walk to the 🚪 to exit</div></div>`;
+  const cw = icanvasW(), ch = icanvasH(), r = pixelScale();
+  const stations = STATION_DEFS[S.tab] || [];
+  const lbls = stations.map(st=>{
+    const lvl = findAction(st.skill, st.id)?.lvl || 0;
+    const locked = skillLvl(st.skill) < lvl;
+    const topPct = ((st.fy + 0.12) * 100).toFixed(1);
+    return `<div class="ilbl" style="left:${(st.fx*100).toFixed(1)}%;top:${topPct}%">${st.ic} ${st.lbl}${locked?` <span class="ilbl-lock">Lv${lvl}</span>`:''}</div>`;
+  }).join('');
+  return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap">
+    <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
+    ${lbls}<div class="ilbl-exit">🚪 EXIT ↓</div>
+  </div>
+  <div class="vhint">${title} · WASD/tap · walk south to exit</div></div>`;
 }
 function renderAch(){
   if (!S.ach) S.ach = {};
@@ -1811,7 +1849,10 @@ function renderMain(){
   const banner = tutBannerHtml();
   if (S.tab==="village") m.innerHTML = banner + `<div class="village-wrap">
       <div class="panel village-canvas-panel" style="padding:8px;margin-bottom:0;">
-        <canvas id="village" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="image-rendering:pixelated;display:block;width:100%;"></canvas>
+        <div class="village-canvas-rel">
+          <canvas id="village" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${VIEW_W}/${VIEW_H};"></canvas>
+          <div id="village-overlay"></div>
+        </div>
         <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD/arrows also work</div>
       </div>
       <div class="village-sidebar">${renderInventoryPanel()}</div>
