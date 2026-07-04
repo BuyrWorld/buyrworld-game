@@ -10,6 +10,7 @@ import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS } from './world/map.ts';
 import { nightAlpha, lampGlow, isNight, skyTint } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
+import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS } from './player/customisation.ts';
 
 /* =====================================================
    BuyrWorld v0.8 — Vite+TS modular entry point
@@ -237,7 +238,11 @@ function setMusic(on){
 
 /* ================= VILLAGE WORLD ================= */
 const CAM = { x:0, y:0 };
-const PL_HAIR = "#6a4a2f", PL_SHIRT = "#ff8a5c";
+// Derive player colours from S.appearance (falls back to defaults for legacy saves)
+const plHair     = () => (S.appearance && S.appearance.hair)     || DEFAULT_APPEARANCE.hair;
+const plShirt    = () => (S.appearance && S.appearance.shirt)    || DEFAULT_APPEARANCE.shirt;
+const plSkin     = () => (S.appearance && S.appearance.skin)     || DEFAULT_APPEARANCE.skin;
+const plTrousers = () => (S.appearance && S.appearance.trousers) || DEFAULT_APPEARANCE.trousers;
 
 const FROST_TIPS = [
   "Rocks respawn instantly round here. Union rules.",
@@ -428,7 +433,9 @@ function villageClick(e){
   VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
   VP.pending = null;
 }
-function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir){
+function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser){
+  skin    = skin    || "#f2c49a";
+  trouser = trouser || "#4a5a8a";
   dir = dir || (facing>=0 ? "right" : "left");
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
@@ -436,14 +443,14 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir){
   ctx.fillStyle="rgba(40,28,16,.55)";
   ctx.fillRect(-8, -19, 16, 30);
   const legSwing = moving ? Math.sin(t*10)*3 : 0;
-  ctx.fillStyle="#4a5a8a";
+  ctx.fillStyle=trouser;
   ctx.fillRect(-5, 2, 4, 8+legSwing*0.4); ctx.fillRect(1, 2, 4, 8-legSwing*0.4);
   ctx.fillStyle=shirt; ctx.fillRect(-7, -6, 14, 10);
   ctx.fillStyle=shirt;
   const armSwing = moving ? Math.sin(t*10+3)*3 : 0;
   ctx.fillRect(-9, -5+armSwing*0.3, 3, 8); ctx.fillRect(6, -5-armSwing*0.3, 3, 8);
-  ctx.fillStyle="#f2c49a"; ctx.fillRect(-9, 2+armSwing*0.3, 3, 3); ctx.fillRect(6, 2-armSwing*0.3, 3, 3);
-  ctx.fillStyle="#f2c49a"; ctx.fillRect(-5, -16, 10, 10);
+  ctx.fillStyle=skin; ctx.fillRect(-9, 2+armSwing*0.3, 3, 3); ctx.fillRect(6, 2-armSwing*0.3, 3, 3);
+  ctx.fillStyle=skin; ctx.fillRect(-5, -16, 10, 10);
   if (dir==="up"){
     ctx.fillStyle=hair; ctx.fillRect(-6, -18, 12, 10);
   } else {
@@ -706,7 +713,7 @@ function drawWorkerAndVfx(ctx, t){
         playerTool = SKILL_TOOL[S.action.skill];
         VP.facing = p.x >= VP.x ? 1 : -1;
       } else {
-        drawPerson(ctx, p.x, p.y, PL_HAIR, PL_SHIRT, t, false, -1, SKILL_TOOL[S.action.skill]);
+        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers());
       }
     }
   }
@@ -776,7 +783,7 @@ function drawVillage(t){
     const rad = 6+Math.sin(t*8)*2;
     ctx.beginPath(); ctx.arc(VP.tx, VP.ty, rad, 0, 7); ctx.stroke();
   }
-  drawPerson(ctx, VP.x, VP.y, PL_HAIR, PL_SHIRT, t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir);
+  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers());
   if (S.playerName){
     ctx.font="bold 9px monospace"; ctx.textAlign="center";
     const nm = S.playerName, wdt = ctx.measureText(nm).width+8;
@@ -840,7 +847,7 @@ function drawInterior(t){
     ctx.fillStyle="#8d939c"; ctx.fillRect(46,H-30,58,10);
     ctx.fillStyle="#2a2a2a"; ctx.beginPath(); ctx.arc(56,H-8,7,0,7); ctx.arc(94,H-8,7,0,7); ctx.fill();
     for (let i=0;i<3;i++){ const lx=170+i*160; ctx.fillStyle="rgba(255,214,102,.25)"; ctx.beginPath(); ctx.arc(lx,26,16,0,7); ctx.fill(); drawEmojiC(ctx,"🏮",lx,26,14); }
-    drawPerson(ctx, W-60, H-24, PL_HAIR, PL_SHIRT, t, false, -1, active==="mining" ? "⛏️" : null);
+    drawPerson(ctx, W-60, H-24, plHair(), plShirt(), t, false, -1, active==="mining" ? "⛏️" : null, null, plSkin(), plTrousers());
   } else if (S.tab==="steelworks"){
     ctx.fillStyle="#4a3f3a"; ctx.fillRect(0,0,W,H);
     for(let r=0;r<7;r++) for(let c=0;c<20;c++){ ctx.strokeStyle="#3a312d"; ctx.strokeRect(c*30+(r%2?15:0), r*18, 30, 18); }
@@ -854,7 +861,7 @@ function drawInterior(t){
     }
     ctx.fillStyle="#3a3a3a"; ctx.fillRect(W-170, H-36, 90, 12); ctx.fillRect(W-140,H-24,30,18);
     if (active==="steelworks"){ ctx.fillStyle="#ff9a4c"; ctx.fillRect(W-160, H-42, 44, 8); }
-    drawPerson(ctx, W-60, H-24, PL_HAIR, PL_SHIRT, t, false, -1, active==="steelworks" ? "🔨" : null);
+    drawPerson(ctx, W-60, H-24, plHair(), plShirt(), t, false, -1, active==="steelworks" ? "🔨" : null, null, plSkin(), plTrousers());
   } else if (S.tab==="manufacturing"){
     ctx.fillStyle="#55606e"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#49535f"; ctx.fillRect(0,0,W,26);
@@ -865,7 +872,7 @@ function drawInterior(t){
     ctx.fillStyle="#7a8494"; ctx.fillRect(150, 30, 14, 46);
     ctx.save(); ctx.translate(157, 34); ctx.rotate(Math.sin(t*3)*0.5);
     ctx.fillStyle="#95a0b0"; ctx.fillRect(-5, 0, 10, 34); ctx.fillStyle="#ffd666"; ctx.fillRect(-7, 30, 14, 8); ctx.restore();
-    drawPerson(ctx, W-60, H-24, PL_HAIR, PL_SHIRT, t, false, -1, active==="manufacturing" ? "🔧" : null);
+    drawPerson(ctx, W-60, H-24, plHair(), plShirt(), t, false, -1, active==="manufacturing" ? "🔧" : null, null, plSkin(), plTrousers());
   } else if (S.tab==="contracts"){
     ctx.fillStyle="#6e5f4a"; ctx.fillRect(0,0,W,H);
     const stock = Math.min(24, Math.floor(Object.values(S.items).reduce((a,b)=>a+b,0)/12));
@@ -879,7 +886,7 @@ function drawInterior(t){
     ctx.fillStyle="#2f3e35"; ctx.fillRect(W-140, 30, 100, 50);
     ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(W-130,96,10,0,7); ctx.arc(W-50,96,10,0,7); ctx.fill();
     drawEmojiC(ctx,"📋", W-190, H-40, 18);
-    drawPerson(ctx, W-210, H-24, PL_HAIR, PL_SHIRT, t, false, 1);
+    drawPerson(ctx, W-210, H-24, plHair(), plShirt(), t, false, 1, null, null, plSkin(), plTrousers());
   } else if (S.tab==="trade"){
     ctx.fillStyle="#7a5a3a"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#6a4c30"; for(let i=0;i<8;i++) ctx.fillRect(0,i*16,W,3);
@@ -891,7 +898,7 @@ function drawInterior(t){
       drawPerson(ctx, sx, 62, o.hair, o.shirt, t+i, false, 1);
       if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", sx, 34, 12);
     });
-    drawPerson(ctx, 30, H-24, PL_HAIR, PL_SHIRT, t, false, 1);
+    drawPerson(ctx, 30, H-24, plHair(), plShirt(), t, false, 1, null, null, plSkin(), plTrousers());
   } else if (S.tab==="pets"){
     ctx.fillStyle="#8a6a45"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#7a5c3a"; for(let i=0;i<10;i++) ctx.fillRect(i*60,0,4,H);
@@ -1039,6 +1046,7 @@ function freshState(){
     action:null,
     contracts:[],
     tab:"village",
+    appearance: Object.assign({}, DEFAULT_APPEARANCE),
   };
 }
 let S = freshState();
@@ -1062,6 +1070,7 @@ function load(){
       if (!("coinsEarned" in S.counters)) S.counters.coinsEarned = 0;
       if (!("trades" in S.counters)) S.counters.trades = 0;
       if (typeof S.playerName !== "string") S.playerName = "";
+      if (!parsed.appearance) S.appearance = Object.assign({}, DEFAULT_APPEARANCE);
       return true;
     }
   } catch(e){}
@@ -1253,6 +1262,7 @@ const TABS = [
   { id:"upgrades", n:"Upgrades", ic:"🛒" },
   { id:"pets", n:"Companions", ic:"🦊" },
   { id:"ach", n:"Awards", ic:"🏆" },
+  { id:"character", n:"Character", ic:"👤" },
   { id:"settings", n:"Save", ic:"💾" },
 ];
 function renderNav(){
@@ -1416,6 +1426,33 @@ function renderSettings(){
     <p style="font-size:11px;color:var(--dim);margin-top:10px;">Stats: ${fmt(S.counters.actions)} actions · ${fmt(S.counters.contracts)} contracts delivered · Total level ${totalLvl()}</p>
   </div>`;
 }
+function drawCharPreview(canvasId){
+  const cv = document.getElementById(canvasId);
+  if (!cv) return;
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle="#9fd6a8"; ctx.fillRect(0, 0, cv.width, cv.height);
+  drawPerson(ctx, cv.width/2, cv.height-12, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers());
+}
+function renderCharacterCustomisation(){
+  const ap = S.appearance || DEFAULT_APPEARANCE;
+  function swatchRow(label, arr, field){
+    return `<div class="cust-row"><div class="cust-lbl">${label}</div><div class="cust-swatches">${
+      arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" data-cust="${field}" data-val="${c.v}" style="background:${c.v};" title="${c.label}" aria-label="${c.label}"></button>`).join('')
+    }</div></div>`;
+  }
+  return `<div class="panel cust-panel">
+    <h2>👤 Character<small>Customise your look. Saved automatically.</small></h2>
+    <div class="cust-preview-wrap">
+      <canvas id="char-preview" width="60" height="80" style="image-rendering:pixelated;display:block;border:2px solid var(--edge);background:#9fd6a8;"></canvas>
+      <div class="cust-name">${S.playerName || "Founder"}</div>
+    </div>
+    ${swatchRow("Skin Tone", SKIN_TONES, "skin")}
+    ${swatchRow("Hair", HAIR_COLOURS, "hair")}
+    ${swatchRow("Shirt", SHIRT_COLOURS, "shirt")}
+    ${swatchRow("Trousers", TROUSER_COLOURS, "trousers")}
+  </div>`;
+}
 function interiorHtml(title){
   return `<div class="panel" style="padding:8px;">
     <canvas id="interior" width="${VIEW_W*pixelScale()}" height="${120*pixelScale()}" style="width:100%;height:120px;display:block;image-rendering:pixelated;border:2px solid var(--edge);"></canvas>
@@ -1439,20 +1476,25 @@ function renderAch(){
 function renderMain(){
   const m = $("#main");
   const banner = tutBannerHtml();
-  if (S.tab==="village") m.innerHTML = banner + `<div class="panel" style="padding:8px;">
-      <canvas id="village" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="width:${VIEW_W}px;height:${VIEW_H}px;image-rendering:pixelated;display:block;"></canvas>
-      <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD/arrows also work · quarry is west, beach is south</div>
-    </div>` + renderInventoryPanel();
+  if (S.tab==="village") m.innerHTML = banner + `<div class="village-wrap">
+      <div class="panel village-canvas-panel" style="padding:8px;margin-bottom:0;">
+        <canvas id="village" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="image-rendering:pixelated;display:block;width:100%;"></canvas>
+        <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD/arrows also work</div>
+      </div>
+      <div class="village-sidebar">${renderInventoryPanel()}</div>
+    </div>`;
   else if (S.tab==="contracts") m.innerHTML = banner + interiorHtml("📦 Inside the Depot — shelves fill up as your warehouse does") + renderContracts();
   else if (S.tab==="trade") m.innerHTML = banner + interiorHtml("⚖️ Inside the Market Hall") + renderTrade();
   else if (S.tab==="upgrades") m.innerHTML = banner + interiorHtml("🛒 Inside the Town Hall — CapEx office") + renderUpgrades();
   else if (S.tab==="pets") m.innerHTML = banner + interiorHtml("🐾 Inside the Companion Barn — your crew hangs out here") + renderPets();
   else if (S.tab==="ach") m.innerHTML = banner + renderAch();
+  else if (S.tab==="character") m.innerHTML = banner + renderCharacterCustomisation();
   else if (S.tab==="settings") m.innerHTML = banner + renderSettings();
   else m.innerHTML = banner + interiorHtml(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop") + renderSkillPanel(S.tab);
   bindMain();
   setupVillage();
   updateMusicZone();
+  if (S.tab==="character") drawCharPreview("char-preview");
 }
 function bindMain(){
   document.querySelectorAll(".action").forEach(el=>{
@@ -1484,6 +1526,11 @@ function bindMain(){
   document.querySelectorAll("[data-pet]").forEach(b=> b.onclick = ()=>{
     S.pets.active = b.dataset.pet; renderMain(); updateHud(); save();
   });
+  document.querySelectorAll("[data-cust]").forEach(b=> b.onclick = ()=>{
+    if (!S.appearance) S.appearance = Object.assign({}, DEFAULT_APPEARANCE);
+    S.appearance[b.dataset.cust] = b.dataset.val;
+    renderMain(); updateHud(); save();
+  });
   const ex = $("#btn-export");
   if (ex){
     ex.onclick = ()=>{ save(); $("#savebox").value = btoa(unescape(encodeURIComponent(JSON.stringify(S)))); toast("Save exported — copy the string."); };
@@ -1508,7 +1555,7 @@ function updateHud(){
   $("#hud-coins").textContent = fmt(S.coins);
   $("#hud-total").textContent = totalLvl();
   const nameEl = document.getElementById("hud-name");
-  if (nameEl) nameEl.textContent = S.playerName ? S.playerName : "—";
+  if (nameEl) nameEl.textContent = S.playerName || "—";
   const stat = document.getElementById("hud-name-stat");
   if (stat){
     if (S.playerName) stat.classList.add("named");
@@ -1516,6 +1563,9 @@ function updateHud(){
   }
   const pet = PETS.find(p=>p.id===S.pets.active);
   $("#hud-pet").textContent = pet ? pet.ic+" "+pet.n.split(" ")[1] : "—";
+  drawCharPreview("hud-portrait");
+  const charBtn = document.getElementById("btn-character");
+  if (charBtn) charBtn.onclick = () => { S.tab="character"; renderNav(); renderMain(); };
 }
 function updateProgressBar(){
   if (!S.action) return;
