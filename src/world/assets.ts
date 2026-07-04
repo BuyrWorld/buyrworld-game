@@ -40,6 +40,19 @@ export const BUILDING_SPRITE_MAP: Record<string, string> = {
   hall:     '/assets/buildings/suburban-e.png',
   barn:     '/assets/buildings/suburban-b.png',
   trophy:   '/assets/buildings/suburban-p.png',
+  sawmill: '/assets/buildings/suburban-c.png',
+};
+
+export const NATURE_SPRITE_MAP: Record<string, string> = {
+  tree_large: '/assets/nature/tree-large.png',
+  tree_small: '/assets/nature/tree-small.png',
+};
+
+export const INTERIOR_SPRITE_MAP: Record<string, string> = {
+  prop_machine:   '/assets/factory/machine.png',
+  prop_hopper:    '/assets/factory/hopper-round.png',
+  prop_conveyor:  '/assets/factory/conveyor-long.png',
+  prop_cog:       '/assets/factory/cog-a.png',
 };
 
 // Mapping: stall object id → NPC vendor sprite
@@ -52,4 +65,6 @@ export const NPC_SPRITE_MAP: Record<string, string> = {
 export function preloadAll(): void {
   Object.entries(BUILDING_SPRITE_MAP).forEach(([k, v]) => loadSprite(`bld_${k}`, v));
   Object.entries(NPC_SPRITE_MAP).forEach(([k, v])      => loadSprite(`npc_${k}`, v));
+  Object.entries(NATURE_SPRITE_MAP).forEach(([k, v])   => loadSprite(k, v));
+  Object.entries(INTERIOR_SPRITE_MAP).forEach(([k, v]) => loadSprite(k, v));
 }

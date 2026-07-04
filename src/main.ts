@@ -311,7 +311,28 @@ const WANDERERS = [
 ];
 const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down" };
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting"]);
+const STATION_DEFS = {
+  mining:        [
+    { fx:0.14, fy:0.44, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
+    { fx:0.40, fy:0.37, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
+    { fx:0.66, fy:0.44, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
+  ],
+  steelworks:    [
+    { fx:0.28, fy:0.48, sk:'prop_machine',  skill:'steelworks',    id:'iron_bar',   ic:'🔩', lbl:'Smelt Iron' },
+    { fx:0.64, fy:0.44, sk:'prop_machine',  skill:'steelworks',    id:'steel_bar',  ic:'⛓️', lbl:'Steel Bar' },
+  ],
+  manufacturing: [
+    { fx:0.20, fy:0.48, sk:'prop_conveyor', skill:'manufacturing', id:'bracket',    ic:'🧱', lbl:'Brackets' },
+    { fx:0.55, fy:0.44, sk:'prop_machine',  skill:'manufacturing', id:'gearbox',    ic:'⚙️', lbl:'Gearbox' },
+    { fx:0.82, fy:0.48, sk:'prop_machine',  skill:'manufacturing', id:'wiring_loom',ic:'🔌', lbl:'Wiring Loom' },
+  ],
+  woodcutting:   [
+    { fx:0.22, fy:0.44, sk:'tree_small',    skill:'woodcutting',   id:'pine',       ic:'🌲', lbl:'Pine' },
+    { fx:0.52, fy:0.40, sk:'tree_large',    skill:'woodcutting',   id:'oak',        ic:'🌳', lbl:'Oak' },
+    { fx:0.80, fy:0.44, sk:'tree_large',    skill:'woodcutting',   id:'hardwood',   ic:'🪵', lbl:'Hardwood' },
+  ],
+};
 const VKEYS = {};
 const VFX = [];
 const DUST = [];
@@ -334,6 +355,7 @@ function solidAt(px, py){
   const t = tileAt(px, py);
   if (t==="T" || t==="W" || t==="C") return true;
   for (const o of V_OBJECTS){
+    if (o.kind==="lamp" || o.kind==="sign") continue;
     const r = objRect(o);
     if (px>=r.x && px<r.x+r.w && py>=r.y && py<r.y+r.h) return true;
   }
@@ -376,9 +398,10 @@ function stationPos(skill, actId){
   }
   if (skill==="steelworks"){ const o=V_OBJECTS.find(x=>x.id==="furnace"); const a=objApproach(o); return {x:a.x, y:a.y}; }
   if (skill==="manufacturing"){ const o=V_OBJECTS.find(x=>x.id==="workshop"); const a=objApproach(o); return {x:a.x, y:a.y}; }
+  if (skill==="woodcutting"){ const o=V_OBJECTS.find(x=>x.kind==="tree" && x.ore===actId); if (o){ const r=objRect(o); return {x:r.x+r.w/2, y:r.y+r.h+4}; } }
   return null;
 }
-const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧" };
+const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓" };
 function pushVfx(skill, act){
   const p = stationPos(skill, act.id);
   if (!p) return;
@@ -391,6 +414,12 @@ function villageTip(o){
     const locked = skillLvl("mining") < o.lvl;
     return `⛏️ ${ITEMS[o.ore].n}${locked ? " 🔒 Lv "+o.lvl : ""}`;
   }
+  if (o.kind==="tree"){
+    const locked = skillLvl("woodcutting") < o.lvl;
+    const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
+    return `🪓 ${act ? act.n : o.ore}${locked ? " 🔒 Lv "+o.lvl : ""}`;
+  }
+  if (o.kind==="lamp") return "";
   if (o.kind==="stall"){
     const locked = skillLvl("trading") < o.lvl;
     return `⚖️ ${o.name}'s Stall${locked ? " 🔒 Trading "+o.lvl : ""}`;
@@ -398,6 +427,18 @@ function villageTip(o){
   return `${o.ic||""} ${o.name}`;
 }
 function interactObj(o){
+  if (o.kind==="lamp") return;
+  if (o.kind==="tree"){
+    if (skillLvl("woodcutting") < o.lvl){ toast(`Requires Woodcutting level ${o.lvl}.`); return; }
+    if (S.action && S.action.skill==="woodcutting" && S.action.id===o.ore){
+      S.action = null; renderNav(); toast("Stopped woodcutting."); save(); return;
+    }
+    const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
+    S.action = { skill:"woodcutting", id:o.ore, progress:0 };
+    toast(`🪓 ${act ? act.n : "Chopping"}...`);
+    log(`▶ Started: ${act ? act.n : "Chop Tree"}`);
+    renderNav(); save(); return;
+  }
   if (o.kind==="rock"){
     if (skillLvl("mining") < o.lvl){ toast(`Requires Mining level ${o.lvl}.`); return; }
     if (S.action && S.action.skill==="mining" && S.action.id===o.ore){
@@ -543,6 +584,12 @@ function drawTiles(ctx, t){
         // wheel ruts on dirt path
         if (c*7%3===0){ ctx.fillStyle="#ccad72"; ctx.fillRect(x+5,y,2,TILE); }
       }
+    } else if (ch==="F"){
+      ctx.fillStyle=(c+r)%2 ? "#4a7a3a" : "#426e34"; ctx.fillRect(x,y,TILE,TILE);
+      const hf=(c*7+r*13)%17;
+      if (hf===0){ ctx.fillStyle="#3a6028"; ctx.fillRect(x+4,y+8,4,10); ctx.fillRect(x+14,y+6,3,12); }
+      if (hf===3){ ctx.fillStyle="#5a9048"; ctx.fillRect(x+10,y+10,3,8); }
+      if (hf===6){ ctx.fillStyle="#3e5e2a"; ctx.fillRect(x+2,y+14,5,4); ctx.fillRect(x+14,y+10,4,4); }
     } else {
       ctx.fillStyle=(c+r)%2 ? "#9fd6a8" : "#95cf9e"; ctx.fillRect(x,y,TILE,TILE);
       const h=(c*7+r*13)%29;
@@ -590,7 +637,7 @@ function drawObjects(ctx, t){
       // drop shadow
       ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x+4, r.y+r.h, r.w-2, 5);
       // try Kenney sprite; fall back to procedural canvas building
-      const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, r.w+24);
+      const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, Math.round(r.w * 2.8));
       if (!_spriteDrawn){
         // stone foundation strip
         ctx.fillStyle="#5a4030"; ctx.fillRect(r.x, r.y+r.h-5, r.w, 5);
@@ -625,9 +672,38 @@ function drawObjects(ctx, t){
       ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+2, r.y+16, r.w-4, r.h-16);
       ctx.fillStyle="#a97f52"; ctx.fillRect(r.x, r.y+14, r.w, 5);
       for (let i=0;i<r.w;i+=8){ ctx.fillStyle = (i/8)%2 ? "#fff8e6" : o.awn; ctx.fillRect(r.x+i, r.y, 8, 10); }
-      if (!drawSprite(ctx, `npc_${o.id}`, r.x+r.w/2, r.y+14, 30))
+      if (!drawSprite(ctx, `npc_${o.id}`, r.x+r.w/2, r.y+18, 46))
         drawPerson(ctx, r.x+r.w/2, r.y+12, o.hair, o.shirt, t+o.tx, false, 1);
       if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", r.x+r.w/2, r.y-6, 10);
+    }
+    if (o.kind==="tree"){
+      const cx = r.x + r.w/2;
+      const treeKey = o.ore==='pine' ? 'tree_small' : 'tree_large';
+      const treeActive = S.action?.skill==="woodcutting" && S.action?.id===o.ore;
+      const drawnTree = drawSprite(ctx, treeKey, cx, r.y+r.h+4, 52);
+      if (!drawnTree){
+        const sway = Math.sin(t*0.8 + o.tx*0.5)*2;
+        ctx.fillStyle='#5a3a20'; ctx.fillRect(cx-3, r.y+r.h-6, 6, 6);
+        ctx.fillStyle='#3a7032'; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-18, 14, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle='#4a8840'; ctx.beginPath(); ctx.arc(cx+sway-5, r.y+r.h-24, 8, 0, Math.PI*2); ctx.fill();
+      }
+      if (skillLvl("woodcutting") < o.lvl) drawEmojiC(ctx, "🔒", cx, r.y-4, 9);
+      if (treeActive) drawEmojiC(ctx, "🪓", cx+Math.sin(t*8)*3, r.y+r.h-22, 13);
+      continue;
+    }
+    if (o.kind==="lamp"){
+      const lx = r.x + r.w/2, ly = r.y;
+      const glow = lampGlow();
+      if (glow > 0){
+        const rg = ctx.createRadialGradient(lx, ly-14, 0, lx, ly-14, 52);
+        rg.addColorStop(0, `rgba(255,214,102,${(glow*0.55).toFixed(2)})`);
+        rg.addColorStop(1, 'rgba(255,214,102,0)');
+        ctx.fillStyle = rg; ctx.fillRect(lx-52, ly-66, 104, 84);
+      }
+      ctx.fillStyle='#4a3a2a'; ctx.fillRect(lx-2, ly-26, 4, 26);
+      ctx.fillStyle='#ffd666'; ctx.fillRect(lx-5, ly-32, 10, 7);
+      ctx.fillStyle='rgba(255,230,140,.3)'; ctx.beginPath(); ctx.arc(lx, ly-28, 9, 0, Math.PI*2); ctx.fill();
+      continue;
     }
     if (o.kind==="sign"){
       ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+10, r.y+8, 4, 14);
@@ -654,22 +730,6 @@ function drawExtras(ctx, t){
   ctx.fillStyle="#b0574f"; ctx.fillRect(31.4*TILE, 19.6*TILE+bob, 46, 12);
   ctx.fillStyle="#e8e2d2"; ctx.fillRect(31.4*TILE+16, 19.6*TILE-10+bob, 4, 12);
   ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.moveTo(31.4*TILE+20, 19.6*TILE-10+bob); ctx.lineTo(31.4*TILE+38, 19.6*TILE-2+bob); ctx.lineTo(31.4*TILE+20, 19.6*TILE-2+bob); ctx.closePath(); ctx.fill();
-  if (tier>=1){
-    const glow = lampGlow();
-    [[10,5],[32,5],[10,10],[32,10]].forEach(([c,r])=>{
-      const x=c*TILE+12, y=r*TILE-2;
-      // warm halo at night
-      if (glow > 0){
-        const rg = ctx.createRadialGradient(x, y-14, 0, x, y-14, 38);
-        rg.addColorStop(0, `rgba(255,214,102,${(glow*0.45).toFixed(2)})`);
-        rg.addColorStop(1, 'rgba(255,214,102,0)');
-        ctx.fillStyle = rg; ctx.fillRect(x-38, y-52, 76, 76);
-      }
-      ctx.fillStyle="rgba(255,214,102,.22)"; ctx.beginPath(); ctx.arc(x, y-14, 12, 0, 7); ctx.fill();
-      ctx.fillStyle="#5a4a3a"; ctx.fillRect(x-2, y-12, 4, 14);
-      ctx.fillStyle="#ffd666"; ctx.fillRect(x-4, y-18, 8, 7);
-    });
-  }
   if (tier>=2){
     ctx.strokeStyle="#8c6947"; ctx.beginPath(); ctx.moveTo(12*TILE, 10.7*TILE); ctx.lineTo(20*TILE, 10.7*TILE); ctx.stroke();
     for (let i=0;i<12;i++){
@@ -755,6 +815,7 @@ function drawMinimap(ctx){
   for (const o of V_OBJECTS){
     if (o.kind==="bld" || o.kind==="stall"){ ctx.fillStyle=o.roof||o.awn; ctx.fillRect(mx+o.tx*2, my+o.ty*2, (o.w||1)*2, (o.h||1)*2); }
     if (o.kind==="rock"){ ctx.fillStyle=o.vein; ctx.fillRect(mx+o.tx*2, my+o.ty*2, 2, 2); }
+    if (o.kind==="tree"){ ctx.fillStyle="#3a7032"; ctx.fillRect(mx+o.tx*2, my+o.ty*2, 2, 3); }
   }
   ctx.fillStyle="#bfe8f7"; const fr=WANDERERS[0]; ctx.fillRect(mx+fr.x/TILE*2-1, my+fr.y/TILE*2-1, 2, 2);
   ctx.fillStyle="#fff"; ctx.fillRect(mx+VP.x/TILE*2-1, my+VP.y/TILE*2-1, 3, 3);
@@ -822,6 +883,20 @@ function drawVillage(t){
   if (alpha > 0.01){
     ctx.fillStyle = `rgba(${skyTint()},${alpha.toFixed(3)})`;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
+  if (alpha > 0.08){
+    const mAlpha = Math.min(1, (alpha - 0.08) / 0.22);
+    const moonX = VIEW_W - 54, moonY = 28;
+    ctx.save();
+    ctx.globalAlpha = mAlpha;
+    ctx.fillStyle = '#fffce0';
+    ctx.beginPath(); ctx.arc(moonX, moonY, 15, 0, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath(); ctx.arc(moonX+10, moonY-6, 13, 0, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle='rgba(255,255,200,0.7)';
+    [[moonX-40,moonY+12],[moonX-22,moonY-18],[VIEW_W-20,moonY+8],[moonX-60,moonY-10]].forEach(([sx,sy])=>{ ctx.fillRect(sx,sy,2,2); });
+    ctx.restore();
   }
   drawMinimap(ctx);
 }
@@ -904,9 +979,10 @@ function drawInterior(t){
     const stalls = V_OBJECTS.filter(o=>o.kind==="stall");
     stalls.forEach((o,i)=>{
       const sx = 100+i*180;
-      for (let k=0;k<6;k++){ ctx.fillStyle = k%2 ? "#fff8e6" : o.awn; ctx.fillRect(sx-42+k*14, 18, 14, 12); }
       ctx.fillStyle="#8c6947"; ctx.fillRect(sx-42, 66, 84, 30);
-      drawPerson(ctx, sx, 62, o.hair, o.shirt, t+i, false, 1);
+      ctx.fillStyle=o.awn; ctx.fillRect(sx-42, 62, 84, 8);
+      if (!drawSprite(ctx, `npc_${o.id}`, sx, 64, 52))
+        drawPerson(ctx, sx, 62, o.hair, o.shirt, t+i, false, 1);
       if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", sx, 34, 12);
     });
   } else if (S.tab==="pets"){
@@ -920,6 +996,13 @@ function drawInterior(t){
       drawEmojiC(ctx, p.ic, px, py+Math.sin(t*6+i)*2, 24);
       if (S.pets.active===id) drawEmojiC(ctx,"⭐", px+12, py-14, 10);
     });
+  } else if (S.tab==="woodcutting"){
+    ctx.fillStyle="#4a5a3a"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#3e4e30"; for(let i=0;i<7;i++) ctx.fillRect(0,i*16,W,3);
+    ctx.fillStyle="#6a5a40"; ctx.fillRect(0,H-40,W,40);
+    for(let i=0;i<6;i++){ ctx.fillStyle="#5a4a32"; ctx.fillRect(i*100,H-40,8,40); }
+    for (let i=0;i<3;i++){ const lx=150+i*160; ctx.fillStyle="rgba(255,214,102,.2)"; ctx.beginPath(); ctx.arc(lx,22,14,0,7); ctx.fill(); drawEmojiC(ctx,"🏮",lx,22,12); }
+    drawEmojiC(ctx,"🪵", 40, H-20, 18); drawEmojiC(ctx,"🪵", 60, H-14, 14); drawEmojiC(ctx,"🪵", W-50, H-18, 16);
   } else if (S.tab==="upgrades" || S.tab==="ach"){
     ctx.fillStyle="#6a6252"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#57503f"; ctx.fillRect(0,H-30,W,30);
@@ -936,6 +1019,31 @@ function drawInterior(t){
     drawEmojiC(ctx,"🏳️", 540, 34, 20);
     drawPerson(ctx, 260, H-24, "#8a8a8a", "#b0574f", t, false, 1);
   }
+  // station nodes from STATION_DEFS — drawn on top of background, below player
+  const stations = STATION_DEFS[S.tab];
+  if (stations){
+    stations.forEach(st=>{
+      const sx = st.fx * W, sy = st.fy * H;
+      const isActive = active===st.skill && S.action?.id===st.id;
+      const locked = skillLvl(st.skill) < (findAction(st.skill, st.id)?.lvl || 0);
+      // sprite or fallback box
+      if (!drawSprite(ctx, st.sk, sx, sy+12, 44)){
+        ctx.fillStyle = locked ? "#888" : isActive ? "#ffd666" : "#b09060";
+        ctx.fillRect(sx-20, sy-16, 40, 32);
+      }
+      drawEmojiC(ctx, st.ic, sx, sy-22, 14);
+      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(sx-24, sy+14, 48, 11);
+      ctx.fillStyle = "#fff8e6"; ctx.font = "bold 6px monospace"; ctx.textAlign = "center";
+      ctx.fillText(st.lbl, sx, sy+22);
+      if (locked) drawEmojiC(ctx, "🔒", sx+16, sy-28, 9);
+      if (isActive){
+        const p = S.action.progress || 0;
+        ctx.fillStyle="rgba(0,0,0,.5)"; ctx.fillRect(sx-22, sy+26, 44, 5);
+        ctx.fillStyle="#ffd666"; ctx.fillRect(sx-22, sy+26, 44*p, 5);
+        drawEmojiC(ctx, SKILL_TOOL[st.skill]||"⚒️", sx+Math.sin(t*8)*3, sy-10, 13);
+      }
+    });
+  }
   // exit door — bottom centre; player walks to bottom edge to leave
   ctx.fillStyle="#6a4a2f"; ctx.fillRect(W/2-14, H-26, 28, 26);
   ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-14, 3, 3);
@@ -943,7 +1051,7 @@ function drawInterior(t){
   ctx.fillStyle="rgba(255,248,230,.85)"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
   ctx.fillText("EXIT ↓", W/2, H-32);
   // player drawn last so they render above furniture
-  const _iTool = active==="mining" ? "⛏️" : active==="steelworks" ? "🔨" : active==="manufacturing" ? "🔧" : null;
+  const _iTool = active==="mining" ? "⛏️" : active==="steelworks" ? "🔨" : active==="manufacturing" ? "🔧" : active==="woodcutting" ? "🪓" : null;
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers());
 }
 function drawTitleFX(t){
@@ -1034,8 +1142,31 @@ function interiorClick(e){
   const cv = document.getElementById("interior");
   if (!cv) return;
   const rect = cv.getBoundingClientRect();
-  IP.tx = Math.max(16, Math.min(VIEW_W-16, (e.clientX - rect.left) * (VIEW_W / rect.width)));
-  IP.ty = Math.max(24, Math.min(VIEW_H-16, (e.clientY - rect.top) * (VIEW_H / rect.height)));
+  const cx = (e.clientX - rect.left) * (VIEW_W / rect.width);
+  const cy = (e.clientY - rect.top) * (VIEW_H / rect.height);
+  // check if click hits a station node
+  const stations = STATION_DEFS[S.tab];
+  if (stations){
+    for (const st of stations){
+      const sx = st.fx * VIEW_W, sy = st.fy * VIEW_H;
+      if (Math.abs(cx-sx) < 28 && Math.abs(cy-sy) < 28){
+        const locked = skillLvl(st.skill) < (findAction(st.skill, st.id)?.lvl || 0);
+        if (locked){ toast("Level too low."); return; }
+        if (S.action?.skill===st.skill && S.action?.id===st.id){
+          S.action = null;
+        } else {
+          const act = findAction(st.skill, st.id);
+          if (act?.in && !canAfford(act)){ toast("Not enough materials."); return; }
+          S.action = { skill:st.skill, id:st.id, progress:0 };
+          log(`▶ Started: ${act?.n || st.lbl}`);
+        }
+        renderNav(); save();
+        return;
+      }
+    }
+  }
+  IP.tx = Math.max(16, Math.min(VIEW_W-16, cx));
+  IP.ty = Math.max(24, Math.min(VIEW_H-16, cy));
 }
 function setupInterior(){
   const cv = document.getElementById("interior");
@@ -1301,6 +1432,7 @@ const TABS = [
   { id:"mining", n:"Mining", ic:"⛏️", skill:true },
   { id:"steelworks", n:"Steelworks", ic:"🔥", skill:true },
   { id:"manufacturing", n:"Manufacturing", ic:"🏭", skill:true },
+  { id:"woodcutting", n:"Woodcutting", ic:"🪓", skill:true },
   { id:"contracts", n:"Contracts", ic:"📋" },
   { id:"trade", n:"Trade", ic:"⚖️" },
   { id:"upgrades", n:"Upgrades", ic:"🛒" },
@@ -1534,6 +1666,7 @@ function renderMain(){
   else if (S.tab==="ach") m.innerHTML = banner + renderAch();
   else if (S.tab==="character") m.innerHTML = banner + renderCharacterCustomisation();
   else if (S.tab==="settings") m.innerHTML = banner + renderSettings();
+  else if (S.tab==="woodcutting") m.innerHTML = banner + interiorHtml("🪓 Inside the Sawmill") + renderSkillPanel(S.tab);
   else m.innerHTML = banner + interiorHtml(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop") + renderSkillPanel(S.tab);
   bindMain();
   setupVillage();
@@ -1611,6 +1744,8 @@ function updateHud(){
   drawCharPreview("hud-portrait");
   const charBtn = document.getElementById("btn-character");
   if (charBtn) charBtn.onclick = () => { S.tab="character"; renderNav(); renderMain(); };
+  const timeEl = document.getElementById("hud-time");
+  if (timeEl) timeEl.textContent = isNight() ? "🌙 Night" : "☀️ Day";
 }
 function updateProgressBar(){
   if (!S.action) return;

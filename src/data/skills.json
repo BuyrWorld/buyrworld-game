@@ -43,5 +43,14 @@
     "n": "Trading", "ic": "⚖️",
     "desc": "Buy low, sell high with the valley's traders. Levels via trades.",
     "actions": []
+  },
+  "woodcutting": {
+    "n": "Woodcutting", "ic": "🪓",
+    "desc": "Fell trees in the Forest Edge to gather timber for crafting.",
+    "actions": [
+      { "id": "pine",     "n": "Chop Pine Tree",  "lvl": 1,  "ms": 4000, "xp": 10, "out": { "wood": 1 } },
+      { "id": "oak",      "n": "Chop Oak Tree",   "lvl": 8,  "ms": 5500, "xp": 22, "out": { "wood": 2 } },
+      { "id": "hardwood", "n": "Fell Hardwood",   "lvl": 20, "ms": 7000, "xp": 40, "out": { "wood": 3, "plank": 1 } }
+    ]
   }
 }

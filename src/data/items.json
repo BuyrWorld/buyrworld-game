@@ -15,5 +15,7 @@
   "chassis":     { "n": "Chassis",           "ic": "🛠️", "v": 150 },
   "servo_unit":  { "n": "Servo Unit",        "ic": "🤖", "v": 320 },
   "pallet_jack": { "n": "Pallet Jack",       "ic": "🛺", "v": 185 },
-  "sensor":      { "n": "Sensor",            "ic": "📡", "v": 260 }
+  "sensor":      { "n": "Sensor",            "ic": "📡", "v": 260 },
+  "wood":  { "n": "Wood",  "ic": "🪵", "v": 3  },
+  "plank": { "n": "Plank", "ic": "📏", "v": 9  }
 }
