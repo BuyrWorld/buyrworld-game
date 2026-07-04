@@ -1,23 +1,5 @@
-export interface Item {
-  n: string;
-  ic: string;
-  v: number;
-}
+import data from './items.json';
 
-export const ITEMS: Record<string, Item> = {
-  iron_ore:    { n: 'Iron Ore',          ic: '🪨', v: 4   },
-  copper_ore:  { n: 'Copper Ore',        ic: '🟤', v: 6   },
-  coal:        { n: 'Coal',              ic: '⚫', v: 7   },
-  bauxite:     { n: 'Bauxite',           ic: '🟠', v: 12  },
-  rare_earth:  { n: 'Rare Earths',       ic: '💎', v: 40  },
-  iron_bar:    { n: 'Iron Bar',          ic: '🔩', v: 14  },
-  copper_wire: { n: 'Copper Wire',       ic: '🧵', v: 12  },
-  steel_bar:   { n: 'Steel Bar',         ic: '⛓️', v: 30  },
-  alu_ingot:   { n: 'Aluminium Ingot',   ic: '🥈', v: 38  },
-  tech_alloy:  { n: 'Tech Alloy',        ic: '✨', v: 110 },
-  bracket:     { n: 'Bracket',           ic: '🧱', v: 26  },
-  wiring_loom: { n: 'Wiring Loom',       ic: '🔌', v: 42  },
-  gearbox:     { n: 'Gearbox',           ic: '⚙️', v: 90  },
-  chassis:     { n: 'Chassis',           ic: '🛠️', v: 150 },
-  servo_unit:  { n: 'Servo Unit',        ic: '🤖', v: 320 },
-};
+export interface Item { n: string; ic: string; v: number; }
+
+export const ITEMS: Record<string, Item> = data as Record<string, Item>;

@@ -1,0 +1,47 @@
+{
+  "mining": {
+    "n": "Mining", "ic": "⛏️",
+    "desc": "Extract raw materials from the Greenfield Valley seams.",
+    "actions": [
+      { "id": "iron_ore",   "n": "Mine Iron Ore",       "lvl": 1,  "ms": 3000, "xp": 10, "out": { "iron_ore": 1 } },
+      { "id": "copper_ore", "n": "Mine Copper Ore",     "lvl": 5,  "ms": 3500, "xp": 14, "out": { "copper_ore": 1 } },
+      { "id": "coal",       "n": "Dig Coal",             "lvl": 10, "ms": 4000, "xp": 18, "out": { "coal": 1 } },
+      { "id": "bauxite",    "n": "Quarry Bauxite",       "lvl": 20, "ms": 5000, "xp": 26, "out": { "bauxite": 1 } },
+      { "id": "rare_earth", "n": "Extract Rare Earths",  "lvl": 40, "ms": 7000, "xp": 48, "out": { "rare_earth": 1 } }
+    ]
+  },
+  "steelworks": {
+    "n": "Steelworks", "ic": "🔥",
+    "desc": "Smelt and alloy. The furnace does not care about your KPIs.",
+    "actions": [
+      { "id": "iron_bar",    "n": "Smelt Iron Bar",     "lvl": 1,  "ms": 4000, "xp": 15, "in": { "iron_ore": 2 },               "out": { "iron_bar": 1 } },
+      { "id": "copper_wire", "n": "Draw Copper Wire",   "lvl": 5,  "ms": 3000, "xp": 11, "in": { "copper_ore": 1 },             "out": { "copper_wire": 1 } },
+      { "id": "steel_bar",   "n": "Smelt Steel Bar",    "lvl": 10, "ms": 5000, "xp": 24, "in": { "iron_ore": 2, "coal": 1 },    "out": { "steel_bar": 1 } },
+      { "id": "alu_ingot",   "n": "Refine Aluminium",   "lvl": 20, "ms": 5500, "xp": 30, "in": { "bauxite": 2 },               "out": { "alu_ingot": 1 } },
+      { "id": "tech_alloy",  "n": "Forge Tech Alloy",   "lvl": 40, "ms": 8000, "xp": 58, "in": { "steel_bar": 1, "rare_earth": 1 }, "out": { "tech_alloy": 1 } }
+    ]
+  },
+  "manufacturing": {
+    "n": "Manufacturing", "ic": "🏭",
+    "desc": "Turn metal into product. Product into contracts. Contracts into glory.",
+    "actions": [
+      { "id": "bracket",     "n": "Press Brackets",    "lvl": 1,  "ms": 4000, "xp": 16, "in": { "iron_bar": 1 },                        "out": { "bracket": 1 } },
+      { "id": "wiring_loom", "n": "Build Wiring Loom", "lvl": 5,  "ms": 4500, "xp": 21, "in": { "copper_wire": 2 },                      "out": { "wiring_loom": 1 } },
+      { "id": "gearbox",     "n": "Assemble Gearbox",  "lvl": 12, "ms": 6000, "xp": 34, "in": { "steel_bar": 2 },                        "out": { "gearbox": 1 } },
+      { "id": "chassis",     "n": "Weld Chassis",       "lvl": 25, "ms": 7500, "xp": 48, "in": { "steel_bar": 1, "alu_ingot": 2 },       "out": { "chassis": 1 } },
+      { "id": "pallet_jack", "n": "Build Pallet Jack",  "lvl": 30, "ms": 8000, "xp": 52, "in": { "steel_bar": 2, "gearbox": 1 },         "out": { "pallet_jack": 1 } },
+      { "id": "sensor",      "n": "Assemble Sensor",    "lvl": 38, "ms": 8500, "xp": 62, "in": { "tech_alloy": 1, "copper_wire": 3 },    "out": { "sensor": 1 } },
+      { "id": "servo_unit",  "n": "Build Servo Unit",   "lvl": 45, "ms": 9000, "xp": 75, "in": { "tech_alloy": 1, "wiring_loom": 1 },   "out": { "servo_unit": 1 } }
+    ]
+  },
+  "logistics": {
+    "n": "Logistics", "ic": "🚚",
+    "desc": "Deliver contracts to earn coins and Logistics XP. Higher levels unlock bigger clients.",
+    "actions": []
+  },
+  "trading": {
+    "n": "Trading", "ic": "⚖️",
+    "desc": "Buy low, sell high with the valley's traders. Levels via trades.",
+    "actions": []
+  }
+}

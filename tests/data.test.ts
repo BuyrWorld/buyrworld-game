@@ -10,8 +10,8 @@ import { VMAP, V_OBJECTS, VCOLS, VROWS, TILE, VIEW_W, VIEW_H } from '../src/worl
 
 /* ---- items ---- */
 describe('ITEMS', () => {
-  it('has exactly 15 items', () => {
-    expect(Object.keys(ITEMS).length).toBe(15);
+  it('has exactly 17 items', () => {
+    expect(Object.keys(ITEMS).length).toBe(17);
   });
 
   it('every item has a non-empty name', () => {
@@ -100,8 +100,8 @@ describe('SKILLS', () => {
 
 /* ---- npcs ---- */
 describe('NPCS', () => {
-  it('has exactly 3 traders', () => {
-    expect(NPCS.length).toBe(3);
+  it('has exactly 4 traders', () => {
+    expect(NPCS.length).toBe(4);
   });
 
   it('every NPC stock item is a valid item ID', () => {

@@ -12,7 +12,7 @@
 ## First 10 milestones
 - [x] **M1 — Identity Pack** · Redesigned "really cool" animated logo (gradient shine, orbiting freight arrow, parallax on title); "HI, MY NAME IS ___" name-badge moment: after entering a name, badge sticker animates onto the character and shows on the HUD + hover card. Version → v0.7. · index.html only
 - [x] **M2 — Modular Migration** · Split into Vite+TS modules per ARCHITECTURE.md with zero behaviour change; sims ported to Vitest and green; new pixel loading screen proves the swap. v0.8. · new /src, index.html
-- [ ] **M3 — Data-Driven Content** · items/actions/buildings/npcs moved to JSON registries; prove it by adding 2 products (Sensor, Pallet Jack) + 1 trader via data only. `npm run check:data` validator. v0.9. · /src/data
+- [x] **M3 — Data-Driven Content** · items/actions/buildings/npcs moved to JSON registries; prove it by adding 2 products (Sensor, Pallet Jack) + 1 trader via data only. `npm run check:data` validator. v0.9. · /src/data
 - [ ] **M4 — Day/Night & Streetlights** · Game clock, sky tint curve, streetlamp glow at night, NPCs head home in the evening (first routine band). v0.10. · world/daynight, actors
 - [ ] **M5 — Interactive Scenery** · Benches (rest buff), mailbox (daily reward), fruit trees (harvest), vending machine; each with cooldown + sparkle affordance. First hidden secret (alley behind Market). v0.11. · world/interact, data
 - [ ] **M6 — Engagement Heartbeat** · 20–30s event scheduler (NPC lines, price alerts, companion sightings, discovery sparkles) weighted by novelty; visible event ticker. v0.12. · systems/events
