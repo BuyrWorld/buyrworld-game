@@ -1215,7 +1215,7 @@ function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null,
     playerName:"", settings:{ music:true }, prod:{}, tut:{ step:0, done:false }, ach:{},
-    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0} },
+    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0} },
     upgrades:{}, pets:{ owned:[], active:null },
     counters:{ actions:0, contracts:0, coinsEarned:0, trades:0 },
     action:null,
@@ -1238,6 +1238,7 @@ function load(){
     if (parsed && parsed.v === 1) {
       S = Object.assign(freshState(), parsed);
       if (!parsed.skills || !parsed.skills.trading) S.skills.trading = { xp:0 };
+      if (!S.skills.woodcutting) S.skills.woodcutting = { xp:0 };
       if (!("settings" in parsed)) S.settings = { music:true };
       if (!("prod" in parsed)) S.prod = {};
       if (!("tut" in parsed)) S.tut = { step:99, done:true };
