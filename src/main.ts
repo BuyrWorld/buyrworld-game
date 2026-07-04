@@ -333,6 +333,38 @@ const STATION_DEFS = {
     { fx:0.80, fy:0.44, sk:'tree_large',    skill:'woodcutting',   id:'hardwood',   ic:'🪵', lbl:'Hardwood' },
   ],
 };
+// Solid collision rects for interior rooms (pixel coords on 576×360 canvas)
+const INTERIOR_COLS = {
+  mining: [
+    {x:30,  y:14, w:12, h:280},  // beam 1
+    {x:150, y:14, w:12, h:280},  // beam 2
+    {x:296, y:14, w:12, h:280},  // beam 3
+    {x:454, y:14, w:12, h:280},  // beam 4
+    {x:118, y:300,w:64, h:36},   // minecart
+    {x:400, y:298,w:26, h:26},   // crate a
+    {x:428, y:298,w:26, h:26},   // crate b
+    {x:14,  y:292,w:38, h:54},   // coal pile
+  ],
+  steelworks: [
+    {x:56,  y:18, w:68, h:68},   // furnace 1
+    {x:236, y:18, w:68, h:68},   // furnace 2
+    {x:356, y:202,w:52, h:22},   // anvil
+    {x:440, y:186,w:18, h:52},   // tool rack
+    {x:478, y:228,w:28, h:26},   // crate a
+    {x:478, y:256,w:28, h:26},   // crate b
+    {x:14,  y:240,w:40, h:50},   // coal pile
+    {x:14,  y:186,w:28, h:38},   // quench barrel
+  ],
+  manufacturing: [
+    {x:60,  y:58, w:78, h:34},   // workbench 1
+    {x:238, y:58, w:78, h:34},   // workbench 2
+    {x:418, y:58, w:78, h:34},   // workbench 3
+    {x:14,  y:158,w:44, h:60},   // shelf unit
+    {x:498, y:158,w:62, h:50},   // pallet stack
+    {x:14,  y:52, w:28, h:80},   // cabinet left
+    {x:532, y:52, w:28, h:80},   // cabinet right
+  ],
+};
 const VKEYS = {};
 const VFX = [];
 const DUST = [];
@@ -693,16 +725,9 @@ function drawObjects(ctx, t){
     }
     if (o.kind==="lamp"){
       const lx = r.x + r.w/2, ly = r.y;
-      const glow = lampGlow();
-      if (glow > 0){
-        const rg = ctx.createRadialGradient(lx, ly-14, 0, lx, ly-14, 52);
-        rg.addColorStop(0, `rgba(255,214,102,${(glow*0.55).toFixed(2)})`);
-        rg.addColorStop(1, 'rgba(255,214,102,0)');
-        ctx.fillStyle = rg; ctx.fillRect(lx-52, ly-66, 104, 84);
-      }
       ctx.fillStyle='#4a3a2a'; ctx.fillRect(lx-2, ly-26, 4, 26);
       ctx.fillStyle='#ffd666'; ctx.fillRect(lx-5, ly-32, 10, 7);
-      ctx.fillStyle='rgba(255,230,140,.3)'; ctx.beginPath(); ctx.arc(lx, ly-28, 9, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle='rgba(255,230,140,.4)'; ctx.beginPath(); ctx.arc(lx, ly-28, 9, 0, Math.PI*2); ctx.fill();
       continue;
     }
     if (o.kind==="sign"){
@@ -872,10 +897,10 @@ function drawVillage(t){
     const r = isN ? {x:near.w.x-12, y:near.w.y-24, w:24} : objRect(near);
     const label = isN ? ((near.w.id==="frost"?"❄️ ":"💬 ")+near.w.n) : villageTip(near);
     ctx.font="bold 9px monospace";
-    const w = ctx.measureText(label).width+10, bx = r.x+(r.w||24)/2;
-    ctx.fillStyle="rgba(255,248,230,.95)"; ctx.fillRect(bx-w/2, r.y-18, w, 13);
-    ctx.strokeStyle="#8c6947"; ctx.strokeRect(bx-w/2, r.y-18, w, 13);
-    ctx.fillStyle="#453423"; ctx.textAlign="center"; ctx.fillText(label, bx, r.y-8);
+    const w = ctx.measureText(label).width+10;
+    const bx = Math.round(r.x+(r.w||24)/2), by = Math.round(r.y);
+    ctx.fillStyle="rgba(0,0,0,.72)"; ctx.fillRect(Math.round(bx-w/2), by-18, Math.ceil(w), 13);
+    ctx.fillStyle="#fff8e6"; ctx.textAlign="center"; ctx.fillText(label, bx, by-8);
   }
   ctx.restore();
   // night/sunrise/sunset sky tint
@@ -896,6 +921,23 @@ function drawVillage(t){
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle='rgba(255,255,200,0.7)';
     [[moonX-40,moonY+12],[moonX-22,moonY-18],[VIEW_W-20,moonY+8],[moonX-60,moonY-10]].forEach(([sx,sy])=>{ ctx.fillRect(sx,sy,2,2); });
+    ctx.restore();
+  }
+  // lamp glow pools drawn over the night overlay so they actually illuminate
+  const glow = lampGlow();
+  if (glow > 0.02){
+    ctx.save();
+    ctx.translate(-Math.round(CAM.x), -Math.round(CAM.y));
+    for (const o of V_OBJECTS){
+      if (o.kind !== "lamp") continue;
+      const r = objRect(o);
+      const lx = r.x + r.w/2, ly = r.y - 14;
+      const rg = ctx.createRadialGradient(lx, ly, 0, lx, ly, 80);
+      rg.addColorStop(0, `rgba(255,214,102,${Math.min(0.74, glow*0.74).toFixed(2)})`);
+      rg.addColorStop(0.45, `rgba(255,200,80,${(glow*0.28).toFixed(2)})`);
+      rg.addColorStop(1, 'rgba(255,180,60,0)');
+      ctx.fillStyle = rg; ctx.fillRect(lx-80, ly-80, 160, 160);
+    }
     ctx.restore();
   }
   drawMinimap(ctx);
@@ -926,40 +968,124 @@ function drawInterior(t){
   const W = cv.width / ratio, H = cv.height / ratio;
   const active = S.action ? S.action.skill : null;
   if (S.tab==="mining"){
-    ctx.fillStyle="#6a5340"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#5c4736"; for(let i=0;i<6;i++) ctx.fillRect(0, 18*i+((i*13)%7), W, 4);
-    for (let i=0;i<5;i++){
-      const o = V_OBJECTS[i];
-      ctx.fillStyle = o.vein; const gx=60+i*110, gy=40+(i*37)%50;
-      ctx.fillRect(gx,gy,5,5); ctx.fillRect(gx+8,gy+6,4,4);
+    // stone cave background
+    ctx.fillStyle="#3a2e26"; ctx.fillRect(0,0,W,H);
+    // ceiling rock texture
+    ctx.fillStyle="#2e2320"; for(let i=0;i<W;i+=18) ctx.fillRect(i,0,9,(i*7)%14+4);
+    // ore vein streaks in back wall
+    [{c:"#aab2bd",x:28,w:5,h:48},{c:"#c97b45",x:195,w:4,h:40},{c:"#2f2f38",x:352,w:6,h:52},{c:"#7ee0ff",x:500,w:4,h:36}].forEach(v=>{
+      ctx.fillStyle=v.c+"90"; ctx.fillRect(v.x,0,v.w,v.h);
+    });
+    // floor + rail track
+    ctx.fillStyle="#211910"; ctx.fillRect(0,H-22,W,22);
+    ctx.fillStyle="#3d3020"; ctx.fillRect(108,H-22,2,22); ctx.fillRect(182,H-22,2,22);
+    for(let x=112;x<182;x+=10){ ctx.fillStyle="#4a3828"; ctx.fillRect(x,H-17,6,4); }
+    // support beams (4 vertical — positioned to avoid station x positions 81,230,380)
+    [[30],[150],[296],[454]].forEach(([bx])=>{
+      ctx.fillStyle="#5a3a1e"; ctx.fillRect(bx,14,12,H-36);
+      ctx.fillStyle="#7a5534"; ctx.fillRect(bx,14,12,8); ctx.fillRect(bx,H/2-3,12,6);
+      ctx.fillStyle="#6a4828"; for(const by of[90,185]) ctx.fillRect(bx-6,by,24,5);
+    });
+    // minecart body + wheels
+    ctx.fillStyle="#4a3428"; ctx.fillRect(118,H-58,64,28);
+    ctx.fillStyle="#231810"; ctx.fillRect(122,H-54,56,16);
+    ctx.fillStyle="#1e1a18"; ctx.beginPath(); ctx.arc(132,H-24,7,0,7); ctx.arc(170,H-24,7,0,7); ctx.fill();
+    ctx.fillStyle="#3a2816"; ctx.fillRect(114,H-42,6,14); ctx.fillRect(178,H-42,6,14);
+    drawEmojiC(ctx,"⛏️",150,H-50,11);
+    // coal pile (left corner)
+    ctx.fillStyle="#1e1814"; ctx.fillRect(14,H-52,38,52); ctx.fillRect(18,H-64,26,14); ctx.fillRect(24,H-72,16,10);
+    ctx.fillStyle="#141210"; ctx.fillRect(16,H-48,10,6); ctx.fillRect(30,H-58,8,6);
+    // crates (right side)
+    [[400,H-56,24,24,"#8c6947"],[426,H-56,24,24,"#7a5a38"]].forEach(([x,y,w,h,c])=>{
+      ctx.fillStyle=c; ctx.fillRect(x,y,w,h); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
+      ctx.strokeRect(x,y,w,h); ctx.fillStyle="#5a3a20"; ctx.fillRect(x+11,y,2,h); ctx.fillRect(x,y+11,w,2);
+    });
+    // hanging lanterns with warm glow
+    for(const lx of[70,220,380]){
+      ctx.fillStyle="rgba(255,200,80,0.18)"; ctx.beginPath(); ctx.arc(lx,32,22,0,7); ctx.fill();
+      drawEmojiC(ctx,"🏮",lx,32,14);
     }
-    ctx.fillStyle="#3d3128"; ctx.fillRect(40,H-34,70,24);
-    ctx.fillStyle="#8d939c"; ctx.fillRect(46,H-30,58,10);
-    ctx.fillStyle="#2a2a2a"; ctx.beginPath(); ctx.arc(56,H-8,7,0,7); ctx.arc(94,H-8,7,0,7); ctx.fill();
-    for (let i=0;i<3;i++){ const lx=170+i*160; ctx.fillStyle="rgba(255,214,102,.25)"; ctx.beginPath(); ctx.arc(lx,26,16,0,7); ctx.fill(); drawEmojiC(ctx,"🏮",lx,26,14); }
   } else if (S.tab==="steelworks"){
+    // brick wall background
     ctx.fillStyle="#4a3f3a"; ctx.fillRect(0,0,W,H);
-    for(let r=0;r<7;r++) for(let c=0;c<20;c++){ ctx.strokeStyle="#3a312d"; ctx.strokeRect(c*30+(r%2?15:0), r*18, 30, 18); }
-    for (let f=0;f<2;f++){
-      const fx = 90+f*180;
-      ctx.fillStyle="#5a4a42"; ctx.fillRect(fx-34, 26, 68, 70);
-      ctx.fillStyle="#2b2320"; ctx.beginPath(); ctx.arc(fx, 74, 24, Math.PI, 0); ctx.fill(); ctx.fillRect(fx-24,74,48,20);
-      const fl = 0.6+0.4*Math.sin(t*9+f*2);
-      ctx.fillStyle="#ff8a3c"; ctx.beginPath(); ctx.arc(fx, 80, 17*fl+4, Math.PI, 0); ctx.fill();
-      ctx.fillStyle="#ffd666"; ctx.beginPath(); ctx.arc(fx, 84, 9*fl+2, Math.PI, 0); ctx.fill();
+    for(let r=0;r<9;r++) for(let c=0;c<20;c++){ ctx.strokeStyle="#3a312d"; ctx.lineWidth=1; ctx.strokeRect(c*30+(r%2?15:0), r*18, 30, 18); }
+    // overhead pipes near ceiling
+    ctx.fillStyle="#5a5050"; ctx.fillRect(0,0,W,8);
+    ctx.fillStyle="#4a4040"; for(const px of[100,260,390]){ ctx.fillRect(px,8,8,44); }
+    // floor
+    ctx.fillStyle="#3a3030"; ctx.fillRect(0,H-18,W,18);
+    ctx.fillStyle="#2e2828"; for(let x=0;x<W;x+=28) ctx.fillRect(x,H-18,2,18);
+    // 2 furnaces with animated flame
+    for(let f=0;f<2;f++){
+      const fx=90+f*180, fy=18;
+      ctx.fillStyle="#5a4a42"; ctx.fillRect(fx-34,fy,68,68);
+      ctx.fillStyle="#3a2e2a"; ctx.fillRect(fx-24,fy+12,48,38);
+      ctx.fillStyle="#2b2320"; ctx.beginPath(); ctx.arc(fx,fy+56,22,Math.PI,0); ctx.fill(); ctx.fillRect(fx-22,fy+56,44,18);
+      const fl=0.6+0.4*Math.sin(t*9+f*2);
+      ctx.fillStyle="#ff8a3c"; ctx.beginPath(); ctx.arc(fx,fy+60,16*fl+4,Math.PI,0); ctx.fill();
+      ctx.fillStyle="#ffd666"; ctx.beginPath(); ctx.arc(fx,fy+64,8*fl+2,Math.PI,0); ctx.fill();
+      ctx.fillStyle="#e05a20"; ctx.fillRect(fx-12,fy,8,14); ctx.fillRect(fx+4,fy,8,14);
     }
-    ctx.fillStyle="#3a3a3a"; ctx.fillRect(W-170, H-36, 90, 12); ctx.fillRect(W-140,H-24,30,18);
-    if (active==="steelworks"){ ctx.fillStyle="#ff9a4c"; ctx.fillRect(W-160, H-42, 44, 8); }
+    // anvil (below steel_bar station — station at x=368, y=158; anvil at y=202 so player walks past)
+    ctx.fillStyle="#808898"; ctx.fillRect(362,198,40,10); ctx.fillStyle="#6a7080"; ctx.fillRect(356,206,52,16);
+    ctx.fillStyle="#5a6070"; ctx.fillRect(364,222,10,10); ctx.fillRect(388,222,10,10);
+    drawEmojiC(ctx,"🔨",382,195,12);
+    // tool rack (right wall)
+    ctx.fillStyle="#6a4a28"; ctx.fillRect(440,186,12,52); ctx.fillStyle="#8c6947"; ctx.fillRect(434,186,24,5);
+    drawEmojiC(ctx,"🔧",448,206,10); drawEmojiC(ctx,"🪛",448,224,10);
+    // quench barrel (left)
+    ctx.fillStyle="#4a5a6a"; ctx.fillRect(14,186,28,38);
+    ctx.fillStyle="#5a7a8a"; ctx.fillRect(18,186,20,8);
+    ctx.strokeStyle="#3a4a5a"; ctx.lineWidth=1;
+    for(const by of[196,206,214]) ctx.strokeRect(14,by,28,10);
+    drawEmojiC(ctx,"💧",28,198,9);
+    // coal pile (left)
+    ctx.fillStyle="#1a1814"; ctx.fillRect(14,242,40,50); ctx.fillRect(18,232,28,12); ctx.fillRect(22,224,18,10);
+    // crates (right)
+    [[478,228,26,24,"#8c6947"],[478,254,26,24,"#7a5a38"]].forEach(([x,y,w,h,c])=>{
+      ctx.fillStyle=c; ctx.fillRect(x,y,w,h); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
+      ctx.strokeRect(x,y,w,h); ctx.fillStyle="#5a3a20"; ctx.fillRect(x+12,y,2,h); ctx.fillRect(x,y+11,w,2);
+    });
   } else if (S.tab==="manufacturing"){
+    // industrial grey floor + ceiling
     ctx.fillStyle="#55606e"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#49535f"; ctx.fillRect(0,0,W,26);
-    ctx.fillStyle="#3d4650"; ctx.fillRect(0, H-52, W, 22);
-    const off = (t*60)%24;
-    ctx.fillStyle="#2f363e"; for(let x=-24;x<W;x+=24) ctx.fillRect(x+off, H-52, 12, 22);
-    for(let b=0;b<4;b++){ const bx=(b*150+t*60)%(W+60)-30; drawEmojiC(ctx,"📦",bx,H-62,16); }
-    ctx.fillStyle="#7a8494"; ctx.fillRect(150, 30, 14, 46);
-    ctx.save(); ctx.translate(157, 34); ctx.rotate(Math.sin(t*3)*0.5);
-    ctx.fillStyle="#95a0b0"; ctx.fillRect(-5, 0, 10, 34); ctx.fillStyle="#ffd666"; ctx.fillRect(-7, 30, 14, 8); ctx.restore();
+    ctx.fillStyle="#49535f"; ctx.fillRect(0,0,W,18);
+    // ceiling girders
+    ctx.fillStyle="#3d4650"; for(const gx of[0,144,288,432]) ctx.fillRect(gx,0,120,8);
+    ctx.fillStyle="#4a5460"; for(const gx of[0,210,420]) ctx.fillRect(gx,8,6,48);
+    // floor
+    ctx.fillStyle="#3d4650"; ctx.fillRect(0,H-18,W,18);
+    ctx.fillStyle="#334048"; for(let x=0;x<W;x+=24) ctx.fillRect(x,H-18,2,18);
+    // animated conveyor belt (visual only, no collision so player can reach exit)
+    const off=(t*60)%24;
+    ctx.fillStyle="#2f363e"; ctx.fillRect(0,246,W,26);
+    ctx.fillStyle="#3d4650"; for(let x=-24;x<W;x+=24) ctx.fillRect(x+off,248,12,22);
+    ctx.fillStyle="#4a5460"; ctx.fillRect(0,244,W,4); ctx.fillRect(0,270,W,4);
+    for(let b=0;b<4;b++){ const bx=(b*150+t*60)%(W+60)-30; drawEmojiC(ctx,"📦",bx,258,14); }
+    // workbenches (3 — station nodes sit below them at y≈173, benches at y=58-92)
+    [[60,58,78,34,"#7a6a52"],[238,58,78,34,"#7a6a52"],[418,58,78,34,"#7a6a52"]].forEach(([x,y,w,h,c])=>{
+      ctx.fillStyle="#5a4a36"; ctx.fillRect(x,y+h,w,6);
+      ctx.fillStyle=c; ctx.fillRect(x,y,w,h);
+      ctx.strokeStyle="#5a4a36"; ctx.lineWidth=1; ctx.strokeRect(x,y,w,h);
+      ctx.fillStyle="#8a7a62"; ctx.fillRect(x+4,y+4,w-8,h-8);
+      ctx.fillStyle="#9a8a72"; ctx.fillRect(x+4,y+4,w-8,4);
+    });
+    // shelf unit (left wall)
+    ctx.fillStyle="#5a4a36"; ctx.fillRect(14,158,44,60);
+    for(const sy of[166,180,194,208]){ ctx.fillStyle="#7a6a52"; ctx.fillRect(16,sy,40,8); }
+    drawEmojiC(ctx,"📦",36,172,10); drawEmojiC(ctx,"📦",36,190,10);
+    // pallet stack (right wall)
+    ctx.fillStyle="#7a6040"; ctx.fillRect(498,158,62,14);
+    [[502,174,56,14,"#8c6947"],[506,190,48,14,"#d9a86a"],[510,206,40,14,"#c98a5a"]].forEach(([x,y,w,h,c])=>{
+      ctx.fillStyle=c; ctx.fillRect(x,y,w,h); ctx.strokeStyle="#6a4820"; ctx.lineWidth=1; ctx.strokeRect(x,y,w,h);
+    });
+    // machine cabinets (side walls)
+    [[14,52,28,80,"#4a5a6a"],[532,52,28,80,"#4a5a6a"]].forEach(([x,y,w,h,c])=>{
+      ctx.fillStyle=c; ctx.fillRect(x,y,w,h);
+      ctx.fillStyle="#3a4a58"; ctx.fillRect(x+4,y+4,w-8,h/2-4);
+      ctx.fillStyle="#5a8a9a"; ctx.fillRect(x+8,y+8,w-16,10);
+      if(Math.floor(t*2)%2){ ctx.fillStyle="#ffd666"; ctx.fillRect(x+8,y+8,(w-16)/2,4); }
+    });
   } else if (S.tab==="contracts"){
     ctx.fillStyle="#6e5f4a"; ctx.fillRect(0,0,W,H);
     const stock = Math.min(24, Math.floor(Object.values(S.items).reduce((a,b)=>a+b,0)/12));
@@ -1032,9 +1158,9 @@ function drawInterior(t){
         ctx.fillRect(sx-20, sy-16, 40, 32);
       }
       drawEmojiC(ctx, st.ic, sx, sy-22, 14);
-      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(sx-24, sy+14, 48, 11);
-      ctx.fillStyle = "#fff8e6"; ctx.font = "bold 6px monospace"; ctx.textAlign = "center";
-      ctx.fillText(st.lbl, sx, sy+22);
+      ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(sx-26, sy+14, 52, 12);
+      ctx.fillStyle = "#fff8e6"; ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
+      ctx.fillText(st.lbl, sx, sy+23);
       if (locked) drawEmojiC(ctx, "🔒", sx+16, sy-28, 9);
       if (isActive){
         const p = S.action.progress || 0;
@@ -1048,8 +1174,9 @@ function drawInterior(t){
   ctx.fillStyle="#6a4a2f"; ctx.fillRect(W/2-14, H-26, 28, 26);
   ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-14, 3, 3);
   drawEmojiC(ctx, "🚪", W/2, H-13, 13);
-  ctx.fillStyle="rgba(255,248,230,.85)"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
-  ctx.fillText("EXIT ↓", W/2, H-32);
+  ctx.fillStyle="rgba(0,0,0,.72)"; ctx.fillRect(W/2-22, H-44, 44, 13);
+  ctx.fillStyle="#fff8e6"; ctx.font="bold 8px monospace"; ctx.textAlign="center";
+  ctx.fillText("EXIT ↓", W/2, H-34);
   // player drawn last so they render above furniture
   const _iTool = active==="mining" ? "⛏️" : active==="steelworks" ? "🔨" : active==="manufacturing" ? "🔧" : active==="woodcutting" ? "🪓" : null;
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers());
@@ -1134,6 +1261,22 @@ function villageFrame(ts){
     drawVillage(t);
   } else if (INTERIOR_TABS.has(S.tab)){
     moveActor(IP, dt, 80, true);
+    // push IP out of interior prop collision rects
+    const iCols = INTERIOR_COLS[S.tab];
+    if (iCols){
+      const half=6, feet=6;
+      for (const c of iCols){
+        const px=IP.x, cy=IP.y+feet;
+        if (px+half>c.x && px-half<c.x+c.w && cy>c.y && cy<c.y+c.h){
+          const dL=(px+half)-c.x, dR=(c.x+c.w)-(px-half), dU=cy-c.y, dD=(c.y+c.h)-cy;
+          const mn=Math.min(dL,dR,dU,dD);
+          if(mn===dL) IP.x=c.x-half;
+          else if(mn===dR) IP.x=c.x+c.w+half;
+          else if(mn===dU) IP.y=c.y-feet;
+          else IP.y=c.y+c.h-feet;
+        }
+      }
+    }
     // exit building if player walks to the bottom door
     if (IP.y > VIEW_H - 18) {
       IP.x = VIEW_W/2; IP.y = VIEW_H*0.68; IP.tx = null; IP.ty = null; IP.moving = false;

@@ -18,9 +18,9 @@ export function isNight(now = Date.now()): boolean {
   return h < 6 || h >= 20;
 }
 
-/** Alpha for the dark blue night overlay drawn over the world canvas (0–0.52). */
+/** Alpha for the dark blue night overlay drawn over the world canvas (0–0.32). */
 export function nightAlpha(now = Date.now()): number {
-  return (1 - dayFraction(now)) * 0.52;
+  return Math.min(0.32, (1 - dayFraction(now)) * 0.52);
 }
 
 /** Lamp warm-glow intensity [0, 1]; 0 during daytime. */
