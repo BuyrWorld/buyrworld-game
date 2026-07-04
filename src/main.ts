@@ -8,6 +8,8 @@ import { PETS } from './data/pets.ts';
 import { CLIENTS, CONTRACT_POOL } from './data/contracts.ts';
 import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS } from './world/map.ts';
+import { nightAlpha, lampGlow, isNight, skyTint } from './world/daynight.ts';
+import { pixelScale } from './world/renderer.ts';
 
 /* =====================================================
    BuyrWorld v0.8 — Vite+TS modular entry point
@@ -287,15 +289,15 @@ function achCheck(){
 }
 const WANDERERS = [
   { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:16*TILE, y:9*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
-    area:[10,6,32,9], tips:FROST_TIPS, tee:"STAYFROSTY" },
+    area:[10,6,32,9], home:[13,7,17,9], tips:FROST_TIPS, tee:"STAYFROSTY" },
   { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:14*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
-    area:[2,12,8,16], tips:[
+    area:[2,12,8,16], home:[2,12,5,13], tips:[
       "Morning! My turnips go by lorry now. Fancy that.",
       "Frost says you're the new founder. Don't work too hard!",
       "The market stalls pay best on green-arrow days.",
     ]},
   { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:26*TILE, y:17.6*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
-    area:[12,17,32,18], tips:[
+    area:[12,17,32,18], home:[27,17,31,18], tips:[
       "One day ships'll dock here. Port Salvo, they'll call it.",
       "See that boat? Doesn't leak much anymore.",
       "Heaviest thing I ever lifted? A Cargo Turtle. True story.",
@@ -487,47 +489,69 @@ function drawTiles(ctx, t){
   for (let r=r0;r<r1;r++) for (let c=c0;c<c1;c++){
     const ch = VMAP[r][c], x=c*TILE, y=r*TILE;
     if (ch==="W"){
-      ctx.fillStyle="#5db3d8"; ctx.fillRect(x,y,TILE,TILE);
-      ctx.fillStyle="#8ed0ea";
-      if ((c+r+Math.floor(t*2))%3===0) ctx.fillRect(x+4,y+10,12,3);
-      if (r>0 && VMAP[r-1][c]==="S"){ ctx.fillStyle="rgba(255,255,255,.7)"; ctx.fillRect(x, y+Math.sin(t*2+c)*2, TILE, 3); }
+      // depth tint: deeper rows slightly darker blue
+      ctx.fillStyle = r < 20 ? "#4da8cc" : "#5db3d8"; ctx.fillRect(x,y,TILE,TILE);
+      // two staggered wave layers for parallax shimmer
+      ctx.fillStyle="rgba(255,255,255,0.38)";
+      if ((c+r+Math.floor(t*2.2))%4===0) ctx.fillRect(x+2,y+7,14,2);
+      if ((c*2+r+Math.floor(t*1.6)+2)%5===0) ctx.fillRect(x+5,y+15,10,2);
+      // foam where water meets sand
+      if (r>0 && VMAP[r-1][c]==="S"){ ctx.fillStyle="rgba(255,255,255,.75)"; ctx.fillRect(x, y+Math.sin(t*2+c)*2, TILE, 3); }
     } else if (ch==="S"){
       ctx.fillStyle="#efdfae"; ctx.fillRect(x,y,TILE,TILE);
       const h=(c*7+r*13)%23;
       if (h===0){ ctx.fillStyle="#dcc98e"; ctx.fillRect(x+8,y+10,5,3); }
+      if (h===4){ ctx.fillStyle="#e0cc99"; ctx.fillRect(x+3,y+5,4,2); }
       if (h===9){ drawEmojiC(ctx,"🐚",x+12,y+12,8); }
     } else if (ch==="D"){
       ctx.fillStyle="#b39468"; ctx.fillRect(x,y,TILE,TILE);
       ctx.fillStyle="#a1855c"; if ((c*5+r*11)%4===0) ctx.fillRect(x+5,y+7,6,4);
+      if ((c*3+r*17)%7===0){ ctx.fillStyle="#957040"; ctx.fillRect(x+14,y+3,4,3); }
+      if ((c*11+r*5)%9===0){ ctx.fillStyle="#8a6840"; ctx.fillRect(x+2,y+15,3,3); }
     } else if (ch==="C"){
       ctx.fillStyle="#8d939c"; ctx.fillRect(x,y,TILE,TILE);
       ctx.fillStyle="#787e88"; ctx.fillRect(x,y+16,TILE,8);
       ctx.fillStyle="#a5abb4"; ctx.fillRect(x+3,y+3,7,5); ctx.fillRect(x+13,y+9,7,5);
+      // vertical crack line for geological detail
+      if ((c*9+r*11)%5===0){ ctx.strokeStyle="#6e7480"; ctx.lineWidth=0.5; ctx.beginPath(); ctx.moveTo(x+10,y+2); ctx.lineTo(x+8,y+14); ctx.stroke(); }
     } else if (ch==="P"){
       if (tier>=2){
         ctx.fillStyle="#cfc5b0"; ctx.fillRect(x,y,TILE,TILE);
         ctx.strokeStyle="#bdb29c"; ctx.lineWidth=1;
         ctx.strokeRect(x+2,y+2,9,9); ctx.strokeRect(x+13,y+2,9,9); ctx.strokeRect(x+2,y+13,9,9); ctx.strokeRect(x+13,y+13,9,9);
+        ctx.fillStyle="#d9cfba"; ctx.fillRect(x+3,y+3,3,3); ctx.fillRect(x+14,y+14,3,3);
       } else {
         ctx.fillStyle="#e5cf9a"; ctx.fillRect(x,y,TILE,TILE);
         ctx.fillStyle="#d4ba7e"; if ((c*7+r*13)%5===0) ctx.fillRect(x+6,y+8,4,4);
+        // wheel ruts on dirt path
+        if (c*7%3===0){ ctx.fillStyle="#ccad72"; ctx.fillRect(x+5,y,2,TILE); }
       }
     } else {
       ctx.fillStyle=(c+r)%2 ? "#9fd6a8" : "#95cf9e"; ctx.fillRect(x,y,TILE,TILE);
       const h=(c*7+r*13)%29;
       if (ch==="G" && h===0){ ctx.fillStyle="#ff9db0"; ctx.fillRect(x+9,y+9,4,4); ctx.fillStyle="#ffd666"; ctx.fillRect(x+10,y+10,2,2); }
+      else if (ch==="G" && h===1){ ctx.fillStyle="#ffffc0"; ctx.fillRect(x+14,y+5,3,3); ctx.fillStyle="#ffd666"; ctx.fillRect(x+15,y+6,1,1); }
+      else if (ch==="G" && h===2){ ctx.fillStyle="#ffffff"; ctx.fillRect(x+5,y+14,2,2); ctx.fillRect(x+7,y+13,2,2); ctx.fillRect(x+6,y+15,2,2); }
       else if (ch==="G" && h===7){ ctx.fillStyle="#7cbf86"; ctx.fillRect(x+6,y+12,3,6); ctx.fillRect(x+14,y+9,3,9); }
+      else if (ch==="G" && h===8){ ctx.fillStyle="#6ab576"; ctx.fillRect(x+10,y+6,2,8); ctx.fillRect(x+13,y+8,2,6); }
+      else if (ch==="G" && h===14){ ctx.fillStyle="#9a9a9a"; ctx.fillRect(x+8,y+12,3,2); ctx.fillStyle="#b8b8b8"; ctx.fillRect(x+9,y+12,1,1); }
       else if (ch==="G" && h===15 && r>12 && c<9){ ctx.fillStyle="#8a6a45"; ctx.fillRect(x+2,y+16,20,3); ctx.fillStyle="#63b573"; ctx.fillRect(x+4,y+10,3,6); ctx.fillRect(x+11,y+9,3,7); ctx.fillRect(x+17,y+11,3,5); }
     }
     if (ch==="T"){
       const pine = (c*13+r*7)%3===0;
+      // gentle wind sway based on position + time
+      const sway = Math.sin(t*0.8 + c*0.7 + r*0.5) * 1.5;
       ctx.fillStyle="#7a5230"; ctx.fillRect(x+9,y+12,6,10);
       if (pine){
         ctx.fillStyle="#3f8b52";
-        ctx.beginPath(); ctx.moveTo(x+12,y-4); ctx.lineTo(x+2,y+14); ctx.lineTo(x+22,y+14); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x+12+sway,y-4); ctx.lineTo(x+2,y+14); ctx.lineTo(x+22,y+14); ctx.closePath(); ctx.fill();
+        ctx.fillStyle="#4e9e62"; // mid layer brightens the silhouette
+        ctx.beginPath(); ctx.moveTo(x+12+sway*0.7,y+2); ctx.lineTo(x+5,y+14); ctx.lineTo(x+19,y+14); ctx.closePath(); ctx.fill();
       } else {
-        ctx.fillStyle="#4e9e5f"; ctx.beginPath(); ctx.arc(x+12,y+8,10,0,7); ctx.fill();
-        ctx.fillStyle="#63b573"; ctx.beginPath(); ctx.arc(x+8,y+6,6,0,7); ctx.fill();
+        const swayX = sway * 0.7;
+        ctx.fillStyle="#4e9e5f"; ctx.beginPath(); ctx.arc(x+12+swayX,y+8,10,0,7); ctx.fill();
+        ctx.fillStyle="#63b573"; ctx.beginPath(); ctx.arc(x+8+swayX,y+6,6,0,7); ctx.fill();
+        ctx.fillStyle="#74c882"; ctx.beginPath(); ctx.arc(x+15+swayX*0.8,y+5,4,0,7); ctx.fill();
       }
     }
   }
@@ -546,14 +570,21 @@ function drawObjects(ctx, t){
       if (locked) drawEmojiC(ctx,"🔒",r.x+12,r.y-4,10);
     }
     if (o.kind==="bld"){
-      ctx.fillStyle="rgba(0,0,0,.15)"; ctx.fillRect(r.x+3, r.y+r.h-4, r.w-4, 5);
-      ctx.fillStyle=o.wall; ctx.fillRect(r.x, r.y+10, r.w, r.h-10);
+      // drop shadow
+      ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x+4, r.y+r.h, r.w-2, 5);
+      // stone foundation strip
+      ctx.fillStyle="#5a4030"; ctx.fillRect(r.x, r.y+r.h-5, r.w, 5);
+      ctx.fillStyle=o.wall; ctx.fillRect(r.x, r.y+10, r.w, r.h-15);
       ctx.fillStyle=o.roof;
       ctx.beginPath(); ctx.moveTo(r.x-4, r.y+12); ctx.lineTo(r.x+r.w/2, r.y-4); ctx.lineTo(r.x+r.w+4, r.y+12); ctx.closePath(); ctx.fill();
-      ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+r.w/2-6, r.y+r.h-16, 12, 16);
+      // door with knob
+      ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+r.w/2-6, r.y+r.h-18, 12, 18);
+      ctx.fillStyle="#c8a060"; ctx.fillRect(r.x+r.w/2-1, r.y+r.h-12, 2, 2);
       if (r.w >= 3*TILE){
         ctx.fillStyle="#bfe8f7"; ctx.fillRect(r.x+8, r.y+20, 10, 8); ctx.fillRect(r.x+r.w-18, r.y+20, 10, 8);
         ctx.strokeStyle="#8c6947"; ctx.lineWidth=1; ctx.strokeRect(r.x+8, r.y+20, 10, 8); ctx.strokeRect(r.x+r.w-18, r.y+20, 10, 8);
+        // top-left glint simulating reflected daylight
+        ctx.fillStyle="rgba(255,255,255,0.65)"; ctx.fillRect(r.x+9, r.y+21, 3, 2); ctx.fillRect(r.x+r.w-17, r.y+21, 3, 2);
       }
       drawEmojiC(ctx, o.ic, r.x+r.w/2, r.y+16, 13);
       if (o.chimney){
@@ -585,6 +616,15 @@ function drawObjects(ctx, t){
 }
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
+  // birds — three V-shapes drifting independently across the upper sky
+  ctx.strokeStyle="rgba(40,30,20,0.6)"; ctx.lineWidth=1;
+  for (let i=0;i<3;i++){
+    const p=(t*0.038+i*0.37)%1;
+    const bx=p*(VCOLS*TILE+160)-80, by=TILE*0.5+Math.sin(p*Math.PI*8)*7+i*19;
+    if (by < TILE*3){
+      ctx.beginPath(); ctx.moveTo(bx-5,by-2); ctx.lineTo(bx,by+2); ctx.lineTo(bx+5,by-2); ctx.stroke();
+    }
+  }
   ctx.fillStyle="#8c6947";
   for (let i=0;i<5;i++) ctx.fillRect(28*TILE, 17.5*TILE+i*10, 2*TILE, 7);
   ctx.fillStyle="#7a5a3a"; ctx.fillRect(28*TILE+4, 17.5*TILE, 4, 52); ctx.fillRect(30*TILE-8, 17.5*TILE, 4, 52);
@@ -593,8 +633,16 @@ function drawExtras(ctx, t){
   ctx.fillStyle="#e8e2d2"; ctx.fillRect(31.4*TILE+16, 19.6*TILE-10+bob, 4, 12);
   ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.moveTo(31.4*TILE+20, 19.6*TILE-10+bob); ctx.lineTo(31.4*TILE+38, 19.6*TILE-2+bob); ctx.lineTo(31.4*TILE+20, 19.6*TILE-2+bob); ctx.closePath(); ctx.fill();
   if (tier>=1){
+    const glow = lampGlow();
     [[10,5],[32,5],[10,10],[32,10]].forEach(([c,r])=>{
       const x=c*TILE+12, y=r*TILE-2;
+      // warm halo at night
+      if (glow > 0){
+        const rg = ctx.createRadialGradient(x, y-14, 0, x, y-14, 38);
+        rg.addColorStop(0, `rgba(255,214,102,${(glow*0.45).toFixed(2)})`);
+        rg.addColorStop(1, 'rgba(255,214,102,0)');
+        ctx.fillStyle = rg; ctx.fillRect(x-38, y-52, 76, 76);
+      }
       ctx.fillStyle="rgba(255,214,102,.22)"; ctx.beginPath(); ctx.arc(x, y-14, 12, 0, 7); ctx.fill();
       ctx.fillStyle="#5a4a3a"; ctx.fillRect(x-2, y-12, 4, 14);
       ctx.fillStyle="#ffd666"; ctx.fillRect(x-4, y-18, 8, 7);
@@ -692,12 +740,14 @@ function drawMinimap(ctx){
 function drawVillage(t){
   const cv = document.getElementById("village");
   if (!cv || S.tab!=="village") return;
+  const ratio = pixelScale();
   const ctx = cv.getContext("2d");
   ctx.imageSmoothingEnabled = false;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   const camTX = Math.max(0, Math.min(VCOLS*TILE-VIEW_W, VP.x - VIEW_W/2));
   const camTY = Math.max(0, Math.min(VROWS*TILE-VIEW_H, VP.y - VIEW_H/2));
-  CAM.x += (camTX - CAM.x) * 0.14;
-  CAM.y += (camTY - CAM.y) * 0.14;
+  CAM.x += (camTX - CAM.x) * 0.10;
+  CAM.y += (camTY - CAM.y) * 0.10;
   if (Math.abs(camTX-CAM.x) < 0.5) CAM.x = camTX;
   if (Math.abs(camTY-CAM.y) < 0.5) CAM.y = camTY;
   ctx.fillStyle="#7cbf86"; ctx.fillRect(0,0,VIEW_W,VIEW_H);
@@ -745,26 +795,38 @@ function drawVillage(t){
     ctx.fillStyle="#453423"; ctx.textAlign="center"; ctx.fillText(label, bx, r.y-8);
   }
   ctx.restore();
+  // night/sunrise/sunset sky tint
+  const alpha = nightAlpha();
+  if (alpha > 0.01){
+    ctx.fillStyle = `rgba(${skyTint()},${alpha.toFixed(3)})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
   drawMinimap(ctx);
 }
 function updateWanderers(dt){
+  const night = isNight();
   for (const w of WANDERERS){
     if (w.tx===null){
       w.wait -= dt;
       if (w.wait<=0){
-        const [ax,ay,bx,by] = w.area;
+        const area = (night && w.home) ? w.home : w.area;
+        const [ax,ay,bx,by] = area;
         const gx=(ax+Math.random()*(bx-ax))*TILE, gy=(ay+Math.random()*(by-ay))*TILE;
         if (!solidAt(gx,gy)){ w.tx=gx; w.ty=gy; }
-        w.wait = 2+Math.random()*4;
+        w.wait = night ? 4+Math.random()*6 : 2+Math.random()*4;
       }
     }
-    moveActor(w, dt, 30);
+    moveActor(w, dt, night ? 20 : 30);
   }
 }
 function drawInterior(t){
   const cv = document.getElementById("interior");
   if (!cv) return;
-  const ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
+  const ratio = pixelScale();
+  const ctx = cv.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  const W = cv.width / ratio, H = cv.height / ratio;
   const active = S.action ? S.action.skill : null;
   if (S.tab==="mining"){
     ctx.fillStyle="#6a5340"; ctx.fillRect(0,0,W,H);
@@ -1356,7 +1418,7 @@ function renderSettings(){
 }
 function interiorHtml(title){
   return `<div class="panel" style="padding:8px;">
-    <canvas id="interior" width="${VIEW_W}" height="120" style="width:100%;display:block;image-rendering:pixelated;border:2px solid var(--edge);"></canvas>
+    <canvas id="interior" width="${VIEW_W*pixelScale()}" height="${120*pixelScale()}" style="width:100%;height:120px;display:block;image-rendering:pixelated;border:2px solid var(--edge);"></canvas>
     <div class="vhint">${title}</div></div>`;
 }
 function renderAch(){
@@ -1378,7 +1440,7 @@ function renderMain(){
   const m = $("#main");
   const banner = tutBannerHtml();
   if (S.tab==="village") m.innerHTML = banner + `<div class="panel" style="padding:8px;">
-      <canvas id="village" width="${VIEW_W}" height="${VIEW_H}"></canvas>
+      <canvas id="village" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="width:${VIEW_W}px;height:${VIEW_H}px;image-rendering:pixelated;display:block;"></canvas>
       <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD/arrows also work · quarry is west, beach is south</div>
     </div>` + renderInventoryPanel();
   else if (S.tab==="contracts") m.innerHTML = banner + interiorHtml("📦 Inside the Depot — shelves fill up as your warehouse does") + renderContracts();
