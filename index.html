@@ -295,10 +295,47 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .village-sidebar{ flex:none; }
 @media (min-width:900px){
   .village-wrap{ flex-direction:row; align-items:flex-start; }
-  .village-canvas-panel{ flex:3; }
-  .village-sidebar{ flex:1; min-width:220px; }
+  .village-canvas-panel{ flex:1; min-width:0; }
+  .village-sidebar{ width:200px; flex:none; }
   .village-sidebar .panel{ margin-bottom:0; }
 }
+/* village canvas HTML label overlay */
+.village-canvas-rel{ position:relative; line-height:0; }
+#village-overlay{ position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+.vlbl{
+  position:absolute; transform:translateX(-50%);
+  font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700;
+  background:rgba(0,0,0,.78); color:#fff8e6;
+  padding:1px 6px; pointer-events:none; white-space:nowrap; line-height:1.5;
+}
+/* interior canvas HTML label overlay */
+.int-canvas-wrap{ position:relative; line-height:0; display:block; }
+.ilbl{
+  position:absolute; transform:translateX(-50%);
+  font-family:'Press Start 2P',monospace; font-size:8px;
+  background:rgba(0,0,0,.78); color:#fff8e6;
+  padding:2px 6px; pointer-events:none; white-space:nowrap; line-height:1.5;
+}
+.ilbl-lock{ color:#ffd666; font-size:7px; }
+.ilbl-exit{
+  position:absolute; bottom:3%; left:50%; transform:translateX(-50%);
+  font-family:'Press Start 2P',monospace; font-size:8px;
+  background:rgba(0,0,0,.78); color:#fff8e6;
+  padding:2px 7px; pointer-events:none; white-space:nowrap;
+}
+/* zone transition card */
+#zone-card{ position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:60; pointer-events:none; display:none; }
+#zone-card.zc-show{
+  display:flex; align-items:center; gap:14px;
+  background:var(--panel); border:2px solid var(--edge); box-shadow:5px 5px 0 var(--shadow);
+  padding:16px 24px;
+  animation:zcIn .28s cubic-bezier(.34,1.56,.64,1) forwards, zcOut .3s ease-in .92s forwards;
+}
+.zc-ic{ font-size:32px; }
+.zc-name{ font-family:'Press Start 2P',monospace; font-size:10px; color:var(--amber); margin-bottom:5px; }
+.zc-tip{ font-size:11px; color:var(--dim); max-width:200px; }
+@keyframes zcIn{ from{opacity:0;transform:scale(.72);} to{opacity:1;transform:scale(1);} }
+@keyframes zcOut{ to{opacity:0;transform:scale(.9);} }
 .vhint{ font-size:11px; color:var(--dim); margin-top:6px; text-align:center; }
 
 /* ---------- character customisation ---------- */
@@ -351,6 +388,7 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
   <div id="ld-bar-wrap"><div id="ld-bar"></div></div>
 </div>
 
+<div id="zone-card" role="status" aria-live="polite"></div>
 <div id="log" aria-live="polite"></div>
 <div id="toast" role="status"></div>
 
