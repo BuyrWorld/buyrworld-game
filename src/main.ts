@@ -457,7 +457,48 @@ const HOME_TIERS = [
   { n:"Grand Cottage",  desc:"The finest cottage in the valley. Everything you need.", cost:12000 },
 ];
 const DELIVERY_POOL = ["iron_ore","copper_ore","coal","iron_bar","steel_bar","bracket","wood","plank","sardine","mackerel","bass","wiring_loom","gearbox"];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome"]);
+let _heartbeatAt = 0;
+const _heartbeatCD = {};
+const HEARTBEAT_POOL = [
+  { id:"v_life", w:3, fn:()=>{
+    const _vs = VILLAGER_STATE.filter(v=>!v.indoor&&v.phase!=="sleep");
+    if (!_vs.length) return null;
+    const _v = VILLAGERS.find(vl=>vl.id===_vs[Math.floor(Math.random()*_vs.length)].id);
+    if (!_v) return null;
+    const _acts=["heads to work","waves to a neighbour","stops to check the sky","is deep in thought","crosses the path purposefully"];
+    return "👀 " + _v.n + " " + _acts[Math.floor(Math.random()*_acts.length)] + ".";
+  }},
+  { id:"mkt_flash", w:2, fn:()=>{
+    if (!S.market) return null;
+    const _npc=NPCS[Math.floor(Math.random()*NPCS.length)];
+    const _it=_npc.stock[Math.floor(Math.random()*_npc.stock.length)];
+    const _d=S.market.drift[_npc.id]&&S.market.drift[_npc.id][_it];
+    if (!_d) return null;
+    if (_d>1.12) return "📊 " + ITEMS[_it].n + " prices ▲" + Math.round((_d-1)*100) + "% at " + _npc.n + "'s.";
+    if (_d<0.88) return "📊 " + ITEMS[_it].n + " prices ▼" + Math.round((1-_d)*100) + "% at " + _npc.n + "'s.";
+    return null;
+  }},
+  { id:"pet_mom", w:2, fn:()=>{
+    if (!S.pets.active) return null;
+    const _pet=PETS.find(p=>p.id===S.pets.active);
+    if (!_pet) return null;
+    const _acts=["sniffs the air","does a little spin","watches a butterfly","yawns contentedly","trots happily by your side"];
+    return "🐾 " + _pet.n + " " + _acts[Math.floor(Math.random()*_acts.length)] + ".";
+  }},
+  { id:"weather", w:2, fn:()=>{
+    if (_weather.type==="rain") return "🌧️ The rain patters steadily across the valley.";
+    const _h=S.clock?S.clock.h:9;
+    if (_h>=22||_h<6) return "🌙 Stars are bright over Greenfield tonight.";
+    if (_h>=6&&_h<9) return "🌅 A fine morning. The valley is waking up.";
+    if (_h>=17&&_h<20) return "🌇 The sun is getting low over the ridge.";
+    return null;
+  }},
+  { id:"tip", w:1, fn:()=>{
+    const _tips=["💡 The Café gives a 20% speed boost for 5 minutes — worth it.","💡 World events shift market prices. Keep an eye on the ticker!","💡 Villagers post delivery requests — look for the green badge above them.","💡 Your Cottage can be upgraded. Visit it east of town.","💡 Rain affects the vibe. Fishing during a storm? Brave."];
+    return _tips[Math.floor(Math.random()*_tips.length)];
+  }},
+];
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank"]);
 const STATION_DEFS = {
   mining:        [
     { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
@@ -2263,6 +2304,41 @@ function drawInterior(t){
       ctx.fillStyle="rgba(160,120,50,.18)"; ctx.fillRect(0,H-48,W,2); ctx.fillRect(0,H-50,W,2);
     }
   }
+  if (S.tab==="bank"){
+    // Village Bank interior — marble-effect, clean columns
+    room("#6a6050","#9a9080","#e0dcd0","#d8d4c8","#4a3828");
+    winP(W*0.08, 38); winP(W*0.60, 38);
+    // marble floor tone on top of room floor
+    ctx.fillStyle="rgba(255,255,255,.08)"; for(let fy=47;fy<H;fy+=32) ctx.fillRect(0,fy,W,16);
+    // two classical columns
+    for(const cx of [W*0.22|0, W*0.74|0]){
+      ctx.fillStyle="#c8c4b8"; ctx.fillRect(cx-6,9,12,H-22);
+      ctx.fillStyle="#e0dcd0"; ctx.fillRect(cx-5,11,10,H-24);
+      ctx.fillStyle="#c8c4b8"; ctx.fillRect(cx-8,9,16,6); ctx.fillRect(cx-8,H-22,16,6); // capital + base
+    }
+    // teller counter back wall
+    ctx.fillStyle="#5a5048"; ctx.fillRect(18,52,W-36,22);
+    ctx.fillStyle="#8a8070"; ctx.fillRect(20,54,W-40,10);
+    ctx.fillStyle="#e0dcd0"; ctx.fillRect(20,54,W-40,3);
+    // vault door right side
+    ctx.fillStyle="#484038"; ctx.fillRect(W-52,10,40,42);
+    ctx.fillStyle="#6a6058"; ctx.fillRect(W-50,12,36,38);
+    ctx.fillStyle="#c8a020"; for(let _r=0;_r<3;_r++) ctx.beginPath(), ctx.arc(W-34, 22+_r*10, 3, 0, 7), ctx.fill();
+    ctx.fillStyle="#ffd666"; ctx.beginPath(); ctx.arc(W-34, 31, 8, 0, 7); ctx.fill();
+    ctx.fillStyle="#c8a020"; ctx.beginPath(); ctx.arc(W-34, 31, 6, 0, 7); ctx.fill();
+    ctx.fillStyle="#ffd666"; ctx.fillRect(W-36,24,4,14); ctx.fillRect(W-41,29,14,4);
+    // teller (male, formal dark shirt)
+    drawPerson(ctx, W/2, 46, "#2a2020", "#2a3a6a", t, false, 1, null, "down", null, "#1a2030");
+    // waiting chairs
+    for(const _cx of [W*0.38|0, W*0.50|0, W*0.62|0]){
+      ctx.fillStyle="#7a7060"; ctx.fillRect(_cx-8,H-54,16,12); ctx.fillRect(_cx-10,H-56,20,4);
+      ctx.fillStyle="#5a5048"; ctx.fillRect(_cx-7,H-43,14,4); ctx.fillRect(_cx-7,H-39,3,6); ctx.fillRect(_cx+4,H-39,3,6);
+    }
+    // decorative plant left
+    ctx.fillStyle="#6a4020"; ctx.fillRect(22,H-44,14,18);
+    ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(29,H-46,10,0,7); ctx.fill();
+    ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(23,H-51,7,0,7); ctx.arc(35,H-51,7,0,7); ctx.fill();
+  }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
   if (stations){
@@ -3351,6 +3427,23 @@ function renderMain(){
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="home") m.innerHTML = _withRoom("🏠 A Villager's Cottage", `<p style="color:var(--dim);font-size:12px;margin:8px 0">A cosy cottage — someone calls this place home.</p>`);
     else if (S.tab==="school") m.innerHTML = _withRoom("🏫 Inside the Village School", `<p style="color:var(--dim);font-size:12px;margin:8px 0">Children hard at work. Two classrooms, one building.</p>`);
+    else if (S.tab==="bank"){
+      const _spent = UPGRADES.filter(u=>S.upgrades[u.id]).reduce((s,u)=>s+u.cost,0)
+                   + (HOME_TIERS[S.homeTier]?.cost||0) - (HOME_TIERS[0]?.cost||0);
+      const _totalEarned = S.counters.coinsEarned||0;
+      m.innerHTML = _withRoom("🏦 Inside the Village Bank",
+        `<div class="panel" style="padding:10px">
+          <h3 style="margin:0 0 10px;font-size:14px">💰 Financial Summary</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tr><td style="padding:3px 0;color:var(--dim)">Current balance</td><td style="text-align:right;color:#ffd666;font-weight:700">${fmt(S.coins)} coins</td></tr>
+            <tr><td style="padding:3px 0;color:var(--dim)">Total earned</td><td style="text-align:right">${fmt(_totalEarned)} coins</td></tr>
+            <tr><td style="padding:3px 0;color:var(--dim)">Invested in upgrades</td><td style="text-align:right">${fmt(_spent)} coins</td></tr>
+            <tr style="border-top:1px solid rgba(255,255,255,.1)"><td style="padding:5px 0 3px;font-weight:700">Net worth</td><td style="text-align:right;font-weight:700;color:#ffd666">${fmt(S.coins + _spent)} coins</td></tr>
+          </table>
+          <p style="color:var(--dim);font-size:11px;margin:12px 0 0">The teller nods politely. <em>"Loans and interest coming soon."</em></p>
+        </div>`
+      );
+    }
     else if (S.tab==="myhome"){
       const _ht = S.homeTier||0;
       const _tier = HOME_TIERS[_ht];
@@ -3528,6 +3621,17 @@ setInterval(()=>{
   updateWorldEvents();
   updateWeather();
   updateDeliveries();
+  // engagement heartbeat — something every 20-30 seconds
+  if (now > _heartbeatAt){
+    const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
+    if (_cands.length){
+      let _r = Math.random() * _cands.reduce((s,e)=>s+e.w,0);
+      const _hev = _cands.find(e=>(_r-=e.w)<=0) || _cands[0];
+      const _hmsg = _hev.fn();
+      if (_hmsg){ toast(_hmsg); _heartbeatCD[_hev.id] = now + 90*1000; _heartbeatAt = now + (20+Math.random()*10)*1000; }
+      else { _heartbeatAt = now + 5000; }
+    } else { _heartbeatAt = now + 5000; }
+  }
   updateProgressBar();
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
