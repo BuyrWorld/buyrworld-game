@@ -449,7 +449,15 @@ const WORLD_EVENTS = [
 ];
 let _weather = { type:"clear", until:0 };
 let _tickerX = 576;
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe"]);
+const HOME_TIERS = [
+  { n:"Basic Cottage",  desc:"A simple roof and walls. Humble but yours.",            cost:0     },
+  { n:"Furnished",      desc:"A bookshelf, kitchen table, and a proper rug.",         cost:250   },
+  { n:"Comfortable",    desc:"An armchair, a real fireplace, and a better bed.",       cost:1000  },
+  { n:"Homely",         desc:"Cabinets, wall art, and a cosy reading nook.",           cost:4000  },
+  { n:"Grand Cottage",  desc:"The finest cottage in the valley. Everything you need.", cost:12000 },
+];
+const DELIVERY_POOL = ["iron_ore","copper_ore","coal","iron_bar","steel_bar","bracket","wood","plank","sardine","mackerel","bass","wiring_loom","gearbox"];
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome"]);
 const STATION_DEFS = {
   mining:        [
     { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
@@ -1542,10 +1550,27 @@ function drawVillage(t){
         html += `<div class="vlbl" style="left:${nlx.toFixed(1)}%;top:${nly.toFixed(1)}%">👤 ${v.n}</div>`;
       }
     }
+    // floating delivery request badge above the requesting villager
+    if (S.deliveryReq){
+      const _dReqV = VILLAGER_STATE.find(v => v.id===S.deliveryReq.npcId && !v.indoor && v.phase!=="sleep");
+      if (_dReqV){
+        const _dlx = (_dReqV.x - CAM.x) / VIEW_W * 100;
+        const _dly = (_dReqV.y - 40 - CAM.y) / VIEW_H * 100;
+        if (_dlx > -5 && _dlx < 105 && _dly > -5 && _dly < 105)
+          html += `<div class="vlbl" style="left:${_dlx.toFixed(1)}%;top:${_dly.toFixed(1)}%;background:rgba(20,110,50,.92);color:#fff">📬 ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n}</div>`;
+      }
+    }
     const dockV = VILLAGER_STATE.find(v => !v.indoor && v.phase !== "sleep" && Math.hypot(VP.x-v.x, VP.y-v.y) < TILE);
     if (dockV){
-      const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
-      html += `<div class="speech-dock">${dockV.n}: "${q}"</div>`;
+      const _isReqV = S.deliveryReq && S.deliveryReq.npcId === dockV.id;
+      if (_isReqV){
+        const _hasIt = itemCount(S.deliveryReq.itemId) >= S.deliveryReq.qty;
+        const _btn = _hasIt ? `<button onclick="deliverReq()" style="margin-left:8px;background:#1a8a3a;color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px;font-family:inherit">Deliver ✓</button>` : `<span style="color:rgba(255,255,255,.55);font-size:11px;margin-left:6px">(need ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n})</span>`;
+        html += `<div class="speech-dock"><b>${dockV.n}:</b> "Could you spare ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n}? I'll pay ${fmt(S.deliveryReq.reward)} coins!"${_btn}</div>`;
+      } else {
+        const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
+        html += `<div class="speech-dock">${dockV.n}: "${q}"</div>`;
+      }
     }
     overlay.innerHTML = html;
   }
@@ -2195,6 +2220,49 @@ function drawInterior(t){
     ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(W-19,H-46,10,0,7); ctx.fill();
     ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(W-25,H-51,7,0,7); ctx.arc(W-13,H-51,7,0,7); ctx.fill();
   }
+  if (S.tab==="myhome"){
+    const _ht = S.homeTier||0;
+    room("#6a5a3a","#8a7050","#d4c8a0","#c8bc90","#4a3020");
+    winP(W*0.12, 34); winP(W*0.62, 34);
+    // tier 0+: basic bed (always present)
+    const _bx = W-58;
+    ctx.fillStyle="#7a5030"; ctx.fillRect(_bx,58,50,62);
+    ctx.fillStyle="#b08050"; ctx.fillRect(_bx+2,60,46,20);
+    ctx.fillStyle=["#d4b880","#c0b0e0","#d4b880","#b0c4d8","#d4c880"][0]; ctx.fillRect(_bx+6,64,38,12);
+    ctx.fillStyle="#f0e8d0"; ctx.fillRect(_bx+4,80,42,36);
+    ctx.fillStyle="#a08060"; ctx.fillRect(_bx,118,50,6); // bed frame foot
+    // tier 1+: bookshelf + rug + kitchen table
+    if (_ht >= 1){
+      ctx.fillStyle="#6a4228"; ctx.fillRect(10,50,20,H-65);
+      for(let bi=0;bi<5;bi++){ ctx.fillStyle=["#c94a3a","#4a6ec9","#4ac96a","#c9c94a","#9a4ac9"][bi]; ctx.fillRect(12,52+bi*16,16,13); }
+      ctx.fillStyle="rgba(160,100,50,.3)"; ctx.fillRect(W/2-40,H-62,80,50);
+      ctx.strokeStyle="rgba(180,120,60,.45)"; ctx.lineWidth=2; ctx.strokeRect(W/2-36,H-58,72,42);
+      ctx.fillStyle="#7a5030"; ctx.fillRect(W/2-18,H-52,36,22); ctx.fillRect(W/2-18,H-30,4,20); ctx.fillRect(W/2+14,H-30,4,20);
+      ctx.fillStyle="#f0e8d8"; ctx.fillRect(W/2-5,H-54,10,5);
+    }
+    // tier 2+: armchair + fireplace
+    if (_ht >= 2){
+      ctx.fillStyle="#4a3020"; ctx.fillRect(10,46,26,H-60); ctx.fillStyle="#c94a1a"; ctx.fillRect(17,H-38,8,10); ctx.fillStyle="#ffd666"; ctx.fillRect(20,H-42,4,6);
+      ctx.fillStyle="#7a5a60"; ctx.fillRect(W-55,H-55,36,28); ctx.fillRect(W-58,H-60,8,32); ctx.fillRect(W-22,H-60,8,32);
+      ctx.fillStyle="#9a7a88"; ctx.fillRect(W-53,H-58,32,6); // cushion
+    }
+    // tier 3+: wall art + cabinet
+    if (_ht >= 3){
+      ctx.fillStyle="#5a3a20"; ctx.fillRect(W/2-22,8,44,32); ctx.fillStyle="#a8c4d8"; ctx.fillRect(W/2-19,11,38,26);
+      ctx.fillStyle="rgba(255,255,255,.15)"; ctx.fillRect(W/2-19,11,38,5);
+      ctx.fillStyle="#5a3a20"; ctx.fillRect(W/2-1,11,2,26);
+      ctx.fillStyle="#6a4228"; ctx.fillRect(36,50,22,H-65); ctx.fillStyle="#4a2a14"; ctx.fillRect(37,62,20,3); ctx.fillRect(37,80,20,3); ctx.fillRect(37,98,20,3);
+    }
+    // tier 4+: piano + hanging plant + decorative border
+    if (_ht >= 4){
+      ctx.fillStyle="#282828"; ctx.fillRect(60,50,48,36); ctx.fillStyle="#f0f0f0"; ctx.fillRect(62,64,44,10);
+      for(let ki=0;ki<10;ki++) ctx.fillStyle=ki%3===2?"#282828":"#fff", ctx.fillRect(63+ki*4+(ki>4?2:0),64,3,8);
+      ctx.fillStyle="#3a2010"; ctx.fillRect(W/2+24,46,4,20);
+      ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(W/2+26,44,9,0,7); ctx.fill();
+      ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(W/2+20,48,6,0,7); ctx.arc(W/2+32,48,6,0,7); ctx.fill();
+      ctx.fillStyle="rgba(160,120,50,.18)"; ctx.fillRect(0,H-48,W,2); ctx.fillRect(0,H-50,W,2);
+    }
+  }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
   if (stations){
@@ -2534,6 +2602,8 @@ function freshState(){
     appearance: Object.assign({}, DEFAULT_APPEARANCE),
     worldEvent: null, nextEventAt: Date.now() + 3*60*1000,
     caffBuff: 0,
+    homeTier: 0,
+    deliveryReq: null, nextDeliveryAt: Date.now() + 5*60*1000,
   };
 }
 let S = freshState();
@@ -2566,6 +2636,8 @@ function load(){
       if (!parsed.appearance) S.appearance = Object.assign({}, DEFAULT_APPEARANCE);
       if (!("worldEvent" in parsed)) { S.worldEvent = null; S.nextEventAt = Date.now() + 5*60*1000; }
       if (!("caffBuff" in parsed)) S.caffBuff = 0;
+      if (!("homeTier" in parsed)) S.homeTier = 0;
+      if (!("deliveryReq" in parsed)) { S.deliveryReq = null; S.nextDeliveryAt = Date.now() + 5*60*1000; }
       return true;
     }
   } catch(e){}
@@ -2658,6 +2730,45 @@ function updateWeather(){
     if (_weather.type==="rain") toast("🌧️ Rain has arrived over the valley.");
     else toast("☀️ Skies are clearing over the valley.");
   }
+}
+function updateDeliveries(){
+  const _now = Date.now();
+  if (S.deliveryReq && _now > S.deliveryReq.expiresAt){
+    const _dv = VILLAGERS.find(v => v.id === S.deliveryReq.npcId);
+    log("📬 " + (_dv ? _dv.n : "Villager") + "'s delivery request expired — they found another supplier.");
+    S.deliveryReq = null;
+    S.nextDeliveryAt = _now + (8+Math.random()*12)*60*1000;
+  }
+  if (!S.deliveryReq && _now > (S.nextDeliveryAt||0)){
+    const _it = DELIVERY_POOL[Math.floor(Math.random()*DELIVERY_POOL.length)];
+    const _qty = 1 + Math.floor(Math.random()*4);
+    const _reward = Math.round(ITEMS[_it].v * _qty * (1.6 + Math.random()*0.8));
+    const _vi = Math.floor(Math.random()*VILLAGERS.length);
+    const _dv = VILLAGERS[_vi];
+    S.deliveryReq = { npcId:_dv.id, itemId:_it, qty:_qty, reward:_reward, expiresAt:_now+20*60*1000 };
+    S.nextDeliveryAt = _now + _reward; // placeholder; real value set on delivery or expiry
+    toast("📬 " + _dv.n + " needs " + _qty + "× " + ITEMS[_it].n + "! Deliver for " + fmt(_reward) + " coins.");
+    log("📬 <b>" + _dv.n + "</b> requests " + _qty + "× " + ITEMS[_it].n + " — reward: <b>" + fmt(_reward) + " coins</b>", "good");
+  }
+}
+function deliverReq(){
+  if (!S.deliveryReq) return;
+  if (itemCount(S.deliveryReq.itemId) < S.deliveryReq.qty){ toast("Not enough " + ITEMS[S.deliveryReq.itemId].n + "."); return; }
+  S.items[S.deliveryReq.itemId] = (S.items[S.deliveryReq.itemId]||0) - S.deliveryReq.qty;
+  S.coins += S.deliveryReq.reward;
+  S.counters.coinsEarned = (S.counters.coinsEarned||0) + S.deliveryReq.reward;
+  const _xpSkill = ["iron_ore","copper_ore","coal","bauxite"].includes(S.deliveryReq.itemId) ? "mining"
+    : ["iron_bar","steel_bar","copper_wire","alu_ingot","tech_alloy"].includes(S.deliveryReq.itemId) ? "steelworks"
+    : ["bracket","wiring_loom","gearbox","chassis","pallet_jack","sensor","servo_unit"].includes(S.deliveryReq.itemId) ? "manufacturing"
+    : ["wood","plank"].includes(S.deliveryReq.itemId) ? "woodcutting"
+    : ["sardine","mackerel","bass","salmon","tuna"].includes(S.deliveryReq.itemId) ? "fishing" : "trading";
+  grantXp(_xpSkill, Math.round(S.deliveryReq.reward * 0.15));
+  const _dv = VILLAGERS.find(v => v.id === S.deliveryReq.npcId);
+  toast("📬 Delivered! +" + fmt(S.deliveryReq.reward) + " coins from " + (_dv ? _dv.n : "villager") + ".");
+  log("📬 Delivery complete for <b>" + (_dv ? _dv.n : "villager") + "</b> — <b>+" + fmt(S.deliveryReq.reward) + " coins</b>", "good");
+  S.deliveryReq = null;
+  S.nextDeliveryAt = Date.now() + (10+Math.random()*15)*60*1000;
+  achCheck(); renderMain(); updateHud(); save();
 }
 function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
 function _villagerTileOk(x, y){
@@ -3240,6 +3351,23 @@ function renderMain(){
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="home") m.innerHTML = _withRoom("🏠 A Villager's Cottage", `<p style="color:var(--dim);font-size:12px;margin:8px 0">A cosy cottage — someone calls this place home.</p>`);
     else if (S.tab==="school") m.innerHTML = _withRoom("🏫 Inside the Village School", `<p style="color:var(--dim);font-size:12px;margin:8px 0">Children hard at work. Two classrooms, one building.</p>`);
+    else if (S.tab==="myhome"){
+      const _ht = S.homeTier||0;
+      const _tier = HOME_TIERS[_ht];
+      const _next = HOME_TIERS[_ht+1];
+      const _canUp = _next && S.coins >= _next.cost;
+      const _upBtn = _next
+        ? `<button data-homeup="1" style="background:${_canUp?"#5a7a3a":"#666"};color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px;margin-top:8px"${_canUp?"":" disabled"}>Upgrade → ${_next.n} — ${fmt(_next.cost)} coins</button>`
+        : `<p style="color:#ffd666;font-size:12px;margin:8px 0">✨ Fully upgraded — the finest cottage in the valley.</p>`;
+      m.innerHTML = _withRoom("🏡 Your Cottage",
+        `<div class="panel" style="padding:10px">
+          <p style="margin:0 0 4px"><b>${_tier.n}</b> <span style="color:var(--dim);font-size:11px">Tier ${_ht+1} of ${HOME_TIERS.length}</span></p>
+          <p style="color:var(--dim);font-size:12px;margin:0 0 10px">${_tier.desc}</p>
+          ${_upBtn}
+          ${_next && !_canUp ? `<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Need ${fmt(_next.cost)} coins (${fmt(_next.cost-S.coins)} short)</p>` : ""}
+        </div>`
+      );
+    }
     else if (S.tab==="cafe"){
       const _caffMs = (S.caffBuff||0) - Date.now();
       const _buffHtml = _caffMs > 0
@@ -3287,6 +3415,15 @@ function bindMain(){
     S.coins -= u.cost; S.upgrades[u.id] = true;
     toast(`${u.ic} ${u.n} PURCHASED`); log(`🛒 CapEx approved: <b>${u.n}</b>`, "good");
     achCheck();
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-homeup]").forEach(b=> b.onclick = ()=>{
+    const _ht = S.homeTier||0;
+    const _next = HOME_TIERS[_ht+1];
+    if (!_next || S.coins < _next.cost){ toast("Not enough coins."); return; }
+    S.coins -= _next.cost; S.homeTier = _ht + 1;
+    toast("🏡 Home upgraded to " + _next.n + "!");
+    log("🏡 Home upgrade: <b>" + _next.n + "</b>", "good");
     renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-coffee]").forEach(b=> b.onclick = ()=>{
@@ -3390,6 +3527,7 @@ setInterval(()=>{
   tick(dt);
   updateWorldEvents();
   updateWeather();
+  updateDeliveries();
   updateProgressBar();
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
