@@ -833,6 +833,32 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   }
   ctx.restore();
 }
+function drawChild(ctx, x, y, hair, shirt, t, moving, dir, trouser, female, sz){
+  // crisp pixel-art child — no ctx.scale() to avoid blur; draws proportionally smaller using integer coords
+  // sz: 0=tiny(age≤6), 1=small(age7-10), 2=medium(age11-14)
+  trouser = trouser || "#4a5a8a";
+  const skin = "#f2c49a";
+  const D = sz===0 ? [6,5,5,6,5] : sz===1 ? [8,6,6,7,6] : [10,7,7,8,7];
+  const [bW,bH,lH,hW,hH] = D;
+  const bHalf=bW>>1, hHalf=hW>>1;
+  const bob = moving ? Math.round(Math.sin(t*10)*0.9) : 0;
+  const ix = Math.round(x), iy = Math.round(y) + bob;
+  const lsw = (moving && Math.sin(t*10)>0) ? 1 : 0;
+  ctx.save();
+  ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(ix,iy+1,bHalf+2,2,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=trouser;
+  ctx.fillRect(ix-bHalf, iy-lH, Math.max(1,bHalf-1), lH+lsw);
+  ctx.fillRect(ix+1, iy-lH, Math.max(1,bHalf-1), lH-lsw);
+  ctx.fillStyle=shirt; ctx.fillRect(ix-bHalf, iy-lH-bH, bW, bH);
+  ctx.fillStyle=skin;
+  if(dir==="right") ctx.fillRect(ix-bHalf-2, iy-lH-bH+1, 2, bH-1);
+  else if(dir==="left") ctx.fillRect(ix+bHalf, iy-lH-bH+1, 2, bH-1);
+  else{ ctx.fillRect(ix-bHalf-2,iy-lH-bH+1,2,bH-1); ctx.fillRect(ix+bHalf,iy-lH-bH+1,2,bH-1); }
+  ctx.fillStyle=skin; ctx.fillRect(ix-hHalf, iy-lH-bH-hH, hW, hH);
+  ctx.fillStyle=hair; ctx.fillRect(ix-hHalf, iy-lH-bH-hH, hW, Math.max(2,hH>>1));
+  if(female) ctx.fillRect(ix+hHalf-2, iy-lH-bH-hH+(hH>>1), 2, (hH>>1)+3);
+  ctx.restore();
+}
 function drawEmojiC(ctx, em, x, y, px){ ctx.font = px+"px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(em, x, y); }
 function nearestInteractable(){
   let best=null, bd=56;
@@ -1120,61 +1146,89 @@ function drawExtras(ctx, t){
   _drawFence(39*TILE, [5,6,10,11]); // west forest west fence
   _drawFence(47*TILE, [5,6,10,11]); // west forest east fence
   _drawFence(87*TILE, [5,6,10,11]); // east forest west fence
-  // park (tx:76-86, ty:6-10): traditional grass park with iron railings, paths, flower beds, play equipment
+  // park (tx:76-86, ty:6-10): traditional manicured park
   {
     const pkX = 76*TILE, pkY = 6*TILE, pkW = 10*TILE, pkH = 4*TILE;
-    const pcy = pkY + pkH/2; // horizontal path centre = row 8 (y=192)
-    // grass base — two-tone checkerboard texture
-    for(let gy=pkY; gy<pkY+pkH; gy+=8) for(let gx=pkX; gx<pkX+pkW; gx+=8){
-      ctx.fillStyle=((gx/8+gy/8)%2===0)?"#4d9e3e":"#55aa44"; ctx.fillRect(gx, gy, 8, 8);
+    const pcy = pkY + pkH/2;
+    // rich grass base with mowed stripe texture
+    ctx.fillStyle="#4e9e3a"; ctx.fillRect(pkX, pkY, pkW, pkH);
+    for(let gx=pkX; gx<pkX+pkW; gx+=TILE){
+      ctx.fillStyle=(((gx-pkX)/TILE)%2===0)?"rgba(0,0,0,.06)":"rgba(255,255,255,.04)";
+      ctx.fillRect(gx, pkY, TILE/2, pkH);
     }
-    // E-W paved path (benches sit alongside this)
-    ctx.fillStyle="#d0c8b0"; ctx.fillRect(pkX, pcy-6, pkW, 12);
-    ctx.fillStyle="#bcb49c"; ctx.fillRect(pkX, pcy-6, pkW, 2); ctx.fillRect(pkX, pcy+4, pkW, 2);
-    // central circular flower bed (at path midpoint)
+    // E-W cobblestone path with joint detail
+    ctx.fillStyle="#c8bc98"; ctx.fillRect(pkX, pcy-7, pkW, 14);
+    ctx.fillStyle="#b0a480"; ctx.fillRect(pkX, pcy-7, pkW, 2); ctx.fillRect(pkX, pcy+5, pkW, 2);
+    ctx.fillStyle="rgba(0,0,0,.12)";
+    for(let px=pkX+18; px<pkX+pkW; px+=18){ ctx.fillRect(px, pcy-5, 1, 10); }
+    for(let px=pkX+2; px<pkX+pkW; px+=22){ ctx.fillRect(px, pcy-3, 12, 1); ctx.fillRect(px+9, pcy+1, 11, 1); }
+    // central circular flower bed — raised stone edging + rich soil + vivid flowers
     const fcx=pkX+pkW/2, fcy=pcy;
-    ctx.fillStyle="#5a4a1a"; ctx.beginPath(); ctx.arc(fcx,fcy,14,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="#3a7a2a"; ctx.beginPath(); ctx.arc(fcx,fcy,11,0,Math.PI*2); ctx.fill();
-    const FC=["#ff9db0","#ffd666","#b48ad9","#ff8a5c","#7cd0a8","#ffe4c4"];
-    for(let fi=0;fi<8;fi++){ const ang=fi*Math.PI/4; ctx.fillStyle=FC[fi%6]; ctx.fillRect(fcx+Math.cos(ang)*7-2,fcy+Math.sin(ang)*7-2,4,4); }
-    ctx.fillStyle="#ffd666"; ctx.fillRect(fcx-2,fcy-2,4,4); // centre bloom
-    // corner flower patches (NW and NE)
-    [[pkX+10,pkY+8],[pkX+pkW-32,pkY+8]].forEach(([bx,by])=>{
-      ctx.fillStyle="#4a3a10"; ctx.fillRect(bx,by,20,14); ctx.fillStyle="#3a6a2a"; ctx.fillRect(bx+2,by+2,16,10);
-      for(let k=0;k<4;k++){ ctx.fillStyle=FC[k]; ctx.fillRect(bx+3+k*4,by+4,3,3); }
+    ctx.fillStyle="#7a5830"; ctx.beginPath(); ctx.arc(fcx,fcy,18,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#4a2a08"; ctx.beginPath(); ctx.arc(fcx,fcy,16,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#3a7028"; ctx.beginPath(); ctx.arc(fcx,fcy,13,0,Math.PI*2); ctx.fill();
+    const FC=["#ff3870","#ffd020","#9040d8","#ff5010","#28d888","#ff60c0","#38b0ff","#ffc840"];
+    for(let fi=0;fi<8;fi++){
+      const ang=fi*Math.PI/4;
+      ctx.fillStyle=FC[fi]; ctx.beginPath(); ctx.arc(fcx+Math.cos(ang)*9,fcy+Math.sin(ang)*9,4,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,.45)"; ctx.beginPath(); ctx.arc(fcx+Math.cos(ang)*8.5,fcy+Math.sin(ang)*8.5,1.5,0,Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle="#ffc830"; ctx.beginPath(); ctx.arc(fcx,fcy,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#fff0a0"; ctx.beginPath(); ctx.arc(fcx,fcy,2.5,0,Math.PI*2); ctx.fill();
+    // corner flower patches (NW and NE, above path)
+    [[pkX+10,pkY+8],[pkX+pkW-42,pkY+8]].forEach(([bx,by])=>{
+      ctx.fillStyle="#5a3a10"; ctx.fillRect(bx-2,by-2,34,20);
+      ctx.fillStyle="#3a2008"; ctx.fillRect(bx,by,30,16);
+      ctx.fillStyle="#3a7020"; ctx.fillRect(bx+2,by+2,26,12);
+      const pc=["#ff3870","#ffd020","#9040d8","#28d888","#ff60c0","#38b0ff"];
+      for(let k=0;k<6;k++){ ctx.fillStyle=pc[k]; ctx.beginPath(); ctx.arc(bx+5+k*4,by+9,3,0,Math.PI*2); ctx.fill(); }
     });
-    // iron railing border — dark green posts + top/bottom rails
-    ctx.fillStyle="#1e3a1e";
-    for(let px=pkX; px<=pkX+pkW; px+=10){ ctx.fillRect(px,pkY-4,2,pkH+8); }
-    ctx.fillRect(pkX,pkY,pkW,2); ctx.fillRect(pkX,pkY+pkH-2,pkW,2);
-    ctx.fillRect(pkX,pkY,2,pkH); ctx.fillRect(pkX+pkW-2,pkY,2,pkH);
-    // entrance gap in south rail (aligns with path row 10)
-    ctx.fillStyle="#4d9e3e"; ctx.fillRect(pkX+pkW/2-8,pkY+pkH-2,16,4);
-    // sandbox (NW quadrant)
-    const sbX=pkX+10, sbY=pkY+pkH-44;
-    ctx.fillStyle="#7a4a1a"; ctx.fillRect(sbX-2,sbY-2,36,4); ctx.fillRect(sbX-2,sbY+26,36,4); ctx.fillRect(sbX-2,sbY-2,4,30); ctx.fillRect(sbX+32,sbY-2,4,30);
-    ctx.fillStyle="#dfc870"; ctx.fillRect(sbX,sbY,32,26); ctx.fillStyle="#ede8a0"; ctx.fillRect(sbX+4,sbY+4,24,18);
-    drawEmojiC(ctx,"🪣",sbX+8,sbY+12,9);
-    // slide (east of centre path, north of bench row)
-    const slX=pkX+155, slY=pkY+8;
-    ctx.fillStyle="#5a3a1a"; ctx.fillRect(slX-8,slY,4,pkH-26); ctx.fillRect(slX,slY,4,pkH-26);
-    for(let rs=slY+5;rs<pkY+pkH-28;rs+=5){ ctx.fillStyle="#7a5a2a"; ctx.fillRect(slX-8,rs,12,2); }
-    ctx.fillStyle="#e04060";
-    ctx.beginPath(); ctx.moveTo(slX+4,slY+6); ctx.lineTo(slX+24,pkY+pkH-22); ctx.lineTo(slX+24,pkY+pkH-18); ctx.lineTo(slX+4,slY+10); ctx.closePath(); ctx.fill();
-    ctx.fillStyle="#c94a6a"; ctx.fillRect(slX+4,slY+2,18,6); // top platform
-    // swings (far east, animated)
-    const swX=pkX+196, swY=pkY+8;
-    ctx.fillStyle="#5a3a1a"; ctx.fillRect(swX,swY,4,pkH-26); ctx.fillRect(swX+24,swY,4,pkH-26); ctx.fillRect(swX-2,swY,30,3);
-    ctx.strokeStyle="#4a2a08"; ctx.lineWidth=1.5;
-    const sa=Math.sin(t*1.3)*10;
-    ctx.beginPath(); ctx.moveTo(swX+2,swY+3); ctx.lineTo(swX+10+sa,swY+32); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(swX+26,swY+3); ctx.lineTo(swX+18+sa,swY+32); ctx.stroke();
-    ctx.fillStyle="#3a7ad9"; ctx.fillRect(swX+6+sa,swY+32,12,4); // seat
+    // iron railing — ornate dark green posts with cap detail + rails
+    ctx.fillStyle="#1a3a1a";
+    for(let px=pkX; px<=pkX+pkW; px+=10){
+      ctx.fillRect(px, pkY-6, 2, pkH+12);
+      ctx.fillRect(px-2, pkY-9, 6, 4);
+    }
+    ctx.fillStyle="#245024";
+    ctx.fillRect(pkX, pkY-2, pkW, 3); ctx.fillRect(pkX, pkY+pkH, pkW, 3);
+    ctx.fillStyle="#1a3a1a"; ctx.fillRect(pkX, pkY, 3, pkH); ctx.fillRect(pkX+pkW-3, pkY, 3, pkH);
+    // entrance gap in south rail
+    ctx.fillStyle="#4e9e3a"; ctx.fillRect(pkX+pkW/2-11, pkY+pkH, 22, 5);
+    // sandbox (SW area below E-W path)
+    const sbX=pkX+8, sbY=pkY+pkH-36;
+    ctx.fillStyle="#7a4a18";
+    ctx.fillRect(sbX-3,sbY-3,44,5); ctx.fillRect(sbX-3,sbY+29,44,5);
+    ctx.fillRect(sbX-3,sbY-3,5,35); ctx.fillRect(sbX+39,sbY-3,5,35);
+    ctx.fillStyle="#e4c860"; ctx.fillRect(sbX,sbY,40,30);
+    ctx.fillStyle="#f0d880"; ctx.fillRect(sbX+4,sbY+4,32,22);
+    ctx.fillStyle="#c8a030"; ctx.fillRect(sbX+6,sbY+10,12,3); ctx.fillRect(sbX+6,sbY+16,18,3);
+    drawEmojiC(ctx,"🪣",sbX+28,sbY+16,10);
+    // slide (east side, north-to-south)
+    const slX=pkX+154, slY=pkY+8;
+    ctx.fillStyle="#4a3010"; ctx.fillRect(slX-8,slY,4,pkH-26); ctx.fillRect(slX,slY,4,pkH-26);
+    for(let rs=slY+5;rs<pkY+pkH-28;rs+=5){ ctx.fillStyle="#6a4818"; ctx.fillRect(slX-8,rs,12,2); }
+    ctx.fillStyle="#c02848";
+    ctx.beginPath(); ctx.moveTo(slX+4,slY+5); ctx.lineTo(slX+28,pkY+pkH-22); ctx.lineTo(slX+28,pkY+pkH-18); ctx.lineTo(slX+4,slY+9); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#e03860";
+    ctx.beginPath(); ctx.moveTo(slX+8,slY+5); ctx.lineTo(slX+24,pkY+pkH-22); ctx.lineTo(slX+24,pkY+pkH-20); ctx.lineTo(slX+9,slY+5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#a02040"; ctx.fillRect(slX+4,slY,26,7);
+    ctx.fillStyle="#c83060"; ctx.fillRect(slX+6,slY+1,22,4);
+    // swings (far east, animated arc)
+    const swX=pkX+194, swY=pkY+8;
+    ctx.fillStyle="#4a3010"; ctx.fillRect(swX,swY,4,pkH-26); ctx.fillRect(swX+28,swY,4,pkH-26);
+    ctx.fillStyle="#382008"; ctx.fillRect(swX-2,swY,36,5);
+    const sa=Math.sin(t*1.4)*13;
+    ctx.strokeStyle="#382808"; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(swX+2,swY+5); ctx.lineTo(swX+8+sa,swY+36); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(swX+30,swY+5); ctx.lineTo(swX+24+sa,swY+36); ctx.stroke();
+    ctx.fillStyle="#1a4fc0"; ctx.fillRect(swX+4+sa,swY+36,20,5);
+    ctx.fillStyle="#2860d8"; ctx.fillRect(swX+5+sa,swY+36,18,3);
     // ornamental tree (NE corner)
-    ctx.fillStyle="#7a5230"; ctx.fillRect(pkX+pkW-20,pkY+8,4,pkH-18);
-    ctx.fillStyle="#3d8048"; ctx.beginPath(); ctx.arc(pkX+pkW-18,pkY+6,11,0,7); ctx.fill();
-    ctx.fillStyle="#4e9a58"; ctx.beginPath(); ctx.arc(pkX+pkW-24,pkY+9,7,0,7); ctx.fill();
-    ctx.fillStyle="#5aaa60"; ctx.beginPath(); ctx.arc(pkX+pkW-16,pkY+2,6,0,7); ctx.fill();
+    const _otX=pkX+pkW-22, _otY=pkY+10;
+    ctx.fillStyle="#6a4020"; ctx.fillRect(_otX,_otY,4,pkH-22);
+    ctx.fillStyle="#2d7a3c"; ctx.beginPath(); ctx.arc(_otX+2,_otY+2,13,0,7); ctx.fill();
+    ctx.fillStyle="#3a8a48"; ctx.beginPath(); ctx.arc(_otX-6,_otY+7,8,0,7); ctx.fill();
+    ctx.fillStyle="#48aa52"; ctx.beginPath(); ctx.arc(_otX+9,_otY-3,7,0,7); ctx.fill();
   }
   // residential flower strip (along path rows 5 and 10)
   for (let col = 50; col < 86; col += 5){
@@ -1432,8 +1486,8 @@ function drawVillage(t){
   }
   for (const c of CHILDREN_STATE){
     if (c.phase==="sleep" || c.phase==="school") continue;
-    const _csc = c.age<=6?0.55:c.age<=10?0.65:0.75;
-    drawPerson(ctx, c.x, c.y, c.hair, c.shirt, t, c.moving, c.facing, null, c.dir, null, c.trouser, null, c.female, _csc);
+    const _csz = c.age<=6?0:c.age<=10?1:2;
+    drawChild(ctx, c.x, c.y+10, c.hair, c.shirt, t, c.moving, c.dir, c.trouser, c.female, _csz);
   }
   if (VP.tx!==null && VP.tx!==undefined){
     ctx.strokeStyle="rgba(255,248,230,.8)"; ctx.lineWidth=2;
@@ -2002,8 +2056,13 @@ function drawInterior(t){
     // --- Classroom A (left half, older children) ---
     ctx.fillStyle="#2a4a2a"; ctx.fillRect(W*0.02,8,W*0.44,24);
     ctx.fillStyle="#3a6a3a"; ctx.fillRect(W*0.03,10,W*0.42,20);
-    ctx.fillStyle="rgba(255,255,255,.65)"; ctx.font="7px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
-    ctx.fillText("READING · MATHS · HISTORY", W*0.24, 23);
+    // crisp chalk marks — pixel rectangles, no fillText to avoid canvas blur
+    { const _bxA=W*0.03|0; ctx.fillStyle="rgba(255,255,255,.72)";
+      let _cx=_bxA+5;
+      for(let k=0;k<4;k++){ctx.fillRect(_cx,18,6,2);_cx+=9;} ctx.fillRect(_cx,18,3,3);_cx+=7;
+      for(let k=0;k<3;k++){ctx.fillRect(_cx,18,6,2);_cx+=9;} ctx.fillRect(_cx,18,3,3);_cx+=7;
+      for(let k=0;k<4;k++){ctx.fillRect(_cx,18,6,2);_cx+=9;}
+    }
     ctx.fillStyle="#7a5a30"; ctx.fillRect(W*0.06,36,W*0.16,8); // teacher desk A
     drawPerson(ctx, W*0.14, H*0.30, "#5a3a2a", "#7a6a9a", t, false, 1, null, "down", null, "#4a4a5a", null, true); // teacher A
     const DA=[[W*0.06,H*0.58],[W*0.17,H*0.58],[W*0.27,H*0.58],[W*0.06,H*0.76],[W*0.17,H*0.76],[W*0.27,H*0.76]];
@@ -2011,15 +2070,20 @@ function drawInterior(t){
     // --- Classroom B (right half, younger children) ---
     ctx.fillStyle="#2a4a2a"; ctx.fillRect(W*0.54,8,W*0.44,24);
     ctx.fillStyle="#3a6a3a"; ctx.fillRect(W*0.55,10,W*0.42,20);
-    ctx.textAlign="center"; ctx.fillText("SCIENCE · ART · GEOGRAPHY", W*0.76, 23);
+    { const _bxB=W*0.55|0; ctx.fillStyle="rgba(255,255,255,.72)";
+      let _dx=_bxB+5;
+      for(let k=0;k<4;k++){ctx.fillRect(_dx,18,6,2);_dx+=9;} ctx.fillRect(_dx,18,3,3);_dx+=7;
+      for(let k=0;k<2;k++){ctx.fillRect(_dx,18,6,2);_dx+=9;} ctx.fillRect(_dx,18,3,3);_dx+=7;
+      for(let k=0;k<5;k++){ctx.fillRect(_dx,18,6,2);_dx+=9;}
+    }
     ctx.fillStyle="#7a5a30"; ctx.fillRect(W*0.56,36,W*0.16,8); // teacher desk B
     drawPerson(ctx, W*0.64, H*0.30, "#4a5a6a", "#4a8a7a", t, false, 1, null, "down", null, "#3a4a3a", null, false); // teacher B
     const DB=[[W*0.57,H*0.58],[W*0.67,H*0.58],[W*0.77,H*0.58],[W*0.57,H*0.76],[W*0.67,H*0.76],[W*0.77,H*0.76]];
     DB.forEach(([dx,dy])=>{ ctx.fillStyle="#9a7a4a"; ctx.fillRect(dx,dy,18,10); ctx.fillStyle="#7a5a30"; ctx.fillRect(dx,dy+10,18,3); });
     // draw school children at desks
     const _sc=CHILDREN_STATE.filter(c=>c.phase==="school");
-    _sc.filter(c=>c.age>=8).slice(0,6).forEach((c,i)=>{ if(i<DA.length) drawPerson(ctx,DA[i][0]+9,DA[i][1]-6,c.hair,c.shirt,t,false,1,null,"down",null,c.trouser,null,c.female,c.age>=12?0.75:0.65); });
-    _sc.filter(c=>c.age<8).slice(0,6).forEach((c,i)=>{ if(i<DB.length) drawPerson(ctx,DB[i][0]+9,DB[i][1]-6,c.hair,c.shirt,t,false,1,null,"down",null,c.trouser,null,c.female,0.55); });
+    _sc.filter(c=>c.age>=8).slice(0,6).forEach((c,i)=>{ if(i<DA.length) drawChild(ctx,DA[i][0]+9,DA[i][1],c.hair,c.shirt,t,false,"down",c.trouser,c.female,c.age>=12?2:1); });
+    _sc.filter(c=>c.age<8).slice(0,6).forEach((c,i)=>{ if(i<DB.length) drawChild(ctx,DB[i][0]+9,DB[i][1],c.hair,c.shirt,t,false,"down",c.trouser,c.female,0); });
     // occasional chalk dust
     if(Math.floor(t*3)%7===0){ ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(W*0.20+Math.sin(t*7)*4,12,2,2); ctx.fillRect(W*0.18,14,2,2); }
     if(Math.floor(t*3)%11===0){ ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(W*0.70+Math.sin(t*5)*4,12,2,2); ctx.fillRect(W*0.68,14,2,2); }
