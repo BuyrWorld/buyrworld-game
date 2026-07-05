@@ -356,19 +356,22 @@ function achCheck(){
 const WANDERERS = [
   { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:16*TILE, y:5.45*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
     area:[10,6,32,9], home:[13,7,17,9], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
-    route:[[11,5.45],[20,5.45],[31,5.45],[31,10.45],[20,10.45],[20.6,8.35],[11,10.45]] },
+    route:[[11,5.45],[20,5.45],[31,5.45],[31,10.45],[20,10.45],[20.6,8.35],[11,10.45]],
+    profile:{ job:"Supply Chain Professional", home:"The Valley Lodge", children:["Harison (6)"] } },
   { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:14*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
     area:[2,12,8,16], home:[2,12,5,13], tips:[
       "Morning! My turnips go by lorry now. Fancy that.",
       "Frost says you're the new founder. Don't work too hard!",
       "The market stalls pay best on green-arrow days.",
-    ]},
+    ],
+    profile:{ job:"Turnip Farmer", home:"Poppy's Farm" } },
   { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:26*TILE, y:17.6*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
     area:[12,17,32,18], home:[27,17,31,18], tips:[
       "One day ships'll dock here. Port Salvo, they'll call it.",
       "See that boat? Doesn't leak much anymore.",
       "Heaviest thing I ever lifted? A Cargo Turtle. True story.",
-    ]},
+    ],
+    profile:{ job:"Harbour Warden", home:"Dockside Hut" } },
 ];
 const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
@@ -682,6 +685,20 @@ function interactObj(o){
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
+function showWandererProfile(w){
+  const existing = document.getElementById("villager-profile-modal");
+  if (existing) existing.remove();
+  const p = w.profile || {};
+  let rows = "";
+  if (p.job) rows += `<div class="vp-row"><span class="vp-lbl">Job</span><span class="vp-val">${p.job}</span></div>`;
+  if (p.home) rows += `<div class="vp-row"><span class="vp-lbl">Home</span><span class="vp-val">${p.home}</span></div>`;
+  if (p.partner) rows += `<div class="vp-row"><span class="vp-lbl">Partner</span><span class="vp-val">${p.partner}</span></div>`;
+  if (p.children && p.children.length) rows += `<div class="vp-row"><span class="vp-lbl">Children</span><span class="vp-val">${p.children.join(", ")}</span></div>`;
+  const el = document.createElement("div");
+  el.id = "villager-profile-modal";
+  el.innerHTML = `<div class="vp-card"><div class="vp-name">${w.n}</div>${rows}<button class="vp-close" onclick="document.getElementById('villager-profile-modal').remove()">✕</button></div>`;
+  document.body.appendChild(el);
+}
 function showVillagerProfile(v){
   const existing = document.getElementById("villager-profile-modal");
   if (existing) existing.remove();
@@ -711,12 +728,7 @@ function villageClick(e){
     if (Math.hypot(wx-v.x, wy-v.y) < 20){ showVillagerProfile(v); return; }
   }
   for (const w of WANDERERS){
-    if (Math.hypot(wx-w.x, wy-w.y) < 20){
-      const o = { kind:"npc", w };
-      if (Math.hypot(VP.x-w.x, VP.y-w.y) < 60) interactObj(o);
-      else { VP.tx=w.x; VP.ty=w.y+18; VP.pending=o; }
-      return;
-    }
+    if (Math.hypot(wx-w.x, wy-w.y) < 20){ showWandererProfile(w); return; }
   }
   for (const o of V_OBJECTS){
     const r = objRect(o), pad=6;
@@ -1379,7 +1391,9 @@ function updateWanderers(dt){
       if (w.wait<=0){
         const area = (night && w.home) ? w.home : w.area;
         const [ax,ay,bx,by] = area;
-        const gx=(ax+Math.random()*(bx-ax))*TILE, gy=(ay+Math.random()*(by-ay))*TILE;
+        let gx, gy, tries=0;
+        do { gx=(ax+Math.random()*(bx-ax))*TILE; gy=(ay+Math.random()*(by-ay))*TILE; tries++; }
+        while (solidAt(gx,gy) && tries < 15);
         if (!solidAt(gx,gy)){ w.tx=gx; w.ty=gy; }
         w.wait = night ? 4+Math.random()*6 : 2+Math.random()*4;
       }
@@ -2235,7 +2249,7 @@ function updateBeachBirds(){
 function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
 function _villagerTileOk(x, y){
   const t = tileAt(x, y);
-  return t !== "W" && t !== "T" && t !== "C" && y < 17.5*TILE;
+  return t !== "W" && t !== "T" && t !== "C";
 }
 function updateVillagers(dt){
   const hr = gameHour();
@@ -2288,6 +2302,16 @@ function updateVillagers(dt){
     }
     v.quipTimer -= dt;
     if (v.quipTimer <= 0){ v.quipIdx = (v.quipIdx+1)%v.quips.length; v.quipTimer = 18+Math.random()*12; }
+    // separation — push apart from other outdoor villagers and wanderers
+    for (const other of VILLAGER_STATE){
+      if (other === v || other.indoor || other.phase === "sleep") continue;
+      const sd = Math.hypot(v.x-other.x, v.y-other.y);
+      if (sd > 0 && sd < 13){ const f=(13-sd)/sd*0.55; v.x+=(v.x-other.x)*f; v.y+=(v.y-other.y)*f; }
+    }
+    for (const w of WANDERERS){
+      const sd = Math.hypot(v.x-w.x, v.y-w.y);
+      if (sd > 0 && sd < 13){ const f=(13-sd)/sd*0.55; v.x+=(v.x-w.x)*f; v.y+=(v.y-w.y)*f; }
+    }
   }
 }
 function updateNightWildlife(dt){
