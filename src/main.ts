@@ -388,8 +388,10 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
     : homePos;
   return { id:v.id, n:v.n, hair:v.hair, shirt:v.shirt, trouser:v.trouser, female:!!v.female,
            homePos, workPos, workTab: workObj?.tab || null,
+           homeId: v.homeId, workId: v.workId, workKind: workObj?.kind || null,
+           partner: v.partner || null, children: v.children || [],
            x:homePos.x, y:homePos.y,
-           tx:null, ty:null, facing:1, moving:false, dir:"down",
+           tx:null, ty:null, facing:1, moving:false, dir:"down", indoor:false,
            phase:"sleep", quips:v.quips, quipIdx:0, quipTimer:Math.random()*20, wait:0,
            wanderTimer:Math.random()*2, wTarget:null };
 });
@@ -680,12 +682,34 @@ function interactObj(o){
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
+function showVillagerProfile(v){
+  const existing = document.getElementById("villager-profile-modal");
+  if (existing) existing.remove();
+  const homeObj = V_OBJECTS.find(o => o.id === v.homeId);
+  const workObj = V_OBJECTS.find(o => o.id === v.workId);
+  const homeName = homeObj?.name || homeObj?.id || v.homeId;
+  const workName = workObj?.name || workObj?.id || v.workId;
+  const partnerName = v.partner ? (VILLAGER_STATE.find(p => p.id === v.partner)?.n || v.partner) : null;
+  let rows = `<div class="vp-row"><span class="vp-lbl">Home</span><span class="vp-val">${homeName}</span></div>`;
+  rows += `<div class="vp-row"><span class="vp-lbl">Works at</span><span class="vp-val">${workName}</span></div>`;
+  if (partnerName) rows += `<div class="vp-row"><span class="vp-lbl">Partner</span><span class="vp-val">${partnerName}</span></div>`;
+  if (v.children && v.children.length) rows += `<div class="vp-row"><span class="vp-lbl">Children</span><span class="vp-val">${v.children.join(", ")}</span></div>`;
+  const el = document.createElement("div");
+  el.id = "villager-profile-modal";
+  el.innerHTML = `<div class="vp-card"><div class="vp-name">${v.n}</div>${rows}<button class="vp-close" onclick="document.getElementById('villager-profile-modal').remove()">✕</button></div>`;
+  document.body.appendChild(el);
+}
 function villageClick(e){
   const cv = document.getElementById("village");
   if (!cv) return;
   const rect = cv.getBoundingClientRect();
   const wx = (e.clientX-rect.left)*(cv.width/rect.width) + CAM.x;
   const wy = (e.clientY-rect.top)*(cv.height/rect.height) + CAM.y;
+  // check for outdoor villager click
+  for (const v of VILLAGER_STATE){
+    if (v.indoor || v.phase === "sleep") continue;
+    if (Math.hypot(wx-v.x, wy-v.y) < 20){ showVillagerProfile(v); return; }
+  }
   for (const w of WANDERERS){
     if (Math.hypot(wx-w.x, wy-w.y) < 20){
       const o = { kind:"npc", w };
@@ -1217,7 +1241,7 @@ function drawMinimap(ctx){
     if (o.kind==="rock"){ ctx.fillStyle=o.vein; ctx.fillRect(mx+o.tx, my+o.ty, 1, 1); }
     if (o.kind==="tree"){ ctx.fillStyle="#3a7032"; ctx.fillRect(mx+o.tx, my+o.ty, 1, 2); }
   }
-  for (const v of VILLAGER_STATE){ if(v.phase!=="sleep"){ ctx.fillStyle=v.shirt; ctx.fillRect(mx+Math.round(v.x/TILE), my+Math.round(v.y/TILE), 1, 1); } }
+  for (const v of VILLAGER_STATE){ if(!v.indoor && v.phase!=="sleep"){ ctx.fillStyle=v.shirt; ctx.fillRect(mx+Math.round(v.x/TILE), my+Math.round(v.y/TILE), 1, 1); } }
   ctx.fillStyle="#bfe8f7"; const fr=WANDERERS[0]; ctx.fillRect(mx+Math.round(fr.x/TILE)-1, my+Math.round(fr.y/TILE)-1, 2, 2);
   ctx.fillStyle="#fff"; ctx.fillRect(mx+Math.round(VP.x/TILE)-1, my+Math.round(VP.y/TILE)-1, 2, 2);
 }
@@ -1252,7 +1276,7 @@ function drawVillage(t){
     drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir);
   }
   for (const v of VILLAGER_STATE){
-    if (v.phase === "sleep") continue;
+    if (v.phase === "sleep" || v.indoor) continue;
     drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female);
   }
   if (VP.tx!==null && VP.tx!==undefined){
@@ -1278,9 +1302,9 @@ function drawVillage(t){
           html += `<div class="vlbl" style="left:${tx.toFixed(1)}%;top:${ty.toFixed(1)}%">${label}</div>`;
       }
     }
-    // floating name tags and speech dock for nearby villagers
+    // floating name tags and speech dock for nearby outdoor villagers
     for (const v of VILLAGER_STATE){
-      if (v.phase === "sleep") continue;
+      if (v.phase === "sleep" || v.indoor) continue;
       const vdist = Math.hypot(VP.x-v.x, VP.y-v.y);
       if (vdist < TILE){
         const nlx = (v.x - CAM.x) / VIEW_W * 100;
@@ -1288,7 +1312,7 @@ function drawVillage(t){
         html += `<div class="vlbl" style="left:${nlx.toFixed(1)}%;top:${nly.toFixed(1)}%">👤 ${v.n}</div>`;
       }
     }
-    const dockV = VILLAGER_STATE.find(v => v.phase !== "sleep" && Math.hypot(VP.x-v.x, VP.y-v.y) < TILE);
+    const dockV = VILLAGER_STATE.find(v => !v.indoor && v.phase !== "sleep" && Math.hypot(VP.x-v.x, VP.y-v.y) < TILE);
     if (dockV){
       const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
       html += `<div class="speech-dock">${dockV.n}: "${q}"</div>`;
@@ -1807,17 +1831,29 @@ function drawInterior(t){
   ctx.fillStyle="#6a4a2f"; ctx.fillRect(W/2-14, H-20, 28, 20);
   ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-10, 3, 3);
   drawEmojiC(ctx, "🚪", W/2, H-9, 11);
-  // draw villagers who work in this room
-  const _tabWorkers = VILLAGER_STATE.filter(v => v.phase==="work" && v.workTab===S.tab);
+  // draw villagers who work in this room (indoor flag set by updateVillagers)
+  const _tabWorkers = VILLAGER_STATE.filter(v => v.indoor && v.workTab===S.tab);
   _tabWorkers.forEach((v, i) => {
     const vx = (i+1) / (_tabWorkers.length+1) * W;
     const vy = H * 0.58;
+    (v as any)._ix = vx; (v as any)._iy = vy; // store for HTML overlay
     drawPerson(ctx, vx, vy, v.hair, v.shirt, t, false, 1, null, "down", null, v.trouser, null, v.female);
-    // name tag above head
-    ctx.fillStyle="rgba(40,30,20,.72)"; ctx.fillRect(vx-18, vy-28, 36, 12);
-    ctx.fillStyle="#ffd666"; ctx.textAlign="center"; ctx.font="bold 8px monospace";
-    ctx.fillText(v.n, vx, vy-19);
   });
+  // HTML name tags for indoor villagers (crisp, only when very close to IP)
+  const _iOverlay = document.getElementById("interior-overlay");
+  if (_iOverlay){
+    let _iHtml = "";
+    _tabWorkers.forEach(v => {
+      const vx = (v as any)._ix, vy = (v as any)._iy;
+      if (vx === undefined) return;
+      const dist = Math.hypot(IP.x-vx, IP.y-vy);
+      if (dist < 26){
+        const pct_x = vx/W*100, pct_y = (vy-28)/H*100;
+        _iHtml += `<div class="int-vlbl" style="left:${pct_x.toFixed(1)}%;top:${pct_y.toFixed(1)}%">${v.n}</div>`;
+      }
+    });
+    _iOverlay.innerHTML = _iHtml;
+  }
   // player drawn last so they render above furniture
   const _iTool = SKILL_TOOL[active] || null;
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null);
@@ -2197,23 +2233,40 @@ function updateBeachBirds(){
   }
 }
 function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
+function _villagerTileOk(x, y){
+  const t = tileAt(x, y);
+  return t !== "W" && t !== "T" && t !== "C" && y < 17.5*TILE;
+}
 function updateVillagers(dt){
   const hr = gameHour();
   const isWork = hr >= 6.5 && hr < 18.5;
   const isSleep = hr >= 22 || hr < 6;
   for (const v of VILLAGER_STATE){
     const newPhase = isSleep ? "sleep" : isWork ? "work" : "leisure";
-    if (newPhase !== v.phase){ v.phase = newPhase; v.wTarget = null; v.wanderTimer = 0; }
-    if (v.phase === "sleep") continue;
+    if (newPhase !== v.phase){ v.phase = newPhase; v.wTarget = null; v.wanderTimer = 0; v.indoor = false; }
+    if (v.phase === "sleep"){ v.indoor = true; v.moving = false; continue; }
+    // Bld workers go indoor when they reach work; stall workers stay outdoors
+    const goesIndoor = v.phase === "work" && v.workKind === "bld";
+    if (goesIndoor){
+      const distToWork = Math.hypot(v.workPos.x - v.x, v.workPos.y - v.y);
+      if (distToWork < 2.5*TILE){ v.indoor = true; v.moving = false; continue; }
+      v.indoor = false;
+    } else {
+      v.indoor = false;
+    }
     const mainDest = v.phase === "work" ? v.workPos : v.homePos;
     const distToMain = Math.hypot(mainDest.x - v.x, mainDest.y - v.y);
-    // wander near destination once arrived, always pick a new nearby target
     v.wanderTimer -= dt;
     if (v.wanderTimer <= 0 || !v.wTarget){
       v.wanderTimer = 1.2 + Math.random() * 2;
       if (distToMain < 4*TILE){
-        const a = Math.random() * Math.PI * 2, r = (0.4 + Math.random()*2)*TILE;
-        v.wTarget = { x: mainDest.x + Math.cos(a)*r, y: mainDest.y + Math.sin(a)*r };
+        let wx, wy, tries = 0;
+        do {
+          const a = Math.random()*Math.PI*2, r = (0.4+Math.random()*2)*TILE;
+          wx = mainDest.x + Math.cos(a)*r; wy = mainDest.y + Math.sin(a)*r;
+          tries++;
+        } while (!_villagerTileOk(wx, wy) && tries < 12);
+        v.wTarget = _villagerTileOk(wx, wy) ? { x:wx, y:wy } : mainDest;
       } else {
         v.wTarget = mainDest;
       }
@@ -2222,17 +2275,19 @@ function updateVillagers(dt){
     const dx = dest.x - v.x, dy = dest.y - v.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 4){
-      const speed = 30 * dt;
-      v.x += (dx/dist)*speed; v.y += (dy/dist)*speed;
+      const nx = v.x + (dx/dist)*30*dt, ny = v.y + (dy/dist)*30*dt;
+      // reject movement into water / off-map
+      if (_villagerTileOk(nx, ny)){ v.x = nx; v.y = ny; }
+      else { v.wTarget = null; } // blocked — pick new target next tick
       v.moving = true;
       v.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up");
       v.facing = dx >= 0 ? 1 : -1;
     } else {
       v.moving = false;
-      v.wTarget = null; // reached target — timer will pick a fresh one
+      v.wTarget = null;
     }
     v.quipTimer -= dt;
-    if (v.quipTimer <= 0){ v.quipIdx = (v.quipIdx + 1) % v.quips.length; v.quipTimer = 18 + Math.random()*12; }
+    if (v.quipTimer <= 0){ v.quipIdx = (v.quipIdx+1)%v.quips.length; v.quipTimer = 18+Math.random()*12; }
   }
 }
 function updateNightWildlife(dt){
@@ -2637,6 +2692,7 @@ function interiorHtml(title){
     <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
     ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><div class="ilbl-exit">🚪 EXIT ↓</div>
     <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
+    <div id="interior-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
   </div>
   <div class="vhint">${title} · WASD/tap · walk south to exit</div></div>`;
 }
