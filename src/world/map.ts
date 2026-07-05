@@ -129,6 +129,13 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'barn',        kind: 'bld',   tx: 24, ty: 31, w: 3, h: 3, tab: 'pets',     name: 'Companion Barn', ic: '🐾', wall: '#d9a86a', roof: '#9a5f3a' },
   { id: 'trophy',      kind: 'bld',   tx: 29, ty: 31, w: 2, h: 2, tab: 'ach',      name: 'Trophy Hall',    ic: '🏆', wall: '#e8dcb8', roof: '#c9a02e' },
   { id: 'sign',        kind: 'sign',  tx: 12, ty: 32, w: 1, h: 1, tab: 'settings', name: 'Save Post',      ic: '💾' },
+  // --- North forest (rows 6-17, above the high street) ---
+  { id: 'stall_wren',  kind: 'stall', tx: 50, ty: 8,  w: 2, h: 2, tab: 'trade',      name: 'Wren',       lvl: 1,  awn: '#3a7a3a', hair: '#3a2a1a', shirt: '#4a7a3a' },
+  { id: 'lore_stone',  kind: 'sign',  tx: 20, ty: 13, w: 1, h: 1, tab: 'lore_stone', name: 'Old Stone',  ic: '🪨' },
+  { id: 'tree_nf_h1',  kind: 'tree',  tx: 10, ty: 7,  w: 1, h: 2, ore: 'hardwood',   lvl: 20 },
+  { id: 'tree_nf_h2',  kind: 'tree',  tx: 30, ty: 10, w: 1, h: 2, ore: 'hardwood',   lvl: 20 },
+  { id: 'tree_nf_h3',  kind: 'tree',  tx: 62, ty: 8,  w: 1, h: 2, ore: 'hardwood',   lvl: 20 },
+  { id: 'tree_nf_h4',  kind: 'tree',  tx: 78, ty: 12, w: 1, h: 2, ore: 'hardwood',   lvl: 20 },
   // --- Forest cabin (east) ---
   { id: 'sawmill',     kind: 'bld',   tx: 41, ty: 23, w: 3, h: 3, tab: 'woodcutting', name: 'Sawmill', ic: '🪓', wall: '#9a7050', roof: '#5a3a20' },
   // --- Pier & fishmonger (beach) ---

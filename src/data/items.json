@@ -27,5 +27,8 @@
   "vase":      { "n": "Vase",       "ic": "🏺",  "v": 45  },
   "fancy_rug": { "n": "Fancy Rug",  "ic": "🧩",  "v": 60  },
   "lamp":      { "n": "Table Lamp", "ic": "🪔",  "v": 35  },
-  "bookcase":  { "n": "Bookcase",   "ic": "📚",  "v": 55  }
+  "bookcase":  { "n": "Bookcase",   "ic": "📚",  "v": 55  },
+  "mushroom":  { "n": "Wild Mushroom",  "ic": "🍄", "v": 25 },
+  "berries":   { "n": "Forest Berries", "ic": "🫐", "v": 18 },
+  "wild_herb": { "n": "Wild Herbs",     "ic": "🌿", "v": 30 }
 }

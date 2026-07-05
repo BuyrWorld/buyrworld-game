@@ -564,7 +564,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -1490,6 +1490,22 @@ function drawExtras(ctx, t){
     const fc = colors[Math.floor(col/5)%4];
     ctx.fillStyle=fc; ctx.fillRect(col*TILE+10, (4+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, (4+NORTH_EXT)*TILE+18, 2, 3);
     ctx.fillStyle=colors[(Math.floor(col/5)+2)%4]; ctx.fillRect(col*TILE+10, (9+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, (9+NORTH_EXT)*TILE+18, 2, 3);
+  }
+  // North forest clearing — light dappled circle near the lore stone (tx:20, ty:13)
+  {
+    const _clx = 20*TILE + TILE/2, _cly = 13*TILE + TILE/2;
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "#c8e890";
+    ctx.beginPath(); ctx.arc(_clx, _cly, 38, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 0.10;
+    ctx.fillStyle = "#e8f8c0";
+    ctx.beginPath(); ctx.arc(_clx, _cly, 28, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // small mushroom emoji cluster
+    drawEmojiC(ctx, "🍄", _clx - 14, _cly + 10, 8);
+    drawEmojiC(ctx, "🍄", _clx + 8,  _cly + 6,  7);
+    drawEmojiC(ctx, "🌿", _clx - 4,  _cly - 10, 8);
   }
   // sky birds — three V-shapes drifting across the upper sky
   ctx.strokeStyle="rgba(40,30,20,0.6)"; ctx.lineWidth=1;
@@ -4380,6 +4396,16 @@ function renderMain(){
           ${_propHtml}
         </div>`);
     }
+    else if (S.tab==="lore_stone") m.innerHTML = _withRoom("🪨 The Old Stone — North Forest",
+      `<div class="panel" style="padding:10px">
+        <h3 style="margin:0 0 8px;font-size:13px">🪨 Greenfield Boundary Stone</h3>
+        <p style="color:var(--dim);font-size:12px;margin:0 0 10px;font-style:italic">"Here the valley ends and the old forest begins. Travellers, keep to the path."</p>
+        <div class="card" style="margin-bottom:6px"><span class="ic">📜</span><div class="body"><div class="nm">Origin Unknown</div><div class="ds">The stone predates the village by centuries. No one carved it — or so the elders say.</div></div></div>
+        <div class="card" style="margin-bottom:6px"><span class="ic">🌲</span><div class="body"><div class="nm">Ancient Hardwood</div><div class="ds">The great trees here are older than the quarry. A skilled woodcutter might find them worth the effort.</div></div></div>
+        <div class="card" style="margin-bottom:6px"><span class="ic">🍄</span><div class="body"><div class="nm">Forager's Clearing</div><div class="ds">Wren knows every inch of these woods. She says the mushrooms here grow better than any in the valley.</div></div></div>
+        <p style="font-size:11px;color:var(--dim);margin:10px 0 0">Visit Wren's stall nearby to trade foraged goods from the forest.</p>
+      </div>`
+    );
     else m.innerHTML = _withRoom(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop", renderSkillPanel(S.tab));
   }
   bindMain();

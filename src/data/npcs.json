@@ -34,5 +34,11 @@
     "title": "Furniture & Homeware Trader", "lvl": 1,
     "quip": "Good taste costs a bit more. Worth every penny.",
     "stock": ["painting", "vase", "fancy_rug", "lamp", "bookcase"]
+  },
+  {
+    "id": "wren", "n": "Wren", "ic": "🌿",
+    "title": "Forest Forager", "lvl": 1,
+    "quip": "What the forest gives, I'll sell fair.",
+    "stock": ["mushroom", "berries", "wild_herb"]
   }
 ]
