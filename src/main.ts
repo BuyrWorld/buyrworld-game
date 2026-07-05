@@ -51,7 +51,7 @@ function tradeBonus(){
 }
 function eventMult(it){
   if (!S.worldEvent) return 1;
-  const _ev = WORLD_EVENTS.find(e => e.id === S.worldEvent.id);
+  const _ev = WORLD_EVENTS.find(e => e.id === S.worldEvent.id) || SEASONAL_EVENTS.find(e => e.id === S.worldEvent.id);
   if (!_ev) return 1;
   if (_ev.affects && !_ev.affects.includes(it)) return 1;
   return _ev.mult;
@@ -357,6 +357,7 @@ const ACH = [
   { id:"home_t1",      ic:"🛋️", n:"Moving In",          ds:"Upgrade your cottage to Tier 1.",    r:50,   c:()=>(S.homeTier||0)>=1 },
   { id:"home_t4",      ic:"🎹", n:"Dream Cottage",      ds:"Reach the highest home tier.",       r:500,  c:()=>(S.homeTier||0)>=4 },
   { id:"first_loan",   ic:"💳", n:"In the Red",         ds:"Take your first bank loan.",         r:15,   c:()=>(S.counters?.loansTotal||0)>=1 },
+  { id:"in_the_black",  ic:"📈", n:"In the Black",       ds:"Close an exchange position at a profit.", r:200, c:()=>(S.counters?.exchangeProfits||0)>=1 },
   { id:"good_neighbour",ic:"📬", n:"Good Neighbour",    ds:"Complete a villager delivery request.", r:75,  c:()=>(S.counters?.deliveries||0)>=1 },
   { id:"postman",      ic:"🚚", n:"Village Postman",    ds:"Complete 10 villager delivery requests.", r:300, c:()=>(S.counters?.deliveries||0)>=10 },
 ];
@@ -463,6 +464,11 @@ const OWLS = [
   { x:44.6*TILE, y:(9.8+NORTH_EXT)*TILE, blink:1.4 },
 ];
 const SHARK = { x:28*TILE, y:(21.5+NORTH_EXT)*TILE, vx:0.35 };
+const SEASONAL_EVENTS = [
+  { id:"xmas_market",    n:"Christmas Market",  msg:"The village Christmas market is open — festive spending is up!",     affects:null,                                       mult:1.28, months:[11,0] },
+  { id:"summer_fete",    n:"Summer Fete",        msg:"The summer fete is on — everyone's in a spending mood.",            affects:["sardine","mackerel","bass","wood","plank"], mult:1.20, months:[5,6,7] },
+  { id:"harvest_season", n:"Harvest Festival",   msg:"Harvest festival — fresh goods and crafted items flying off stalls.",affects:["bracket","wood","plank","iron_ore"],        mult:1.22, months:[8,9,10] },
+];
 const WORLD_EVENTS = [
   { id:"ore_shortage", n:"Iron Ore Shortage",       msg:"A mine collapse disrupts supply — metal prices soaring.",        affects:["iron_ore","copper_ore","coal","bauxite"], mult:1.35 },
   { id:"fish_glut",    n:"Bumper Catch Season",     msg:"Excellent seas bring record catches — fish prices have fallen.",  affects:["sardine","mackerel","bass","salmon","tuna"], mult:0.72 },
@@ -1366,6 +1372,37 @@ function drawExtras(ctx, t){
     ctx.fillStyle="#1a0c00"; ctx.font="bold 7px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText("HIGH STREET", _signX+1, _signY+16);
     ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+    // Seasonal high street decorations
+    const _curSeason = getSeason();
+    if (_curSeason === "winter"){
+      // Christmas: red-green garland stripe + gold stars
+      ctx.strokeStyle="#c02020"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-13); ctx.lineTo(_rx1, _ryBase-13); ctx.stroke();
+      ctx.strokeStyle="#208a20"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-11); ctx.lineTo(_rx1, _ryBase-11); ctx.stroke();
+      for(let sx=_rx0+14; sx<_rx1; sx+=32) drawEmojiC(ctx,"⭐", sx, _ryBase-18, 8);
+    } else if (_curSeason === "summer"){
+      // Summer fete: extra dense rainbow pennants on a second line
+      const _fcS = ["#ff4040","#ff9020","#ffe030","#40c040","#4080ff","#c040e0"];
+      ctx.strokeStyle="#5a3a2a"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-15); ctx.lineTo(_rx1, _ryBase-15); ctx.stroke();
+      for(let bi=0; bi<Math.floor((_rx1-_rx0)/13); bi++){
+        const _bx = _rx0 + bi*13 + 3;
+        ctx.fillStyle = _fcS[bi % _fcS.length];
+        ctx.beginPath(); ctx.moveTo(_bx, _ryBase-16); ctx.lineTo(_bx-4, _ryBase-8); ctx.lineTo(_bx+4, _ryBase-8); ctx.closePath(); ctx.fill();
+      }
+    } else if (_curSeason === "autumn"){
+      // Harvest: orange/gold pennants + pumpkins at stall fronts
+      const _hc = ["#e06020","#c89020","#c84020","#a86020"];
+      ctx.strokeStyle="#5a3a10"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-13); ctx.lineTo(_rx1, _ryBase-13); ctx.stroke();
+      for(let bi=0; bi<Math.floor((_rx1-_rx0)/15); bi++){
+        const _bx = _rx0 + bi*15 + 4;
+        ctx.fillStyle = _hc[bi % _hc.length];
+        ctx.beginPath(); ctx.moveTo(_bx, _ryBase-14); ctx.lineTo(_bx-5, _ryBase-6); ctx.lineTo(_bx+5, _ryBase-6); ctx.closePath(); ctx.fill();
+      }
+      for(let px=_rx0+20; px<_rx1-10; px+=52) drawEmojiC(ctx,"🎃", px, _ryBase-2, 9);
+    }
   }
   // park (tx:76-86, ty:6-10): traditional manicured park
   {
@@ -3097,6 +3134,7 @@ function freshState(){
     properties: [],
     rentAt: Date.now() + 5*60*1000,
     loans: [],
+    seNotified: "",
   };
 }
 let S = freshState();
@@ -3155,6 +3193,8 @@ function load(){
       if (!("rentAt" in parsed)) S.rentAt = Date.now() + 5*60*1000;
       if (!S.loans) S.loans = [];
       if (!("deliveries" in S.counters)) S.counters.deliveries = 0;
+      if (!("exchangeProfits" in S.counters)) S.counters.exchangeProfits = 0;
+      if (!("seNotified" in parsed)) S.seNotified = "";
       return true;
     }
   } catch(e){}
@@ -3219,7 +3259,28 @@ function updateBeachBirds(){
 }
 function updateWorldEvents(){
   const _now = Date.now();
-  if (S.worldEvent && _now > S.worldEvent.endsAt){
+  // Seasonal events override random ones for the whole calendar month
+  const _m = new Date().getMonth();
+  const _se = SEASONAL_EVENTS.find(e => e.months.includes(_m));
+  if (_se){
+    const _mEnd = new Date(); _mEnd.setMonth(_mEnd.getMonth()+1, 1); _mEnd.setHours(0,0,0,0);
+    if (!S.worldEvent || S.worldEvent.id !== _se.id){
+      S.worldEvent = { id:_se.id, endsAt:_mEnd.getTime(), seasonal:true };
+      S.nextEventAt = _mEnd.getTime();
+      if (S.seNotified !== _se.id){
+        S.seNotified = _se.id;
+        _tickerX = VIEW_W;
+        toast("🎉 " + _se.n + " — special prices this month!");
+        log("🎉 <b>" + _se.n + "</b> — " + _se.msg, "good");
+        if (S.tab==="trade") renderMain();
+      }
+    } else {
+      S.worldEvent.endsAt = _mEnd.getTime(); // stay refreshed through month end
+    }
+    return;
+  }
+  // Normal random event logic (spring months only, roughly)
+  if (S.worldEvent && !S.worldEvent.seasonal && _now > S.worldEvent.endsAt){
     const _ev = WORLD_EVENTS.find(e=>e.id===S.worldEvent.id);
     log("📰 Market: the " + (_ev ? _ev.n : "event") + " has ended. Prices normalising.");
     S.worldEvent = null;
@@ -3335,7 +3396,8 @@ function sellPosition(posId){
   const profit = val - pos.qty * pos.costPerUnit;
   log("📈 Closed position: " + (comm?comm.n:pos.commodity) + " → +" + fmt(val) + " coins (" + (profit>=0?"+":"") + fmt(profit) + ")", profit>=0?"good":"");
   grantXp("trading", Math.round(Math.max(1, Math.abs(profit)*0.1)));
-  renderMain(); updateHud(); save();
+  if (profit > 0) S.counters.exchangeProfits = (S.counters.exchangeProfits||0) + 1;
+  achCheck(); renderMain(); updateHud(); save();
 }
 function updateStudying(){
   if (!S.studying) return;
