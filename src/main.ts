@@ -532,7 +532,12 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank","exchange","university"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent"]);
+const PROPERTIES = [
+  { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
+  { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
+  { id:"manor_c",   n:"Greenfield Manor", desc:"The grand estate on the hill. Premium rental income.",  cost:35000, rent:25 },
+];
 const EXCHANGE_COMMODITIES = [
   { id:"iron_ore",    n:"Iron Ore",    ic:"🪨", unit:50  },
   { id:"steel_bar",   n:"Steel Bar",   ic:"⛓️", unit:120 },
@@ -1204,13 +1209,19 @@ function drawObjects(ctx, t){
       // Always draw emoji label and dynamic effects on top of sprite or canvas building
       drawEmojiC(ctx, o.ic, r.x+r.w/2, r.y+16, 13);
       if (o.chimney){
-        ctx.fillStyle="#7a5a45"; ctx.fillRect(r.x+r.w-16, r.y-10, 8, 14);
-        if (S.action && S.action.skill==="steelworks"){
-          for (let i=0;i<3;i++){
-            const p=((t*0.6+i*0.33)%1);
-            ctx.fillStyle="rgba(120,120,130,"+(0.5*(1-p)).toFixed(2)+")";
-            ctx.beginPath(); ctx.arc(r.x+r.w-12+Math.sin(p*6)*3, r.y-12-p*22, 4+p*4, 0, 7); ctx.fill();
-          }
+        const _swLvl = skillLvl("steelworks");
+        const _chimW = 8 + Math.min(6, Math.floor(_swLvl/10)*2); // chimney grows with level
+        const _chimX = r.x + r.w - 16;
+        ctx.fillStyle="#7a5a45"; ctx.fillRect(_chimX, r.y-10, _chimW, 14);
+        ctx.fillStyle="#6a4a35"; ctx.fillRect(_chimX, r.y-12, _chimW, 4); // chimney rim
+        // smoke — always drifts, denser when active or high level
+        const _smokePuffs = S.action && S.action.skill==="steelworks" ? Math.min(6, 3+Math.floor(_swLvl/15)) : Math.max(0, Math.floor(_swLvl/20));
+        const _smokeAlpha = S.action && S.action.skill==="steelworks" ? 0.55 : 0.25;
+        for (let i=0;i<_smokePuffs;i++){
+          const p=((t*0.5+i/_smokePuffs)%1);
+          const _sa = (_smokeAlpha*(1-p)).toFixed(2);
+          ctx.fillStyle=`rgba(110,110,120,${_sa})`;
+          ctx.beginPath(); ctx.arc(_chimX+_chimW/2+Math.sin(p*5+i)*4, r.y-14-p*28, 3+p*5, 0, 7); ctx.fill();
         }
       }
       if (o.id==="workshop" && S.action && S.action.skill==="manufacturing" && Math.floor(t*4)%2)
@@ -1681,6 +1692,17 @@ function drawVillage(t){
         const nlx = (v.x - CAM.x) / VIEW_W * 100;
         const nly = (v.y - 24 - CAM.y) / VIEW_H * 100;
         html += `<div class="vlbl" style="left:${nlx.toFixed(1)}%;top:${nly.toFixed(1)}%">👤 ${v.n}</div>`;
+      }
+    }
+    // post office daily reward badge
+    if (S.dailyReward && S.dailyReward.lastDate !== new Date().toDateString()){
+      const _po = V_OBJECTS.find(o => o.id==="postoffice");
+      if (_po){
+        const _por = objRect(_po);
+        const _px = (_por.x + _por.w/2 - CAM.x) / VIEW_W * 100;
+        const _py = (_por.y - 14 - CAM.y) / VIEW_H * 100;
+        if (_px > -5 && _px < 105 && _py > -5 && _py < 105)
+          html += `<div class="vlbl" style="left:${_px.toFixed(1)}%;top:${_py.toFixed(1)}%;background:rgba(160,30,20,.92);color:#fff">📮 Parcel!</div>`;
       }
     }
     // floating delivery request badge above the requesting villager
@@ -2476,6 +2498,108 @@ function drawInterior(t){
     ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(29,H-46,10,0,7); ctx.fill();
     ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(23,H-51,7,0,7); ctx.arc(35,H-51,7,0,7); ctx.fill();
   }
+  if (S.tab==="retail"){
+    // Retail Stall interior — candy-bright, market feel
+    room("#8a2040","#c04060","#fce8f0","#f8d8e8","#4a0820");
+    winP(W*0.14, 38); winP(W*0.70, 38);
+    // striped awning across top
+    for(let i=0;i<8;i++){ ctx.fillStyle=i%2===0?"#e84060":"#fff8fc"; ctx.fillRect(i*(W/8),0,W/8,12); }
+    // display counter
+    ctx.fillStyle="#5a1828"; ctx.fillRect(12,52,W-24,22);
+    ctx.fillStyle="#c04060"; ctx.fillRect(14,54,W-28,10);
+    ctx.fillStyle="#fce8f0"; ctx.fillRect(14,54,W-28,3);
+    // display items on counter
+    const _rItems = ["🥐","🍎","🧁","🎀","🪴"];
+    _rItems.forEach((em,i)=>{ drawEmojiC(ctx, em, 30+i*52, 52, 12); });
+    // chalk price board on back wall
+    ctx.fillStyle="#2a1020"; ctx.fillRect(W-80,8,70,44);
+    ctx.fillStyle="#3a2030"; ctx.fillRect(W-78,10,66,40);
+    ctx.fillStyle="rgba(255,255,255,.6)"; ctx.font="bold 7px monospace";
+    ctx.fillText("TODAY'S", W-74, 22); ctx.fillText("SPECIALS", W-74, 31); ctx.fillText("✦ Fresh ✦", W-74, 40);
+    // shopkeeper
+    drawPerson(ctx, W/2, 46, "#c9a24b", "#e84060", t, false, 1, null, "down", null, "#4a1828", null, true);
+    // bunting across ceiling
+    for(let bi=0;bi<6;bi++){
+      const _bx = bi*(W/5.5), _by = 6+Math.sin(bi*1.2)*3;
+      ctx.fillStyle=["#e84060","#ffd666","#4a8ae8","#68cc68","#e86040"][bi%5];
+      ctx.beginPath(); ctx.moveTo(_bx,0); ctx.lineTo(_bx-6,_by+8); ctx.lineTo(_bx+6,_by+8); ctx.closePath(); ctx.fill();
+      if (bi>0) { ctx.strokeStyle="#8a4060"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(_bx-(W/5.5),3); ctx.lineTo(_bx,3); ctx.stroke(); }
+    }
+    // waiting customer
+    drawPerson(ctx, W*0.22, H-40, "#8a6a4a", "#4a6aaa", t, false, 1, null, "down", null, "#2a2a4a");
+    drawPerson(ctx, W*0.75, H-44, "#c08050", "#c8704a", t, false, 1, null, "down", null, "#3a3a2a", null, true);
+  }
+  if (S.tab==="postoffice"){
+    // Post Office interior — classic British red, efficient
+    room("#6a1010","#9a2020","#f0e8e0","#e8dcd0","#2a0808");
+    winP(W*0.10, 38); winP(W*0.65, 38);
+    // royal mail red service counter
+    ctx.fillStyle="#8a1a1a"; ctx.fillRect(10,52,W-20,22);
+    ctx.fillStyle="#c02020"; ctx.fillRect(12,54,W-24,10);
+    ctx.fillStyle="#f0e8e0"; ctx.fillRect(12,54,W-24,3);
+    // glass partition
+    ctx.fillStyle="rgba(180,210,230,.30)"; ctx.fillRect(12,28,W-24,26);
+    ctx.strokeStyle="#8a9aaa"; ctx.lineWidth=1; ctx.strokeRect(12,28,W-24,26); ctx.lineWidth=1;
+    // shelving with parcels behind counter
+    for(let sh=0;sh<3;sh++){
+      ctx.fillStyle="#5a3818"; ctx.fillRect(W-90,10+sh*14,70,2);
+      const _parcCols=["#c84020","#e8a020","#2a5aaa","#4a8a3a"];
+      for(let p=0;p<3;p++){ ctx.fillStyle=_parcCols[(sh*3+p)%4]; ctx.fillRect(W-88+p*22,12+sh*14,18,10); }
+    }
+    // postmaster
+    drawPerson(ctx, W*0.55, 46, "#3a3a3a", "#c02020", t, false, 1, null, "down", null, "#1a1a1a", null, false);
+    // royal cipher/crest on wall
+    ctx.fillStyle="#c09820"; ctx.font="bold 14px serif"; ctx.textAlign="center";
+    ctx.fillText("✦ GR ✦", 38, 34); ctx.textAlign="left";
+    // mailboxes on left wall
+    for(let mb=0;mb<4;mb++){
+      ctx.fillStyle="#c02020"; ctx.fillRect(12,H-72+mb*14,22,12);
+      ctx.fillStyle="#8a1010"; ctx.fillRect(26,H-66+mb*14,4,2);
+    }
+    // waiting area chairs
+    for(const _cx of [W*0.28|0, W*0.42|0]){
+      ctx.fillStyle="#6a3030"; ctx.fillRect(_cx-8,H-44,16,10); ctx.fillRect(_cx-10,H-46,20,3);
+    }
+    // seated customer with parcel
+    drawPerson(ctx, W*0.30, H-48, "#c9a060", "#4a6a9a", t, false, 1, null, "down", null, "#2a3a5a");
+    ctx.fillStyle="#c84020"; ctx.fillRect(W*0.30-8,H-56,16,10); // parcel in hands
+  }
+  if (S.tab==="estateagent"){
+    // Estate Agent interior — smart navy/glass, aspirational
+    room("#1a2a3a","#2a4060","#e8ecf0","#dde4ea","#0a1420");
+    winP(W*0.08, 38); winP(W*0.68, 38);
+    // marble-effect floor
+    ctx.fillStyle="rgba(255,255,255,.06)"; for(let fy=47;fy<H;fy+=28) ctx.fillRect(0,fy,W,14);
+    // property photo boards on back wall
+    const _propCols=["#c8b878","#b0c0a8","#d0c8b8"];
+    const _propIcs=["🏡","🏠","🏰"];
+    [0,1,2].forEach(i=>{
+      const _bx=14+i*96, _by=8;
+      ctx.fillStyle="#1a2a3a"; ctx.fillRect(_bx,_by,84,46);
+      ctx.fillStyle=_propCols[i]; ctx.fillRect(_bx+2,_by+2,80,36);
+      drawEmojiC(ctx, _propIcs[i], _bx+42, _by+22, 18);
+      ctx.fillStyle="#fff"; ctx.font="bold 5px monospace"; ctx.fillText(PROPERTIES[i].n.slice(0,12), _bx+4, _by+44);
+    });
+    // agent desk
+    ctx.fillStyle="#1a3050"; ctx.fillRect(W/2-36,52,72,20);
+    ctx.fillStyle="#2a4060"; ctx.fillRect(W/2-34,54,68,8);
+    // laptop glow on desk
+    ctx.fillStyle="#0a3a5a"; ctx.fillRect(W/2-10,46,20,6);
+    ctx.fillStyle="rgba(80,180,255,.4)"; ctx.fillRect(W/2-9,46,18,5);
+    // agent
+    drawPerson(ctx, W/2, 48, "#4a3a2a", "#1a3060", t, false, 1, null, "down", null, "#0a1020", null, true);
+    // client chairs
+    for(const _cx of [W*0.30|0, W*0.70|0]){
+      ctx.fillStyle="#2a4060"; ctx.fillRect(_cx-10,H-50,20,14); ctx.fillRect(_cx-12,H-52,24,4);
+    }
+    // waiting clients
+    drawPerson(ctx, W*0.28, H-58, "#8a6a50", "#3a5a80", t, false, 1, null, "down", null, "#1a2a3a");
+    drawPerson(ctx, W*0.72, H-54, "#c9a060", "#2a4a70", t, false, 1, null, "down", null, "#0a1830", null, true);
+    // potted plant
+    ctx.fillStyle="#3a2010"; ctx.fillRect(W-28,H-44,16,20);
+    ctx.fillStyle="#1a5a28"; ctx.beginPath(); ctx.arc(W-20,H-46,10,0,7); ctx.fill();
+    ctx.fillStyle="#2a7a38"; ctx.beginPath(); ctx.arc(W-26,H-50,7,0,7); ctx.arc(W-14,H-50,7,0,7); ctx.fill();
+  }
   if (S.tab==="exchange"){
     // Exchange Floor interior — corporate, sleek, lots of screens
     room("#303848","#485060","#c0c8d0","#d0d8e0","#1a2028");
@@ -2895,6 +3019,10 @@ function freshState(){
     exchange: { positions:[] },
     degrees: [], studying: null,
     interestAt: Date.now() + 30*60*1000,
+    retail: { slots:[{itemId:null,qty:0},{itemId:null,qty:0},{itemId:null,qty:0}], lastSale:0, dailySold:0, lastReset:"" },
+    dailyReward: { lastDate:"" },
+    properties: [],
+    rentAt: Date.now() + 5*60*1000,
   };
 }
 let S = freshState();
@@ -2935,6 +3063,12 @@ function load(){
       if (!Array.isArray(S.degrees)) S.degrees = [];
       if (!("studying" in parsed)) S.studying = null;
       if (!("interestAt" in parsed)) S.interestAt = Date.now() + 30*60*1000;
+      if (!("retail" in parsed)) S.retail = { slots:[{itemId:null,qty:0},{itemId:null,qty:0},{itemId:null,qty:0}], lastSale:0, dailySold:0, lastReset:"" };
+      if (!Array.isArray(S.retail.slots)) S.retail.slots = [{itemId:null,qty:0},{itemId:null,qty:0},{itemId:null,qty:0}];
+      if (!("dailyReward" in parsed)) S.dailyReward = { lastDate:"" };
+      if (!("properties" in parsed)) S.properties = [];
+      if (!Array.isArray(S.properties)) S.properties = [];
+      if (!("rentAt" in parsed)) S.rentAt = Date.now() + 5*60*1000;
       return true;
     }
   } catch(e){}
@@ -3133,6 +3267,46 @@ function updateBankInterest(now){
     }
   }
   S.interestAt = now + 30*60*1000;
+  save();
+}
+function updateRetail(now){
+  if (!S.retail || !S.retail.slots) return;
+  const _today = new Date().toDateString();
+  if (S.retail.lastReset !== _today){ S.retail.dailySold = 0; S.retail.lastReset = _today; }
+  if ((S.retail.dailySold||0) >= 200) return;
+  if (now < (S.retail.lastSale||0) + 2*60*1000) return;
+  const _stocked = S.retail.slots.filter(sl => sl && sl.itemId && sl.qty > 0);
+  if (!_stocked.length) return;
+  const _sl = _stocked[Math.floor(Math.random()*_stocked.length)];
+  const _it = _sl.itemId;
+  const _npc = NPCS.find(n => n.stock && n.stock.includes(_it));
+  const _price = _npc ? Math.round(sellPrice(_npc, _it) * 1.15) : Math.round((ITEMS[_it]?.v || 10) * 0.9);
+  _sl.qty--;
+  if (_sl.qty <= 0) _sl.itemId = null;
+  S.coins += _price;
+  S.counters.coinsEarned = (S.counters.coinsEarned||0) + _price;
+  S.retail.dailySold = (S.retail.dailySold||0) + 1;
+  S.retail.lastSale = now;
+  grantXp("trading", Math.round(_price * 0.08));
+  if (S.tab==="retail") renderMain();
+  updateHud(); save();
+}
+function updateRent(now){
+  if (!S.properties || !S.properties.length) return;
+  if (now < (S.rentAt||0)) return;
+  const _period = 5; // minutes
+  const _total = S.properties.reduce((sum, pid) => {
+    const p = PROPERTIES.find(pr => pr.id===pid);
+    return sum + (p ? p.rent * _period : 0);
+  }, 0);
+  if (_total > 0){
+    S.coins += _total;
+    S.counters.coinsEarned = (S.counters.coinsEarned||0) + _total;
+    log("🏘️ Rent collected: +" + fmt(_total) + " coins from " + S.properties.length + " propert" + (S.properties.length===1?"y":"ies") + ".", "good");
+    if (S.tab==="estateagent") renderMain();
+    updateHud();
+  }
+  S.rentAt = now + _period*60*1000;
   save();
 }
 function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
@@ -3844,6 +4018,71 @@ function renderMain(){
         </div>`
       );
     }
+    else if (S.tab==="retail"){
+      const _today = new Date().toDateString();
+      if (S.retail.lastReset !== _today){ S.retail.dailySold = 0; S.retail.lastReset = _today; }
+      const _slotHtml = S.retail.slots.map((sl, i)=>{
+        if (sl && sl.itemId && sl.qty > 0){
+          return `<div class="card" style="padding:6px 8px;display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:18px">${ITEMS[sl.itemId]?.ic||"📦"}</span>
+            <div style="flex:1"><div style="font-weight:700;font-size:12px">${ITEMS[sl.itemId]?.n||sl.itemId}</div><div style="font-size:11px;color:var(--dim)">${sl.qty} units remaining</div></div>
+            <button data-retail-clear="${i}" style="background:#5a2a2a;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px">Clear</button>
+          </div>`;
+        }
+        const _invItems = Object.keys(S.items).filter(id=>S.items[id]>0&&ITEMS[id]);
+        const _opts = _invItems.map(id=>`<option value="${id}">${ITEMS[id].n} (${S.items[id]})</option>`).join('');
+        return `<div class="card" style="padding:6px 8px;display:flex;align-items:center;gap:8px;margin-bottom:6px;opacity:0.7">
+          <span style="font-size:18px">➕</span>
+          <div style="flex:1"><select data-retail-sel="${i}" style="background:#2a2a3a;color:#fff;border:1px solid #555;padding:2px 4px;font-size:11px;border-radius:3px"><option value="">— stock an item —</option>${_opts}</select></div>
+          <button data-retail-stock="${i}" style="background:#2a5a3a;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px">Stock</button>
+        </div>`;
+      }).join('');
+      m.innerHTML = _withRoom("🛍️ Retail Stall — High Street",
+        `<div class="panel" style="padding:10px">
+          <h3 style="margin:0 0 6px;font-size:14px">🏪 Your Stall</h3>
+          <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Stock up to 3 items. The stall auto-sells 1 unit every 2 min at +15% above market price. Daily cap: 200 units.</p>
+          ${_slotHtml}
+          <p style="color:var(--dim);font-size:11px;margin:8px 0 0">Sold today: ${S.retail.dailySold||0} / 200 units</p>
+        </div>`);
+    }
+    else if (S.tab==="postoffice"){
+      const _isReady = S.dailyReward.lastDate !== new Date().toDateString();
+      const _reward = Math.min(500, 50 + totalLvl() * 3);
+      m.innerHTML = _withRoom("📮 Post Office",
+        `<div class="panel" style="padding:10px">
+          <h3 style="margin:0 0 6px;font-size:14px">📬 Daily Parcel</h3>
+          <p style="color:var(--dim);font-size:12px;margin:0 0 10px">A parcel waits for you each day. Come back daily to collect your reward — the amount scales with your total level.</p>
+          ${_isReady
+            ? `<button data-daily-claim="1" style="background:#b03020;color:#fff;border:none;padding:8px 22px;border-radius:4px;cursor:pointer;font-size:14px;font-weight:700">📮 Collect Parcel — ${fmt(_reward)} coins</button>`
+            : `<div style="color:#4aff88;font-size:13px;margin:4px 0">✔ Parcel collected today. Come back tomorrow!</div>`}
+          <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Current reward: <b>${fmt(_reward)} coins</b> (Level ${totalLvl()} × 3 + 50, capped at 500)</p>
+        </div>`);
+    }
+    else if (S.tab==="estateagent"){
+      const _nextRent = Math.max(0, ((S.rentAt||0) - Date.now()) / 60000);
+      const _totalRent = S.properties.reduce((s,pid)=>{ const p=PROPERTIES.find(pr=>pr.id===pid); return s+(p?p.rent:0); }, 0);
+      const _propHtml = PROPERTIES.map(p=>{
+        const owned = S.properties.includes(p.id);
+        const canBuy = !owned && S.coins >= p.cost;
+        return `<div class="card" style="padding:8px 10px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">${p.id==="cottage_a"?"🏡":p.id==="flat_b"?"🏠":"🏰"}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13px">${p.n} ${owned?"✓":""}</div>
+            <div style="font-size:11px;color:var(--dim)">${p.desc}</div>
+            <div style="font-size:11px;color:${owned?"#4aff88":"var(--dim)"}">+${p.rent} coins/min${owned?" · OWNED":""}</div>
+          </div>
+          ${owned ? `<span style="color:#4aff88;font-size:11px">OWNED</span>`
+            : `<button data-buy-prop="${p.id}" style="background:${canBuy?"#2a4060":"#444"};color:#fff;border:none;padding:5px 12px;border-radius:3px;cursor:pointer;font-size:11px"${canBuy?"":" disabled"}>${fmt(p.cost)} coins</button>`}
+        </div>`;
+      }).join('');
+      m.innerHTML = _withRoom("🏘️ Estate Agent",
+        `<div class="panel" style="padding:10px">
+          <h3 style="margin:0 0 6px;font-size:14px">🏘️ Property Portfolio</h3>
+          <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Buy properties for passive rental income. Rent collected every 5 minutes.</p>
+          ${S.properties.length ? `<p style="color:#4aff88;font-size:12px;margin:0 0 8px">Portfolio: +${_totalRent} coins/min · Next rent in ${_nextRent.toFixed(1)} min</p>` : ""}
+          ${_propHtml}
+        </div>`);
+    }
     else m.innerHTML = _withRoom(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop", renderSkillPanel(S.tab));
   }
   bindMain();
@@ -3896,6 +4135,50 @@ function bindMain(){
     S.caffBuff = Math.max(S.caffBuff||0, Date.now()) + _dur;
     toast("☕ Coffee! All actions 20% faster for 5 minutes.");
     log("☕ <b>Coffee purchased</b> — 5 min speed boost active.", "good");
+    renderMain(); updateHud(); save();
+  });
+  // retail stall handlers
+  document.querySelectorAll("[data-retail-stock]").forEach(b=> b.onclick = ()=>{
+    const _i = parseInt(b.dataset.retailStock);
+    const _sel = document.querySelector(`[data-retail-sel="${_i}"]`);
+    const _itemId = _sel ? _sel.value : "";
+    if (!_itemId || !ITEMS[_itemId]){ toast("Pick an item to stock."); return; }
+    const _qty = S.items[_itemId]||0;
+    if (_qty <= 0){ toast("None in inventory."); return; }
+    S.retail.slots[_i] = { itemId:_itemId, qty:_qty };
+    S.items[_itemId] = 0;
+    toast("🛍️ Stocked " + _qty + "× " + ITEMS[_itemId].n + " in slot " + (_i+1) + ".");
+    renderMain(); save();
+  });
+  document.querySelectorAll("[data-retail-clear]").forEach(b=> b.onclick = ()=>{
+    const _i = parseInt(b.dataset.retailClear);
+    const _sl = S.retail.slots[_i];
+    if (_sl && _sl.itemId && _sl.qty > 0){
+      addItem(_sl.itemId, _sl.qty);
+      toast("Returned " + _sl.qty + "× " + (ITEMS[_sl.itemId]?.n||_sl.itemId) + " to inventory.");
+    }
+    S.retail.slots[_i] = { itemId:null, qty:0 };
+    renderMain(); save();
+  });
+  // daily reward
+  document.querySelectorAll("[data-daily-claim]").forEach(b=> b.onclick = ()=>{
+    if (S.dailyReward.lastDate === new Date().toDateString()){ toast("Already collected today."); return; }
+    const _r = Math.min(500, 50 + totalLvl() * 3);
+    S.coins += _r; S.counters.coinsEarned = (S.counters.coinsEarned||0) + _r;
+    S.dailyReward.lastDate = new Date().toDateString();
+    toast("📮 Daily parcel collected! +" + fmt(_r) + " coins.");
+    log("📮 <b>Daily parcel:</b> +" + fmt(_r) + " coins. Come back tomorrow!", "good");
+    renderMain(); updateHud(); save();
+  });
+  // property purchase
+  document.querySelectorAll("[data-buy-prop]").forEach(b=> b.onclick = ()=>{
+    const _pid = b.dataset.buyProp;
+    const _p = PROPERTIES.find(pr=>pr.id===_pid);
+    if (!_p || S.properties.includes(_pid)){ return; }
+    if (S.coins < _p.cost){ toast("Not enough coins."); return; }
+    S.coins -= _p.cost; S.properties.push(_pid);
+    toast("🏘️ " + _p.n + " purchased! Earning +" + _p.rent + " coins/min.");
+    log("🏘️ Property acquired: <b>" + _p.n + "</b> — +" + _p.rent + " coins/min passive income.", "good");
     renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-pos-sell]").forEach(b=> b.onclick = ()=> sellPosition(b.dataset.posSell));
@@ -4011,6 +4294,8 @@ setInterval(()=>{
   updateDeliveries();
   updateStudying();
   updateBankInterest(now);
+  updateRetail(now);
+  updateRent(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));

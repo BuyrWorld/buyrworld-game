@@ -84,7 +84,10 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'depot',       kind: 'bld',   tx: 19, ty: 2,  w: 3, h: 3, tab: 'contracts',     name: 'Depot',         ic: '📦', wall: '#cfd8bd', roof: '#4e7d5b' },
   { id: 'hall',        kind: 'bld',   tx: 23, ty: 2,  w: 3, h: 3, tab: 'upgrades',      name: 'Town Hall',     ic: '🛒', wall: '#ecdfc6', roof: '#b0574f' },
   { id: 'bank',        kind: 'bld',   tx: 27, ty: 2,  w: 2, h: 3, tab: 'bank',          name: 'Village Bank',  ic: '🏦', wall: '#e8e0cc', roof: '#8a7a5a' },
-  { id: 'exchange',    kind: 'bld',   tx: 30, ty: 2,  w: 2, h: 3, tab: 'exchange',      name: 'Exchange Floor', ic: '📈', wall: '#d0d8e8', roof: '#2a4a6a' },
+  { id: 'exchange',    kind: 'bld',   tx: 30, ty: 2,  w: 2, h: 3, tab: 'exchange',      name: 'Exchange Floor',  ic: '📈', wall: '#d0d8e8', roof: '#2a4a6a' },
+  { id: 'retail',      kind: 'bld',   tx: 33, ty: 2,  w: 2, h: 3, tab: 'retail',        name: 'Retail Stall',    ic: '🛍️', wall: '#f8d0d8', roof: '#e84060' },
+  { id: 'postoffice',  kind: 'bld',   tx: 36, ty: 2,  w: 2, h: 3, tab: 'postoffice',    name: 'Post Office',     ic: '📮', wall: '#e8e0d8', roof: '#b03020' },
+  { id: 'estateagent', kind: 'bld',   tx: 39, ty: 2,  w: 2, h: 3, tab: 'estateagent',   name: 'Estate Agent',    ic: '🏘️', wall: '#d8e0e8', roof: '#2a4060' },
   // --- Trade stalls ---
   { id: 'stall_marge', kind: 'stall', tx: 12, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Marge',  lvl: 1,  awn: '#ff8a5c', hair: '#c9a24b', shirt: '#7cb46b' },
   { id: 'stall_bolt',  kind: 'stall', tx: 15, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Bolt',   lvl: 10, awn: '#6fb7d9', hair: '#3a3a3a', shirt: '#c9723a' },
