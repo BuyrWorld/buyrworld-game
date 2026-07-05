@@ -128,6 +128,27 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'pot_4',     kind: 'plant',    tx: 30, ty: 9,  w: 1, h: 1 },
   { id: 'pot_5',     kind: 'plant',    tx: 31, ty: 6,  w: 1, h: 1 },
   { id: 'flowerbed', kind: 'plant',    tx: 21, ty: 9,  w: 2, h: 1 },
+  // --- East forest trees (cols 88-94, woodcutting-capable) ---
+  { id: 'tree_e_pine1', kind: 'tree', tx: 88, ty: 3,  w: 1, h: 2, ore: 'pine',     lvl: 1 },
+  { id: 'tree_e_pine2', kind: 'tree', tx: 90, ty: 7,  w: 1, h: 2, ore: 'pine',     lvl: 1 },
+  { id: 'tree_e_pine3', kind: 'tree', tx: 93, ty: 2,  w: 1, h: 2, ore: 'pine',     lvl: 1 },
+  { id: 'tree_e_oak1',  kind: 'tree', tx: 89, ty: 11, w: 1, h: 2, ore: 'oak',      lvl: 8 },
+  { id: 'tree_e_oak2',  kind: 'tree', tx: 92, ty: 14, w: 1, h: 2, ore: 'oak',      lvl: 8 },
+  { id: 'tree_e_hard1', kind: 'tree', tx: 91, ty: 5,  w: 1, h: 2, ore: 'hardwood', lvl: 20 },
+  // --- Park (residential district, around tx:77-83, ty:7-9) ---
+  { id: 'park_bench_1', kind: 'bench', tx: 77, ty: 8, w: 2, h: 1 },
+  { id: 'park_bench_2', kind: 'bench', tx: 82, ty: 8, w: 2, h: 1 },
+  { id: 'park_flower1', kind: 'plant', tx: 78, ty: 7, w: 2, h: 1 },
+  { id: 'park_flower2', kind: 'plant', tx: 80, ty: 9, w: 2, h: 1 },
+  // --- Residential decorations (planters along home rows) ---
+  { id: 'home_pot_1', kind: 'plant', tx: 54, ty: 5, w: 1, h: 1 },
+  { id: 'home_pot_2', kind: 'plant', tx: 59, ty: 5, w: 1, h: 1 },
+  { id: 'home_pot_3', kind: 'plant', tx: 64, ty: 5, w: 1, h: 1 },
+  { id: 'home_pot_4', kind: 'plant', tx: 69, ty: 5, w: 1, h: 1 },
+  { id: 'home_pot_5', kind: 'plant', tx: 54, ty: 10, w: 1, h: 1 },
+  { id: 'home_pot_6', kind: 'plant', tx: 59, ty: 10, w: 1, h: 1 },
+  { id: 'home_pot_7', kind: 'plant', tx: 64, ty: 10, w: 1, h: 1 },
+  { id: 'home_pot_8', kind: 'plant', tx: 69, ty: 10, w: 1, h: 1 },
   // --- Residential homes (east district, 3 rows × 5 homes) ---
   // Row A: north of east path (ty=3, approach from south at path row 5)
   { id: 'home_01', kind: 'bld', tx: 51, ty: 3, w: 2, h: 2, tab: 'home', name: "Agnes's Cottage",  ic: '🏠', wall: '#d9c8b0', roof: '#8a6a4a' },

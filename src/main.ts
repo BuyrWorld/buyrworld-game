@@ -148,10 +148,11 @@ function zoneForTab(tab){
   if (tab==="woodcutting") return "barn";
   if (tab==="fishing") return "pier";
   if (tab==="upgrades" || tab==="ach") return "market";
+  if (tab==="home") return "home";
   return "valley";
 }
 const MUSIC = (() => {
-  let ctx = null, timer = null, master = null, cur = null, loopStart = 0, noiseBuf = null;
+  let ctx = null, timer = null, master = null, cur = null, loopStart = 0, noiseBuf = null, volMult = 1.0;
   const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
   function ensureCtx(){
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -168,7 +169,7 @@ const MUSIC = (() => {
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type; o.frequency.value = mtof(midi);
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(vol, t + 0.01);
+    g.gain.linearRampToValueAtTime(vol * volMult, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur*beat*0.9);
     o.connect(g); g.connect(master);
     o.start(t); o.stop(t + dur*beat);
@@ -176,7 +177,7 @@ const MUSIC = (() => {
   function thump(t, vel){
     const s = ctx.createBufferSource(), g = ctx.createGain();
     s.buffer = noiseBuf;
-    g.gain.setValueAtTime(vel*0.12, t);
+    g.gain.setValueAtTime(vel*0.12*volMult, t);
     g.gain.exponentialRampToValueAtTime(0.001, t+0.1);
     s.connect(g); g.connect(master);
     s.start(t);
@@ -226,11 +227,17 @@ const MUSIC = (() => {
       cur = null;
     },
     setVol(v){ if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, 0.08); },
+    setVolMult(m){ volMult = m; },
     start(){ this.unlocked = true; this.play(zoneForTab(S.tab)); },
   };
 })();
 function updateMusicZone(){
-  if (MUSIC.unlocked && S.settings && S.settings.music) MUSIC.play(zoneForTab(S.tab));
+  if (MUSIC.unlocked && S.settings && S.settings.music){
+    const isHome = S.tab === "home";
+    const isInterior = INTERIOR_TABS.has(S.tab) && S.tab !== "village";
+    MUSIC.setVolMult(isHome ? 0.28 : isInterior ? 0.42 : 1.0);
+    MUSIC.play(zoneForTab(S.tab));
+  }
 }
 /* ---------- action sound effects ---------- */
 const VOL_LEVELS = { low: 0.45, med: 0.75, loud: 1.05 };
@@ -379,11 +386,12 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
   const workPos = workObj
     ? { x: (workObj.tx + (workObj.w||2)/2)*TILE, y: (workObj.ty + (workObj.h||2))*TILE + 10 }
     : homePos;
-  return { id:v.id, n:v.n, hair:v.hair, shirt:v.shirt, trouser:v.trouser,
+  return { id:v.id, n:v.n, hair:v.hair, shirt:v.shirt, trouser:v.trouser, female:!!v.female,
            homePos, workPos, workTab: workObj?.tab || null,
            x:homePos.x, y:homePos.y,
            tx:null, ty:null, facing:1, moving:false, dir:"down",
-           phase:"sleep", quips:v.quips, quipIdx:0, quipTimer:Math.random()*20, wait:0 };
+           phase:"sleep", quips:v.quips, quipIdx:0, quipTimer:Math.random()*20, wait:0,
+           wanderTimer:Math.random()*2, wTarget:null };
 });
 let CHAT_NPC = null; // villager the player is talking to inside a building
 // Night wildlife
@@ -439,10 +447,15 @@ const ZONE_TIPS = {
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
   pets:          { ic:"🐾", n:"The Companion Barn",  tip:"Your crew lives here." },
 };
-let _zoneCardData = null; // { ic, n, shownAt }
+let _zoneCardData = null;
 function showZoneCard(tab){
   const z = ZONE_TIPS[tab]; if (!z) return;
   _zoneCardData = { ic: z.ic, n: z.n, shownAt: Date.now() };
+  const el = document.getElementById("zone-card-canvas"); if (!el) return;
+  el.innerHTML = `${z.ic} ${z.n}<br><span style="font:400 9px 'IBM Plex Mono',monospace;color:#c9b090">walk south to exit</span>`;
+  el.style.display = "block"; el.style.opacity = "1";
+  clearTimeout(el._zcTimer);
+  el._zcTimer = setTimeout(()=>{ el.style.opacity="0"; setTimeout(()=>{ el.style.display="none"; },520); }, 2600);
 }
 
 // Solid collision rects for interior rooms (pixel coords on 320×200 canvas)
@@ -537,10 +550,15 @@ function tileAt(px, py){
   return VMAP[r][c];
 }
 function solidAt(px, py){
-  // picket fence along the forest edge — solid except the two path gates
+  // picket fences along forest edges — solid except path gates
   {
     const _fr = Math.floor(py/TILE);
+    // west forest west fence (col 39)
     if (px >= 39*TILE-4 && px <= 39*TILE+8 && _fr >= 2 && _fr <= 16 && _fr!==5 && _fr!==6 && _fr!==10 && _fr!==11) return true;
+    // west forest east fence (col 47)
+    if (px >= 47*TILE-4 && px <= 47*TILE+8 && _fr >= 2 && _fr <= 16 && _fr!==5 && _fr!==6 && _fr!==10 && _fr!==11) return true;
+    // east forest west fence (col 87)
+    if (px >= 87*TILE-4 && px <= 87*TILE+8 && _fr >= 2 && _fr <= 16 && _fr!==5 && _fr!==6 && _fr!==10 && _fr!==11) return true;
   }
   const t = tileAt(px, py);
   if (t==="T" || t==="W" || t==="C") return true;
@@ -689,7 +707,7 @@ function villageClick(e){
   VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
   VP.pending = null;
 }
-function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor){
+function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female){
   skin    = skin    || "#f2c49a";
   trouser = trouser || "#4a5a8a";
   dir = dir || (facing>=0 ? "right" : "left");
@@ -707,8 +725,15 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   ctx.fillStyle=skin; ctx.fillRect(-5, -16, 10, 10);
   if (dir==="up"){
     ctx.fillStyle=hair; ctx.fillRect(-6, -18, 12, 10);
+    if (female){ ctx.fillRect(-8,-14,3,12); ctx.fillRect(5,-14,3,12); }
   } else {
-    ctx.fillStyle=hair; ctx.fillRect(-6, -18, 12, 5); ctx.fillRect(-6, -16, 2, 5); ctx.fillRect(4, -16, 2, 5);
+    ctx.fillStyle=hair; ctx.fillRect(-6, -18, 12, 5);
+    if (female){
+      ctx.fillRect(-8, -16, 3, 15); // left flowing strand
+      ctx.fillRect(5, -16, 3, 15);  // right flowing strand
+    } else {
+      ctx.fillRect(-6, -16, 2, 5); ctx.fillRect(4, -16, 2, 5);
+    }
     ctx.fillStyle="#17161a";
     if (dir==="down"){ ctx.fillRect(-3, -11, 2, 2); ctx.fillRect(2, -11, 2, 2); ctx.fillStyle="#c96f4a"; ctx.fillRect(-1, -8, 3, 1); }
     else { ctx.fillRect(facing>=0?0:-2, -11, 2, 2); ctx.fillRect(facing>=0?3:-5, -11, 2, 2); }
@@ -971,17 +996,46 @@ function drawObjects(ctx, t){
 }
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
-  // picket fence along the forest boundary, with gate gaps at the path rows
-  const _fx = 39*TILE - 4;
-  for (let fr = 2; fr <= 16; fr++){
-    if (fr === 5 || fr === 6 || fr === 10 || fr === 11) continue;
-    const fy = fr*TILE;
-    ctx.fillStyle="#e8e2d2";
-    ctx.fillRect(_fx, fy+2, 4, 18); ctx.fillRect(_fx+12, fy+2, 4, 18);
-    ctx.fillStyle="#cfc8b8";
-    ctx.beginPath(); ctx.moveTo(_fx, fy+2); ctx.lineTo(_fx+2, fy-2); ctx.lineTo(_fx+4, fy+2); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(_fx+12, fy+2); ctx.lineTo(_fx+14, fy-2); ctx.lineTo(_fx+16, fy+2); ctx.closePath(); ctx.fill();
-    ctx.fillStyle="#d9d2c2"; ctx.fillRect(_fx-3, fy+6, 22, 3); ctx.fillRect(_fx-3, fy+13, 22, 3);
+  // helper: draw picket fence strip at given x-offset, rows 2-16, with gate rows skipped
+  const _drawFence = (fxBase, gateRows) => {
+    const _fx = fxBase - 4;
+    for (let fr = 2; fr <= 16; fr++){
+      if (gateRows.includes(fr)) continue;
+      const fy = fr*TILE;
+      ctx.fillStyle="#e8e2d2";
+      ctx.fillRect(_fx, fy+2, 4, 18); ctx.fillRect(_fx+12, fy+2, 4, 18);
+      ctx.fillStyle="#cfc8b8";
+      ctx.beginPath(); ctx.moveTo(_fx, fy+2); ctx.lineTo(_fx+2, fy-2); ctx.lineTo(_fx+4, fy+2); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(_fx+12, fy+2); ctx.lineTo(_fx+14, fy-2); ctx.lineTo(_fx+16, fy+2); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="#d9d2c2"; ctx.fillRect(_fx-3, fy+6, 22, 3); ctx.fillRect(_fx-3, fy+13, 22, 3);
+    }
+  };
+  _drawFence(39*TILE, [5,6,10,11]); // west forest west fence
+  _drawFence(47*TILE, [5,6,10,11]); // west forest east fence
+  _drawFence(87*TILE, [5,6,10,11]); // east forest west fence
+  // park (residential, tx≈77-83, ty≈7-9): sandbox + slide + small tree
+  {
+    const pkX = 77*TILE, pkY = 7*TILE;
+    // sandbox pit
+    ctx.fillStyle="#8c6040"; ctx.fillRect(pkX+4,pkY+10,52,4); ctx.fillRect(pkX+4,pkY+38,52,4); ctx.fillRect(pkX+4,pkY+10,4,32); ctx.fillRect(pkX+52,pkY+10,4,32);
+    ctx.fillStyle="#dfc070"; ctx.fillRect(pkX+8,pkY+14,44,24);
+    ctx.fillStyle="#e8d080"; ctx.fillRect(pkX+10,pkY+16,40,20);
+    // slide tower + ramp
+    ctx.fillStyle="#6a4a2f"; ctx.fillRect(pkX+60,pkY+4,6,34);
+    ctx.fillStyle="#4a9adc"; ctx.fillRect(pkX+66,pkY+16,16,4);
+    ctx.fillStyle="#3a8acc";
+    ctx.beginPath(); ctx.moveTo(pkX+66,pkY+20); ctx.lineTo(pkX+82,pkY+36); ctx.lineTo(pkX+82,pkY+40); ctx.lineTo(pkX+66,pkY+24); ctx.closePath(); ctx.fill();
+    // small park tree
+    ctx.fillStyle="#7a5230"; ctx.fillRect(pkX+90,pkY+10,5,16);
+    ctx.fillStyle="#3f8b52"; ctx.beginPath(); ctx.arc(pkX+92,pkY+6,10,0,7); ctx.fill();
+    ctx.fillStyle="#4e9e62"; ctx.beginPath(); ctx.arc(pkX+88,pkY+10,6,0,7); ctx.fill();
+  }
+  // residential flower strip (along path rows 5 and 10)
+  for (let col = 50; col < 86; col += 5){
+    const colors = ["#ff9db0","#ffd666","#b48ad9","#7cd0a8"];
+    const fc = colors[Math.floor(col/5)%4];
+    ctx.fillStyle=fc; ctx.fillRect(col*TILE+10, 4*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, 4*TILE+18, 2, 3);
+    ctx.fillStyle=colors[(Math.floor(col/5)+2)%4]; ctx.fillRect(col*TILE+10, 9*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, 9*TILE+18, 2, 3);
   }
   // sky birds — three V-shapes drifting across the upper sky
   ctx.strokeStyle="rgba(40,30,20,0.6)"; ctx.lineWidth=1;
@@ -1199,7 +1253,7 @@ function drawVillage(t){
   }
   for (const v of VILLAGER_STATE){
     if (v.phase === "sleep") continue;
-    drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser);
+    drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female);
   }
   if (VP.tx!==null && VP.tx!==undefined){
     ctx.strokeStyle="rgba(255,248,230,.8)"; ctx.lineWidth=2;
@@ -1224,7 +1278,17 @@ function drawVillage(t){
           html += `<div class="vlbl" style="left:${tx.toFixed(1)}%;top:${ty.toFixed(1)}%">${label}</div>`;
       }
     }
-    const dockV = VILLAGER_STATE.find(v => v.phase !== "sleep" && Math.hypot(VP.x-v.x, VP.y-v.y) < 2*TILE);
+    // floating name tags and speech dock for nearby villagers
+    for (const v of VILLAGER_STATE){
+      if (v.phase === "sleep") continue;
+      const vdist = Math.hypot(VP.x-v.x, VP.y-v.y);
+      if (vdist < TILE){
+        const nlx = (v.x - CAM.x) / VIEW_W * 100;
+        const nly = (v.y - 24 - CAM.y) / VIEW_H * 100;
+        html += `<div class="vlbl" style="left:${nlx.toFixed(1)}%;top:${nly.toFixed(1)}%">👤 ${v.n}</div>`;
+      }
+    }
+    const dockV = VILLAGER_STATE.find(v => v.phase !== "sleep" && Math.hypot(VP.x-v.x, VP.y-v.y) < TILE);
     if (dockV){
       const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
       html += `<div class="speech-dock">${dockV.n}: "${q}"</div>`;
@@ -1506,8 +1570,6 @@ function drawInterior(t){
     ctx.fillStyle="#453423"; ctx.fillRect(234,10,76,26);
     ctx.fillStyle="#fff8e6"; ctx.fillRect(237,13,70,20);
     ctx.fillStyle="#d9a86a"; ctx.fillRect(241,17,10,12); ctx.fillStyle="#5db3d8"; ctx.fillRect(244,20,5,5);
-    ctx.fillStyle="#453423"; ctx.font="700 8px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
-    ctx.fillText("BUYR", 280, 22); ctx.fillText("FREIGHT", 280, 31);
     ctx.textAlign="left";
     // forklift — orange body, black mast, forks
     ctx.fillStyle="rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(188,142,22,4,0,0,7); ctx.fill();
@@ -1750,7 +1812,7 @@ function drawInterior(t){
   _tabWorkers.forEach((v, i) => {
     const vx = (i+1) / (_tabWorkers.length+1) * W;
     const vy = H * 0.58;
-    drawPerson(ctx, vx, vy, v.hair, v.shirt, t, false, 1, null, "down", null, v.trouser);
+    drawPerson(ctx, vx, vy, v.hair, v.shirt, t, false, 1, null, "down", null, v.trouser, null, v.female);
     // name tag above head
     ctx.fillStyle="rgba(40,30,20,.72)"; ctx.fillRect(vx-18, vy-28, 36, 12);
     ctx.fillStyle="#ffd666"; ctx.textAlign="center"; ctx.font="bold 8px monospace";
@@ -1780,24 +1842,6 @@ function drawInterior(t){
     ctx.fillStyle="#8a7060"; ctx.font="8px monospace"; ctx.textAlign="right";
     ctx.fillText("[tap to dismiss]", W-14, 46);
     ctx.restore();
-  }
-  // zone card — centred in room, fades over 3 s
-  if (_zoneCardData){
-    const age = (Date.now() - _zoneCardData.shownAt) / 1000;
-    if (age < 3){
-      const alpha = age < 2.2 ? 1 : 1 - (age-2.2)/0.8;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle="rgba(30,22,14,.88)"; ctx.fillRect(W/2-70,H/2-22,140,44);
-      ctx.strokeStyle="#ffd666"; ctx.lineWidth=2; ctx.strokeRect(W/2-70,H/2-22,140,44);
-      ctx.fillStyle="#ffd666"; ctx.textAlign="center"; ctx.font="bold 14px monospace";
-      ctx.fillText(_zoneCardData.ic+" "+_zoneCardData.n, W/2, H/2-2);
-      ctx.fillStyle="#c9b090"; ctx.font="9px monospace";
-      ctx.fillText("walk south to exit", W/2, H/2+14);
-      ctx.restore();
-    } else {
-      _zoneCardData = null;
-    }
   }
 }
 function drawTitleFX(t){
@@ -2123,31 +2167,32 @@ function updateBeachBirds(){
   for (const b of BEACH_BIRDS){
     if (b.state==="sit"){
       if (Math.hypot(VP.x - b.x, VP.y - b.y) < 3*TILE){
-        b.state="fly"; b.vx=(Math.random()-0.5)*3; b.vy=-2.8-Math.random();
+        // dive toward sea (south) when player approaches
+        b.state="fly"; b.vx=(Math.random()-0.5)*1.2; b.vy=2.8+Math.random();
       }
     } else {
       b.x += b.vx*1.4; b.y += b.vy*1.4; b.vx*=0.99;
-      // landing from fly-in (vy>0) — land when reaching sand
-      if (b.vy>0 && b.y >= 17.1*TILE){
+      // landing from fly-in (vy<0 coming down from above)
+      if (b.vy<0 && b.y >= 17.1*TILE){
         if (Math.hypot(VP.x-b.x, VP.y-b.y)>3*TILE){ b.vy=0; b.vx=0; b.state="sit"; b.y=17.1*TILE+Math.random()*0.7*TILE; }
         else { b.vy=-2; }
       }
-      // flew off map — teleport to new sand spot
-      if (b.y<12*TILE || b.x<-TILE || b.x>(VCOLS+1)*TILE){
+      // flew into sea or off map — respawn on a far sand spot
+      if (b.y > 20*TILE || b.x < -TILE || b.x > (VCOLS+1)*TILE){
         let nx=0,ny=0,tr=0;
         do{ nx=(3+Math.floor(Math.random()*42))*TILE; ny=(17.1+Math.random()*0.8)*TILE; tr++; }
-        while(Math.hypot(VP.x-nx,VP.y-ny)<5*TILE && tr<20);
+        while(Math.hypot(VP.x-nx,VP.y-ny)<6*TILE && tr<20);
         b.x=nx; b.y=ny; b.vx=0; b.vy=0; b.state="sit";
       }
     }
   }
-  // occasionally send one bird flying in from above
+  // occasionally send one bird gliding in from the sky (vy>0 going down to land)
   if (Math.random() < 0.0003){
     const b = BEACH_BIRDS[Math.floor(Math.random()*BEACH_BIRDS.length)];
     if (b.state==="sit"){
-      let nx=0,ny=0,tr=0;
-      do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-17*TILE)<5*TILE && tr<20);
-      b.x=nx; b.y=13*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=2; b.state="fly";
+      let nx=0,tr=0;
+      do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-17*TILE)<6*TILE && tr<20);
+      b.x=nx; b.y=13*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=-2; b.state="fly";
     }
   }
 }
@@ -2158,20 +2203,33 @@ function updateVillagers(dt){
   const isSleep = hr >= 22 || hr < 6;
   for (const v of VILLAGER_STATE){
     const newPhase = isSleep ? "sleep" : isWork ? "work" : "leisure";
-    if (newPhase !== v.phase){ v.phase = newPhase; v.tx = null; v.ty = null; }
+    if (newPhase !== v.phase){ v.phase = newPhase; v.wTarget = null; v.wanderTimer = 0; }
     if (v.phase === "sleep") continue;
-    const dest = v.phase === "work" ? v.workPos : v.homePos;
+    const mainDest = v.phase === "work" ? v.workPos : v.homePos;
+    const distToMain = Math.hypot(mainDest.x - v.x, mainDest.y - v.y);
+    // wander near destination once arrived, always pick a new nearby target
+    v.wanderTimer -= dt;
+    if (v.wanderTimer <= 0 || !v.wTarget){
+      v.wanderTimer = 1.2 + Math.random() * 2;
+      if (distToMain < 4*TILE){
+        const a = Math.random() * Math.PI * 2, r = (0.4 + Math.random()*2)*TILE;
+        v.wTarget = { x: mainDest.x + Math.cos(a)*r, y: mainDest.y + Math.sin(a)*r };
+      } else {
+        v.wTarget = mainDest;
+      }
+    }
+    const dest = v.wTarget;
     const dx = dest.x - v.x, dy = dest.y - v.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 4){
-      const speed = 28 * dt;
-      v.x += (dx/dist) * speed;
-      v.y += (dy/dist) * speed;
+      const speed = 30 * dt;
+      v.x += (dx/dist)*speed; v.y += (dy/dist)*speed;
       v.moving = true;
       v.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up");
       v.facing = dx >= 0 ? 1 : -1;
     } else {
       v.moving = false;
+      v.wTarget = null; // reached target — timer will pick a fresh one
     }
     v.quipTimer -= dt;
     if (v.quipTimer <= 0){ v.quipIdx = (v.quipIdx + 1) % v.quips.length; v.quipTimer = 18 + Math.random()*12; }
@@ -2574,9 +2632,11 @@ function interiorHtml(title){
     const topPct = ((st.fy + 0.12) * 100).toFixed(1);
     return `<div class="ilbl" style="left:${(st.fx*100).toFixed(1)}%;top:${topPct}%">${st.ic} ${st.lbl}${locked?` <span class="ilbl-lock">Lv${lvl}</span>`:''}</div>`;
   }).join('');
+  const depotLbl = S.tab==="contracts" ? `<div class="ilbl" style="left:73%;top:5%;background:rgba(255,248,230,.96);color:#453423;font:700 9px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;pointer-events:none">BUYR FREIGHT</div>` : "";
   return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap" style="max-width:${cw*2}px;margin:0 auto;position:relative;">
     <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
-    ${lbls}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><div class="ilbl-exit">🚪 EXIT ↓</div>
+    ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><div class="ilbl-exit">🚪 EXIT ↓</div>
+    <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
   </div>
   <div class="vhint">${title} · WASD/tap · walk south to exit</div></div>`;
 }
@@ -2598,10 +2658,10 @@ function renderAch(){
 let _lastRoomTab = null;
 function renderMain(){
   const m = $("#main");
-  if (INTERIOR_TABS.has(S.tab) && S.tab !== _lastRoomTab){
+  const _entering = INTERIOR_TABS.has(S.tab) && S.tab !== _lastRoomTab;
+  if (_entering){
     IP.x = icanvasW()/2; IP.y = icanvasH() - 34;
     IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
-    if (typeof showZoneCard === "function") showZoneCard(S.tab);
   }
   _lastRoomTab = INTERIOR_TABS.has(S.tab) ? S.tab : null;
   const banner = tutBannerHtml();
@@ -2633,6 +2693,7 @@ function renderMain(){
   setupVillage();
   setupInterior();
   updateMusicZone();
+  if (_entering) showZoneCard(S.tab); // after innerHTML so zone-card-canvas exists
   if (S.tab==="character") drawCharPreview("char-preview");
 }
 function bindMain(){

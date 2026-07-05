@@ -53,4 +53,10 @@ export const TRACKS: Record<string, Track> = {
     bass: [[40,3],[45,3],[47,3],[40,3]],
     perc: null,
   },
+  home: {
+    tempo: 38, leadType: 'triangle', bassType: 'triangle',
+    lead: [[60,2],[64,2],[67,2],[64,2],[62,3],[0,1],[60,2],[59,2],[62,2],[60,2],[57,4],[0,2]],
+    bass: [[48,4],[43,4],[45,4],[41,4],[48,4],[43,4],[41,4],[43,4]],
+    perc: null,
+  },
 };

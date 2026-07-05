@@ -211,10 +211,10 @@ describe('CONTRACT_POOL', () => {
 
 /* ---- audio tracks ---- */
 describe('TRACKS', () => {
-  const EXPECTED = ['valley', 'quarry', 'forge', 'line', 'market', 'barn', 'pier'];
+  const EXPECTED = ['valley', 'quarry', 'forge', 'line', 'market', 'barn', 'pier', 'home'];
 
-  it('has exactly 7 tracks', () => {
-    expect(Object.keys(TRACKS).length).toBe(7);
+  it('has exactly 8 tracks', () => {
+    expect(Object.keys(TRACKS).length).toBe(8);
   });
 
   it('contains all expected track names', () => {
