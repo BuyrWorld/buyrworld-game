@@ -142,7 +142,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'home_pot_1', kind: 'plant', tx: 54, ty: 5, w: 1, h: 1 },
   { id: 'home_pot_2', kind: 'plant', tx: 59, ty: 5, w: 1, h: 1 },
   { id: 'home_pot_3', kind: 'plant', tx: 64, ty: 5, w: 1, h: 1 },
-  { id: 'home_pot_4', kind: 'plant', tx: 69, ty: 5, w: 1, h: 1 },
+  { id: 'home_pot_4', kind: 'plant', tx: 70, ty: 5, w: 1, h: 1 },
   { id: 'home_pot_5', kind: 'plant', tx: 54, ty: 10, w: 1, h: 1 },
   { id: 'home_pot_6', kind: 'plant', tx: 59, ty: 10, w: 1, h: 1 },
   { id: 'home_pot_7', kind: 'plant', tx: 64, ty: 10, w: 1, h: 1 },
@@ -154,6 +154,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'home_03', kind: 'bld', tx: 61, ty: 3, w: 2, h: 2, tab: 'home', name: "Clara's Cottage",   ic: '🏠', wall: '#e8d8a0', roof: '#8a7a3a' },
   { id: 'home_04', kind: 'bld', tx: 66, ty: 3, w: 2, h: 2, tab: 'home', name: "Derek's Cottage",   ic: '🏠', wall: '#b8c8b0', roof: '#4a6a4a' },
   { id: 'home_05', kind: 'bld', tx: 71, ty: 3, w: 2, h: 2, tab: 'home', name: "Edna's Cottage",    ic: '🏠', wall: '#d8c0d0', roof: '#7a5a7a' },
+  { id: 'cafe',    kind: 'bld', tx: 68, ty: 3, w: 2, h: 2, tab: 'cafe', name: 'Village Café',       ic: '☕', wall: '#f0e8d0', roof: '#c06030' },
   // Row B: between east paths (ty=6, approach at row 8 grass)
   { id: 'home_06', kind: 'bld', tx: 51, ty: 6, w: 2, h: 2, tab: 'home', name: "Frank's Cottage",   ic: '🏠', wall: '#c8b0a0', roof: '#7a5040' },
   { id: 'home_07', kind: 'bld', tx: 56, ty: 6, w: 2, h: 2, tab: 'home', name: "Gracie's Cottage",  ic: '🏠', wall: '#b8d0b0', roof: '#4a7a4a' },

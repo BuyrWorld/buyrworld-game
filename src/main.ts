@@ -48,15 +48,22 @@ function tradeBonus(){
   if (S.pets.active === "warehouse_panda") b += 0.05;
   return Math.min(b, 0.25);
 }
+function eventMult(it){
+  if (!S.worldEvent) return 1;
+  const _ev = WORLD_EVENTS.find(e => e.id === S.worldEvent.id);
+  if (!_ev) return 1;
+  if (_ev.affects && !_ev.affects.includes(it)) return 1;
+  return _ev.mult;
+}
 function buyPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  return Math.max(1, Math.round(ITEMS[it].v * d * 1.35 * (1 - tradeBonus())));
+  return Math.max(1, Math.round(ITEMS[it].v * d * 1.35 * eventMult(it) * (1 - tradeBonus())));
 }
 function sellPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  const p = Math.round(ITEMS[it].v * d * 0.80 * (1 + tradeBonus()));
+  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * (1 + tradeBonus()));
   return Math.max(1, Math.min(p, buyPrice(npc, it) - 1));
 }
 function doTrade(npcId, it, qty, mode){
@@ -429,7 +436,20 @@ const OWLS = [
   { x:44.6*TILE, y:9.8*TILE, blink:1.4 },
 ];
 const SHARK = { x:28*TILE, y:21.5*TILE, vx:0.35 };
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school"]);
+const WORLD_EVENTS = [
+  { id:"ore_shortage", n:"Iron Ore Shortage",       msg:"A mine collapse disrupts supply — metal prices soaring.",        affects:["iron_ore","copper_ore","coal","bauxite"], mult:1.35 },
+  { id:"fish_glut",    n:"Bumper Catch Season",     msg:"Excellent seas bring record catches — fish prices have fallen.",  affects:["sardine","mackerel","bass","salmon","tuna"], mult:0.72 },
+  { id:"trade_fair",   n:"Regional Trade Fair",     msg:"Traders gather from across the region — market prices are up.",  affects:null, mult:1.20 },
+  { id:"slowdown",     n:"Economic Slowdown",       msg:"Consumer confidence slips — prices are falling broadly.",        affects:null, mult:0.82 },
+  { id:"ore_vein",     n:"New Ore Vein Discovered", msg:"A rich new seam found nearby — ore prices have eased.",          affects:["iron_ore","copper_ore","bauxite"], mult:0.76 },
+  { id:"harvest_fest", n:"Harvest Festival",        msg:"The festival draws crowds — stalls doing brisk trade.",          affects:null, mult:1.15 },
+  { id:"storm",        n:"Storm Warning Issued",    msg:"Storm approaching — fishing is suspended until it passes.",      affects:["sardine","mackerel","bass","salmon","tuna"], mult:0.58 },
+  { id:"craft_demand", n:"Artisan Goods in Demand", msg:"Urban buyers seek crafted items — manufactured goods are rising.",affects:["bracket","gearbox","wiring_loom","chassis","servo_unit"], mult:1.28 },
+  { id:"metal_boom",   n:"Construction Boom",       msg:"A city project drives demand — steel and bar prices are rising.",affects:["iron_bar","steel_bar","alu_ingot","tech_alloy"], mult:1.30 },
+];
+let _weather = { type:"clear", until:0 };
+let _tickerX = 576;
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe"]);
 const STATION_DEFS = {
   mining:        [
     { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
@@ -1549,6 +1569,22 @@ function drawVillage(t){
     [[moonX-40,moonY+12],[moonX-22,moonY-18],[VIEW_W-20,moonY+8],[moonX-60,moonY-10]].forEach(([sx,sy])=>{ ctx.fillRect(sx,sy,2,2); });
     ctx.restore();
   }
+  // rain overlay (drawn after night tint so rain is visible at night)
+  if (_weather.type === "rain"){
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "#7090b0";
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = "rgba(180,215,255,0.7)";
+    ctx.lineWidth = 1;
+    for (let _ri=0; _ri<55; _ri++){
+      const _rx = (((_ri*73 + Math.floor(t*140)) % (VIEW_W+40)) + VIEW_W+40) % (VIEW_W+40) - 20;
+      const _ry = (((_ri*47 + Math.floor(t*180)) % (VIEW_H+20)) + VIEW_H+20) % (VIEW_H+20) - 10;
+      ctx.beginPath(); ctx.moveTo(_rx, _ry); ctx.lineTo(_rx-2, _ry+6); ctx.stroke();
+    }
+    ctx.restore();
+  }
   // lamp glow pools drawn over the night overlay so they actually illuminate
   const glow = lampGlow();
   if (glow > 0.02){
@@ -1567,6 +1603,25 @@ function drawVillage(t){
     ctx.restore();
   }
   drawMinimap(ctx);
+  // scrolling news ticker at bottom of village canvas when a world event is active
+  if (S.worldEvent){
+    const _tev = WORLD_EVENTS.find(e=>e.id===S.worldEvent.id);
+    if (_tev){
+      _tickerX -= 0.9;
+      const _tmsg = "  \u{1F4F0} " + _tev.n.toUpperCase() + ": " + _tev.msg + "       ";
+      ctx.save();
+      ctx.font = "bold 10px sans-serif";
+      const _tw = ctx.measureText(_tmsg).width;
+      if (_tickerX < -_tw) _tickerX = VIEW_W;
+      ctx.fillStyle = "rgba(0,0,0,0.78)";
+      ctx.fillRect(0, VIEW_H-17, VIEW_W, 17);
+      ctx.fillStyle = "#ffe066";
+      ctx.textBaseline = "middle";
+      ctx.fillText(_tmsg, _tickerX, VIEW_H-8);
+      ctx.textBaseline = "alphabetic";
+      ctx.restore();
+    }
+  }
 }
 function updateWanderers(dt){
   const night = isNight();
@@ -2088,6 +2143,58 @@ function drawInterior(t){
     if(Math.floor(t*3)%7===0){ ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(W*0.20+Math.sin(t*7)*4,12,2,2); ctx.fillRect(W*0.18,14,2,2); }
     if(Math.floor(t*3)%11===0){ ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(W*0.70+Math.sin(t*5)*4,12,2,2); ctx.fillRect(W*0.68,14,2,2); }
   }
+  if (S.tab==="cafe"){
+    // Village Café interior — warm coffee shop aesthetic
+    room("#5a3820","#8a5a30","#c8a878","#bca070","#3a2010");
+    winP(W*0.10, 34); winP(W*0.58, 34);
+    // back counter
+    ctx.fillStyle="#4a2c10"; ctx.fillRect(18,48,W-36,24);
+    ctx.fillStyle="#7a4a22"; ctx.fillRect(20,50,W-40,10);
+    ctx.fillStyle="#c8a060"; ctx.fillRect(20,50,W-40,3); // counter highlight
+    // coffee machine
+    ctx.fillStyle="#282828"; ctx.fillRect(W/2-24,30,24,22);
+    ctx.fillStyle="#3a3a3a"; ctx.fillRect(W/2-22,32,20,12);
+    ctx.fillStyle="#c8c8c8"; ctx.fillRect(W/2-16,44,8,6);
+    ctx.fillStyle="#9a3818"; ctx.beginPath(); ctx.arc(W/2-12,37,5,0,7); ctx.fill();
+    ctx.fillStyle="#7a2a10"; ctx.beginPath(); ctx.arc(W/2-12,37,3,0,7); ctx.fill();
+    ctx.fillStyle="#282828"; ctx.fillRect(W/2+2,36,9,16); // grinder box
+    ctx.fillStyle="#444"; ctx.fillRect(W/2+4,38,5,10);
+    drawEmojiC(ctx,"☕", W/2+20, 50, 10);
+    // barista (female, dark hair, red apron)
+    drawPerson(ctx, W/2-10, 42, "#2a1a0a", "#c05030", t, false, 1, null, "down", null, "#2a1850", null, true);
+    // menu board top-right
+    ctx.fillStyle="#2a1408"; ctx.fillRect(W*0.70,6,W*0.27,34);
+    ctx.fillStyle="#f0e4c4"; ctx.fillRect(W*0.71,7,W*0.25,32);
+    { const _mx=W*0.72|0;
+      ctx.fillStyle="#5a3020"; ctx.fillRect(_mx,12,32,2); ctx.fillRect(_mx,17,24,2); ctx.fillRect(_mx,22,30,2); ctx.fillRect(_mx,27,18,2);
+    }
+    drawEmojiC(ctx,"☕", W*0.94, 20, 9);
+    // 3 small café tables
+    const _cafeTbls = [[W*0.14,H*0.62],[W*0.43,H*0.64],[W*0.14,H*0.82]];
+    for(const [cx,cy] of _cafeTbls){
+      ctx.fillStyle="rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(cx,cy+11,17,5,0,0,7); ctx.fill();
+      ctx.fillStyle="#6a4020"; ctx.beginPath(); ctx.ellipse(cx,cy,17,9,0,0,7); ctx.fill();
+      ctx.fillStyle="#8a5a30"; ctx.beginPath(); ctx.ellipse(cx,cy,15,7,0,0,7); ctx.fill();
+      ctx.fillStyle="#5a3010"; ctx.fillRect(cx-1,cy+9,2,12);
+      // four stools around table
+      for(const [ox,oy] of [[-22,0],[22,0],[0,-15],[0,15]]){
+        ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(cx+ox,cy+oy+8,6,2,0,0,7); ctx.fill();
+        ctx.fillStyle="#7a4a20"; ctx.fillRect(cx+ox-5,cy+oy-5,10,9);
+        ctx.fillStyle="#6a3a14"; ctx.fillRect(cx+ox-2,cy+oy+4,4,6);
+      }
+    }
+    // coffee aroma wisps
+    for(let _w=0;_w<3;_w++){
+      const _wa = ((t*0.8+_w*0.4) % 1);
+      ctx.fillStyle="rgba(120,80,40,"+(0.3*(1-_wa)).toFixed(2)+")";
+      const _wx = W/2-16+_w*6, _wy = 30-_wa*12+Math.sin(t*2+_w)*2;
+      ctx.beginPath(); ctx.arc(_wx,_wy,2,0,7); ctx.fill();
+    }
+    // potted plant right of door
+    ctx.fillStyle="#6a4020"; ctx.fillRect(W-26,H-44,14,18);
+    ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(W-19,H-46,10,0,7); ctx.fill();
+    ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(W-25,H-51,7,0,7); ctx.arc(W-13,H-51,7,0,7); ctx.fill();
+  }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
   if (stations){
@@ -2425,6 +2532,8 @@ function freshState(){
     contracts:[],
     tab:"village",
     appearance: Object.assign({}, DEFAULT_APPEARANCE),
+    worldEvent: null, nextEventAt: Date.now() + 3*60*1000,
+    caffBuff: 0,
   };
 }
 let S = freshState();
@@ -2455,6 +2564,8 @@ function load(){
       if (!("trades" in S.counters)) S.counters.trades = 0;
       if (typeof S.playerName !== "string") S.playerName = "";
       if (!parsed.appearance) S.appearance = Object.assign({}, DEFAULT_APPEARANCE);
+      if (!("worldEvent" in parsed)) { S.worldEvent = null; S.nextEventAt = Date.now() + 5*60*1000; }
+      if (!("caffBuff" in parsed)) S.caffBuff = 0;
       return true;
     }
   } catch(e){}
@@ -2481,6 +2592,7 @@ function speedMult(skill){
     if (pet.id==="forklift_fox" && skill==="mining") m *= 0.88;
     if (pet.id==="drone_owl" && skill==="manufacturing") m *= 0.88;
   }
+  if (S.caffBuff && Date.now() < S.caffBuff) m *= 0.80;
   return m;
 }
 function updateBeachBirds(){
@@ -2514,6 +2626,37 @@ function updateBeachBirds(){
       do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-17*TILE)<6*TILE && tr<20);
       b.x=nx; b.y=13*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=-2; b.state="fly";
     }
+  }
+}
+function updateWorldEvents(){
+  const _now = Date.now();
+  if (S.worldEvent && _now > S.worldEvent.endsAt){
+    const _ev = WORLD_EVENTS.find(e=>e.id===S.worldEvent.id);
+    log("📰 Market: the " + (_ev ? _ev.n : "event") + " has ended. Prices normalising.");
+    S.worldEvent = null;
+    S.nextEventAt = _now + (8+Math.random()*20)*60*1000;
+    if (S.tab==="trade") renderMain();
+  }
+  if (!S.worldEvent && _now > S.nextEventAt){
+    const _ev = WORLD_EVENTS[Math.floor(Math.random()*WORLD_EVENTS.length)];
+    const _dur = (5+Math.random()*15)*60*1000;
+    S.worldEvent = { id:_ev.id, endsAt:_now+_dur };
+    S.nextEventAt = _now + _dur + (8+Math.random()*20)*60*1000;
+    _tickerX = VIEW_W;
+    toast("📰 " + _ev.n + ": " + _ev.msg);
+    log("📰 World event: <b>" + _ev.n + "</b> — " + _ev.msg, "good");
+    if (S.tab==="trade") renderMain();
+  }
+}
+function updateWeather(){
+  const _now = Date.now();
+  if (_weather.until === 0){
+    _weather.until = _now + (8+Math.random()*15)*60*1000;
+  } else if (_now > _weather.until){
+    _weather.type = _weather.type === "rain" ? "clear" : "rain";
+    _weather.until = _now + (_weather.type==="rain" ? (4+Math.random()*8) : (12+Math.random()*18))*60*1000;
+    if (_weather.type==="rain") toast("🌧️ Rain has arrived over the valley.");
+    else toast("☀️ Skies are clearing over the valley.");
   }
 }
 function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
@@ -3095,8 +3238,21 @@ function renderMain(){
     else if (S.tab==="ach") m.innerHTML = _withRoom("🏆 Inside the Trophy Hall", renderAch());
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
-    else if (S.tab==="home") m.innerHTML = _withRoom("🏠 A Villager's Cottage", `<p style="color:var(--dim);font-size:12px;margin:8px 0">A cosy home. Someone lives here.</p>`);
+    else if (S.tab==="home") m.innerHTML = _withRoom("🏠 A Villager's Cottage", `<p style="color:var(--dim);font-size:12px;margin:8px 0">A cosy cottage — someone calls this place home.</p>`);
     else if (S.tab==="school") m.innerHTML = _withRoom("🏫 Inside the Village School", `<p style="color:var(--dim);font-size:12px;margin:8px 0">Children hard at work. Two classrooms, one building.</p>`);
+    else if (S.tab==="cafe"){
+      const _caffMs = (S.caffBuff||0) - Date.now();
+      const _buffHtml = _caffMs > 0
+        ? `<div class="panel" style="background:rgba(180,100,20,.15);border:1px solid #c06030;padding:8px;margin-bottom:8px"><b style="color:#e07030">☕ Coffee active!</b><br><span style="color:var(--dim);font-size:11px">Actions 20% faster · ${Math.ceil(_caffMs/1000)}s remaining</span></div>`
+        : "";
+      m.innerHTML = _withRoom("☕ Inside the Village Café",
+        `${_buffHtml}<div class="panel" style="padding:10px"><p style="margin:0 0 8px"><b>Order a Coffee</b> — boosts all action speed by 20% for 5 minutes.</p>
+        <p style="color:var(--dim);font-size:12px;margin:0 0 10px">The barista gives you a knowing nod as she pulls the shot.</p>
+        <button data-coffee="1" style="background:#c06030;color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px">☕ Buy Coffee — 15 coins</button>
+        ${S.coins < 15 ? '<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Not enough coins.</p>' : ''}
+        </div>`
+      );
+    }
     else m.innerHTML = _withRoom(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop", renderSkillPanel(S.tab));
   }
   bindMain();
@@ -3131,6 +3287,15 @@ function bindMain(){
     S.coins -= u.cost; S.upgrades[u.id] = true;
     toast(`${u.ic} ${u.n} PURCHASED`); log(`🛒 CapEx approved: <b>${u.n}</b>`, "good");
     achCheck();
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-coffee]").forEach(b=> b.onclick = ()=>{
+    if (S.coins < 15){ toast("Not enough coins."); return; }
+    S.coins -= 15;
+    const _dur = 5*60*1000;
+    S.caffBuff = Math.max(S.caffBuff||0, Date.now()) + _dur;
+    toast("☕ Coffee! All actions 20% faster for 5 minutes.");
+    log("☕ <b>Coffee purchased</b> — 5 min speed boost active.", "good");
     renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-pet]").forEach(b=> b.onclick = ()=>{
@@ -3223,6 +3388,8 @@ setInterval(()=>{
   const dt = now - lastTick; lastTick = now;
   const beforeItems = JSON.stringify(S.items);
   tick(dt);
+  updateWorldEvents();
+  updateWeather();
   updateProgressBar();
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
