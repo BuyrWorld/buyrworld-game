@@ -11,6 +11,7 @@ import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS } from './world/map
 import { nightAlpha, lampGlow, isNight, skyTint, gameHour } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS } from './player/customisation.ts';
+import { VILLAGERS } from './data/villagers.ts';
 import { preloadAll, drawSprite, getSprite } from './world/assets.ts';
 
 /* =====================================================
@@ -369,7 +370,30 @@ const BEACH_BIRDS = Array.from({length:7}, (_,i) => ({
   y:(17.1+i%2*0.7)*TILE,
   vx:0, vy:0, state:"sit", flap:i*0.9,
 }));
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing"]);
+// M6: villager runtime state (positions, phase, quip cycling)
+const VILLAGER_STATE = VILLAGERS.map(v => {
+  const homeObj = V_OBJECTS.find(o => o.id === v.homeId);
+  const workObj = V_OBJECTS.find(o => o.id === v.workId);
+  const homePos = homeObj
+    ? { x: (homeObj.tx + (homeObj.w||2)/2)*TILE, y: (homeObj.ty + (homeObj.h||2))*TILE + 10 }
+    : { x: 52*TILE, y: 5*TILE };
+  const workPos = workObj
+    ? { x: (workObj.tx + (workObj.w||2)/2)*TILE, y: (workObj.ty + (workObj.h||2))*TILE + 10 }
+    : homePos;
+  return { id:v.id, n:v.n, hair:v.hair, shirt:v.shirt, trouser:v.trouser,
+           homePos, workPos, x:homePos.x, y:homePos.y,
+           tx:null, ty:null, facing:1, moving:false, dir:"down",
+           phase:"sleep", quips:v.quips, quipIdx:0, quipTimer:Math.random()*20, wait:0 };
+});
+// Night wildlife
+const FOX = { x:42*TILE, y:8*TILE, tx:null, ty:null, facing:1, moving:false, dir:"right", wait:0 };
+const OWLS = [
+  { x:41.4*TILE, y:1.8*TILE, blink:0 },
+  { x:44.3*TILE, y:2.8*TILE, blink:0.7 },
+  { x:44.6*TILE, y:9.8*TILE, blink:1.4 },
+];
+const SHARK = { x:28*TILE, y:21.5*TILE, vx:0.35 };
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home"]);
 const STATION_DEFS = {
   mining:        [
     { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
@@ -489,6 +513,10 @@ const INTERIOR_COLS = {
     {x:36,  y:76, w:64, h:18},  // saw table
     {x:244, y:132,w:50, h:26},  // log pile
     {x:14,  y:142,w:50, h:14},  // plank stack
+  ],
+  home: [
+    {x:14,  y:56, w:64, h:76},  // bed
+    {x:230, y:50, w:38, h:44},  // fireplace surround
   ],
 };
 const VKEYS = {};
@@ -1049,6 +1077,38 @@ function drawExtras(ctx, t){
     ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][i%3]; ctx.fillRect(cx, cy, 10, 9);
     ctx.strokeStyle="#8c6947"; ctx.strokeRect(cx, cy, 10, 9);
   }
+  // Night wildlife: fox, owls, shark fin
+  if (isNight()){
+    // Fox wanders the forest at night
+    const fsx=Math.round(FOX.x-CAM.x), fsy=Math.round(FOX.y-CAM.y);
+    if (fsx>-20&&fsx<VIEW_W+20&&fsy>-20&&fsy<VIEW_H+20){
+      const fd=FOX.facing;
+      ctx.fillStyle="#c8642a"; ctx.fillRect(fsx-5,fsy-4,12,6);
+      ctx.fillStyle="#c8642a"; ctx.fillRect(fsx+(fd>0?5:-9),fsy-7,5,5);
+      ctx.fillStyle="#f0f0e0"; ctx.fillRect(fsx+(fd>0?8:-8),fsy-6,3,2);
+      ctx.fillStyle="#1a1614"; ctx.fillRect(fsx+(fd>0?9:-7),fsy-7,2,2);
+      ctx.fillStyle="#c8642a"; ctx.fillRect(fsx+(fd>0?-12:-4),fsy-2,8,3);
+      ctx.fillStyle="#f0f0e0"; ctx.fillRect(fsx+(fd>0?-14:-4),fsy-2,5,2);
+      ctx.fillStyle="#1a1614"; ctx.fillRect(fsx-2,fsy+2,2,4); ctx.fillRect(fsx+3,fsy+2,2,4);
+    }
+    // Owls perch in tree tiles at night
+    for (const owl of OWLS){
+      owl.blink = (owl.blink||0) + 0.02;
+      const osx=Math.round(owl.x-CAM.x), osy=Math.round(owl.y-CAM.y);
+      if (osx<-14||osx>VIEW_W+14||osy<-14||osy>VIEW_H+14) continue;
+      ctx.fillStyle="#d0c8a0"; ctx.fillRect(osx-4,osy-6,9,10);
+      ctx.fillStyle="#2a2218"; ctx.fillRect(osx-3,osy-8,3,3); ctx.fillRect(osx+3,osy-8,3,3);
+      const eyeH = Math.sin(owl.blink*5)>0.96 ? 1 : 3;
+      ctx.fillStyle="#f0c040"; ctx.fillRect(osx-2,osy-4,3,eyeH); ctx.fillRect(osx+1,osy-4,3,eyeH);
+      ctx.fillStyle="#2a1a0a"; ctx.fillRect(osx-1,osy-3,2,1);
+    }
+    // Shark fin drifts offshore
+    const ssx=Math.round(SHARK.x-CAM.x), ssy=Math.round(SHARK.y-CAM.y);
+    if (ssx>-16&&ssx<VIEW_W+16&&ssy>-16&&ssy<VIEW_H+16){
+      ctx.fillStyle="#354050";
+      ctx.beginPath(); ctx.moveTo(ssx,ssy+4); ctx.lineTo(ssx+5,ssy-12); ctx.lineTo(ssx+10,ssy+4); ctx.closePath(); ctx.fill();
+    }
+  }
 }
 function drawWorkerAndVfx(ctx, t){
   let playerTool = null;
@@ -1077,20 +1137,21 @@ function drawWorkerAndVfx(ctx, t){
   return playerTool;
 }
 function drawMinimap(ctx){
-  const mw = VCOLS*2, mh = VROWS*2, mx = VIEW_W-mw-8, my = 8;
-  ctx.fillStyle="rgba(69,52,35,.78)"; ctx.fillRect(mx-3, my-3, mw+6, mh+6);
+  const mw = VCOLS, mh = VROWS, mx = VIEW_W-mw-8, my = 8;
+  ctx.fillStyle="rgba(69,52,35,.78)"; ctx.fillRect(mx-2, my-2, mw+4, mh+4);
   const cmap = { G:"#8fc79a", P:"#dcc48f", W:"#5db3d8", T:"#3f7a4e", C:"#7d838c", D:"#a1855c", S:"#e6d49e" };
   for (let r=0;r<VROWS;r++) for (let c=0;c<VCOLS;c++){
     ctx.fillStyle = cmap[VMAP[r][c]] || "#888";
-    ctx.fillRect(mx+c*2, my+r*2, 2, 2);
+    ctx.fillRect(mx+c, my+r, 1, 1);
   }
   for (const o of V_OBJECTS){
-    if (o.kind==="bld" || o.kind==="stall"){ ctx.fillStyle=o.roof||o.awn; ctx.fillRect(mx+o.tx*2, my+o.ty*2, (o.w||1)*2, (o.h||1)*2); }
-    if (o.kind==="rock"){ ctx.fillStyle=o.vein; ctx.fillRect(mx+o.tx*2, my+o.ty*2, 2, 2); }
-    if (o.kind==="tree"){ ctx.fillStyle="#3a7032"; ctx.fillRect(mx+o.tx*2, my+o.ty*2, 2, 3); }
+    if (o.kind==="bld" || o.kind==="stall"){ ctx.fillStyle=o.roof||o.awn||"#888"; ctx.fillRect(mx+o.tx, my+o.ty, o.w||1, o.h||1); }
+    if (o.kind==="rock"){ ctx.fillStyle=o.vein; ctx.fillRect(mx+o.tx, my+o.ty, 1, 1); }
+    if (o.kind==="tree"){ ctx.fillStyle="#3a7032"; ctx.fillRect(mx+o.tx, my+o.ty, 1, 2); }
   }
-  ctx.fillStyle="#bfe8f7"; const fr=WANDERERS[0]; ctx.fillRect(mx+fr.x/TILE*2-1, my+fr.y/TILE*2-1, 2, 2);
-  ctx.fillStyle="#fff"; ctx.fillRect(mx+VP.x/TILE*2-1, my+VP.y/TILE*2-1, 3, 3);
+  for (const v of VILLAGER_STATE){ if(v.phase!=="sleep"){ ctx.fillStyle=v.shirt; ctx.fillRect(mx+Math.round(v.x/TILE), my+Math.round(v.y/TILE), 1, 1); } }
+  ctx.fillStyle="#bfe8f7"; const fr=WANDERERS[0]; ctx.fillRect(mx+Math.round(fr.x/TILE)-1, my+Math.round(fr.y/TILE)-1, 2, 2);
+  ctx.fillStyle="#fff"; ctx.fillRect(mx+Math.round(VP.x/TILE)-1, my+Math.round(VP.y/TILE)-1, 2, 2);
 }
 function drawVillage(t){
   const cv = document.getElementById("village");
@@ -1121,7 +1182,10 @@ function drawVillage(t){
   const playerTool = drawWorkerAndVfx(ctx, t);
   for (const w of WANDERERS){
     drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir);
-
+  }
+  for (const v of VILLAGER_STATE){
+    if (v.phase === "sleep") continue;
+    drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser);
   }
   if (VP.tx!==null && VP.tx!==undefined){
     ctx.strokeStyle="rgba(255,248,230,.8)"; ctx.lineWidth=2;
@@ -1145,6 +1209,11 @@ function drawVillage(t){
         if (tx > -5 && tx < 105 && ty > -5 && ty < 100)
           html += `<div class="vlbl" style="left:${tx.toFixed(1)}%;top:${ty.toFixed(1)}%">${label}</div>`;
       }
+    }
+    const dockV = VILLAGER_STATE.find(v => v.phase !== "sleep" && Math.hypot(VP.x-v.x, VP.y-v.y) < 2*TILE);
+    if (dockV){
+      const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
+      html += `<div class="speech-dock">${dockV.n}: "${q}"</div>`;
     }
     overlay.innerHTML = html;
   }
@@ -1598,6 +1667,29 @@ function drawInterior(t){
       }
     });
   }
+  if (S.tab==="home"){
+    room("#5a7a4a","#6a8a5a","#d4c4a0","#c8b890","#4a3020");
+    winP(W*0.12, 38); winP(W*0.62, 38);
+    // fireplace (left wall)
+    ctx.fillStyle="#4a3020"; ctx.fillRect(8,46,28,H-60);
+    ctx.fillStyle="#3a2010"; ctx.fillRect(12,H-44,20,H-60);
+    ctx.fillStyle="#c94a1a"; ctx.fillRect(14,H-40,8,10); ctx.fillStyle="#e8721a"; ctx.fillRect(20,H-42,6,8); ctx.fillStyle="#ffd666"; ctx.fillRect(17,H-44,4,6);
+    // bed (right side)
+    ctx.fillStyle="#8c6040"; ctx.fillRect(W-58,60,50,60);
+    ctx.fillStyle="#c09060"; ctx.fillRect(W-56,62,46,18);
+    ctx.fillStyle="#e8c8a0"; ctx.fillRect(W-52,66,38,10);
+    ctx.fillStyle="#f0dfc0"; ctx.fillRect(W-54,82,42,34);
+    // small table + chair (centre)
+    ctx.fillStyle="#8c6040"; ctx.fillRect(W/2-18,H-50,36,28); ctx.fillRect(W/2-18,H-22,4,22); ctx.fillRect(W/2+14,H-22,4,22);
+    ctx.fillStyle="#c09060"; ctx.fillRect(W/2-16,H-48,32,4);
+    // tea cup on table
+    ctx.fillStyle="#f0e8d8"; ctx.fillRect(W/2-5,H-52,10,7);
+    ctx.fillStyle="#8c6040"; ctx.fillRect(W/2-7,H-46,14,2);
+    // rug
+    ctx.fillStyle="rgba(180,80,60,.35)"; ctx.fillRect(W/2-44,H-64,88,52);
+    ctx.strokeStyle="rgba(200,160,60,.5)"; ctx.lineWidth=2;
+    ctx.strokeRect(W/2-40,H-60,80,44);
+  }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
   if (stations){
@@ -1723,6 +1815,8 @@ function villageFrame(ts){
     }
     updateWanderers(dt);
     updateBeachBirds();
+    updateVillagers(dt);
+    updateNightWildlife(dt);
     if (VP.pending){
       const o = VP.pending;
       const ap = o.kind==="npc" ? {x:o.w.x, y:o.w.y+18} : objApproach(o);
@@ -1863,6 +1957,7 @@ if (typeof document !== 'undefined'){
   .int-right .panel{margin-bottom:14px}
   .ilbl-room{position:absolute;left:6px;bottom:6px;background:rgba(69,52,35,.9);color:#ffd666;font:700 11px 'IBM Plex Mono',monospace;padding:2px 9px;border-radius:4px;pointer-events:none;letter-spacing:.5px}
   #hud-time{font:700 12px 'IBM Plex Mono',monospace;color:#e8961e;background:rgba(69,52,35,.08);border:2px solid #8c694733;border-radius:6px;padding:4px 9px;white-space:nowrap}
+  .speech-dock{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(255,248,230,.97);border:2px solid #8c6947;color:#453423;font:600 11px/1.5 'IBM Plex Mono',monospace;padding:4px 14px;border-radius:6px;white-space:nowrap;box-shadow:2px 2px 0 rgba(70,50,30,.25);pointer-events:none;max-width:80%;text-align:center}
   `;
   document.head.appendChild(_st);
 }
@@ -1983,6 +2078,52 @@ function updateBeachBirds(){
       b.x=nx; b.y=13*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=2; b.state="fly";
     }
   }
+}
+function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
+function updateVillagers(dt){
+  const hr = gameHour();
+  const isWork = hr >= 6.5 && hr < 18.5;
+  const isSleep = hr >= 22 || hr < 6;
+  for (const v of VILLAGER_STATE){
+    const newPhase = isSleep ? "sleep" : isWork ? "work" : "leisure";
+    if (newPhase !== v.phase){ v.phase = newPhase; v.tx = null; v.ty = null; }
+    if (v.phase === "sleep") continue;
+    const dest = v.phase === "work" ? v.workPos : v.homePos;
+    const dx = dest.x - v.x, dy = dest.y - v.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 4){
+      const speed = 28 * dt;
+      v.x += (dx/dist) * speed;
+      v.y += (dy/dist) * speed;
+      v.moving = true;
+      v.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up");
+      v.facing = dx >= 0 ? 1 : -1;
+    } else {
+      v.moving = false;
+    }
+    v.quipTimer -= dt;
+    if (v.quipTimer <= 0){ v.quipIdx = (v.quipIdx + 1) % v.quips.length; v.quipTimer = 18 + Math.random()*12; }
+  }
+}
+function updateNightWildlife(dt){
+  const hr = gameHour();
+  const isNight = hr >= 22 || hr < 6;
+  if (!isNight) return;
+  // fox wanders between forest tiles
+  const fdx = FOX.tx !== null ? FOX.tx - FOX.x : 0;
+  const fdy = FOX.ty !== null ? FOX.ty - FOX.y : 0;
+  if (FOX.tx === null || Math.hypot(fdx, fdy) < 4){
+    FOX.tx = (40 + Math.random()*5) * TILE;
+    FOX.ty = (4 + Math.random()*10) * TILE;
+  } else {
+    const fd = Math.hypot(fdx, fdy);
+    FOX.x += (fdx/fd) * 18 * dt;
+    FOX.y += (fdy/fd) * 18 * dt;
+    FOX.dir = fdx >= 0 ? "right" : "left";
+  }
+  // shark drifts horizontally in water
+  SHARK.x += SHARK.vx;
+  if (SHARK.x > 44*TILE || SHARK.x < 4*TILE) SHARK.vx = -SHARK.vx;
 }
 function payMult(){
   let m = 1;
@@ -2413,6 +2554,7 @@ function renderMain(){
     else if (S.tab==="ach") m.innerHTML = _withRoom("🏆 Inside the Trophy Hall", renderAch());
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
+    else if (S.tab==="home") m.innerHTML = _withRoom("🏠 A Villager's Cottage", `<p style="color:var(--dim);font-size:12px;margin:8px 0">A cosy home. Someone lives here.</p>`);
     else m.innerHTML = _withRoom(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop", renderSkillPanel(S.tab));
   }
   bindMain();
