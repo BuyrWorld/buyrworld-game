@@ -357,6 +357,8 @@ const ACH = [
   { id:"home_t1",      ic:"🛋️", n:"Moving In",          ds:"Upgrade your cottage to Tier 1.",    r:50,   c:()=>(S.homeTier||0)>=1 },
   { id:"home_t4",      ic:"🎹", n:"Dream Cottage",      ds:"Reach the highest home tier.",       r:500,  c:()=>(S.homeTier||0)>=4 },
   { id:"first_loan",   ic:"💳", n:"In the Red",         ds:"Take your first bank loan.",         r:15,   c:()=>(S.counters?.loansTotal||0)>=1 },
+  { id:"good_neighbour",ic:"📬", n:"Good Neighbour",    ds:"Complete a villager delivery request.", r:75,  c:()=>(S.counters?.deliveries||0)>=1 },
+  { id:"postman",      ic:"🚚", n:"Village Postman",    ds:"Complete 10 villager delivery requests.", r:300, c:()=>(S.counters?.deliveries||0)>=10 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -371,6 +373,7 @@ const ACH_PROG = {
   total_100:   ()=>({ cur:Math.min(100,  totalLvl()),                                max:100   }),
   full_honours:()=>({ cur:Math.min(7,    S.degrees?.length||0),                      max:7     }),
   mogul:       ()=>({ cur:Math.min(3,    S.properties?.length||0),                   max:3     }),
+  postman:     ()=>({ cur:Math.min(10,  S.counters?.deliveries||0),                 max:10    }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
@@ -1753,8 +1756,11 @@ function drawVillage(t){
       if (_dReqV){
         const _dlx = (_dReqV.x - CAM.x) / VIEW_W * 100;
         const _dly = (_dReqV.y - 40 - CAM.y) / VIEW_H * 100;
-        if (_dlx > -5 && _dlx < 105 && _dly > -5 && _dly < 105)
-          html += `<div class="vlbl" style="left:${_dlx.toFixed(1)}%;top:${_dly.toFixed(1)}%;background:rgba(20,110,50,.92);color:#fff">📬 ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n}</div>`;
+        if (_dlx > -5 && _dlx < 105 && _dly > -5 && _dly < 105){
+          const _tLeft = Math.max(0, Math.ceil((S.deliveryReq.expiresAt - Date.now()) / 60000));
+          const _dbg = _tLeft <= 5 ? 'rgba(160,40,20,.92)' : _tLeft <= 10 ? 'rgba(160,100,20,.92)' : 'rgba(20,110,50,.92)';
+          html += `<div class="vlbl" style="left:${_dlx.toFixed(1)}%;top:${_dly.toFixed(1)}%;background:${_dbg};color:#fff">📬 ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n} · ${_tLeft}m</div>`;
+        }
       }
     }
     const dockV = VILLAGER_STATE.find(v => !v.indoor && v.phase !== "sleep" && Math.hypot(VP.x-v.x, VP.y-v.y) < TILE);
@@ -1763,7 +1769,9 @@ function drawVillage(t){
       if (_isReqV){
         const _hasIt = itemCount(S.deliveryReq.itemId) >= S.deliveryReq.qty;
         const _btn = _hasIt ? `<button onclick="deliverReq()" style="margin-left:8px;background:#1a8a3a;color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px;font-family:inherit">Deliver ✓</button>` : `<span style="color:rgba(255,255,255,.55);font-size:11px;margin-left:6px">(need ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n})</span>`;
-        html += `<div class="speech-dock"><b>${dockV.n}:</b> "Could you spare ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n}? I'll pay ${fmt(S.deliveryReq.reward)} coins!"${_btn}</div>`;
+        const _mLeft = Math.max(0, Math.ceil((S.deliveryReq.expiresAt - Date.now()) / 60000));
+        const _urg = _mLeft <= 5 ? `<span style="color:#ff8870;margin-left:8px">⏰ ${_mLeft}m left!</span>` : `<span style="color:rgba(255,255,255,.5);margin-left:8px">${_mLeft}m left</span>`;
+        html += `<div class="speech-dock"><b>${dockV.n}:</b> "Could you spare ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n}? I'll pay ${fmt(S.deliveryReq.reward)} coins!"${_btn}${_urg}</div>`;
       } else {
         const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
         html += `<div class="speech-dock">${dockV.n}: "${q}"</div>`;
@@ -3146,6 +3154,7 @@ function load(){
       if (!Array.isArray(S.properties)) S.properties = [];
       if (!("rentAt" in parsed)) S.rentAt = Date.now() + 5*60*1000;
       if (!S.loans) S.loans = [];
+      if (!("deliveries" in S.counters)) S.counters.deliveries = 0;
       return true;
     }
   } catch(e){}
@@ -3241,11 +3250,20 @@ function updateWeather(){
 }
 function updateDeliveries(){
   const _now = Date.now();
-  if (S.deliveryReq && _now > S.deliveryReq.expiresAt){
-    const _dv = VILLAGERS.find(v => v.id === S.deliveryReq.npcId);
-    log("📬 " + (_dv ? _dv.n : "Villager") + "'s delivery request expired — they found another supplier.");
-    S.deliveryReq = null;
-    S.nextDeliveryAt = _now + (8+Math.random()*12)*60*1000;
+  if (S.deliveryReq){
+    const _minsLeft = (S.deliveryReq.expiresAt - _now) / 60000;
+    if (!S.deliveryReq.warned && _minsLeft <= 5 && _minsLeft > 0){
+      S.deliveryReq.warned = true;
+      const _dv = VILLAGERS.find(v => v.id === S.deliveryReq.npcId);
+      toast(`⏰ ${_dv ? _dv.n : "Villager"} needs their delivery in ${Math.ceil(_minsLeft)} min!`);
+    }
+    if (_now > S.deliveryReq.expiresAt){
+      const _dv = VILLAGERS.find(v => v.id === S.deliveryReq.npcId);
+      toast(`❌ ${_dv ? _dv.n : "Villager"}'s request expired — they found another supplier.`);
+      log("📬 " + (_dv ? _dv.n : "Villager") + "'s delivery request expired — they found another supplier.", "dim");
+      S.deliveryReq = null;
+      S.nextDeliveryAt = _now + 30*60*1000;
+    }
   }
   if (!S.deliveryReq && _now > (S.nextDeliveryAt||0)){
     const _it = DELIVERY_POOL[Math.floor(Math.random()*DELIVERY_POOL.length)];
@@ -3271,6 +3289,7 @@ function deliverReq(){
     : ["wood","plank"].includes(S.deliveryReq.itemId) ? "woodcutting"
     : ["sardine","mackerel","bass","salmon","tuna"].includes(S.deliveryReq.itemId) ? "fishing" : "trading";
   grantXp(_xpSkill, Math.round(S.deliveryReq.reward * 0.15));
+  S.counters.deliveries = (S.counters.deliveries||0) + 1;
   const _dv = VILLAGERS.find(v => v.id === S.deliveryReq.npcId);
   toast("📬 Delivered! +" + fmt(S.deliveryReq.reward) + " coins from " + (_dv ? _dv.n : "villager") + ".");
   log("📬 Delivery complete for <b>" + (_dv ? _dv.n : "villager") + "</b> — <b>+" + fmt(S.deliveryReq.reward) + " coins</b>", "good");
