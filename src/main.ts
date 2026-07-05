@@ -348,7 +348,30 @@ const ACH = [
   { id:"capex",       ic:"🛒", n:"CapEx Approved",    ds:"Buy your first upgrade.",           r:50,   c:()=>Object.keys(S.upgrades).length>=1 },
   { id:"rail_baron",  ic:"🚆", n:"Rail Baron",        ds:"Sign the Rail Freight Deal.",       r:1000, c:()=>!!S.upgrades.fleet3 },
   { id:"frosty_grad", ic:"❄️", n:"Stay Frosty",       ds:"Complete Frost's tutorial.",        r:50,   c:()=>S.tut && S.tut.done },
+  { id:"first_fish",   ic:"🎣", n:"First Cast",        ds:"Catch your first fish.",             r:25,   c:()=>prodSum(["sardine","mackerel","bass","salmon","tuna"])>=1 },
+  { id:"angler_100",   ic:"🐟", n:"Seasoned Angler",   ds:"Catch 100 fish.",                    r:150,  c:()=>prodSum(["sardine","mackerel","bass","salmon","tuna"])>=100 },
+  { id:"graduate",     ic:"🏛️", n:"Graduate",           ds:"Complete a university degree.",      r:150,  c:()=>(S.degrees?.length||0)>=1 },
+  { id:"full_honours", ic:"📜", n:"Full Honours",       ds:"Complete all university degrees.",   r:2000, c:()=>(S.degrees?.length||0)>=7 },
+  { id:"landlord",     ic:"🏡", n:"Landlord",           ds:"Buy your first property.",           r:100,  c:()=>(S.properties?.length||0)>=1 },
+  { id:"mogul",        ic:"🏰", n:"Property Mogul",     ds:"Own all three properties.",          r:500,  c:()=>(S.properties?.length||0)>=3 },
+  { id:"home_t1",      ic:"🛋️", n:"Moving In",          ds:"Upgrade your cottage to Tier 1.",    r:50,   c:()=>(S.homeTier||0)>=1 },
+  { id:"home_t4",      ic:"🎹", n:"Dream Cottage",      ds:"Reach the highest home tier.",       r:500,  c:()=>(S.homeTier||0)>=4 },
+  { id:"first_loan",   ic:"💳", n:"In the Red",         ds:"Take your first bank loan.",         r:15,   c:()=>(S.counters?.loansTotal||0)>=1 },
 ];
+const ACH_PROG = {
+  ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
+  ore_1000:    ()=>({ cur:Math.min(1000, prodSum(ORES)),                              max:1000  }),
+  runs_10:     ()=>({ cur:Math.min(10,   S.counters?.contracts||0),                  max:10    }),
+  runs_50:     ()=>({ cur:Math.min(50,   S.counters?.contracts||0),                  max:50    }),
+  deals_25:    ()=>({ cur:Math.min(25,   S.counters?.trades||0),                     max:25    }),
+  first_grand: ()=>({ cur:Math.min(1000, S.counters?.coinsEarned||0),                max:1000  }),
+  tycoon:      ()=>({ cur:Math.min(25000,S.counters?.coinsEarned||0),                max:25000 }),
+  angler_100:  ()=>({ cur:Math.min(100,  prodSum(["sardine","mackerel","bass","salmon","tuna"])), max:100 }),
+  full_barn:   ()=>({ cur:Math.min(PETS.length, S.pets?.owned?.length||0),           max:PETS.length }),
+  total_100:   ()=>({ cur:Math.min(100,  totalLvl()),                                max:100   }),
+  full_honours:()=>({ cur:Math.min(7,    S.degrees?.length||0),                      max:7     }),
+  mogul:       ()=>({ cur:Math.min(3,    S.properties?.length||0),                   max:3     }),
+};
 function achCheck(){
   if (!S.ach) S.ach = {};
   for (const a of ACH){
@@ -3908,16 +3931,25 @@ function interiorHtml(title){
 }
 function renderAch(){
   if (!S.ach) S.ach = {};
-  const got = ACH.filter(a=>S.ach[a.id]).length;
-  let html = `<div class="panel"><h2>🏆 Trophy Room<small>${got} / ${ACH.length} awards earned. Each one pays a coin bonus.</small></h2>`;
-  ACH.forEach(a=>{
-    const own = !!S.ach[a.id];
-    html += `<div class="card ${own?'owned':'locked'}">
-      <span class="ic">${own?a.ic:"🔒"}</span>
-      <div class="body"><div class="nm">${own?a.n:"???"}</div><div class="ds">${a.ds}</div></div>
-      <span style="font-size:11px;color:${own?'var(--mint)':'var(--dim)'};">${own?"EARNED ✔":"+"+fmt(a.r)+" coins"}</span>
-    </div>`;
-  });
+  const earned = ACH.filter(a=>S.ach[a.id]);
+  const locked  = ACH.filter(a=>!S.ach[a.id]);
+  const coinsFromAch = earned.reduce((s,a)=>s+a.r,0);
+  let html = `<div class="panel"><h2>🏆 Trophy Room<small>${earned.length} / ${ACH.length} awards · ${fmt(coinsFromAch)} coins earned</small></h2>`;
+  if (earned.length){
+    html += `<p style="font-size:11px;color:var(--mint);margin:4px 0 6px;font-weight:700">✔ EARNED (${earned.length})</p>`;
+    earned.forEach(a=>{
+      html += `<div class="card owned"><span class="ic">${a.ic}</span><div class="body"><div class="nm">${a.n}</div><div class="ds">${a.ds}</div></div><span style="font-size:11px;color:var(--mint)">+${fmt(a.r)} ✔</span></div>`;
+    });
+  }
+  if (locked.length){
+    html += `<p style="font-size:11px;color:var(--dim);margin:10px 0 6px;font-weight:700">🔒 LOCKED (${locked.length})</p>`;
+    locked.forEach(a=>{
+      const p = ACH_PROG[a.id] ? ACH_PROG[a.id]() : null;
+      const pct = p ? Math.round(p.cur/p.max*100) : 0;
+      const prog = p ? `<div style="height:3px;background:#333;border-radius:2px;margin-top:4px"><div style="height:3px;background:#4a8aee;border-radius:2px;width:${pct}%"></div></div><div style="font-size:10px;color:#6a8aaa;margin-top:2px">${fmt(p.cur)} / ${fmt(p.max)}</div>` : '';
+      html += `<div class="card locked"><span class="ic">🔒</span><div class="body"><div class="nm">${a.ds}</div>${prog}</div><span style="font-size:11px;color:var(--dim)">+${fmt(a.r)}</span></div>`;
+    });
+  }
   html += `</div>`;
   return html;
 }
@@ -4298,6 +4330,7 @@ function bindMain(){
     const amt=parseInt(b.dataset.loanborrow);
     S.coins+=amt;
     S.loans.push({amount:amt, borrowed:Date.now(), interestAccrued:0});
+    S.counters.loansTotal = (S.counters.loansTotal||0) + 1;
     toast(`🏦 Borrowed ${fmt(amt)} coins — 5% daily interest.`);
     renderMain(); updateHud(); save();
   });
