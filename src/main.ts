@@ -59,12 +59,12 @@ function eventMult(it){
 function buyPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  return Math.max(1, Math.round(ITEMS[it].v * d * 1.35 * eventMult(it) * (1 - tradeBonus())));
+  return Math.max(1, Math.round(ITEMS[it].v * d * 1.35 * eventMult(it) * seasonMult(it) * (1 - tradeBonus())));
 }
 function sellPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * (1 + tradeBonus()));
+  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()));
   return Math.max(1, Math.min(p, buyPrice(npc, it) - 1));
 }
 function doTrade(npcId, it, qty, mode){
@@ -450,6 +450,35 @@ const WORLD_EVENTS = [
 ];
 let _weather = { type:"clear", until:0 };
 let _tickerX = 576;
+function getSeason(){
+  const m = new Date().getMonth(); // 0=Jan, 11=Dec
+  if (m >= 2 && m <= 4) return "spring";
+  if (m >= 5 && m <= 7) return "summer";
+  if (m >= 8 && m <= 10) return "autumn";
+  return "winter";
+}
+const SEASON_DEFS = {
+  spring: { n:"Spring", ic:"🌸", grass:"#8acc7a", skyOverlay:"rgba(255,200,220,.04)",
+    priceShift:{ wood:1.10, plank:1.10, sardine:1.12, mackerel:1.12, bass:1.10 },
+    obs:["🌸 Blossom is on the trees along the valley path.","🌱 Fresh shoots are coming up along the village green.","🐦 The birds have started nesting. Spring is here.","☁️ April showers drift over the ridge. Classic.","🌷 Clara has put out new flower pots along the high street."] },
+  summer: { n:"Summer", ic:"☀️", grass:"#7cbf86", skyOverlay:"rgba(255,240,160,.04)",
+    priceShift:{ sardine:0.85, mackerel:0.85, bass:0.82, iron_ore:0.92, coal:0.80 },
+    obs:["☀️ A long bright evening over Greenfield. Peak summer.","🌿 The valley is thick with green — everything's growing.","🍦 The days are long and warm. Even the furnace feels bearable.","🌞 Barely a cloud. The mountains are sharp on the horizon.","🦋 Butterflies over the park. The kids are loving this weather."] },
+  autumn: { n:"Autumn", ic:"🍂", grass:"#a8a858", skyOverlay:"rgba(200,140,60,.06)",
+    priceShift:{ wood:1.18, plank:1.18, bracket:1.14, gearbox:1.14, iron_ore:1.08 },
+    obs:["🍂 Leaves are coming down. The valley's gone copper and gold.","🍁 A sharp autumn morning — ground's already crunchy.","🌫️ Early mist in the valley. Classic October.","🍄 Frank found a huge fungus in the north wood. He's showing everyone.","🦔 Gracie spotted a hedgehog under the barn hedge last night."] },
+  winter: { n:"Winter", ic:"❄️", grass:"#c0cc99", skyOverlay:"rgba(160,190,230,.09)",
+    priceShift:{ coal:1.35, iron_ore:1.20, sardine:1.22, mackerel:1.18, bass:1.15 },
+    obs:["❄️ A proper frost this morning. Puddles crackled underfoot.","🌨️ Light snow expected by evening over the ridge.","🧥 Agnes has put the thick coat on — it's properly cold now.","🕯️ The lamplights look especially warm on a winter evening.","☃️ The kids built a snowman on the green. Max is delighted."] },
+};
+function seasonMult(it){
+  const _ps = SEASON_DEFS[getSeason()].priceShift;
+  return (_ps && _ps[it]) || 1;
+}
+let _snowflakes = [];
+let _autumnLeaves = [];
+let _blossomPetals = [];
+let _lastSeason = "";
 const HOME_TIERS = [
   { n:"Basic Cottage",  desc:"A simple roof and walls. Humble but yours.",            cost:0     },
   { n:"Furnished",      desc:"A bookshelf, kitchen table, and a proper rug.",         cost:250   },
@@ -494,8 +523,12 @@ const HEARTBEAT_POOL = [
     if (_h>=17&&_h<20) return "🌇 The sun is getting low over the ridge.";
     return null;
   }},
+  { id:"season", w:3, fn:()=>{
+    const _sd=SEASON_DEFS[getSeason()]; if (!_sd) return null;
+    return _sd.obs[Math.floor(Math.random()*_sd.obs.length)];
+  }},
   { id:"tip", w:1, fn:()=>{
-    const _tips=["💡 The Café gives a 20% speed boost for 5 minutes — worth it.","💡 World events shift market prices. Keep an eye on the ticker!","💡 Villagers post delivery requests — look for the green badge above them.","💡 Your Cottage can be upgraded. Visit it east of town.","💡 Rain affects the vibe. Fishing during a storm? Brave."];
+    const _tips=["💡 The Café gives a 20% speed boost for 5 minutes — worth it.","💡 World events shift market prices. Keep an eye on the ticker!","💡 Villagers post delivery requests — look for the green badge above them.","💡 Your Cottage can be upgraded. Visit it east of town.","💡 Rain affects the vibe. Fishing during a storm? Brave.","💡 Seasons affect prices — coal and fish are pricier in winter.","💡 The University offers permanent XP boosts. Worth the investment.","💡 The Exchange Floor lets you speculate on commodity prices using world events."];
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
@@ -959,6 +992,26 @@ function nearestInteractable(){
   return best;
 }
 function villageTierLvl(){ const tl = totalLvl(); return tl>=300?3 : tl>=150?2 : tl>=50?1 : 0; }
+function getTreePalette(tType){
+  const _s = getSeason();
+  if (tType===0){ // pine — evergreen in UK, minor tint by season
+    if (_s==="winter") return { layers:["#2a6020","#386830","#487838"], bare:false, snow:true };
+    if (_s==="spring") return { layers:["#4a9038","#5aaa48","#6aba58"], bare:false, snow:false };
+    return { layers:["#3a7a2a","#4a9a38","#5ab848"], bare:false, snow:false }; // summer/autumn
+  }
+  if (_s==="winter") return { bare:true, trunkCol:"#4a3828" };
+  if (_s==="autumn"){
+    if (tType===1) return { layers:["#a05a18","#c07020","#d08030","#e09040"], bare:false };
+    return { layers:["#904820","#b06228","#a05018","#c07030"], bare:false };
+  }
+  if (_s==="spring"){
+    if (tType===1) return { layers:["#4a9040","#5aaa50","#6aba60","#78c868"], bare:false };
+    return { layers:["#3a8030","#4a9040","#5a9848","#68a850"], bare:false };
+  }
+  // summer
+  if (tType===1) return { layers:["#4a8038","#5a9248","#69a856","#78b860"], bare:false };
+  return { layers:["#2e6828","#3a7832","#4a8840","#5a9848"], bare:false };
+}
 function drawTiles(ctx, t){
   const tier = villageTierLvl();
   const c0 = Math.max(0, Math.floor(CAM.x/TILE)), c1 = Math.min(VCOLS, c0+VIEW_W/TILE+2);
@@ -1023,28 +1076,50 @@ function drawTiles(ctx, t){
     if (ch==="T"){
       const tType = (c*13+r*7)%3; // 0=pine, 1=oak, 2=hardwood
       const sway = Math.sin(t*0.8 + c*0.7 + r*0.5) * 1.2;
-      if (tType===0){ // pine — tall narrow triangular layers
+      const _tp = getTreePalette(tType);
+      if (_tp.bare){
+        // winter bare deciduous — trunk and bare branch strokes
+        ctx.fillStyle=_tp.trunkCol; ctx.fillRect(x+8, y+10, tType===1?8:10, 12);
+        ctx.strokeStyle="#3a2818"; ctx.lineWidth=1.2;
+        ctx.beginPath();
+        const _bx=x+12, _by=y+10;
+        ctx.moveTo(_bx,_by); ctx.lineTo(_bx-6,_by-8); ctx.moveTo(_bx,_by); ctx.lineTo(_bx+7,_by-7);
+        ctx.moveTo(_bx-3,_by-5); ctx.lineTo(_bx-9,_by-11); ctx.moveTo(_bx+4,_by-5); ctx.lineTo(_bx+10,_by-10);
+        ctx.moveTo(_bx,_by-2); ctx.lineTo(_bx,_by-11);
+        ctx.stroke(); ctx.lineWidth=1;
+      } else if (tType===0){ // pine
+        const [c0,c1,c2] = _tp.layers;
         ctx.fillStyle="#7a5230"; ctx.fillRect(x+10,y+12,4,10);
-        ctx.fillStyle="#3a7a2a";
+        ctx.fillStyle=c0;
         ctx.beginPath(); ctx.moveTo(x+12+sway*1.2,y-6); ctx.lineTo(x+1,y+14); ctx.lineTo(x+23,y+14); ctx.closePath(); ctx.fill();
-        ctx.fillStyle="#4a9a38";
+        ctx.fillStyle=c1;
         ctx.beginPath(); ctx.moveTo(x+12+sway,y+1); ctx.lineTo(x+4,y+14); ctx.lineTo(x+20,y+14); ctx.closePath(); ctx.fill();
-        ctx.fillStyle="#5ab848";
+        ctx.fillStyle=c2;
         ctx.beginPath(); ctx.moveTo(x+12+sway*0.6,y+6); ctx.lineTo(x+6,y+14); ctx.lineTo(x+18,y+14); ctx.closePath(); ctx.fill();
-      } else if (tType===1){ // oak — wide round multi-cluster
+        if (_tp.snow){ // winter snow on pine tips
+          ctx.fillStyle="rgba(230,240,255,.85)";
+          ctx.beginPath(); ctx.moveTo(x+12+sway*1.2,y-6); ctx.lineTo(x+6,y+0); ctx.lineTo(x+18,y+0); ctx.closePath(); ctx.fill();
+        }
+      } else if (tType===1){ // oak
+        const [c0,c1,c2,c3] = _tp.layers;
         ctx.fillStyle="#6a4828"; ctx.fillRect(x+8,y+12,8,10);
         const sw=sway*0.7;
-        ctx.fillStyle="#4a8038"; ctx.beginPath(); ctx.arc(x+12+sw,y+7,11,0,7); ctx.fill();
-        ctx.fillStyle="#5a9248"; ctx.beginPath(); ctx.arc(x+6+sw,y+5,7,0,7); ctx.fill();
-        ctx.fillStyle="#69a856"; ctx.beginPath(); ctx.arc(x+18+sw*0.8,y+5,6,0,7); ctx.fill();
-        ctx.fillStyle="#78b860"; ctx.beginPath(); ctx.arc(x+12+sw*0.5,y+0,6,0,7); ctx.fill();
-      } else { // hardwood — massive spreading canopy
+        ctx.fillStyle=c0; ctx.beginPath(); ctx.arc(x+12+sw,y+7,11,0,7); ctx.fill();
+        ctx.fillStyle=c1; ctx.beginPath(); ctx.arc(x+6+sw,y+5,7,0,7); ctx.fill();
+        ctx.fillStyle=c2; ctx.beginPath(); ctx.arc(x+18+sw*0.8,y+5,6,0,7); ctx.fill();
+        ctx.fillStyle=c3; ctx.beginPath(); ctx.arc(x+12+sw*0.5,y+0,6,0,7); ctx.fill();
+        if (getSeason()==="spring"){ // spring blossom clusters on oak
+          ctx.fillStyle="rgba(255,200,210,.7)";
+          ctx.beginPath(); ctx.arc(x+7+sw,y+2,4,0,7); ctx.arc(x+16+sw*0.6,y+1,3,0,7); ctx.fill();
+        }
+      } else { // hardwood
+        const [c0,c1,c2,c3] = _tp.layers;
         ctx.fillStyle="#5a3818"; ctx.fillRect(x+7,y+11,10,11);
         const sw=sway*0.8;
-        ctx.fillStyle="#2e6828"; ctx.beginPath(); ctx.arc(x+12+sw,y+8,13,0,7); ctx.fill();
-        ctx.fillStyle="#3a7832"; ctx.beginPath(); ctx.arc(x+4+sw,y+5,9,0,7); ctx.fill();
-        ctx.fillStyle="#4a8840"; ctx.beginPath(); ctx.arc(x+20+sw*0.9,y+7,8,0,7); ctx.fill();
-        ctx.fillStyle="#5a9848"; ctx.beginPath(); ctx.arc(x+11+sw*0.6,y+0,8,0,7); ctx.fill();
+        ctx.fillStyle=c0; ctx.beginPath(); ctx.arc(x+12+sw,y+8,13,0,7); ctx.fill();
+        ctx.fillStyle=c1; ctx.beginPath(); ctx.arc(x+4+sw,y+5,9,0,7); ctx.fill();
+        ctx.fillStyle=c2; ctx.beginPath(); ctx.arc(x+20+sw*0.9,y+7,8,0,7); ctx.fill();
+        ctx.fillStyle=c3; ctx.beginPath(); ctx.arc(x+11+sw*0.6,y+0,8,0,7); ctx.fill();
       }
     }
   }
@@ -1549,7 +1624,7 @@ function drawVillage(t){
   CAM.y += (camTY - CAM.y) * 0.10;
   if (Math.abs(camTX-CAM.x) < 0.5) CAM.x = camTX;
   if (Math.abs(camTY-CAM.y) < 0.5) CAM.y = camTY;
-  ctx.fillStyle="#7cbf86"; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+  ctx.fillStyle=SEASON_DEFS[getSeason()].grass; ctx.fillRect(0,0,VIEW_W,VIEW_H);
   ctx.save();
   ctx.translate(-Math.round(CAM.x), -Math.round(CAM.y));
   drawTiles(ctx, t);
@@ -1686,24 +1761,69 @@ function drawVillage(t){
     ctx.restore();
   }
   drawMinimap(ctx);
-  // scrolling news ticker at bottom of village canvas when a world event is active
-  if (S.worldEvent){
-    const _tev = WORLD_EVENTS.find(e=>e.id===S.worldEvent.id);
-    if (_tev){
-      _tickerX -= 0.9;
-      const _tmsg = "  \u{1F4F0} " + _tev.n.toUpperCase() + ": " + _tev.msg + "       ";
-      ctx.save();
-      ctx.font = "bold 10px sans-serif";
-      const _tw = ctx.measureText(_tmsg).width;
-      if (_tickerX < -_tw) _tickerX = VIEW_W;
-      ctx.fillStyle = "rgba(0,0,0,0.78)";
-      ctx.fillRect(0, VIEW_H-17, VIEW_W, 17);
-      ctx.fillStyle = "#ffe066";
-      ctx.textBaseline = "middle";
-      ctx.fillText(_tmsg, _tickerX, VIEW_H-8);
-      ctx.textBaseline = "alphabetic";
-      ctx.restore();
+  // seasonal sky overlay — subtle tint over the whole canvas
+  const _seasonNow = getSeason();
+  const _sDef = SEASON_DEFS[_seasonNow];
+  ctx.fillStyle = _sDef.skyOverlay;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  // seasonal particles (screen-space, no camera offset)
+  if (_seasonNow === "winter"){
+    // snowflakes — initialise / update / draw
+    while (_snowflakes.length < 48) _snowflakes.push({ x:Math.random()*VIEW_W, y:Math.random()*VIEW_H, vy:0.25+Math.random()*0.35, vx:(Math.random()-0.5)*0.25, r:0.8+Math.random()*1.2, ph:Math.random()*Math.PI*2 });
+    ctx.fillStyle = "rgba(230,240,255,0.82)";
+    for (const sf of _snowflakes){
+      sf.y += sf.vy; sf.x += sf.vx + Math.sin(t*0.6+sf.ph)*0.18;
+      if (sf.y > VIEW_H+2) { sf.y=-2; sf.x=Math.random()*VIEW_W; }
+      if (sf.x < -2) sf.x=VIEW_W+2; if (sf.x > VIEW_W+2) sf.x=-2;
+      ctx.beginPath(); ctx.arc(sf.x, sf.y, sf.r, 0, 7); ctx.fill();
     }
+    // frost ground tint
+    ctx.fillStyle="rgba(200,215,240,.10)"; ctx.fillRect(0, VIEW_H*0.55, VIEW_W, VIEW_H*0.45);
+  } else { _snowflakes = []; }
+  if (_seasonNow === "autumn"){
+    const _leafCols = ["#c87020","#a05018","#d09028","#b06030","#8a4010"];
+    while (_autumnLeaves.length < 28) _autumnLeaves.push({ x:Math.random()*VIEW_W, y:Math.random()*VIEW_H, vy:0.18+Math.random()*0.28, vx:(Math.random()-0.5)*0.4, a:Math.random()*Math.PI*2, va:(Math.random()-0.5)*0.08, col:Math.floor(Math.random()*_leafCols.length) });
+    for (const lf of _autumnLeaves){
+      lf.y += lf.vy; lf.x += lf.vx + Math.sin(t*0.5+lf.a)*0.22; lf.a += lf.va;
+      if (lf.y > VIEW_H+4) { lf.y=-4; lf.x=Math.random()*VIEW_W; }
+      ctx.save(); ctx.translate(lf.x, lf.y); ctx.rotate(lf.a);
+      ctx.fillStyle=_leafCols[lf.col]; ctx.fillRect(-2,-1.5,4,3); ctx.restore();
+    }
+  } else { _autumnLeaves = []; }
+  if (_seasonNow === "spring"){
+    while (_blossomPetals.length < 20) _blossomPetals.push({ x:Math.random()*VIEW_W, y:Math.random()*VIEW_H, vy:0.12+Math.random()*0.16, vx:(Math.random()-0.5)*0.3, a:Math.random()*Math.PI*2, ph:Math.random()*Math.PI*2 });
+    ctx.fillStyle="rgba(255,200,215,0.65)";
+    for (const bp of _blossomPetals){
+      bp.y += bp.vy; bp.x += bp.vx + Math.sin(t*0.4+bp.ph)*0.2; bp.a += 0.02;
+      if (bp.y > VIEW_H+4) { bp.y=-4; bp.x=Math.random()*VIEW_W; }
+      ctx.save(); ctx.translate(bp.x, bp.y); ctx.rotate(bp.a);
+      ctx.beginPath(); ctx.ellipse(0,0,2,1,0,0,7); ctx.fill(); ctx.restore();
+    }
+  } else { _blossomPetals = []; }
+  // check for season change and announce it
+  if (_lastSeason && _lastSeason !== _seasonNow){
+    const _ns = SEASON_DEFS[_seasonNow];
+    toast(_ns.ic + " " + _ns.n + " has arrived over Greenfield!");
+    log(_ns.ic + " <b>" + _ns.n + " begins.</b> " + _ns.obs[0], "good");
+  }
+  _lastSeason = _seasonNow;
+  // scrolling news ticker at bottom of village canvas
+  const _tickerMsg = S.worldEvent
+    ? (()=>{ const _tev=WORLD_EVENTS.find(e=>e.id===S.worldEvent.id); return _tev ? "  📰 " + _tev.n.toUpperCase() + ": " + _tev.msg + "       " : null; })()
+    : "  " + _sDef.ic + " " + _sDef.n.toUpperCase() + " — Greenfield Valley  ·  " + new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long"}) + "       ";
+  if (_tickerMsg){
+    _tickerX -= 0.9;
+    ctx.save();
+    ctx.font = "bold 10px sans-serif";
+    const _tw = ctx.measureText(_tickerMsg).width;
+    if (_tickerX < -_tw) _tickerX = VIEW_W;
+    ctx.fillStyle = S.worldEvent ? "rgba(0,0,0,0.78)" : "rgba(20,20,40,0.70)";
+    ctx.fillRect(0, VIEW_H-17, VIEW_W, 17);
+    ctx.fillStyle = S.worldEvent ? "#ffe066" : _sDef.ic==="❄️"?"#c0d8ff":_sDef.ic==="🍂"?"#e8a040":_sDef.ic==="🌸"?"#ffb8c8":"#c8f090";
+    ctx.textBaseline = "middle";
+    ctx.fillText(_tickerMsg, _tickerX, VIEW_H-8);
+    ctx.textBaseline = "alphabetic";
+    ctx.restore();
   }
 }
 function updateWanderers(dt){
