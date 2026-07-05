@@ -145,6 +145,7 @@ function zoneForTab(tab){
   if (tab==="trade" || tab==="contracts") return "market";
   if (tab==="pets") return "barn";
   if (tab==="woodcutting") return "barn";
+  if (tab==="fishing") return "pier";
   if (tab==="upgrades" || tab==="ach") return "market";
   return "valley";
 }
@@ -210,7 +211,7 @@ const MUSIC = (() => {
         if (timer){ clearInterval(timer); timer = null; }
         master = ctx.createGain();
         master.gain.setValueAtTime(0, ctx.currentTime);
-        master.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.35);
+        master.gain.linearRampToValueAtTime(volLevel(), ctx.currentTime + 0.35);
         master.connect(ctx.destination);
         cur = id;
         loopStart = ctx.currentTime + 0.06;
@@ -223,6 +224,7 @@ const MUSIC = (() => {
       if (master && ctx){ master.gain.setTargetAtTime(0, ctx.currentTime, 0.1); }
       cur = null;
     },
+    setVol(v){ if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, 0.08); },
     start(){ this.unlocked = true; this.play(zoneForTab(S.tab)); },
   };
 })();
@@ -230,6 +232,8 @@ function updateMusicZone(){
   if (MUSIC.unlocked && S.settings && S.settings.music) MUSIC.play(zoneForTab(S.tab));
 }
 /* ---------- action sound effects ---------- */
+const VOL_LEVELS = { low: 0.45, med: 0.75, loud: 1.05 };
+function volLevel(){ return VOL_LEVELS[(S.settings && S.settings.vol) || "med"] || 0.75; }
 const SFX = (() => {
   let ctx = null, noise = null;
   function ensure(){
@@ -257,21 +261,32 @@ const SFX = (() => {
     if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
     try{
       ensure();
-      if (skill==="mining"){ hit(0.10, 0.05); osc("square", 1500, 640, 0.07, 0.05); }
-      else if (skill==="steelworks"){ osc("square", 660, 200, 0.16, 0.06); hit(0.08, 0.10); }
-      else if (skill==="manufacturing"){ hit(0.07, 0.03); hit(0.07, 0.03, 0.08); }
-      else if (skill==="woodcutting"){ hit(0.12, 0.09); osc("triangle", 190, 90, 0.10, 0.07); }
+      const mv = volLevel() / 0.75;
+      if (skill==="mining"){ hit(0.10*mv, 0.05); osc("square", 1500, 640, 0.07, 0.05*mv); }
+      else if (skill==="steelworks"){ osc("square", 660, 200, 0.16, 0.06*mv); hit(0.08*mv, 0.10); }
+      else if (skill==="manufacturing"){ hit(0.07*mv, 0.03); hit(0.07*mv, 0.03, 0.08); }
+      else if (skill==="woodcutting"){ hit(0.12*mv, 0.09); osc("triangle", 190, 90, 0.10, 0.07*mv); }
+      else if (skill==="fishing"){ hit(0.06*mv, 0.12); osc("sine", 320, 110, 0.18, 0.05*mv); }
     }catch(e){}
   }};
 })();
 function syncMusicButton(){
   const b = document.getElementById("btn-music");
-  if (b) b.textContent = (S.settings && S.settings.music) ? "🔊" : "🔇";
+  if (!b) return;
+  b.textContent = !S.settings.music ? "🔇" : S.settings.vol === "low" ? "🔉" : S.settings.vol === "loud" ? "📣" : "🔊";
+  b.title = !S.settings.music ? "Sound: off" : "Volume: " + S.settings.vol;
 }
 function setMusic(on){
   S.settings.music = on;
-  if (on){ MUSIC.unlocked = true; updateMusicZone(); } else MUSIC.stop();
+  if (on){ MUSIC.unlocked = true; updateMusicZone(); MUSIC.setVol(volLevel()); } else MUSIC.stop();
   syncMusicButton(); save();
+}
+function cycleVolume(){
+  if (!S.settings.music){ S.settings.vol = "low"; setMusic(true); return; }
+  if (S.settings.vol === "low"){ S.settings.vol = "med"; }
+  else if (S.settings.vol === "med"){ S.settings.vol = "loud"; }
+  else { setMusic(false); return; }
+  MUSIC.setVol(volLevel()); syncMusicButton(); save();
 }
 
 /* ================= VILLAGE WORLD ================= */
@@ -331,8 +346,9 @@ function achCheck(){
   }
 }
 const WANDERERS = [
-  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:16*TILE, y:9*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
-    area:[10,6,32,9], home:[13,7,17,9], tips:FROST_TIPS, tee:"STAYFROSTY" },
+  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:16*TILE, y:5.45*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
+    area:[10,6,32,9], home:[13,7,17,9], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
+    route:[[11,5.45],[20,5.45],[31,5.45],[31,10.45],[20,10.45],[20.6,8.35],[11,10.45]] },
   { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:14*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
     area:[2,12,8,16], home:[2,12,5,13], tips:[
       "Morning! My turnips go by lorry now. Fancy that.",
@@ -356,18 +372,18 @@ const BEACH_BIRDS = Array.from({length:7}, (_,i) => ({
 const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing"]);
 const STATION_DEFS = {
   mining:        [
-    { fx:0.14, fy:0.44, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
-    { fx:0.40, fy:0.37, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
-    { fx:0.66, fy:0.44, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
+    { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
+    { fx:0.50, fy:0.62, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
+    { fx:0.84, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
   ],
   steelworks:    [
-    { fx:0.28, fy:0.48, sk:'prop_machine',  skill:'steelworks',    id:'iron_bar',   ic:'🔩', lbl:'Smelt Iron' },
-    { fx:0.64, fy:0.44, sk:'prop_machine',  skill:'steelworks',    id:'steel_bar',  ic:'⛓️', lbl:'Steel Bar' },
+    { fx:0.28, fy:0.55, sk:'prop_machine',  skill:'steelworks',    id:'iron_bar',   ic:'🔩', lbl:'Smelt Iron' },
+    { fx:0.64, fy:0.55, sk:'prop_machine',  skill:'steelworks',    id:'steel_bar',  ic:'⛓️', lbl:'Steel Bar' },
   ],
   manufacturing: [
-    { fx:0.20, fy:0.48, sk:'prop_conveyor', skill:'manufacturing', id:'bracket',    ic:'🧱', lbl:'Brackets' },
-    { fx:0.55, fy:0.44, sk:'prop_machine',  skill:'manufacturing', id:'gearbox',    ic:'⚙️', lbl:'Gearbox' },
-    { fx:0.82, fy:0.48, sk:'prop_machine',  skill:'manufacturing', id:'wiring_loom',ic:'🔌', lbl:'Wiring Loom' },
+    { fx:0.20, fy:0.53, sk:'prop_conveyor', skill:'manufacturing', id:'bracket',    ic:'🧱', lbl:'Brackets' },
+    { fx:0.55, fy:0.53, sk:'prop_machine',  skill:'manufacturing', id:'gearbox',    ic:'⚙️', lbl:'Gearbox' },
+    { fx:0.82, fy:0.53, sk:'prop_machine',  skill:'manufacturing', id:'wiring_loom',ic:'🔌', lbl:'Wiring Loom' },
   ],
   woodcutting:   [
     { fx:0.18, fy:0.62, sk:'log_pine',      skill:'woodcutting',   id:'pine',       ic:'🌲', lbl:'Pine Logs' },
@@ -419,14 +435,14 @@ const INTERIOR_COLS = {
     {x:4,   y:154,w:22, h:32},  // coal pile
   ],
   steelworks: [
-    {x:31,  y:10, w:38, h:38},  // furnace 1
-    {x:131, y:10, w:38, h:38},  // furnace 2
+    {x:42,  y:10, w:38, h:38},  // furnace 1
+    {x:212, y:10, w:38, h:38},  // furnace 2
     {x:198, y:112,w:29, h:12},  // anvil
     {x:244, y:103,w:10, h:29},  // tool rack
     {x:266, y:127,w:16, h:14},  // crate a
     {x:266, y:142,w:16, h:14},  // crate b
-    {x:8,   y:133,w:22, h:28},  // coal pile
-    {x:8,   y:103,w:16, h:21},  // quench barrel
+    {x:46,  y:146,w:38, h:16},  // coal heap
+    {x:14,  y:118,w:30, h:36},  // quench barrel
   ],
   manufacturing: [
     {x:33,  y:32, w:43, h:19},  // workbench 1
@@ -437,13 +453,23 @@ const INTERIOR_COLS = {
     {x:8,   y:29, w:16, h:44},  // cabinet left
     {x:296, y:29, w:16, h:44},  // cabinet right
   ],
+  ach: [
+    {x:33,  y:80, w:26, h:16},
+    {x:99,  y:80, w:26, h:16},
+    {x:195, y:80, w:26, h:16},
+    {x:261, y:80, w:26, h:16},
+    {x:33,  y:132,w:26, h:16},
+    {x:99,  y:132,w:26, h:16},
+    {x:195, y:132,w:26, h:16},
+    {x:261, y:132,w:26, h:16},
+  ],
   contracts: [
-    {x:16,  y:84, w:54, h:16},  // clerk desk
+    {x:16,  y:126,w:54, h:16},  // clerk desk
     {x:236, y:52, w:72, h:62},  // loading bay + lorry
     {x:240, y:122,w:56, h:35},  // pallet stack
     {x:20,  y:126,w:18, h:34},  // crate stack
     {x:170, y:114,w:52, h:28},  // forklift
-    {x:62,  y:54, w:72, h:60},  // racking
+    {x:10,  y:50, w:74, h:62},  // racking (flush left wall)
   ],
   trade: [
     {x:24,  y:58, w:278,h:30},  // trader counters row
@@ -452,7 +478,7 @@ const INTERIOR_COLS = {
   ],
   pets: [
     {x:14,  y:60, w:50, h:46},  // hay bales
-    {x:250, y:64, w:50, h:16},  // water trough
+    {x:266, y:82, w:20, h:30},  // scratching post
   ],
   upgrades: [
     {x:141, y:58, w:38, h:28},  // podium
@@ -484,6 +510,11 @@ function tileAt(px, py){
   return VMAP[r][c];
 }
 function solidAt(px, py){
+  // picket fence along the forest edge — solid except the two path gates
+  {
+    const _fr = Math.floor(py/TILE);
+    if (px >= 39*TILE-4 && px <= 39*TILE+8 && _fr >= 2 && _fr <= 16 && _fr!==5 && _fr!==6 && _fr!==10 && _fr!==11) return true;
+  }
   const t = tileAt(px, py);
   if (t==="T" || t==="W" || t==="C") return true;
   for (const o of V_OBJECTS){
@@ -601,7 +632,7 @@ function interactObj(o){
     return;
   }
   S.tab = o.tab;
-  IP.x = icanvasW()/2; IP.y = icanvasH()*0.62; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
+  IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
 function villageClick(e){
@@ -913,6 +944,18 @@ function drawObjects(ctx, t){
 }
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
+  // picket fence along the forest boundary, with gate gaps at the path rows
+  const _fx = 39*TILE - 4;
+  for (let fr = 2; fr <= 16; fr++){
+    if (fr === 5 || fr === 6 || fr === 10 || fr === 11) continue;
+    const fy = fr*TILE;
+    ctx.fillStyle="#e8e2d2";
+    ctx.fillRect(_fx, fy+2, 4, 18); ctx.fillRect(_fx+12, fy+2, 4, 18);
+    ctx.fillStyle="#cfc8b8";
+    ctx.beginPath(); ctx.moveTo(_fx, fy+2); ctx.lineTo(_fx+2, fy-2); ctx.lineTo(_fx+4, fy+2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(_fx+12, fy+2); ctx.lineTo(_fx+14, fy-2); ctx.lineTo(_fx+16, fy+2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#d9d2c2"; ctx.fillRect(_fx-3, fy+6, 22, 3); ctx.fillRect(_fx-3, fy+13, 22, 3);
+  }
   // sky birds — three V-shapes drifting across the upper sky
   ctx.strokeStyle="rgba(40,30,20,0.6)"; ctx.lineWidth=1;
   for (let i=0;i<3;i++){
@@ -945,9 +988,20 @@ function drawExtras(ctx, t){
   for (let i=0;i<5;i++) ctx.fillRect(28*TILE, 17.5*TILE+i*10, 2*TILE, 7);
   ctx.fillStyle="#7a5a3a"; ctx.fillRect(28*TILE+4, 17.5*TILE, 4, 52); ctx.fillRect(30*TILE-8, 17.5*TILE, 4, 52);
   const bob = Math.sin(t*1.6)*2;
-  ctx.fillStyle="#b0574f"; ctx.fillRect(31.4*TILE, 19.6*TILE+bob, 46, 12);
-  ctx.fillStyle="#e8e2d2"; ctx.fillRect(31.4*TILE+16, 19.6*TILE-10+bob, 4, 12);
-  ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.moveTo(31.4*TILE+20, 19.6*TILE-10+bob); ctx.lineTo(31.4*TILE+38, 19.6*TILE-2+bob); ctx.lineTo(31.4*TILE+20, 19.6*TILE-2+bob); ctx.closePath(); ctx.fill();
+  { const bx = 31.4*TILE, by = 19.6*TILE + bob;
+    ctx.strokeStyle="#6a4a2f"; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(30*TILE+6, 18.6*TILE+8); ctx.quadraticCurveTo(bx-6, by-4, bx+4, by+3); ctx.stroke();
+    ctx.fillStyle="rgba(20,60,90,.25)"; ctx.beginPath(); ctx.ellipse(bx+27, by+15, 26, 4, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#8a3e34";
+    ctx.beginPath(); ctx.moveTo(bx-4, by); ctx.lineTo(bx+50, by); ctx.lineTo(bx+58, by+5); ctx.lineTo(bx+46, by+13); ctx.lineTo(bx+2, by+13); ctx.lineTo(bx-10, by+5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#b0574f"; ctx.fillRect(bx-4, by, 54, 5);
+    ctx.fillStyle="#e8e2d2"; ctx.fillRect(bx-2, by-2, 52, 2);
+    ctx.fillStyle="#d9a86a"; ctx.fillRect(bx+30, by-9, 14, 9);
+    ctx.fillStyle="#453423"; ctx.fillRect(bx+33, by-7, 4, 3);
+    ctx.fillStyle="#6a4a2f"; ctx.fillRect(bx+16, by-26, 3, 26);
+    ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.moveTo(bx+19, by-25); ctx.quadraticCurveTo(bx+38+Math.sin(t*2)*2, by-18, bx+19, by-8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#e8dcc0"; ctx.fillRect(bx+12, by-26, 3, 3);
+  }
   if (tier>=2){
     ctx.strokeStyle="#8c6947"; ctx.beginPath(); ctx.moveTo(12*TILE, 10.7*TILE); ctx.lineTo(20*TILE, 10.7*TILE); ctx.stroke();
     for (let i=0;i<12;i++){
@@ -1136,6 +1190,19 @@ function drawVillage(t){
 function updateWanderers(dt){
   const night = isNight();
   for (const w of WANDERERS){
+    if (w.route && !night){
+      if (w.tx===null){
+        w.wait -= dt;
+        if (w.wait<=0){
+          w.ri = ((w.ri ?? -1)+1) % w.route.length;
+          const [cx,cy] = w.route[w.ri];
+          w.tx = cx*TILE; w.ty = cy*TILE;
+          w.wait = (w.ri === w.benchIdx) ? 8+Math.random()*4 : 1.5+Math.random()*2;
+        }
+      }
+      moveActor(w, dt, 27);
+      continue;
+    }
     if (w.tx===null){
       w.wait -= dt;
       if (w.wait<=0){
@@ -1255,7 +1322,9 @@ function drawInterior(t){
     ctx.fillStyle="#5db3d8"; ctx.beginPath(); ctx.ellipse(29,121,12,4,0,0,7); ctx.fill();
     ctx.fillStyle="#8ed0ea"; ctx.fillRect(24,119,7,2);
     // coal pile (left)
-    ctx.fillStyle="#1a1814"; ctx.fillRect(8,133,22,28); ctx.fillRect(10,127,16,8); ctx.fillRect(12,122,10,6);
+    ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(64,162,18,4,0,0,7); ctx.fill();
+    ctx.fillStyle="#26221e"; ctx.beginPath(); ctx.arc(58,156,10,Math.PI,0); ctx.arc(70,156,11,Math.PI,0); ctx.fill(); ctx.fillRect(48,156,33,6);
+    ctx.fillStyle="#3a342e"; ctx.fillRect(55,150,4,4); ctx.fillRect(66,148,4,4); ctx.fillRect(72,153,4,4);
     // crates (right)
     [[266,127,"#8c6947"],[266,142,"#7a5a38"]].forEach(([x,y,c])=>{
       ctx.fillStyle=c; ctx.fillRect(x,y,16,14); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
@@ -1348,10 +1417,15 @@ function drawInterior(t){
     ctx.fillStyle="#2f3e35"; ctx.fillRect(247,63,50,34);
     ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(252,104,6,0,7); ctx.arc(292,104,6,0,7); ctx.fill();
     for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#ffd666":"#2c2824"; ctx.fillRect(236+i*8,114,8,5); }
-    // lorry livery engraving
-    ctx.fillStyle="#e8e2d2"; ctx.fillRect(252,78,40,12);
-    ctx.fillStyle="#d9a86a"; ctx.fillRect(255,80,7,8); ctx.fillStyle="#5db3d8"; ctx.fillRect(257,82,3,3);
-    ctx.fillStyle="#453423"; ctx.font="600 6px 'IBM Plex Mono',monospace"; ctx.textAlign="left"; ctx.fillText("BUYR FREIGHT", 265, 87);
+    // lorry rear detail + clean company wall sign
+    ctx.fillStyle="#3f6449"; ctx.fillRect(271,63,2,34);
+    ctx.fillStyle="#2c2824"; ctx.fillRect(249,68,3,5); ctx.fillRect(249,86,3,5); ctx.fillRect(292,68,3,5); ctx.fillRect(292,86,3,5);
+    ctx.fillStyle="#453423"; ctx.fillRect(234,10,76,26);
+    ctx.fillStyle="#fff8e6"; ctx.fillRect(237,13,70,20);
+    ctx.fillStyle="#d9a86a"; ctx.fillRect(241,17,10,12); ctx.fillStyle="#5db3d8"; ctx.fillRect(244,20,5,5);
+    ctx.fillStyle="#453423"; ctx.font="700 8px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+    ctx.fillText("BUYR", 280, 22); ctx.fillText("FREIGHT", 280, 31);
+    ctx.textAlign="left";
     // forklift — orange body, black mast, forks
     ctx.fillStyle="rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(188,142,22,4,0,0,7); ctx.fill();
     ctx.fillStyle="#2c2824"; ctx.fillRect(198,110,5,30);
@@ -1360,17 +1434,21 @@ function drawInterior(t){
     ctx.fillStyle="#c97b20"; ctx.fillRect(172,118,26,5);
     ctx.fillStyle="#3a3230"; ctx.fillRect(176,110,14,9);
     ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(178,140,5,0,7); ctx.arc(194,140,5,0,7); ctx.fill();
-    // tall racking with boxes (left wall side)
-    ctx.fillStyle="#5a6a7a"; ctx.fillRect(64,54,6,60); ctx.fillRect(126,54,6,60);
-    for(const ry of [64,86,108]){ ctx.fillStyle="#7a8a9a"; ctx.fillRect(64,ry,68,4); }
-    for(let bi=0;bi<6;bi++){ ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][bi%3]; ctx.fillRect(70+(bi%3)*20, 52+Math.floor(bi/3)*22, 16, 11); }
-    ctx.fillStyle="#7a5a3a"; ctx.fillRect(16,92,54,8); ctx.fillStyle="#8c6c48"; ctx.fillRect(16,84,54,8);
-    drawEmojiC(ctx,"📋",30,80,9); drawEmojiC(ctx,"🖊️",52,80,8);
-    drawPerson(ctx, 43, 78, "#4a3a2a", "#5a7a5a", t, false, 1, null, "down");
+    // tall racking flush against the left wall
+    ctx.fillStyle="#5a6a7a"; ctx.fillRect(12,50,6,62); ctx.fillRect(76,50,6,62);
+    for(const ry of [58,80,102]){ ctx.fillStyle="#7a8a9a"; ctx.fillRect(12,ry,70,4); }
+    for(let bi=0;bi<6;bi++){ ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][bi%3]; ctx.fillRect(18+(bi%3)*21, 47+Math.floor(bi/3)*22, 17, 11); }
+    ctx.fillStyle="#7a5a3a"; ctx.fillRect(16,134,54,8); ctx.fillStyle="#8c6c48"; ctx.fillRect(16,126,54,8);
+    drawEmojiC(ctx,"📋",30,122,9); drawEmojiC(ctx,"🖊️",52,122,8);
+    drawPerson(ctx, 43, 120, "#4a3a2a", "#5a7a5a", t, false, IP.x >= 43 ? 1 : -1, null, "down");
+    // busy warehouse worker pacing with a parcel
+    const _wx = 152 + Math.sin(t*0.45)*54, _wf = Math.cos(t*0.45) >= 0 ? 1 : -1;
+    drawPerson(ctx, _wx, 108, "#2a2a32", "#c9723a", t, true, _wf, null, _wf>0 ? "right" : "left");
+    drawEmojiC(ctx, "📦", _wx, 88, 10);
     ctx.fillStyle="#7a6040"; ctx.fillRect(240,150,56,7);
     crate(244,136,20,14); crate(266,136,20,14,"#7a5a38"); crate(255,122,20,14,"#d9a86a");
     crate(20,144,18,16); crate(20,126,18,16,"#7a5a38");
-    drawEmojiC(ctx,"🛒",120,150,13);
+    drawEmojiC(ctx,"🛒",84,138,13);
   } else if (S.tab==="trade"){
     room("#5a3e26","#7a5a3a","#c9a06a","#bd9560","#4a3018");
     for(let i=0;i<16;i++){ ctx.fillStyle=["#ff8a5c","#ffd666","#6fb7d9","#ff9db0"][i%4]; const bx=10+i*19; ctx.beginPath(); ctx.moveTo(bx,10); ctx.lineTo(bx+14,10); ctx.lineTo(bx+7,20); ctx.closePath(); ctx.fill(); }
@@ -1401,12 +1479,34 @@ function drawInterior(t){
     ctx.fillStyle="#8c6c44"; ctx.fillRect(W-26,12,5,34); ctx.fillRect(W-14,12,5,34);
     for(const ly of [16,24,32,40]){ ctx.fillStyle="#8c6c44"; ctx.fillRect(W-26,ly,17,3); }
     winP(20,30);
-    for(const [hx,hy] of [[14,60],[14,84],[38,72]]){ ctx.fillStyle="#d9b968"; ctx.fillRect(hx,hy,26,20); ctx.strokeStyle="#a8842c"; ctx.lineWidth=1; ctx.strokeRect(hx+.5,hy+.5,25,19); ctx.fillStyle="#a8842c"; ctx.fillRect(hx,hy+6,26,2); ctx.fillRect(hx,hy+13,26,2); }
-    ctx.fillStyle="#6a4a2c"; ctx.fillRect(250,64,50,16);
-    ctx.fillStyle="#5db3d8"; ctx.fillRect(253,67,44,10);
-    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(256+((t*20)%30),69,8,2);
-    drawEmojiC(ctx,"🥣", 232, 76, 11);
-    drawEmojiC(ctx,"🌾", 70, 160, 14); drawEmojiC(ctx,"🌾", 230, 156, 12); drawEmojiC(ctx,"🌾", 150, 168, 11);
+    for(const [hx,hy,hr] of [[30,84,20],[52,94,15],[22,102,13]]){
+      ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(hx,hy+hr*0.55,hr*1.1,4,0,0,7); ctx.fill();
+      ctx.fillStyle="#e0c268"; ctx.beginPath(); ctx.arc(hx,hy,hr,Math.PI,0); ctx.fill(); ctx.fillRect(hx-hr,hy,hr*2,hr*0.5);
+      ctx.strokeStyle="#b8923a"; ctx.lineWidth=1;
+      for(let k=0;k<4;k++){ ctx.beginPath(); ctx.moveTo(hx-hr+3+k*hr*0.5, hy+hr*0.4); ctx.lineTo(hx-hr+8+k*hr*0.5, hy-hr*0.5); ctx.stroke(); }
+      ctx.fillStyle="#e8d088"; ctx.fillRect(hx+hr-4, hy-hr*0.3, 5, 2); ctx.fillRect(hx-hr, hy-2, 4, 2);
+    }
+    ctx.fillStyle="#8c6c44"; ctx.fillRect(64,66,3,30);
+    ctx.fillStyle="#a8a098"; for(const px of [60,64,68]) ctx.fillRect(px,60,2,9);
+    const _bed = (bx, by, c1, c2) => {
+      ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(bx, by+8, 20, 5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle=c1; ctx.beginPath(); ctx.ellipse(bx, by, 20, 11, 0, 0, 7); ctx.fill();
+      ctx.fillStyle=c2; ctx.beginPath(); ctx.ellipse(bx, by, 13, 6, 0, 0, 7); ctx.fill();
+    };
+    _bed(226, 78, "#b0574f", "#d9847a");
+    _bed(272, 128, "#5f7fbe", "#8aa4d9");
+    ctx.fillStyle="#8a5a34"; ctx.beginPath(); ctx.ellipse(78, 150, 10, 5, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#c9955a"; ctx.beginPath(); ctx.ellipse(78, 148, 7, 3, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#8a5a34"; ctx.beginPath(); ctx.ellipse(102, 152, 10, 5, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#5db3d8"; ctx.beginPath(); ctx.ellipse(102, 150, 7, 3, 0, 0, 7); ctx.fill();
+    drawEmojiC(ctx,"🧶", 170, 142, 12); drawEmojiC(ctx,"🦴", 128, 160, 11);
+    ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(276, 112, 10, 3, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#a8905a"; ctx.fillRect(272, 88, 8, 24);
+    ctx.fillStyle="#c9b284"; ctx.fillRect(266, 82, 20, 8);
+    for(const [sx2,sy2] of [[110,158],[150,166],[236,156],[196,170]]){
+      ctx.strokeStyle="#d9b968"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(sx2,sy2); ctx.lineTo(sx2-4,sy2-9); ctx.moveTo(sx2,sy2); ctx.lineTo(sx2,sy2-11); ctx.moveTo(sx2,sy2); ctx.lineTo(sx2+4,sy2-8); ctx.stroke();
+    }
     if (!S.pets.owned.length){
       ctx.fillStyle="#e8dcc0"; ctx.fillRect(W/2-34,14,68,26); ctx.strokeStyle="#8c6947"; ctx.strokeRect(W/2-34,14,68,26);
       drawEmojiC(ctx,"❓", W/2, 27, 16);
@@ -1455,10 +1555,48 @@ function drawInterior(t){
       ctx.fillStyle="#5a3a20"; ctx.fillRect(chx+1, chy+14, 3, 4); ctx.fillRect(chx+12, chy+14, 3, 4);
     }
     ctx.fillStyle="#5a6a7a"; ctx.fillRect(16,60,22,42); ctx.fillStyle="#48586a"; for(const cy of [66,80,92]) ctx.fillRect(18,cy,18,8);
-    drawEmojiC(ctx,"💼", 124, 79, 9);
-    drawEmojiC(ctx,"🪴", 292, 92, 15);
-    drawEmojiC(ctx,"🪴", 52, 96, 13);
+    drawEmojiC(ctx,"💼", 188, 82, 10);
+    const _bigPlant = (px, py) => {
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(px, py+14, 11, 3, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#b06a42"; ctx.fillRect(px-8, py, 16, 13);
+      ctx.fillStyle="#c97b50"; ctx.fillRect(px-10, py-3, 20, 4);
+      ctx.fillStyle="#2f8a52"; ctx.beginPath(); ctx.arc(px, py-12, 10, 0, 7); ctx.fill();
+      ctx.fillStyle="#3aa66a"; ctx.beginPath(); ctx.arc(px-6, py-17, 7, 0, 7); ctx.arc(px+6, py-16, 7, 0, 7); ctx.fill();
+      ctx.fillStyle="#4dbf7e"; ctx.beginPath(); ctx.arc(px, py-21, 6, 0, 7); ctx.fill();
+    };
+    _bigPlant(292, 88); _bigPlant(52, 92);
     drawEmojiC(ctx,"🕐", 60, 27, 12);
+  } else if (S.tab==="ach"){
+    room("#3e2430","#5a3644","#e8e2d2","#dcd6c6","#c9a02e");
+    ctx.fillStyle="#c9a02e"; ctx.fillRect(0,41,W,3);
+    for(let i=0;i<6;i++){ ctx.fillStyle=i%2?"#c9a02e":"#e8e2d2"; const px=30+i*52; ctx.beginPath(); ctx.moveTo(px,10); ctx.lineTo(px+16,10); ctx.lineTo(px+8,26); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle="#c9a02e"; ctx.beginPath(); ctx.arc(W/2,24,13,0,7); ctx.fill();
+    ctx.fillStyle="#5a3644"; ctx.beginPath(); ctx.arc(W/2,24,10,0,7); ctx.fill();
+    drawEmojiC(ctx,"🏆", W/2, 24, 13);
+    ctx.fillStyle="#c9a02e"; ctx.fillRect(W/2-24,47,48,H-61);
+    ctx.fillStyle="#9e2b33"; ctx.fillRect(W/2-20,47,40,H-61);
+    ctx.fillStyle="#7d1f27"; for(let cy=54;cy<H-18;cy+=14) ctx.fillRect(W/2-20,cy,40,2);
+    for(const rx of [W/2-34, W/2+34]){
+      for(const ry of [66,106,146]){
+        ctx.fillStyle="#c9a02e"; ctx.fillRect(rx-2,ry,4,16); ctx.beginPath(); ctx.arc(rx,ry,3,0,7); ctx.fill();
+      }
+      ctx.strokeStyle="#9e2b33"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(rx,68); ctx.quadraticCurveTo(rx,86,rx,108); ctx.quadraticCurveTo(rx,126,rx,148); ctx.stroke();
+    }
+    const _got = ACH.filter(a=>S.ach && S.ach[a.id]);
+    const _spots = [[46,80],[112,80],[208,80],[274,80],[46,132],[112,132],[208,132],[274,132]];
+    _spots.forEach(([px,py],i)=>{
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(px,py+16,14,3,0,0,7); ctx.fill();
+      ctx.fillStyle="#f2eee2"; ctx.fillRect(px-11,py,22,14);
+      ctx.fillStyle="#cfc8b8"; ctx.fillRect(px-13,py+12,26,4);
+      ctx.fillStyle="#fff"; ctx.fillRect(px-11,py,22,3);
+      if (_got[i]){
+        drawEmojiC(ctx, _got[i].ic, px, py-9, 15);
+        if (Math.floor(t*2+i)%3===0) drawEmojiC(ctx,"✨", px+11, py-16, 8);
+      } else {
+        ctx.fillStyle="rgba(69,52,35,.25)"; ctx.beginPath(); ctx.arc(px,py-8,7,0,7); ctx.fill();
+      }
+    });
   }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
@@ -1480,11 +1618,17 @@ function drawInterior(t){
           ctx.fillStyle = locked ? "#a8a098" : "#c9955a"; ctx.beginPath(); ctx.arc(_lx+24, _ly+4.5, 4.5, 0, 7); ctx.fill();
           ctx.fillStyle = locked ? "#8a8078" : _tone; ctx.beginPath(); ctx.arc(_lx+24, _ly+4.5, 2.5, 0, 7); ctx.fill();
         }
-      } else if (!drawSprite(ctx, st.sk, sx, sy+12, 44)){
-        ctx.fillStyle = locked ? "#888" : isActive ? "#ffd666" : "#b09060";
-        ctx.fillRect(sx-20, sy-16, 40, 32);
+      } else {
+        ctx.globalAlpha = locked ? 0.45 : 1;
+        if (!drawSprite(ctx, st.sk, sx, sy+15, 44)){
+          ctx.fillStyle = locked ? "#888" : isActive ? "#ffd666" : "#b09060";
+          ctx.fillRect(sx-20, sy-13, 40, 32);
+        }
+        ctx.globalAlpha = 1;
       }
+      ctx.globalAlpha = locked ? 0.55 : 1;
       drawEmojiC(ctx, st.ic, sx, sy-18, 14);
+      ctx.globalAlpha = 1;
       if (locked) drawEmojiC(ctx, "🔒", sx+16, sy-28, 9);
       if (isActive){
         const p = S.action.progress || 0;
@@ -1550,8 +1694,8 @@ function villageFrame(ts){
     drawTitleFX(t);
   } else if (S.tab==="village"){
     moveActor(VP, dt, 104);
-    if (!globalThis._saidSwim && VP.y > 18.2*TILE){
-      globalThis._saidSwim = true;
+    if (VP.y > 18.2*TILE && (!globalThis._swimAt || performance.now() - globalThis._swimAt > 6000)){
+      globalThis._swimAt = performance.now();
       toast(`🌊 ${pName()}: "I can't swim… yet."`);
       log(`🌊 ${pName()} eyes the water: "I can't swim… yet."`);
     }
@@ -1705,7 +1849,11 @@ if (typeof document !== 'undefined'){
   .ilbl-lock{color:#ffd666}
   .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);background:rgba(176,87,79,.92);color:#fff8e6;font:600 10px 'IBM Plex Mono',monospace;padding:1px 7px;border-radius:4px;pointer-events:none}
   .vhint{text-align:center}
-  .int-layout{display:flex;flex-direction:column;gap:14px}
+  .int-layout{display:flex;flex-direction:column;gap:14px;isolation:isolate}
+  .int-left{position:relative;z-index:2}
+  .int-left .int-canvas-wrap{overflow:hidden;border-radius:4px}
+  .int-left canvas{position:relative;z-index:2;display:block}
+  .int-right{position:relative;z-index:1}
   @media(min-width:1080px){
     .int-layout{flex-direction:row;align-items:flex-start}
     .int-left{flex:0 0 auto;width:min(660px,46%)}
@@ -1738,7 +1886,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null,
-    playerName:"", settings:{ music:true }, prod:{}, tut:{ step:0, done:false }, ach:{},
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0} },
     upgrades:{}, pets:{ owned:[], active:null },
     counters:{ actions:0, contracts:0, coinsEarned:0, trades:0 },
@@ -2174,9 +2322,16 @@ function drawCharPreview(canvasId){
   const cv = document.getElementById(canvasId);
   if (!cv) return;
   const ctx = cv.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.fillStyle="#9fd6a8"; ctx.fillRect(0, 0, cv.width, cv.height);
-  drawPerson(ctx, cv.width/2, cv.height-12, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers());
+  const big = canvasId === "char-preview";
+  const sc = big ? 3 : 1;
+  ctx.save();
+  ctx.translate(cv.width/2, cv.height - (big ? 20 : 12));
+  ctx.scale(sc, sc);
+  drawPerson(ctx, 0, 0, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers());
+  ctx.restore();
 }
 function renderCharacterCustomisation(){
   const ap = S.appearance || DEFAULT_APPEARANCE;
@@ -2188,7 +2343,7 @@ function renderCharacterCustomisation(){
   return `<div class="panel cust-panel">
     <h2>👤 Character<small>Customise your look. Saved automatically.</small></h2>
     <div class="cust-preview-wrap">
-      <canvas id="char-preview" width="60" height="80" style="image-rendering:pixelated;display:block;border:2px solid var(--edge);background:#9fd6a8;"></canvas>
+      <canvas id="char-preview" width="120" height="140" style="image-rendering:pixelated;display:block;border:2px solid var(--edge);background:#9fd6a8;"></canvas>
       <div class="cust-name">${S.playerName || "Founder"}</div>
     </div>
     ${swatchRow("Skin Tone", SKIN_TONES, "skin")}
@@ -2227,8 +2382,15 @@ function renderAch(){
   html += `</div>`;
   return html;
 }
+let _lastRoomTab = null;
 function renderMain(){
   const m = $("#main");
+  if (INTERIOR_TABS.has(S.tab) && S.tab !== _lastRoomTab){
+    IP.x = icanvasW()/2; IP.y = icanvasH() - 34;
+    IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
+    if (typeof showZoneCard === "function") showZoneCard(S.tab);
+  }
+  _lastRoomTab = INTERIOR_TABS.has(S.tab) ? S.tab : null;
   const banner = tutBannerHtml();
   if (S.tab==="village") m.innerHTML = banner + `<div class="village-wrap">
       <div class="panel village-canvas-panel" style="padding:8px;margin-bottom:0;">
@@ -2240,7 +2402,6 @@ function renderMain(){
       </div>
       <div class="village-sidebar">${renderInventoryPanel()}</div>
     </div>`;
-  else if (S.tab==="ach") m.innerHTML = banner + renderAch();
   else if (S.tab==="character") m.innerHTML = banner + renderCharacterCustomisation();
   else if (S.tab==="settings") m.innerHTML = banner + renderSettings();
   else {
@@ -2249,6 +2410,7 @@ function renderMain(){
     else if (S.tab==="trade") m.innerHTML = _withRoom("⚖️ Inside the Market Hall", renderTrade());
     else if (S.tab==="upgrades") m.innerHTML = _withRoom("🛒 Inside the Town Hall — CapEx office", renderUpgrades());
     else if (S.tab==="pets") m.innerHTML = _withRoom("🐾 Inside the Companion Barn — your crew hangs out here", renderPets());
+    else if (S.tab==="ach") m.innerHTML = _withRoom("🏆 Inside the Trophy Hall", renderAch());
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else m.innerHTML = _withRoom(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop", renderSkillPanel(S.tab));
@@ -2351,7 +2513,7 @@ fillContracts();
 if (!TABS.some(t=>t.id===S.tab)) S.tab = "village";
 preloadAll();
 renderNav(); renderMain(); updateHud(); syncMusicButton();
-document.getElementById("btn-music").onclick = () => setMusic(!S.settings.music);
+document.getElementById("btn-music").onclick = () => cycleVolume();
 window.addEventListener("keydown", e => {
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){

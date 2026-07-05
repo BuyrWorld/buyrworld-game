@@ -11,18 +11,18 @@ export const VMAP: string[] = [
   'TCCCCCCCCGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 2  T+C*8+G*30+f*8+T=48? actually: 1+8+30+8+1=48
   'TCDDDDDDCGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 3
   'TCDDDDDDCGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 4
-  'TCDDDDDDCPPPPPPPPPPPPPPPPPPPPPPPPPGPPPPGGFFFFFFT', // 5
-  'TCDDDDDDDPGGGGGGGGGGGGGGGGGGGGGGGGGGGGGPFFFFFFFT', // 6
-  'TCDDDDDDCPGGGGWWWWGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 7
-  'TCCCCCCCCPGGGGWWWWGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 8
-  'TGGGGGGGGPGGGGGGGGGGGGGGGGGGGGGGGGGGGGGPFFFFFFFT', // 9
-  'TGGGGGGGGPPPPPPPPPPPPPPPPPPPPPPPPPGPPPPGFFFFFFFT', // 10
-  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 11
-  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 12
-  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 13
-  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 14
-  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 15
-  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFT', // 16
+  'TCDDDDDDCPPPPPPPPPPPPPPPPPPPPPPPPPGPPPPFFFFFFFFT', // 5
+  'TCDDDDDDDPGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 6
+  'TCDDDDDDCPGGGGWWWWGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 7
+  'TCCCCCCCCPGGGGWWWWGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 8
+  'TGGGGGGGGPGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 9
+  'TGGGGGGGGPPPPPPPPPPPPPPPPPPPPPPPPPGPPPPFFFFFFFFT', // 10
+  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 11
+  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 12
+  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 13
+  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 14
+  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 15
+  'TGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGFFFFFFFFT', // 16
   'TSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSST', // 17
   'TSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSST', // 18
   'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW', // 19
@@ -75,27 +75,27 @@ export const V_OBJECTS: WorldObject[] = [
   // --- Other buildings ---
   { id: 'barn',        kind: 'bld',   tx: 24, ty: 11, w: 3, h: 3, tab: 'pets',     name: 'Companion Barn', ic: '🐾', wall: '#d9a86a', roof: '#9a5f3a' },
   { id: 'trophy',      kind: 'bld',   tx: 29, ty: 11, w: 2, h: 2, tab: 'ach',      name: 'Trophy Hall',    ic: '🏆', wall: '#e8dcb8', roof: '#c9a02e' },
-  { id: 'sign',        kind: 'sign',  tx: 10, ty: 11, w: 1, h: 1, tab: 'settings', name: 'Save Post',      ic: '💾' },
+  { id: 'sign',        kind: 'sign',  tx: 12, ty: 12, w: 1, h: 1, tab: 'settings', name: 'Save Post',      ic: '💾' },
   // --- Forest cabin (east) ---
   { id: 'sawmill',     kind: 'bld',   tx: 41, ty: 3,  w: 3, h: 3, tab: 'woodcutting', name: 'Sawmill', ic: '🪓', wall: '#9a7050', roof: '#5a3a20' },
   // --- Pier & fishmonger (beach) ---
   { id: 'pier',         kind: 'bld',   tx: 22, ty: 16, w: 3, h: 2, tab: 'fishing', name: 'Pier',    ic: '🎣', wall: '#8c6947', roof: '#6a4a28' },
   { id: 'stall_marina', kind: 'stall', tx: 17, ty: 16, w: 2, h: 2, tab: 'trade',   name: 'Marina',  lvl: 1,  awn: '#4da8cc', hair: '#8a5a20', shirt: '#4a7a9a' },
   // --- Streetlamps ---
-  { id: 'lamp_1', kind: 'lamp', tx: 10, ty: 5,  w: 1, h: 1 },
-  { id: 'lamp_2', kind: 'lamp', tx: 32, ty: 5,  w: 1, h: 1 },
-  { id: 'lamp_3', kind: 'lamp', tx: 10, ty: 10, w: 1, h: 1 },
-  { id: 'lamp_4', kind: 'lamp', tx: 32, ty: 10, w: 1, h: 1 },
-  { id: 'lamp_5', kind: 'lamp', tx: 37, ty: 7,  w: 1, h: 1 },
+  { id: 'lamp_1', kind: 'lamp', tx: 10, ty: 6,  w: 1, h: 1 },
+  { id: 'lamp_2', kind: 'lamp', tx: 32, ty: 6,  w: 1, h: 1 },
+  { id: 'lamp_3', kind: 'lamp', tx: 10, ty: 11, w: 1, h: 1 },
+  { id: 'lamp_4', kind: 'lamp', tx: 32, ty: 11, w: 1, h: 1 },
+  { id: 'lamp_5', kind: 'lamp', tx: 36, ty: 6,  w: 1, h: 1 },
   { id: 'lamp_6', kind: 'lamp', tx: 43, ty: 7,  w: 1, h: 1 },
   // --- Forest trees ---
-  { id: 'tree_pine1',  kind: 'tree', tx: 39, ty: 2,  w: 1, h: 2, ore: 'pine',     lvl: 1  },
+  { id: 'tree_pine1',  kind: 'tree', tx: 41, ty: 2,  w: 1, h: 2, ore: 'pine',     lvl: 1  },
   { id: 'tree_pine2',  kind: 'tree', tx: 41, ty: 8,  w: 1, h: 2, ore: 'pine',     lvl: 1  },
   { id: 'tree_pine3',  kind: 'tree', tx: 44, ty: 3,  w: 1, h: 2, ore: 'pine',     lvl: 1  },
   { id: 'tree_pine4',  kind: 'tree', tx: 46, ty: 5,  w: 1, h: 2, ore: 'pine',     lvl: 1  },
   { id: 'tree_oak1',   kind: 'tree', tx: 44, ty: 10, w: 1, h: 2, ore: 'oak',      lvl: 8  },
   { id: 'tree_oak2',   kind: 'tree', tx: 46, ty: 8,  w: 1, h: 2, ore: 'oak',      lvl: 8  },
-  { id: 'tree_oak3',   kind: 'tree', tx: 39, ty: 12, w: 1, h: 2, ore: 'oak',      lvl: 8  },
+  { id: 'tree_oak3',   kind: 'tree', tx: 41, ty: 12, w: 1, h: 2, ore: 'oak',      lvl: 8  },
   { id: 'tree_hard1',  kind: 'tree', tx: 44, ty: 14, w: 1, h: 2, ore: 'hardwood', lvl: 20 },
   { id: 'tree_hard2',  kind: 'tree', tx: 46, ty: 13, w: 1, h: 2, ore: 'hardwood', lvl: 20 },
   // --- Town decorations ---
