@@ -12,7 +12,7 @@ import { nightAlpha, lampGlow, isNight, skyTint, gameHour } from './world/daynig
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
-import { preloadAll, drawSprite, getSprite } from './world/assets.ts';
+import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
    BuyrWorld v0.8 — Vite+TS modular entry point
@@ -1847,6 +1847,18 @@ function drawVillage(t){
     ctx.textBaseline = "alphabetic";
     ctx.restore();
   }
+  // save-flash: brief checkmark in bottom-right corner after auto-save
+  if (Date.now() < _saveFlashUntil) {
+    const _fAlpha = Math.min(1, (_saveFlashUntil - Date.now()) / 400);
+    ctx.save();
+    ctx.globalAlpha = _fAlpha * 0.85;
+    if (!drawSprite(ctx, 'icon_check', VIEW_W - 14, VIEW_H - 20, 14)) {
+      ctx.fillStyle = "#4aff88"; ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+      ctx.fillText("✓", VIEW_W - 4, VIEW_H - 20);
+    }
+    ctx.restore();
+  }
 }
 function updateWanderers(dt){
   const night = isNight();
@@ -2424,44 +2436,55 @@ function drawInterior(t){
     const _ht = S.homeTier||0;
     room("#6a5a3a","#8a7050","#d4c8a0","#c8bc90","#4a3020");
     winP(W*0.12, 34); winP(W*0.62, 34);
-    // tier 0+: basic bed (always present)
-    const _bx = W-58;
-    ctx.fillStyle="#7a5030"; ctx.fillRect(_bx,58,50,62);
-    ctx.fillStyle="#b08050"; ctx.fillRect(_bx+2,60,46,20);
-    ctx.fillStyle=["#d4b880","#c0b0e0","#d4b880","#b0c4d8","#d4c880"][0]; ctx.fillRect(_bx+6,64,38,12);
-    ctx.fillStyle="#f0e8d0"; ctx.fillRect(_bx+4,80,42,36);
-    ctx.fillStyle="#a08060"; ctx.fillRect(_bx,118,50,6); // bed frame foot
-    // tier 1+: bookshelf + rug + kitchen table
+    // _ft: draw furniture tile (col,row) at dest (x,y) scaled 2×; falls back to canvas rect
+    const _sc = 2, _tsz = 16 * _sc; // 32px per tile at scale 2
+    const _ft = (col, row, x, y, tw=1, th=1, fbCol="#8a6a4a") => {
+      if (!drawFurnitureTile(ctx, col, row, x, y, _sc, tw, th)) {
+        ctx.fillStyle = fbCol; ctx.fillRect(x, y, _tsz*tw, _tsz*th);
+      }
+    };
+    // T0+: bed — top-right corner (2×2 tiles = 64×64px)
+    // roguelikeIndoor: single bed is at col 0, row 0 (2×2 block)
+    _ft(0, 0, W-70, 50, 2, 2, "#7a5030");
+    // T1+: bookshelf (left wall), oval rug + table (floor centre)
     if (_ht >= 1){
-      ctx.fillStyle="#6a4228"; ctx.fillRect(10,50,20,H-65);
-      for(let bi=0;bi<5;bi++){ ctx.fillStyle=["#c94a3a","#4a6ec9","#4ac96a","#c9c94a","#9a4ac9"][bi]; ctx.fillRect(12,52+bi*16,16,13); }
-      ctx.fillStyle="rgba(160,100,50,.3)"; ctx.fillRect(W/2-40,H-62,80,50);
-      ctx.strokeStyle="rgba(180,120,60,.45)"; ctx.lineWidth=2; ctx.strokeRect(W/2-36,H-58,72,42);
-      ctx.fillStyle="#7a5030"; ctx.fillRect(W/2-18,H-52,36,22); ctx.fillRect(W/2-18,H-30,4,20); ctx.fillRect(W/2+14,H-30,4,20);
-      ctx.fillStyle="#f0e8d8"; ctx.fillRect(W/2-5,H-54,10,5);
+      // bookshelf: col 8, row 2 (1 wide, 2 tall) = 32×64px
+      _ft(8, 2, 8, 50, 1, 2, "#6a4228");
+      // oval rug: col 0, row 7 (3 wide, 2 tall) = 96×64px — centre floor
+      _ft(0, 7, W/2-48, H-74, 3, 2, "#b07848");
+      // table: col 4, row 0 (2×2) above rug
+      _ft(4, 0, W/2-32, H-100, 2, 2, "#7a5030");
     }
-    // tier 2+: armchair + fireplace
+    // T2+: sofa (right) + fireplace (left wall)
     if (_ht >= 2){
-      ctx.fillStyle="#4a3020"; ctx.fillRect(10,46,26,H-60); ctx.fillStyle="#c94a1a"; ctx.fillRect(17,H-38,8,10); ctx.fillStyle="#ffd666"; ctx.fillRect(20,H-42,4,6);
-      ctx.fillStyle="#7a5a60"; ctx.fillRect(W-55,H-55,36,28); ctx.fillRect(W-58,H-60,8,32); ctx.fillRect(W-22,H-60,8,32);
-      ctx.fillStyle="#9a7a88"; ctx.fillRect(W-53,H-58,32,6); // cushion
+      // fireplace: col 22, row 0 (2×2) on left wall below shelf
+      _ft(22, 0, 8, 116, 2, 2, "#4a3020");
+      // sofa: col 0, row 4 (3 wide, 1 tall) right side floor
+      _ft(0, 4, W-100, H-56, 3, 1, "#7a5a60");
     }
-    // tier 3+: wall art + cabinet
+    // T3+: wall art (back wall) + cabinet (left of shelf)
     if (_ht >= 3){
-      ctx.fillStyle="#5a3a20"; ctx.fillRect(W/2-22,8,44,32); ctx.fillStyle="#a8c4d8"; ctx.fillRect(W/2-19,11,38,26);
-      ctx.fillStyle="rgba(255,255,255,.15)"; ctx.fillRect(W/2-19,11,38,5);
-      ctx.fillStyle="#5a3a20"; ctx.fillRect(W/2-1,11,2,26);
-      ctx.fillStyle="#6a4228"; ctx.fillRect(36,50,22,H-65); ctx.fillStyle="#4a2a14"; ctx.fillRect(37,62,20,3); ctx.fillRect(37,80,20,3); ctx.fillRect(37,98,20,3);
+      // painting on back wall: col 16, row 0 (3 wide, 1 tall)
+      _ft(16, 0, W/2-24, 10, 3, 1, "#5a3a20");
+      // cabinet: col 12, row 0 (1 wide, 2 tall)
+      _ft(12, 0, 44, 50, 1, 2, "#6a4228");
     }
-    // tier 4+: piano + hanging plant + decorative border
+    // T4+: piano + potted plant + decorative floor border
     if (_ht >= 4){
-      ctx.fillStyle="#282828"; ctx.fillRect(60,50,48,36); ctx.fillStyle="#f0f0f0"; ctx.fillRect(62,64,44,10);
-      for(let ki=0;ki<10;ki++) ctx.fillStyle=ki%3===2?"#282828":"#fff", ctx.fillRect(63+ki*4+(ki>4?2:0),64,3,8);
-      ctx.fillStyle="#3a2010"; ctx.fillRect(W/2+24,46,4,20);
-      ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(W/2+26,44,9,0,7); ctx.fill();
-      ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(W/2+20,48,6,0,7); ctx.arc(W/2+32,48,6,0,7); ctx.fill();
+      // piano: canvas rect (unique, no tilesheet equivalent)
+      ctx.fillStyle="#282828"; ctx.fillRect(64,50,48,36); ctx.fillStyle="#f0f0f0"; ctx.fillRect(66,64,44,10);
+      for(let ki=0;ki<10;ki++) { ctx.fillStyle=ki%3===2?"#282828":"#fff"; ctx.fillRect(67+ki*4+(ki>4?2:0),64,3,8); }
+      // potted plant: col 14, row 0 (1×2)
+      _ft(14, 0, W/2+28, 48, 1, 2, "#3a8a2a");
+      // decorative border strip
       ctx.fillStyle="rgba(160,120,50,.18)"; ctx.fillRect(0,H-48,W,2); ctx.fillRect(0,H-50,W,2);
     }
+    // bonus sprites if player owns furniture items
+    if (S.items && S.items["fancy_rug"] > 0) _ft(3, 7, W/2-48, H-40, 3, 2, "#c06830");
+    if (S.items && S.items["lamp"]      > 0) _ft(20, 1, W-38, H-68, 1, 1, "#c09830");
+    if (S.items && S.items["bookcase"]  > 0) _ft(8,  4, 8, 116, 1, 2, "#5a3a20");
+    if (S.items && S.items["painting"]  > 0 && _ht < 3) _ft(16, 0, W/2-24, 10, 3, 1, "#5a3a20");
+    if (S.items && S.items["vase"]      > 0) _ft(18, 0, W/2+8, 10, 1, 1, "#9a8060");
   }
   if (S.tab==="bank"){
     // Village Bank interior — marble-effect, clean columns
@@ -3029,7 +3052,17 @@ let S = freshState();
 
 function storageOK(){ try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } }
 const HAS_LS = storageOK();
-function save(){ S.lastSeen = Date.now(); if (HAS_LS) { try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} } }
+let _saveFlashUntil = 0, _lastSaveFlash = 0;
+function save(){
+  S.lastSeen = Date.now();
+  if (HAS_LS) {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(S));
+      const _n = Date.now();
+      if (_n - _lastSaveFlash > 5000) { _saveFlashUntil = _n + 1200; _lastSaveFlash = _n; }
+    } catch(e) {}
+  }
+}
 function load(){
   if (!HAS_LS) return false;
   try {
@@ -3919,12 +3952,17 @@ function renderMain(){
       const _upBtn = _next
         ? `<button data-homeup="1" style="background:${_canUp?"#5a7a3a":"#666"};color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px;margin-top:8px"${_canUp?"":" disabled"}>Upgrade → ${_next.n} — ${fmt(_next.cost)} coins</button>`
         : `<p style="color:#ffd666;font-size:12px;margin:8px 0">✨ Fully upgraded — the finest cottage in the valley.</p>`;
-      m.innerHTML = _withRoom("🏡 Your Cottage",
+      const _starImg = `<img src="/assets/UI/star.png" style="width:12px;height:12px;image-rendering:pixelated;vertical-align:middle;margin-right:2px">`;
+      const _homeImg = `<img src="/assets/UI/home.png" style="width:16px;height:16px;image-rendering:pixelated;vertical-align:middle;margin-right:4px;filter:invert(1)">`;
+      const _tierStars = HOME_TIERS.map((_,i)=>i<_ht?_starImg:`<span style="opacity:.3">${_starImg}</span>`).join("");
+      m.innerHTML = _withRoom(`${_homeImg}Your Cottage`,
         `<div class="panel" style="padding:10px">
+          <p style="margin:0 0 2px">${_tierStars}</p>
           <p style="margin:0 0 4px"><b>${_tier.n}</b> <span style="color:var(--dim);font-size:11px">Tier ${_ht+1} of ${HOME_TIERS.length}</span></p>
           <p style="color:var(--dim);font-size:12px;margin:0 0 10px">${_tier.desc}</p>
           ${_upBtn}
           ${_next && !_canUp ? `<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Need ${fmt(_next.cost)} coins (${fmt(_next.cost-S.coins)} short)</p>` : ""}
+          <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Tip: buy furniture from Finn's Stall to add bonus decor to your home.</p>
         </div>`
       );
     }

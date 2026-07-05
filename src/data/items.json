@@ -22,5 +22,10 @@
   "mackerel": { "n": "Mackerel", "ic": "🐠", "v": 16  },
   "bass":     { "n": "Bass",     "ic": "🐡", "v": 30  },
   "salmon":   { "n": "Salmon",   "ic": "🍣", "v": 60  },
-  "tuna":     { "n": "Tuna",     "ic": "🐋", "v": 120 }
+  "tuna":     { "n": "Tuna",     "ic": "🐋", "v": 120 },
+  "painting":  { "n": "Painting",   "ic": "🖼️",  "v": 80  },
+  "vase":      { "n": "Vase",       "ic": "🏺",  "v": 45  },
+  "fancy_rug": { "n": "Fancy Rug",  "ic": "🧩",  "v": 60  },
+  "lamp":      { "n": "Table Lamp", "ic": "🪔",  "v": 35  },
+  "bookcase":  { "n": "Bookcase",   "ic": "📚",  "v": 55  }
 }

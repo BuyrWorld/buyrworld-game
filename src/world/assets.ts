@@ -49,10 +49,18 @@ export const NATURE_SPRITE_MAP: Record<string, string> = {
 };
 
 export const INTERIOR_SPRITE_MAP: Record<string, string> = {
-  prop_machine:   '/assets/factory/machine.png',
-  prop_hopper:    '/assets/factory/hopper-round.png',
-  prop_conveyor:  '/assets/factory/conveyor-long.png',
-  prop_cog:       '/assets/factory/cog-a.png',
+  prop_machine:    '/assets/factory/machine.png',
+  prop_hopper:     '/assets/factory/hopper-round.png',
+  prop_conveyor:   '/assets/factory/conveyor-long.png',
+  prop_cog:        '/assets/factory/cog-a.png',
+  roguelike_indoor:'/assets/interior/roguelikeIndoor_transparent.png',
+};
+
+export const UI_SPRITE_MAP: Record<string, string> = {
+  icon_save:  '/assets/UI/save.png',
+  icon_home:  '/assets/UI/home.png',
+  icon_star:  '/assets/UI/star.png',
+  icon_check: '/assets/UI/checkmark.png',
 };
 
 // Mapping: stall object id → NPC vendor sprite
@@ -62,9 +70,34 @@ export const NPC_SPRITE_MAP: Record<string, string> = {
   stall_perry: '/assets/characters/mini-male-d.png',
 };
 
+// Draw a single tile (or multi-tile block) from the roguelikeIndoor tilesheet.
+// col/row are 0-indexed; tileW/tileH span multiple tiles for furniture that is
+// wider/taller than one cell. Each cell is 16×16px with a 1px gap (17px pitch).
+export function drawFurnitureTile(
+  ctx: CanvasRenderingContext2D,
+  col: number,
+  row: number,
+  destX: number,
+  destY: number,
+  scale: number = 2,
+  tileW: number = 1,
+  tileH: number = 1,
+): boolean {
+  const img = getSprite('roguelike_indoor');
+  if (!img) return false;
+  const PITCH = 17, SZ = 16;
+  ctx.drawImage(
+    img,
+    col * PITCH, row * PITCH, SZ * tileW, SZ * tileH,
+    Math.round(destX), Math.round(destY), SZ * tileW * scale, SZ * tileH * scale,
+  );
+  return true;
+}
+
 export function preloadAll(): void {
   Object.entries(BUILDING_SPRITE_MAP).forEach(([k, v]) => loadSprite(`bld_${k}`, v));
   Object.entries(NPC_SPRITE_MAP).forEach(([k, v])      => loadSprite(`npc_${k}`, v));
   Object.entries(NATURE_SPRITE_MAP).forEach(([k, v])   => loadSprite(k, v));
   Object.entries(INTERIOR_SPRITE_MAP).forEach(([k, v]) => loadSprite(k, v));
+  Object.entries(UI_SPRITE_MAP).forEach(([k, v])       => loadSprite(k, v));
 }

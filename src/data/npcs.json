@@ -28,5 +28,11 @@
     "title": "Pier Fishmonger", "lvl": 1,
     "quip": "Fresh off the line, love. Never been near a tin.",
     "stock": ["sardine", "mackerel", "bass", "salmon", "tuna"]
+  },
+  {
+    "id": "finn", "n": "Finn", "ic": "🪑",
+    "title": "Furniture & Homeware Trader", "lvl": 1,
+    "quip": "Good taste costs a bit more. Worth every penny.",
+    "stock": ["painting", "vase", "fancy_rug", "lamp", "bookcase"]
   }
 ]

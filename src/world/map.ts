@@ -92,6 +92,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'stall_marge', kind: 'stall', tx: 12, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Marge',  lvl: 1,  awn: '#ff8a5c', hair: '#c9a24b', shirt: '#7cb46b' },
   { id: 'stall_bolt',  kind: 'stall', tx: 15, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Bolt',   lvl: 10, awn: '#6fb7d9', hair: '#3a3a3a', shirt: '#c9723a' },
   { id: 'stall_perry', kind: 'stall', tx: 18, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Perry',  lvl: 25, awn: '#e8c94e', hair: '#7a4a2a', shirt: '#4a6ea9' },
+  { id: 'stall_finn',  kind: 'stall', tx: 21, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Finn',   lvl: 1,  awn: '#c84a7a', hair: '#8a3030', shirt: '#7a5a9a' },
   // --- Other buildings ---
   { id: 'barn',        kind: 'bld',   tx: 24, ty: 11, w: 3, h: 3, tab: 'pets',     name: 'Companion Barn', ic: '🐾', wall: '#d9a86a', roof: '#9a5f3a' },
   { id: 'trophy',      kind: 'bld',   tx: 29, ty: 11, w: 2, h: 2, tab: 'ach',      name: 'Trophy Hall',    ic: '🏆', wall: '#e8dcb8', roof: '#c9a02e' },
