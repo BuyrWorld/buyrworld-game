@@ -84,6 +84,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'depot',       kind: 'bld',   tx: 19, ty: 2,  w: 3, h: 3, tab: 'contracts',     name: 'Depot',         ic: '📦', wall: '#cfd8bd', roof: '#4e7d5b' },
   { id: 'hall',        kind: 'bld',   tx: 23, ty: 2,  w: 3, h: 3, tab: 'upgrades',      name: 'Town Hall',     ic: '🛒', wall: '#ecdfc6', roof: '#b0574f' },
   { id: 'bank',        kind: 'bld',   tx: 27, ty: 2,  w: 2, h: 3, tab: 'bank',          name: 'Village Bank',  ic: '🏦', wall: '#e8e0cc', roof: '#8a7a5a' },
+  { id: 'exchange',    kind: 'bld',   tx: 30, ty: 2,  w: 2, h: 3, tab: 'exchange',      name: 'Exchange Floor', ic: '📈', wall: '#d0d8e8', roof: '#2a4a6a' },
   // --- Trade stalls ---
   { id: 'stall_marge', kind: 'stall', tx: 12, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Marge',  lvl: 1,  awn: '#ff8a5c', hair: '#c9a24b', shirt: '#7cb46b' },
   { id: 'stall_bolt',  kind: 'stall', tx: 15, ty: 11, w: 2, h: 2, tab: 'trade', name: 'Bolt',   lvl: 10, awn: '#6fb7d9', hair: '#3a3a3a', shirt: '#c9723a' },
@@ -170,7 +171,8 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'home_14', kind: 'bld', tx: 66, ty: 11, w: 2, h: 2, tab: 'home', name: "Ned's Cottage",    ic: '🏠', wall: '#b8c8b0', roof: '#3a5a3a' },
   { id: 'home_15', kind: 'bld', tx: 71, ty: 11, w: 2, h: 2, tab: 'home', name: "Olive's Cottage",  ic: '🏠', wall: '#b0ccd8', roof: '#3a607a' },
   // --- Village School (north of park, accessible from east path row 5) ---
-  { id: 'school', kind: 'bld', tx: 76, ty: 2, w: 5, h: 3, tab: 'school', name: 'Village School', ic: '🏫', wall: '#e8e4c0', roof: '#5a8a4a' },
+  { id: 'school',     kind: 'bld', tx: 76, ty: 2, w: 5, h: 3, tab: 'school',     name: 'Village School', ic: '🏫', wall: '#e8e4c0', roof: '#5a8a4a' },
+  { id: 'university', kind: 'bld', tx: 82, ty: 2, w: 3, h: 3, tab: 'university', name: 'University',     ic: '🎓', wall: '#ddd8c0', roof: '#4a3a7a' },
   // --- Park interactive equipment (interaction zones; drawn by drawExtras) ---
   { id: 'park_slide', kind: 'slide', tx: 82, ty: 6, w: 2, h: 2, name: 'Slide' },
   { id: 'park_swing', kind: 'swing', tx: 84, ty: 7, w: 2, h: 2, name: 'Swings' },

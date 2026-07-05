@@ -46,7 +46,8 @@ function rollMarket(force){
 function tradeBonus(){
   let b = skillLvl("trading") * 0.002;
   if (S.pets.active === "warehouse_panda") b += 0.05;
-  return Math.min(b, 0.25);
+  if (S.degrees && S.degrees.includes("mkt_analysis")) b += 0.08;
+  return Math.min(b, 0.35);
 }
 function eventMult(it){
   if (!S.worldEvent) return 1;
@@ -498,7 +499,23 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank","exchange","university"]);
+const EXCHANGE_COMMODITIES = [
+  { id:"iron_ore",    n:"Iron Ore",    ic:"🪨", unit:50  },
+  { id:"steel_bar",   n:"Steel Bar",   ic:"⛓️", unit:120 },
+  { id:"sardine",     n:"Sardine",     ic:"🐟", unit:40  },
+  { id:"bracket",     n:"Bracket",     ic:"🧱", unit:100 },
+  { id:"wiring_loom", n:"Wiring Loom", ic:"🔌", unit:160 },
+];
+const COURSES = [
+  { id:"survey",       n:"Surveying",              skill:"mining",        perk:"xp",    val:0.15, cost:500,  ms:10*60*1000, ic:"⛏️",  desc:"Mine 15% more XP." },
+  { id:"metallurgy",   n:"Metallurgy",             skill:"steelworks",    perk:"xp",    val:0.15, cost:1000, ms:20*60*1000, ic:"🔥",  desc:"Smelt 15% more XP." },
+  { id:"mech_eng",     n:"Mechanical Engineering", skill:"manufacturing", perk:"xp",    val:0.15, cost:1500, ms:30*60*1000, ic:"⚙️",  desc:"Manufacture 15% more XP." },
+  { id:"log_mgmt",     n:"Logistics Management",   skill:"logistics",     perk:"xp",    val:0.20, cost:800,  ms:15*60*1000, ic:"🚚",  desc:"Earn 20% more Logistics XP." },
+  { id:"mkt_analysis", n:"Market Analysis",        skill:"trading",       perk:"bonus", val:0.08, cost:2000, ms:40*60*1000, ic:"⚖️",  desc:"+8% sell price bonus." },
+  { id:"forestry",     n:"Forestry",               skill:"woodcutting",   perk:"xp",    val:0.15, cost:600,  ms:12*60*1000, ic:"🌲",  desc:"Chop 15% more XP." },
+  { id:"marine_bio",   n:"Marine Biology",         skill:"fishing",       perk:"xp",    val:0.15, cost:700,  ms:15*60*1000, ic:"🎣",  desc:"Fish 15% more XP." },
+];
 const STATION_DEFS = {
   mining:        [
     { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
@@ -2339,6 +2356,81 @@ function drawInterior(t){
     ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(29,H-46,10,0,7); ctx.fill();
     ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(23,H-51,7,0,7); ctx.arc(35,H-51,7,0,7); ctx.fill();
   }
+  if (S.tab==="exchange"){
+    // Exchange Floor interior — corporate, sleek, lots of screens
+    room("#303848","#485060","#c0c8d0","#d0d8e0","#1a2028");
+    winP(W*0.12, 38); winP(W*0.72, 38);
+    // dark tile floor with grid lines
+    ctx.fillStyle="rgba(0,0,0,.15)"; ctx.fillRect(0,45,W,H);
+    for(let gy=55;gy<H;gy+=20) { ctx.fillStyle="rgba(255,255,255,.04)"; ctx.fillRect(0,gy,W,1); }
+    for(let gx=0;gx<W;gx+=20)  { ctx.fillStyle="rgba(255,255,255,.04)"; ctx.fillRect(gx,45,1,H); }
+    // back wall screens (price charts)
+    const _scrColors = ["#1a3a5a","#1a4a2a","#3a2a1a","#3a1a3a","#1a3a4a"];
+    const _scrX = [14,72,130,188,246];
+    _scrColors.forEach((bg,i)=>{
+      ctx.fillStyle="#111"; ctx.fillRect(_scrX[i],10,52,38);
+      ctx.fillStyle=bg; ctx.fillRect(_scrX[i]+2,12,48,34);
+      // chart line
+      ctx.strokeStyle=i%2===0?"#4aff88":"#ff6a4a"; ctx.lineWidth=1.5; ctx.beginPath();
+      for(let px=0;px<48;px+=4){
+        const py = 20 + Math.sin(px*0.4+i)*7;
+        px===0 ? ctx.moveTo(_scrX[i]+2+px,12+py) : ctx.lineTo(_scrX[i]+2+px,12+py);
+      }
+      ctx.stroke(); ctx.lineWidth=1;
+      // ticker label
+      ctx.fillStyle="#fff"; ctx.font="bold 5px monospace";
+      ctx.fillText(["ORE","STLB","FISH","BRKT","WLOM"][i], _scrX[i]+3, 47);
+    });
+    // trading desks
+    for(const _dx of [W*0.25|0, W*0.55|0, W*0.80|0]){
+      ctx.fillStyle="#2a3a4a"; ctx.fillRect(_dx-18,H-72,36,18);
+      ctx.fillStyle="#1a2a38"; ctx.fillRect(_dx-14,H-80,28,10);
+      drawPerson(ctx, _dx, H-76, "#8a7a5a", "#1a3060", t, false, 1, null, "down", null, "#111");
+    }
+    // ticker tape along top
+    ctx.fillStyle="rgba(0,0,0,.6)"; ctx.fillRect(0,0,W,9);
+    ctx.fillStyle="#ffd666"; ctx.font="bold 6px monospace";
+    const _tapeItems = ["ORE +2.1%","STLB +5.4%","FISH -3.2%","BRKT +8.7%","WLOM +1.2%"];
+    let _tx2 = (_tickerX * 0.6) % (W + 200) - 80;
+    _tapeItems.forEach(s=>{ ctx.fillText(s, _tx2, 7); _tx2 += ctx.measureText(s).width + 24; });
+    // receptionist desk front
+    ctx.fillStyle="#384858"; ctx.fillRect(W/2-30,H-48,60,14);
+    ctx.fillStyle="#4a5a6a"; ctx.fillRect(W/2-28,H-56,56,10);
+    drawPerson(ctx, W/2, H-58, "#c09060", "#c83030", t, true, 1, null, "down", null, "#1a1a2a");
+  }
+  if (S.tab==="university"){
+    // University interior — stone, ivy, chalkboards, lecture hall
+    room("#6a6450","#9a9070","#e8e4d0","#ddd8c0","#3a3020");
+    winP(W*0.08, 38); winP(W*0.68, 38);
+    // stone floor texture
+    for(let gy=47;gy<H;gy+=18) for(let gx=0;gx<W;gx+=36){
+      ctx.fillStyle="rgba(0,0,0,.06)"; ctx.fillRect(gx+(gy%36<18?0:18),gy,17,17);
+    }
+    // chalkboard back wall
+    ctx.fillStyle="#2a3020"; ctx.fillRect(14,8,W-28,50);
+    ctx.fillStyle="#344028"; ctx.fillRect(16,10,W-32,46);
+    // chalk drawings on board
+    ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(30,22); ctx.lineTo(80,22); ctx.lineTo(55,40); ctx.closePath(); ctx.stroke(); // triangle
+    ctx.beginPath(); ctx.arc(W/2,28,10,0,7); ctx.stroke(); // circle
+    ctx.strokeStyle="rgba(255,255,255,.5)"; ctx.beginPath(); ctx.moveTo(W-80,14); ctx.lineTo(W-20,14); ctx.moveTo(W-70,22); ctx.lineTo(W-30,22); ctx.stroke(); // text lines
+    ctx.fillStyle="rgba(255,255,255,.6)"; ctx.font="bold 7px monospace"; ctx.fillText("SKILLS +XP", W/2-26, 40);
+    ctx.lineWidth=1;
+    // lecturer at board
+    drawPerson(ctx, W/2, 50, "#7a5a30", "#4a2a8a", t, true, 1, null, "down", null, "#1a1020");
+    // rows of desks
+    for(let row=0;row<2;row++) for(let col=0;col<4;col++){
+      const _dx = 30+col*68, _dy = H-80+row*32;
+      ctx.fillStyle="#8a7a50"; ctx.fillRect(_dx-14,_dy,28,10);
+      ctx.fillStyle="#6a5a38"; ctx.fillRect(_dx-12,_dy+10,4,12); ctx.fillRect(_dx+8,_dy+10,4,12);
+      // seated student (alternating)
+      if (row===0||col<3) drawPerson(ctx, _dx, _dy-4, "#c09060", col%2===0?"#4a6a9a":"#9a4a2a", t, col%3!==0, 1, null, "down", null, "#1a1a1a");
+    }
+    // ivy on walls
+    ctx.fillStyle="#3a6a2a";
+    for(let iy=0;iy<6;iy++){ ctx.beginPath(); ctx.arc(6+iy*8,50+iy*12,5,0,7); ctx.fill(); }
+    for(let iy=0;iy<5;iy++){ ctx.beginPath(); ctx.arc(W-10+iy*3,55+iy*10,4,0,7); ctx.fill(); }
+  }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
   if (stations){
@@ -2680,6 +2772,9 @@ function freshState(){
     caffBuff: 0,
     homeTier: 0,
     deliveryReq: null, nextDeliveryAt: Date.now() + 5*60*1000,
+    exchange: { positions:[] },
+    degrees: [], studying: null,
+    interestAt: Date.now() + 30*60*1000,
   };
 }
 let S = freshState();
@@ -2714,6 +2809,12 @@ function load(){
       if (!("caffBuff" in parsed)) S.caffBuff = 0;
       if (!("homeTier" in parsed)) S.homeTier = 0;
       if (!("deliveryReq" in parsed)) { S.deliveryReq = null; S.nextDeliveryAt = Date.now() + 5*60*1000; }
+      if (!("exchange" in parsed)) S.exchange = { positions:[] };
+      if (!Array.isArray(S.exchange.positions)) S.exchange.positions = [];
+      if (!("degrees" in parsed)) S.degrees = [];
+      if (!Array.isArray(S.degrees)) S.degrees = [];
+      if (!("studying" in parsed)) S.studying = null;
+      if (!("interestAt" in parsed)) S.interestAt = Date.now() + 30*60*1000;
       return true;
     }
   } catch(e){}
@@ -2845,6 +2946,74 @@ function deliverReq(){
   S.deliveryReq = null;
   S.nextDeliveryAt = Date.now() + (10+Math.random()*15)*60*1000;
   achCheck(); renderMain(); updateHud(); save();
+}
+function avgDrift(itemId){
+  ensureMarket();
+  let sum=0, cnt=0;
+  for (const npc of NPCS){
+    if (npc.stock.includes(itemId)){
+      const d = S.market.drift[npc.id] && S.market.drift[npc.id][itemId];
+      if (typeof d==="number"){ sum+=d; cnt++; }
+    }
+  }
+  return cnt ? sum/cnt : 1;
+}
+function positionValue(pos){
+  const curDrift = avgDrift(pos.commodity) * eventMult(pos.commodity);
+  return Math.max(1, Math.round(pos.qty * pos.costPerUnit * (curDrift / pos.driftAtBuy)));
+}
+function buyPosition(commodityId, qty){
+  const comm = EXCHANGE_COMMODITIES.find(c=>c.id===commodityId);
+  if (!comm){ return; }
+  const totalCost = comm.unit * qty;
+  if (S.coins < totalCost){ toast("Not enough coins."); return; }
+  const driftAtBuy = avgDrift(commodityId) * eventMult(commodityId);
+  S.coins -= totalCost;
+  S.exchange.positions.push({ id:Date.now().toString(), commodity:commodityId, qty, costPerUnit:comm.unit, driftAtBuy, boughtAt:Date.now() });
+  log("📈 Opened position: " + qty + "× " + comm.n + " @ " + fmt(totalCost) + " coins.");
+  renderMain(); updateHud(); save();
+}
+function sellPosition(posId){
+  const idx = S.exchange.positions.findIndex(p=>p.id===posId);
+  if (idx<0) return;
+  const pos = S.exchange.positions[idx];
+  const val = positionValue(pos);
+  const comm = EXCHANGE_COMMODITIES.find(c=>c.id===pos.commodity);
+  S.exchange.positions.splice(idx, 1);
+  S.coins += val;
+  S.counters.coinsEarned = (S.counters.coinsEarned||0) + val;
+  const profit = val - pos.qty * pos.costPerUnit;
+  log("📈 Closed position: " + (comm?comm.n:pos.commodity) + " → +" + fmt(val) + " coins (" + (profit>=0?"+":"") + fmt(profit) + ")", profit>=0?"good":"");
+  grantXp("trading", Math.round(Math.max(1, Math.abs(profit)*0.1)));
+  renderMain(); updateHud(); save();
+}
+function updateStudying(){
+  if (!S.studying) return;
+  if (Date.now() >= S.studying.endsAt){
+    const _c = COURSES.find(c=>c.id===S.studying.courseId);
+    if (_c && !S.degrees.includes(_c.id)){
+      S.degrees = [...S.degrees, _c.id];
+      toast(_c.ic + " " + _c.n + " degree earned! " + _c.desc);
+      log(_c.ic + " <b>" + _c.n + "</b> completed — " + _c.desc, "good");
+    }
+    S.studying = null;
+    if (S.tab==="university") renderMain();
+    save();
+  }
+}
+function updateBankInterest(now){
+  if (!S.interestAt || now < S.interestAt) return;
+  if (S.coins > 100){
+    const _int = Math.floor(S.coins * 0.0005);
+    if (_int > 0){
+      S.coins += _int;
+      S.counters.coinsEarned = (S.counters.coinsEarned||0) + _int;
+      log("🏦 Interest: +" + fmt(_int) + " coins on your savings.", "good");
+      if (S.tab==="bank") renderMain();
+    }
+  }
+  S.interestAt = now + 30*60*1000;
+  save();
 }
 function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
 function _villagerTileOk(x, y){
@@ -3029,6 +3198,8 @@ function toast(msg){
 }
 
 function grantXp(skill, xp){
+  const _degCourse = COURSES.find(c => c.skill===skill && c.perk==="xp" && S.degrees && S.degrees.includes(c.id));
+  if (_degCourse) xp = Math.round(xp * (1 + _degCourse.val));
   const before = skillLvl(skill);
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
@@ -3439,8 +3610,10 @@ function renderMain(){
             <tr><td style="padding:3px 0;color:var(--dim)">Total earned</td><td style="text-align:right">${fmt(_totalEarned)} coins</td></tr>
             <tr><td style="padding:3px 0;color:var(--dim)">Invested in upgrades</td><td style="text-align:right">${fmt(_spent)} coins</td></tr>
             <tr style="border-top:1px solid rgba(255,255,255,.1)"><td style="padding:5px 0 3px;font-weight:700">Net worth</td><td style="text-align:right;font-weight:700;color:#ffd666">${fmt(S.coins + _spent)} coins</td></tr>
+          <tr><td style="padding:3px 0;color:var(--dim)">Savings rate</td><td style="text-align:right;color:#4aff88">0.05% / 30 min</td></tr>
+          <tr><td style="padding:3px 0;color:var(--dim)">Next interest</td><td style="text-align:right">${fmt(Math.max(0, (S.interestAt - Date.now()) / 60000))} min</td></tr>
           </table>
-          <p style="color:var(--dim);font-size:11px;margin:12px 0 0">The teller nods politely. <em>"Loans and interest coming soon."</em></p>
+        <p style="color:var(--dim);font-size:11px;margin:12px 0 0">Interest accrues automatically while you play. Keep a healthy balance!</p>
         </div>`
       );
     }
@@ -3471,6 +3644,83 @@ function renderMain(){
         <p style="color:var(--dim);font-size:12px;margin:0 0 10px">The barista gives you a knowing nod as she pulls the shot.</p>
         <button data-coffee="1" style="background:#c06030;color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px">☕ Buy Coffee — 15 coins</button>
         ${S.coins < 15 ? '<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Not enough coins.</p>' : ''}
+        </div>`
+      );
+    }
+    else if (S.tab==="exchange"){
+      ensureMarket();
+      const _posHtml = S.exchange.positions.length === 0
+        ? `<p style="color:var(--dim);font-size:12px;margin:8px 0">No open positions. Buy below to speculate on commodity prices.</p>`
+        : S.exchange.positions.map(pos=>{
+            const comm = EXCHANGE_COMMODITIES.find(c=>c.id===pos.commodity);
+            const cur = positionValue(pos);
+            const cost = pos.qty * pos.costPerUnit;
+            const pct = ((cur-cost)/cost*100).toFixed(1);
+            const col = cur>=cost?"#4aff88":"#ff6a6a";
+            return `<div class="card" style="margin-bottom:6px;padding:6px 8px;display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">${comm?comm.ic:"📦"}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:12px">${comm?comm.n:pos.commodity} ×${pos.qty}</div>
+                <div style="font-size:11px;color:var(--dim)">Paid ${fmt(cost)} · Now ${fmt(cur)} <span style="color:${col}">(${pct}%)</span></div>
+              </div>
+              <button data-pos-sell="${pos.id}" style="background:#5a3a2a;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:11px">Sell</button>
+            </div>`;
+          }).join('')
+      ;
+      const _buyHtml = EXCHANGE_COMMODITIES.map(comm=>{
+        const drift = avgDrift(comm.id) * eventMult(comm.id);
+        const pctStr = drift>=1 ? `<span style="color:#4aff88">+${((drift-1)*100).toFixed(1)}%</span>` : `<span style="color:#ff6a6a">${((drift-1)*100).toFixed(1)}%</span>`;
+        const canBuy1 = S.coins >= comm.unit;
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:16px">${comm.ic}</span>
+          <div style="flex:1;font-size:12px"><b>${comm.n}</b> · ${fmt(comm.unit)}/unit · Drift ${pctStr}</div>
+          <button data-pos-buy="${comm.id}|1" style="background:${canBuy1?"#2a5a3a":"#444"};color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px"${canBuy1?"":" disabled"}>×1</button>
+          <button data-pos-buy="${comm.id}|5" style="background:${S.coins>=comm.unit*5?"#1a4a2a":"#444"};color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px"${S.coins>=comm.unit*5?"":" disabled"}>×5</button>
+        </div>`;
+      }).join('');
+      m.innerHTML = _withRoom("📈 Exchange Floor",
+        `<div class="panel" style="padding:10px">
+          <h3 style="margin:0 0 6px;font-size:14px">📊 Open Positions</h3>
+          ${_posHtml}
+          <h3 style="margin:12px 0 6px;font-size:14px">🛒 Buy Position</h3>
+          <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Buy a position at the current drift price. Sell when drift is favourable — world events create opportunities.</p>
+          ${_buyHtml}
+        </div>`
+      );
+    }
+    else if (S.tab==="university"){
+      const _studHtml = S.studying
+        ? (()=>{
+            const _c = COURSES.find(c=>c.id===S.studying.courseId);
+            const _rem = Math.max(0, S.studying.endsAt - Date.now());
+            const _pct = Math.round((1 - _rem/(_c?_c.ms:1))*100);
+            return `<div style="background:rgba(80,60,140,.2);border:1px solid #7a5aaa;padding:8px;border-radius:4px;margin-bottom:10px">
+              <b style="color:#c0a0ff">${_c?_c.ic:""} Studying: ${_c?_c.n:"..."}</b><br>
+              <div style="background:#1a1a2a;border-radius:2px;height:6px;margin:4px 0;overflow:hidden"><div style="background:#7a5aaa;height:6px;width:${_pct}%"></div></div>
+              <span style="color:var(--dim);font-size:11px">${Math.ceil(_rem/60000)} min remaining</span>
+            </div>`;
+          })()
+        : "";
+      const _courseHtml = COURSES.map(c=>{
+        const done = S.degrees.includes(c.id);
+        const studying = S.studying && S.studying.courseId===c.id;
+        const canEnroll = !done && !S.studying && S.coins>=c.cost;
+        return `<div class="card" style="margin-bottom:6px;padding:6px 10px;display:flex;align-items:center;gap:8px;opacity:${done?"0.7":"1"}">
+          <span style="font-size:18px">${c.ic}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:12px">${c.n} ${done?"✓":""}</div>
+            <div style="font-size:11px;color:var(--dim)">${c.desc} · ${Math.round(c.ms/60000)} min · ${fmt(c.cost)} coins</div>
+          </div>
+          ${done ? `<span style="color:#4aff88;font-size:11px">DONE</span>`
+            : studying ? `<span style="color:#c0a0ff;font-size:11px">STUDYING</span>`
+            : `<button data-enroll="${c.id}" style="background:${canEnroll?"#4a3a8a":"#444"};color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:11px"${canEnroll?"":" disabled"}>Enroll</button>`}
+        </div>`;
+      }).join('');
+      m.innerHTML = _withRoom("🎓 University",
+        `<div class="panel" style="padding:10px">
+          <h3 style="margin:0 0 6px;font-size:14px">📚 Courses — Permanent Skill Perks</h3>
+          <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Complete courses for permanent bonuses. One course at a time. Degrees last forever.</p>
+          ${_studHtml}${_courseHtml}
         </div>`
       );
     }
@@ -3526,6 +3776,24 @@ function bindMain(){
     S.caffBuff = Math.max(S.caffBuff||0, Date.now()) + _dur;
     toast("☕ Coffee! All actions 20% faster for 5 minutes.");
     log("☕ <b>Coffee purchased</b> — 5 min speed boost active.", "good");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-pos-sell]").forEach(b=> b.onclick = ()=> sellPosition(b.dataset.posSell));
+  document.querySelectorAll("[data-pos-buy]").forEach(b=> b.onclick = ()=>{
+    const [cid, qStr] = (b.dataset.posBuy||"").split("|");
+    buyPosition(cid, parseInt(qStr)||1);
+  });
+  document.querySelectorAll("[data-enroll]").forEach(b=> b.onclick = ()=>{
+    const _cid = b.dataset.enroll;
+    const _c = COURSES.find(c=>c.id===_cid);
+    if (!_c) return;
+    if (S.degrees.includes(_cid)){ toast("Already completed."); return; }
+    if (S.studying){ toast("Already studying: " + (COURSES.find(c=>c.id===S.studying.courseId)?.n||"?") + "."); return; }
+    if (S.coins < _c.cost){ toast("Not enough coins."); return; }
+    S.coins -= _c.cost;
+    S.studying = { courseId:_cid, endsAt:Date.now() + _c.ms };
+    toast(_c.ic + " Enrolled in " + _c.n + ". Study time: " + Math.round(_c.ms/60000) + " min.");
+    log(_c.ic + " Enrolled in <b>" + _c.n + "</b>.", "good");
     renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-pet]").forEach(b=> b.onclick = ()=>{
@@ -3621,6 +3889,8 @@ setInterval(()=>{
   updateWorldEvents();
   updateWeather();
   updateDeliveries();
+  updateStudying();
+  updateBankInterest(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
