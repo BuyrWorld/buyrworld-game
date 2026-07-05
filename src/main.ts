@@ -400,6 +400,27 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
            iwx:0, iwy:0, iwTimer:Math.random()*3, iwTarget:null };
 });
 let CHAT_NPC = null; // villager the player is talking to inside a building
+// Children NPCs — derived from villager family data + extra school children
+const CHILDREN_DATA = [
+  { id:"ruby",    n:"Ruby",    age:9,  female:true,  hair:"#c9a24b", shirt:"#ff8070", trouser:"#4a5a8a", homeId:"home_03" },
+  { id:"tom",     n:"Tom",     age:6,  female:false, hair:"#4a3a2a", shirt:"#5a9adc", trouser:"#3a3a5a", homeId:"home_04" },
+  { id:"lily",    n:"Lily",    age:10, female:true,  hair:"#c9a060", shirt:"#7cb46b", trouser:"#3a5a3a", homeId:"home_06" },
+  { id:"ben",     n:"Ben",     age:14, female:false, hair:"#5a4a3a", shirt:"#4a7aba", trouser:"#3a3a4a", homeId:"home_12" },
+  { id:"sue",     n:"Sue",     age:11, female:true,  hair:"#8a6a2a", shirt:"#e8c9a0", trouser:"#5a3a3a", homeId:"home_12" },
+  { id:"max",     n:"Max",     age:5,  female:false, hair:"#5a4a3a", shirt:"#e84a4a", trouser:"#4a4a3a", homeId:"home_12" },
+  { id:"daisy",   n:"Daisy",   age:7,  female:true,  hair:"#c9a060", shirt:"#f0b0dc", trouser:"#2a4a6a", homeId:"home_14" },
+  { id:"harison", n:"Harison", age:6,  female:false, hair:"#17161a", shirt:"#bfe8f7", trouser:"#3a3a4a", homeId:"home_05" },
+  { id:"ethan",   n:"Ethan",   age:8,  female:false, hair:"#6a4a2a", shirt:"#4a9a4a", trouser:"#3a3a4a", homeId:"home_08" },
+  { id:"maya",    n:"Maya",    age:10, female:true,  hair:"#3a2a1a", shirt:"#d46b8a", trouser:"#3a3a5a", homeId:"home_09" },
+  { id:"finn",    n:"Finn",    age:11, female:false, hair:"#3a3a3a", shirt:"#9a7050", trouser:"#4a5a3a", homeId:"home_10" },
+];
+const CHILDREN_STATE = CHILDREN_DATA.map((c,i) => {
+  const homeObj = V_OBJECTS.find(o => o.id === c.homeId);
+  const homePos = homeObj ? { x:(homeObj.tx+(homeObj.w||2)/2)*TILE, y:(homeObj.ty+(homeObj.h||2))*TILE+10 } : { x:60*TILE, y:5*TILE };
+  const parkPos = { x:(78+(i%6))*TILE, y:(7+Math.floor(i/6)*1.5)*TILE };
+  return { ...c, homePos, parkPos, x:homePos.x, y:homePos.y, phase:"sleep",
+           tx:null, ty:null, facing:1, moving:false, dir:"down", wTarget:null, wanderTimer:Math.random()*3 };
+});
 // Night wildlife
 const FOX = { x:42*TILE, y:8*TILE, tx:null, ty:null, facing:1, moving:false, dir:"right", wait:0 };
 const OWLS = [
@@ -408,7 +429,7 @@ const OWLS = [
   { x:44.6*TILE, y:9.8*TILE, blink:1.4 },
 ];
 const SHARK = { x:28*TILE, y:21.5*TILE, vx:0.35 };
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school"]);
 const STATION_DEFS = {
   mining:        [
     { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
@@ -569,7 +590,7 @@ function solidAt(px, py){
   const t = tileAt(px, py);
   if (t==="T" || t==="W" || t==="C") return true;
   for (const o of V_OBJECTS){
-    if (o.kind==="lamp" || o.kind==="sign" || o.kind==="plant") continue;
+    if (o.kind==="lamp" || o.kind==="sign" || o.kind==="plant" || o.kind==="swing" || o.kind==="slide" || o.kind==="sandbox") continue;
     const r = objRect(o);
     if (px>=r.x && px<r.x+r.w && py>=r.y && py<r.y+r.h) return true;
   }
@@ -645,6 +666,8 @@ function villageTip(o){
   }
   if (o.kind==="lamp" || o.kind==="plant") return "";
   if (o.kind==="bench") return "🪑 Bench";
+  if (o.kind==="swing") return "🌟 Swings";
+  if (o.kind==="slide") return "🎉 Slide";
   if (o.kind==="fountain") return "⛲ Fountain";
   if (o.kind==="stall"){
     const locked = skillLvl("trading") < o.lvl;
@@ -655,6 +678,8 @@ function villageTip(o){
 function interactObj(o){
   if (o.kind==="lamp" || o.kind==="plant") return;
   if (o.kind==="bench"){ toast("🪑 You rest your legs for a moment. Lovely."); return; }
+  if (o.kind==="swing"){ toast("🌟 You sway back and forth on the swings. Bliss."); return; }
+  if (o.kind==="slide"){ toast("🎉 Wheee! You slide all the way down!"); return; }
   if (o.kind==="fountain"){ toast("⛲ You toss a coin in. Feels lucky."); return; }
   if (o.kind==="tree"){
     if (skillLvl("woodcutting") < o.lvl){ toast(`Requires Woodcutting level ${o.lvl}.`); return; }
@@ -756,12 +781,13 @@ function villageClick(e){
   VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
   VP.pending = null;
 }
-function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female){
+function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female, scale=1.0){
   skin    = skin    || "#f2c49a";
   trouser = trouser || "#4a5a8a";
   dir = dir || (facing>=0 ? "right" : "left");
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
+  if (scale !== 1.0) ctx.scale(scale, scale);
   ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(0, 10-bob, 8, 3, 0, 0, 7); ctx.fill();
   const legSwing = moving ? Math.sin(t*10)*3 : 0;
   ctx.fillStyle=trouser;
@@ -883,20 +909,30 @@ function drawTiles(ctx, t){
       else if (ch==="G" && h===15 && r>12 && c<9){ ctx.fillStyle="#8a6a45"; ctx.fillRect(x+2,y+16,20,3); ctx.fillStyle="#63b573"; ctx.fillRect(x+4,y+10,3,6); ctx.fillRect(x+11,y+9,3,7); ctx.fillRect(x+17,y+11,3,5); }
     }
     if (ch==="T"){
-      const pine = (c*13+r*7)%3===0;
-      // gentle wind sway based on position + time
-      const sway = Math.sin(t*0.8 + c*0.7 + r*0.5) * 1.5;
-      ctx.fillStyle="#7a5230"; ctx.fillRect(x+9,y+12,6,10);
-      if (pine){
-        ctx.fillStyle="#3f8b52";
-        ctx.beginPath(); ctx.moveTo(x+12+sway,y-4); ctx.lineTo(x+2,y+14); ctx.lineTo(x+22,y+14); ctx.closePath(); ctx.fill();
-        ctx.fillStyle="#4e9e62"; // mid layer brightens the silhouette
-        ctx.beginPath(); ctx.moveTo(x+12+sway*0.7,y+2); ctx.lineTo(x+5,y+14); ctx.lineTo(x+19,y+14); ctx.closePath(); ctx.fill();
-      } else {
-        const swayX = sway * 0.7;
-        ctx.fillStyle="#4e9e5f"; ctx.beginPath(); ctx.arc(x+12+swayX,y+8,10,0,7); ctx.fill();
-        ctx.fillStyle="#63b573"; ctx.beginPath(); ctx.arc(x+8+swayX,y+6,6,0,7); ctx.fill();
-        ctx.fillStyle="#74c882"; ctx.beginPath(); ctx.arc(x+15+swayX*0.8,y+5,4,0,7); ctx.fill();
+      const tType = (c*13+r*7)%3; // 0=pine, 1=oak, 2=hardwood
+      const sway = Math.sin(t*0.8 + c*0.7 + r*0.5) * 1.2;
+      if (tType===0){ // pine — tall narrow triangular layers
+        ctx.fillStyle="#7a5230"; ctx.fillRect(x+10,y+12,4,10);
+        ctx.fillStyle="#3a7a2a";
+        ctx.beginPath(); ctx.moveTo(x+12+sway*1.2,y-6); ctx.lineTo(x+1,y+14); ctx.lineTo(x+23,y+14); ctx.closePath(); ctx.fill();
+        ctx.fillStyle="#4a9a38";
+        ctx.beginPath(); ctx.moveTo(x+12+sway,y+1); ctx.lineTo(x+4,y+14); ctx.lineTo(x+20,y+14); ctx.closePath(); ctx.fill();
+        ctx.fillStyle="#5ab848";
+        ctx.beginPath(); ctx.moveTo(x+12+sway*0.6,y+6); ctx.lineTo(x+6,y+14); ctx.lineTo(x+18,y+14); ctx.closePath(); ctx.fill();
+      } else if (tType===1){ // oak — wide round multi-cluster
+        ctx.fillStyle="#6a4828"; ctx.fillRect(x+8,y+12,8,10);
+        const sw=sway*0.7;
+        ctx.fillStyle="#4a8038"; ctx.beginPath(); ctx.arc(x+12+sw,y+7,11,0,7); ctx.fill();
+        ctx.fillStyle="#5a9248"; ctx.beginPath(); ctx.arc(x+6+sw,y+5,7,0,7); ctx.fill();
+        ctx.fillStyle="#69a856"; ctx.beginPath(); ctx.arc(x+18+sw*0.8,y+5,6,0,7); ctx.fill();
+        ctx.fillStyle="#78b860"; ctx.beginPath(); ctx.arc(x+12+sw*0.5,y+0,6,0,7); ctx.fill();
+      } else { // hardwood — massive spreading canopy
+        ctx.fillStyle="#5a3818"; ctx.fillRect(x+7,y+11,10,11);
+        const sw=sway*0.8;
+        ctx.fillStyle="#2e6828"; ctx.beginPath(); ctx.arc(x+12+sw,y+8,13,0,7); ctx.fill();
+        ctx.fillStyle="#3a7832"; ctx.beginPath(); ctx.arc(x+4+sw,y+5,9,0,7); ctx.fill();
+        ctx.fillStyle="#4a8840"; ctx.beginPath(); ctx.arc(x+20+sw*0.9,y+7,8,0,7); ctx.fill();
+        ctx.fillStyle="#5a9848"; ctx.beginPath(); ctx.arc(x+11+sw*0.6,y+0,8,0,7); ctx.fill();
       }
     }
   }
@@ -1014,18 +1050,36 @@ function drawObjects(ctx, t){
       const cx = r.x + r.w/2;
       const treeActive = S.action?.skill==="woodcutting" && S.action?.objId===o.id;
       const locked = skillLvl("woodcutting") < o.lvl;
-      const sway = Math.sin(t*0.8 + o.tx*0.5)*2;
-      // bark & foliage colour by species; muted when locked
+      const sway = Math.sin(t*0.8 + o.tx*0.5);
       const bark = o.ore==="pine" ? "#7a5a2e" : o.ore==="oak" ? "#6a4828" : "#5a3818";
-      const leaf1 = locked ? (o.ore==="pine"?"#3a6030":o.ore==="oak"?"#4a5828":"#3a4820")
-                           : (o.ore==="pine"?"#4a9a3a":o.ore==="oak"?"#5a8040":"#3a7838");
-      const leaf2 = locked ? (o.ore==="pine"?"#2e5028":o.ore==="oak"?"#3a4820":"#2a3a18")
-                           : (o.ore==="pine"?"#5ab848":o.ore==="oak"?"#6a9050":"#4a8848");
-      ctx.fillStyle=bark; ctx.fillRect(cx-3, r.y+r.h-6, 6, 7);
-      ctx.fillStyle=leaf1; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-18, o.ore==="pine"?12:15, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle=leaf2; ctx.beginPath(); ctx.arc(cx+sway-(o.ore==="pine"?4:5), r.y+r.h-(o.ore==="pine"?25:28), o.ore==="pine"?7:10, 0, Math.PI*2); ctx.fill();
-      if (o.ore==="hardwood"){ ctx.fillStyle=leaf1; ctx.beginPath(); ctx.arc(cx+sway+4, r.y+r.h-26, 8, 0, Math.PI*2); ctx.fill(); }
-      if (locked){ ctx.fillStyle="rgba(0,0,0,.22)"; ctx.beginPath(); ctx.arc(cx, r.y+r.h-20, 16, 0, Math.PI*2); ctx.fill(); }
+      const l1 = locked ? (o.ore==="pine"?"#2a5028":o.ore==="oak"?"#3a4820":"#2a3818") : (o.ore==="pine"?"#3a8a30":o.ore==="oak"?"#5a8040":"#2a7030");
+      const l2 = locked ? (o.ore==="pine"?"#1e4020":o.ore==="oak"?"#2a3810":"#1e2e10") : (o.ore==="pine"?"#4aaa3a":o.ore==="oak"?"#6a9850":"#3a8848");
+      const l3 = locked ? "#3a4a20" : (o.ore==="pine"?"#5ac840":o.ore==="oak"?"#7aaa60":"#4a9860");
+      if (o.ore==="pine"){
+        // tall narrow triangular layered silhouette
+        ctx.fillStyle=bark; ctx.fillRect(cx-2, r.y+r.h-6, 4, 7);
+        ctx.fillStyle=l1; ctx.beginPath(); ctx.moveTo(cx+sway*1.5, r.y+r.h-30); ctx.lineTo(cx-13+sway, r.y+r.h-12); ctx.lineTo(cx+13+sway, r.y+r.h-12); ctx.closePath(); ctx.fill();
+        ctx.fillStyle=l2; ctx.beginPath(); ctx.moveTo(cx+sway, r.y+r.h-40); ctx.lineTo(cx-9+sway*0.7, r.y+r.h-24); ctx.lineTo(cx+9+sway*0.7, r.y+r.h-24); ctx.closePath(); ctx.fill();
+        ctx.fillStyle=l3; ctx.beginPath(); ctx.moveTo(cx+sway*0.5, r.y+r.h-48); ctx.lineTo(cx-5+sway*0.4, r.y+r.h-34); ctx.lineTo(cx+5+sway*0.4, r.y+r.h-34); ctx.closePath(); ctx.fill();
+      } else if (o.ore==="oak"){
+        // wide round multi-cluster spreading canopy
+        ctx.fillStyle=bark; ctx.fillRect(cx-4, r.y+r.h-7, 8, 8);
+        ctx.fillStyle=l1; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-22, 17, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l2; ctx.beginPath(); ctx.arc(cx-12+sway*0.8, r.y+r.h-28, 11, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l2; ctx.beginPath(); ctx.arc(cx+12+sway*0.9, r.y+r.h-27, 10, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l3; ctx.beginPath(); ctx.arc(cx+sway*0.6, r.y+r.h-35, 8, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l3; ctx.beginPath(); ctx.arc(cx-6+sway*0.7, r.y+r.h-16, 7, 0, Math.PI*2); ctx.fill();
+      } else {
+        // massive irregular spreading hardwood canopy
+        ctx.fillStyle=bark; ctx.fillRect(cx-5, r.y+r.h-8, 10, 9);
+        ctx.fillStyle=l1; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-20, 18, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l2; ctx.beginPath(); ctx.arc(cx-16+sway*1.2, r.y+r.h-26, 13, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l2; ctx.beginPath(); ctx.arc(cx+14+sway, r.y+r.h-28, 12, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l3; ctx.beginPath(); ctx.arc(cx-6+sway*0.8, r.y+r.h-36, 10, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l3; ctx.beginPath(); ctx.arc(cx+8+sway*1.1, r.y+r.h-38, 9, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=l1; ctx.beginPath(); ctx.arc(cx+sway*0.4, r.y+r.h-44, 7, 0, Math.PI*2); ctx.fill();
+      }
+      if (locked){ ctx.fillStyle="rgba(0,0,0,.22)"; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-28, 22, 0, Math.PI*2); ctx.fill(); }
       if (treeActive) drawEmojiC(ctx, "🪓", cx+Math.sin(t*10)*4, r.y+r.h-22, 13);
       continue;
     }
@@ -1066,38 +1120,61 @@ function drawExtras(ctx, t){
   _drawFence(39*TILE, [5,6,10,11]); // west forest west fence
   _drawFence(47*TILE, [5,6,10,11]); // west forest east fence
   _drawFence(87*TILE, [5,6,10,11]); // east forest west fence
-  // park (residential, tx≈76-86, ty≈6-10): sand area + border + spaced equipment
+  // park (tx:76-86, ty:6-10): traditional grass park with iron railings, paths, flower beds, play equipment
   {
     const pkX = 76*TILE, pkY = 6*TILE, pkW = 10*TILE, pkH = 4*TILE;
-    // sand ground fill
-    ctx.fillStyle="#e8d898"; ctx.fillRect(pkX+4, pkY+4, pkW-8, pkH-8);
-    ctx.fillStyle="#e0d080"; ctx.fillRect(pkX+8, pkY+8, pkW-16, pkH-16);
-    // thin picket border
-    ctx.strokeStyle="#8c6040"; ctx.lineWidth=3; ctx.strokeRect(pkX+4, pkY+4, pkW-8, pkH-8);
-    for(let bx=pkX+14; bx<pkX+pkW-8; bx+=10){ ctx.fillStyle="#a07050"; ctx.fillRect(bx,pkY+1,4,6); }
-    for(let bx=pkX+14; bx<pkX+pkW-8; bx+=10){ ctx.fillStyle="#a07050"; ctx.fillRect(bx,pkY+pkH-6,4,6); }
-    // sandbox (left zone)
-    const sbX=pkX+12, sbY=pkY+pkH-46;
-    ctx.fillStyle="#7a4a20"; ctx.fillRect(sbX,sbY,38,4); ctx.fillRect(sbX,sbY+28,38,4); ctx.fillRect(sbX,sbY,4,32); ctx.fillRect(sbX+34,sbY,4,32);
-    ctx.fillStyle="#dfc878"; ctx.fillRect(sbX+4,sbY+4,30,24);
-    ctx.fillStyle="#ede8a0"; ctx.fillRect(sbX+7,sbY+7,22,16);
-    // slide (centre)
-    const slX=pkX+90, slY=pkY+10;
-    ctx.fillStyle="#6a4a2f"; ctx.fillRect(slX,slY,5,pkH-18);
-    ctx.fillStyle="#c94a6a"; ctx.fillRect(slX+5,slY+8,14,4); // slide top ledge
+    const pcy = pkY + pkH/2; // horizontal path centre = row 8 (y=192)
+    // grass base — two-tone checkerboard texture
+    for(let gy=pkY; gy<pkY+pkH; gy+=8) for(let gx=pkX; gx<pkX+pkW; gx+=8){
+      ctx.fillStyle=((gx/8+gy/8)%2===0)?"#4d9e3e":"#55aa44"; ctx.fillRect(gx, gy, 8, 8);
+    }
+    // E-W paved path (benches sit alongside this)
+    ctx.fillStyle="#d0c8b0"; ctx.fillRect(pkX, pcy-6, pkW, 12);
+    ctx.fillStyle="#bcb49c"; ctx.fillRect(pkX, pcy-6, pkW, 2); ctx.fillRect(pkX, pcy+4, pkW, 2);
+    // central circular flower bed (at path midpoint)
+    const fcx=pkX+pkW/2, fcy=pcy;
+    ctx.fillStyle="#5a4a1a"; ctx.beginPath(); ctx.arc(fcx,fcy,14,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#3a7a2a"; ctx.beginPath(); ctx.arc(fcx,fcy,11,0,Math.PI*2); ctx.fill();
+    const FC=["#ff9db0","#ffd666","#b48ad9","#ff8a5c","#7cd0a8","#ffe4c4"];
+    for(let fi=0;fi<8;fi++){ const ang=fi*Math.PI/4; ctx.fillStyle=FC[fi%6]; ctx.fillRect(fcx+Math.cos(ang)*7-2,fcy+Math.sin(ang)*7-2,4,4); }
+    ctx.fillStyle="#ffd666"; ctx.fillRect(fcx-2,fcy-2,4,4); // centre bloom
+    // corner flower patches (NW and NE)
+    [[pkX+10,pkY+8],[pkX+pkW-32,pkY+8]].forEach(([bx,by])=>{
+      ctx.fillStyle="#4a3a10"; ctx.fillRect(bx,by,20,14); ctx.fillStyle="#3a6a2a"; ctx.fillRect(bx+2,by+2,16,10);
+      for(let k=0;k<4;k++){ ctx.fillStyle=FC[k]; ctx.fillRect(bx+3+k*4,by+4,3,3); }
+    });
+    // iron railing border — dark green posts + top/bottom rails
+    ctx.fillStyle="#1e3a1e";
+    for(let px=pkX; px<=pkX+pkW; px+=10){ ctx.fillRect(px,pkY-4,2,pkH+8); }
+    ctx.fillRect(pkX,pkY,pkW,2); ctx.fillRect(pkX,pkY+pkH-2,pkW,2);
+    ctx.fillRect(pkX,pkY,2,pkH); ctx.fillRect(pkX+pkW-2,pkY,2,pkH);
+    // entrance gap in south rail (aligns with path row 10)
+    ctx.fillStyle="#4d9e3e"; ctx.fillRect(pkX+pkW/2-8,pkY+pkH-2,16,4);
+    // sandbox (NW quadrant)
+    const sbX=pkX+10, sbY=pkY+pkH-44;
+    ctx.fillStyle="#7a4a1a"; ctx.fillRect(sbX-2,sbY-2,36,4); ctx.fillRect(sbX-2,sbY+26,36,4); ctx.fillRect(sbX-2,sbY-2,4,30); ctx.fillRect(sbX+32,sbY-2,4,30);
+    ctx.fillStyle="#dfc870"; ctx.fillRect(sbX,sbY,32,26); ctx.fillStyle="#ede8a0"; ctx.fillRect(sbX+4,sbY+4,24,18);
+    drawEmojiC(ctx,"🪣",sbX+8,sbY+12,9);
+    // slide (east of centre path, north of bench row)
+    const slX=pkX+155, slY=pkY+8;
+    ctx.fillStyle="#5a3a1a"; ctx.fillRect(slX-8,slY,4,pkH-26); ctx.fillRect(slX,slY,4,pkH-26);
+    for(let rs=slY+5;rs<pkY+pkH-28;rs+=5){ ctx.fillStyle="#7a5a2a"; ctx.fillRect(slX-8,rs,12,2); }
     ctx.fillStyle="#e04060";
-    ctx.beginPath(); ctx.moveTo(slX+5,slY+12); ctx.lineTo(slX+22,pkY+pkH-14); ctx.lineTo(slX+22,pkY+pkH-10); ctx.lineTo(slX+5,slY+16); ctx.closePath(); ctx.fill();
-    // swings (right zone)
-    const swX=pkX+140, swY=pkY+14;
-    ctx.fillStyle="#6a4a2f"; ctx.fillRect(swX,swY,4,pkH-24); ctx.fillRect(swX+22,swY,4,pkH-24);
-    ctx.strokeStyle="#5a3a1a"; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(swX+2,swY+4); ctx.lineTo(swX+10,swY+34); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(swX+24,swY+4); ctx.lineTo(swX+16,swY+34); ctx.stroke();
-    ctx.fillStyle="#4a9ade"; ctx.fillRect(swX+7,swY+34,10,5);
-    // small park tree (far right)
-    ctx.fillStyle="#7a5230"; ctx.fillRect(pkX+pkW-22,pkY+10,5,pkH-20);
-    ctx.fillStyle="#3f8b52"; ctx.beginPath(); ctx.arc(pkX+pkW-20,pkY+8,11,0,7); ctx.fill();
-    ctx.fillStyle="#4e9e62"; ctx.beginPath(); ctx.arc(pkX+pkW-26,pkY+13,7,0,7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(slX+4,slY+6); ctx.lineTo(slX+24,pkY+pkH-22); ctx.lineTo(slX+24,pkY+pkH-18); ctx.lineTo(slX+4,slY+10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#c94a6a"; ctx.fillRect(slX+4,slY+2,18,6); // top platform
+    // swings (far east, animated)
+    const swX=pkX+196, swY=pkY+8;
+    ctx.fillStyle="#5a3a1a"; ctx.fillRect(swX,swY,4,pkH-26); ctx.fillRect(swX+24,swY,4,pkH-26); ctx.fillRect(swX-2,swY,30,3);
+    ctx.strokeStyle="#4a2a08"; ctx.lineWidth=1.5;
+    const sa=Math.sin(t*1.3)*10;
+    ctx.beginPath(); ctx.moveTo(swX+2,swY+3); ctx.lineTo(swX+10+sa,swY+32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(swX+26,swY+3); ctx.lineTo(swX+18+sa,swY+32); ctx.stroke();
+    ctx.fillStyle="#3a7ad9"; ctx.fillRect(swX+6+sa,swY+32,12,4); // seat
+    // ornamental tree (NE corner)
+    ctx.fillStyle="#7a5230"; ctx.fillRect(pkX+pkW-20,pkY+8,4,pkH-18);
+    ctx.fillStyle="#3d8048"; ctx.beginPath(); ctx.arc(pkX+pkW-18,pkY+6,11,0,7); ctx.fill();
+    ctx.fillStyle="#4e9a58"; ctx.beginPath(); ctx.arc(pkX+pkW-24,pkY+9,7,0,7); ctx.fill();
+    ctx.fillStyle="#5aaa60"; ctx.beginPath(); ctx.arc(pkX+pkW-16,pkY+2,6,0,7); ctx.fill();
   }
   // residential flower strip (along path rows 5 and 10)
   for (let col = 50; col < 86; col += 5){
@@ -1352,6 +1429,11 @@ function drawVillage(t){
   for (const v of VILLAGER_STATE){
     if (v.phase === "sleep" || v.indoor) continue;
     drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female);
+  }
+  for (const c of CHILDREN_STATE){
+    if (c.phase==="sleep" || c.phase==="school") continue;
+    const _csc = c.age<=6?0.55:c.age<=10?0.65:0.75;
+    drawPerson(ctx, c.x, c.y, c.hair, c.shirt, t, c.moving, c.facing, null, c.dir, null, c.trouser, null, c.female, _csc);
   }
   if (VP.tx!==null && VP.tx!==undefined){
     ctx.strokeStyle="rgba(255,248,230,.8)"; ctx.lineWidth=2;
@@ -1909,6 +1991,39 @@ function drawInterior(t){
       ctx.fillStyle="#3a8a2a"; for(let pi=0;pi<4;pi++) { ctx.beginPath(); ctx.arc(W-28+Math.sin(pi*2)*8, 68+pi*6, 5, 0, 7); ctx.fill(); }
     }
   }
+  if (S.tab==="school"){
+    // school interior — two classrooms split by centre wall
+    room("#e8f0d0","#e0e8c8","#d8deb8","#ccd4ac","#5a7a3a");
+    winP(W*0.05, 34); winP(W*0.39, 34); // left room windows
+    winP(W*0.55, 34); winP(W*0.88, 34); // right room windows
+    // centre dividing wall
+    ctx.fillStyle="#c8b898"; ctx.fillRect(W/2-4,0,8,H);
+    ctx.fillStyle="#b0a078"; ctx.fillRect(W/2-5,0,2,H); ctx.fillRect(W/2+3,0,2,H);
+    // --- Classroom A (left half, older children) ---
+    ctx.fillStyle="#2a4a2a"; ctx.fillRect(W*0.02,8,W*0.44,24);
+    ctx.fillStyle="#3a6a3a"; ctx.fillRect(W*0.03,10,W*0.42,20);
+    ctx.fillStyle="rgba(255,255,255,.65)"; ctx.font="7px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+    ctx.fillText("READING · MATHS · HISTORY", W*0.24, 23);
+    ctx.fillStyle="#7a5a30"; ctx.fillRect(W*0.06,36,W*0.16,8); // teacher desk A
+    drawPerson(ctx, W*0.14, H*0.30, "#5a3a2a", "#7a6a9a", t, false, 1, null, "down", null, "#4a4a5a", null, true); // teacher A
+    const DA=[[W*0.06,H*0.58],[W*0.17,H*0.58],[W*0.27,H*0.58],[W*0.06,H*0.76],[W*0.17,H*0.76],[W*0.27,H*0.76]];
+    DA.forEach(([dx,dy])=>{ ctx.fillStyle="#9a7a4a"; ctx.fillRect(dx,dy,18,10); ctx.fillStyle="#7a5a30"; ctx.fillRect(dx,dy+10,18,3); });
+    // --- Classroom B (right half, younger children) ---
+    ctx.fillStyle="#2a4a2a"; ctx.fillRect(W*0.54,8,W*0.44,24);
+    ctx.fillStyle="#3a6a3a"; ctx.fillRect(W*0.55,10,W*0.42,20);
+    ctx.textAlign="center"; ctx.fillText("SCIENCE · ART · GEOGRAPHY", W*0.76, 23);
+    ctx.fillStyle="#7a5a30"; ctx.fillRect(W*0.56,36,W*0.16,8); // teacher desk B
+    drawPerson(ctx, W*0.64, H*0.30, "#4a5a6a", "#4a8a7a", t, false, 1, null, "down", null, "#3a4a3a", null, false); // teacher B
+    const DB=[[W*0.57,H*0.58],[W*0.67,H*0.58],[W*0.77,H*0.58],[W*0.57,H*0.76],[W*0.67,H*0.76],[W*0.77,H*0.76]];
+    DB.forEach(([dx,dy])=>{ ctx.fillStyle="#9a7a4a"; ctx.fillRect(dx,dy,18,10); ctx.fillStyle="#7a5a30"; ctx.fillRect(dx,dy+10,18,3); });
+    // draw school children at desks
+    const _sc=CHILDREN_STATE.filter(c=>c.phase==="school");
+    _sc.filter(c=>c.age>=8).slice(0,6).forEach((c,i)=>{ if(i<DA.length) drawPerson(ctx,DA[i][0]+9,DA[i][1]-6,c.hair,c.shirt,t,false,1,null,"down",null,c.trouser,null,c.female,c.age>=12?0.75:0.65); });
+    _sc.filter(c=>c.age<8).slice(0,6).forEach((c,i)=>{ if(i<DB.length) drawPerson(ctx,DB[i][0]+9,DB[i][1]-6,c.hair,c.shirt,t,false,1,null,"down",null,c.trouser,null,c.female,0.55); });
+    // occasional chalk dust
+    if(Math.floor(t*3)%7===0){ ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(W*0.20+Math.sin(t*7)*4,12,2,2); ctx.fillRect(W*0.18,14,2,2); }
+    if(Math.floor(t*3)%11===0){ ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(W*0.70+Math.sin(t*5)*4,12,2,2); ctx.fillRect(W*0.68,14,2,2); }
+  }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
   if (stations){
@@ -2056,6 +2171,7 @@ function villageFrame(ts){
     updateWanderers(dt);
     updateBeachBirds();
     updateVillagers(dt);
+    updateChildren(dt);
     updateNightWildlife(dt);
     if (VP.pending){
       const o = VP.pending;
@@ -2340,6 +2456,30 @@ function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.cl
 function _villagerTileOk(x, y){
   const t = tileAt(x, y);
   return t !== "W" && t !== "T" && t !== "C";
+}
+function updateChildren(dt){
+  const hr = gameHour();
+  const phase = (hr>=22||hr<8)?"sleep":(hr>=8.5&&hr<15.5)?"school":(hr>=15.5&&hr<18.5)?"park":"home";
+  for (const c of CHILDREN_STATE){
+    c.phase = phase;
+    if (phase==="sleep"||phase==="school"){ c.moving=false; continue; }
+    c.wanderTimer -= dt;
+    if (!c.wTarget || c.wanderTimer<=0){
+      if (phase==="park"){
+        c.wTarget={ x:(78+Math.random()*5)*TILE, y:(6.8+Math.random()*2.4)*TILE };
+      } else {
+        c.wTarget={ x:c.homePos.x+(Math.random()*16-8), y:c.homePos.y };
+      }
+      c.wanderTimer=4+Math.random()*6;
+    }
+    const dx=c.wTarget.x-c.x, dy=c.wTarget.y-c.y, dist=Math.hypot(dx,dy);
+    if (dist<5){ c.wTarget=null; c.moving=false; }
+    else {
+      const sp=26*dt, nx=c.x+(dx/dist)*sp, ny=c.y+(dy/dist)*sp;
+      if(_villagerTileOk(nx,ny)){ c.x=nx; c.y=ny; }
+      c.moving=true; c.dir=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up"); c.facing=dx>=0?1:-1;
+    }
+  }
 }
 function updateVillagers(dt){
   const hr = gameHour();
@@ -2892,6 +3032,7 @@ function renderMain(){
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="home") m.innerHTML = _withRoom("🏠 A Villager's Cottage", `<p style="color:var(--dim);font-size:12px;margin:8px 0">A cosy home. Someone lives here.</p>`);
+    else if (S.tab==="school") m.innerHTML = _withRoom("🏫 Inside the Village School", `<p style="color:var(--dim);font-size:12px;margin:8px 0">Children hard at work. Two classrooms, one building.</p>`);
     else m.innerHTML = _withRoom(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop", renderSkillPanel(S.tab));
   }
   bindMain();

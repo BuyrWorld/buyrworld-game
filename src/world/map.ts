@@ -166,4 +166,9 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'home_13', kind: 'bld', tx: 61, ty: 11, w: 2, h: 2, tab: 'home', name: "Mabel's Cottage",  ic: '🏠', wall: '#e0c8d0', roof: '#7a4a5a' },
   { id: 'home_14', kind: 'bld', tx: 66, ty: 11, w: 2, h: 2, tab: 'home', name: "Ned's Cottage",    ic: '🏠', wall: '#b8c8b0', roof: '#3a5a3a' },
   { id: 'home_15', kind: 'bld', tx: 71, ty: 11, w: 2, h: 2, tab: 'home', name: "Olive's Cottage",  ic: '🏠', wall: '#b0ccd8', roof: '#3a607a' },
+  // --- Village School (north of park, accessible from east path row 5) ---
+  { id: 'school', kind: 'bld', tx: 76, ty: 2, w: 5, h: 3, tab: 'school', name: 'Village School', ic: '🏫', wall: '#e8e4c0', roof: '#5a8a4a' },
+  // --- Park interactive equipment (interaction zones; drawn by drawExtras) ---
+  { id: 'park_slide', kind: 'slide', tx: 82, ty: 6, w: 2, h: 2, name: 'Slide' },
+  { id: 'park_swing', kind: 'swing', tx: 84, ty: 7, w: 2, h: 2, name: 'Swings' },
 ];
