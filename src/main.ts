@@ -365,8 +365,8 @@ const WANDERERS = [
       "The market stalls pay best on green-arrow days.",
     ],
     profile:{ job:"Turnip Farmer", home:"Poppy's Farm" } },
-  { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:26*TILE, y:17.6*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
-    area:[12,17,32,18], home:[27,17,31,18], tips:[
+  { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:27*TILE, y:17.5*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
+    area:[26,17,37,17.8], home:[27,17,35,17.8], tips:[
       "One day ships'll dock here. Port Salvo, they'll call it.",
       "See that boat? Doesn't leak much anymore.",
       "Heaviest thing I ever lifted? A Cargo Turtle. True story.",
@@ -2376,6 +2376,24 @@ function updateVillagers(dt){
     }
     const mainDest = v.phase === "work" ? v.workPos : v.homePos;
     const distToMain = Math.hypot(mainDest.x - v.x, mainDest.y - v.y);
+    // Stall workers stand still at their stall during work hours
+    if (v.phase === "work" && v.workKind === "stall"){
+      if (distToMain > 8){
+        v.wTarget = mainDest; v.wanderTimer = 0.5;
+      } else {
+        v.moving = false; v.wTarget = null; v.wanderTimer = 99;
+        if (VP.x !== undefined){ v.facing = VP.x >= v.x ? 1 : -1; }
+      }
+      // skip wide-wander logic for stall workers at work
+      const sd = v.wTarget;
+      if (sd && distToMain > 8){
+        const dx = sd.x-v.x, dy = sd.y-v.y, dist = Math.hypot(dx, dy);
+        if (dist > 4){ const nx=v.x+(dx/dist)*30*dt, ny=v.y+(dy/dist)*30*dt; if(_villagerTileOk(nx,ny)){v.x=nx;v.y=ny;} v.moving=true; v.dir=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up"); v.facing=dx>=0?1:-1; }
+      }
+      v.quipTimer -= dt;
+      if (v.quipTimer <= 0){ v.quipIdx=(v.quipIdx+1)%v.quips.length; v.quipTimer=18+Math.random()*12; }
+      continue;
+    }
     v.wanderTimer -= dt;
     if (v.wanderTimer <= 0 || !v.wTarget){
       v.wanderTimer = 1.2 + Math.random() * 2;
