@@ -3645,22 +3645,98 @@ function tick(dt){
 }
 
 function applyOffline(){
-  const elapsed = Math.min(Date.now() - (S.lastSeen || Date.now()), OFFLINE_CAP_MS);
-  if (elapsed < 5000 || !S.action) return;
-  const act = findAction(S.action.skill, S.action.id);
-  if (!act) { S.action = null; return; }
-  const dur = act.ms * speedMult(S.action.skill);
-  let possible = Math.floor(elapsed / dur);
-  let done = 0;
-  while (possible > 0){
-    if (!completeAction(act, S.action.skill, true)) { S.action = null; break; }
-    done++; possible--;
+  const now = Date.now();
+  const elapsed = Math.min(now - (S.lastSeen || now), OFFLINE_CAP_MS);
+  if (elapsed < 60*1000) return;
+  const passiveLines = [];
+  let passiveCoins = 0;
+
+  // --- active skill catch-up ---
+  if (S.action){
+    const act = findAction(S.action.skill, S.action.id);
+    if (!act){ S.action = null; }
+    else {
+      const dur = act.ms * speedMult(S.action.skill);
+      let possible = Math.floor(elapsed / dur), done = 0;
+      while (possible-- > 0){
+        if (!completeAction(act, S.action.skill, true)){ S.action = null; break; }
+        done++;
+      }
+      if (done > 0){
+        const ds = elapsed>=3600000 ? (elapsed/3600000).toFixed(1)+"h" : Math.round(elapsed/60000)+"m";
+        passiveLines.push(`⛏️ ${done}× ${act.n} (${ds} night shift)`);
+      }
+    }
   }
-  if (done > 0){
-    const hrs = (elapsed/3600000);
-    const dur_str = hrs >= 1 ? hrs.toFixed(1)+"h" : Math.round(elapsed/60000)+"m";
-    toast(`🌙 NIGHT SHIFT: ${done}× ${act.n} while you were away (${dur_str}).`);
-    log(`🌙 Night shift report: <b>${done}×</b> ${act.n} completed while away.`, "good");
+
+  // --- bank interest: compound across missed 30-min windows ---
+  if (S.coins > 100 && S.interestAt && S.interestAt <= now){
+    let cursor = S.interestAt, running = S.coins, gained = 0;
+    while (cursor <= now){
+      if (running > 100){ const i = Math.floor(running * 0.0005); if (i>0){ gained+=i; running+=i; } }
+      cursor += 30*60*1000;
+    }
+    S.interestAt = cursor;
+    if (gained > 0){
+      S.coins += gained; S.counters.coinsEarned = (S.counters.coinsEarned||0) + gained;
+      passiveCoins += gained; passiveLines.push(`🏦 Bank interest: +${fmt(gained)}`);
+    }
+  }
+
+  // --- retail stall: sell up to daily cap across missed 2-min windows ---
+  if (S.retail && S.retail.slots){
+    const intervalMs = 2*60*1000;
+    const since = S.retail.lastSale || (now - elapsed);
+    const ticks = Math.min(Math.floor((now - since) / intervalMs), 200);
+    let retailEarned = 0, unitsSold = 0;
+    for (let t = 0; t < ticks; t++){
+      if ((S.retail.dailySold||0) >= 200) break;
+      const stocked = S.retail.slots.filter(sl => sl && sl.itemId && sl.qty > 0);
+      if (!stocked.length) break;
+      const sl = stocked[t % stocked.length];
+      const npc = NPCS.find(n => n.stock && n.stock.includes(sl.itemId));
+      const price = npc ? Math.round(sellPrice(npc, sl.itemId) * 1.15) : Math.round((ITEMS[sl.itemId]?.v||10) * 0.9);
+      sl.qty--; if (sl.qty <= 0){ sl.itemId = null; sl.qty = 0; }
+      S.coins += price; S.counters.coinsEarned = (S.counters.coinsEarned||0) + price;
+      S.retail.dailySold = (S.retail.dailySold||0) + 1;
+      retailEarned += price; unitsSold++;
+    }
+    S.retail.lastSale = now;
+    if (retailEarned > 0){ passiveCoins += retailEarned; passiveLines.push(`🛍️ Retail stall: +${fmt(retailEarned)} (${unitsSold} units)`); }
+  }
+
+  // --- property rent: sum across missed 5-min windows ---
+  if (S.properties && S.properties.length && S.rentAt && S.rentAt <= now){
+    const periodMs = 5*60*1000;
+    let cursor = S.rentAt, rentEarned = 0;
+    const tickRent = S.properties.reduce((s,pid)=>{ const p=PROPERTIES.find(pr=>pr.id===pid); return s+(p?p.rent*5:0); },0);
+    while (cursor <= now){ rentEarned += tickRent; cursor += periodMs; }
+    S.rentAt = cursor;
+    if (rentEarned > 0){
+      S.coins += rentEarned; S.counters.coinsEarned = (S.counters.coinsEarned||0) + rentEarned;
+      passiveCoins += rentEarned; passiveLines.push(`🏘️ Rental income: +${fmt(rentEarned)}`);
+    }
+  }
+
+  // --- loan interest: days elapsed per loan ---
+  if (S.loans && S.loans.length){
+    const dayMs = 24*60*60*1000;
+    let anyAccrued = false;
+    S.loans.forEach(ln => {
+      const days = Math.floor((now - (ln.lastAccrual||ln.borrowed)) / dayMs);
+      if (days > 0){
+        ln.interestAccrued = (ln.interestAccrued||0) + ln.amount * 0.05 * days;
+        ln.lastAccrual = (ln.lastAccrual||ln.borrowed) + days * dayMs;
+        anyAccrued = true;
+      }
+    });
+    if (anyAccrued) passiveLines.push(`💳 Loan interest accrued — check the bank`);
+  }
+
+  // --- show summary ---
+  if (passiveLines.length > 0){
+    const hrsAway = elapsed >= 3600000 ? (elapsed/3600000).toFixed(1)+"h" : Math.round(elapsed/60000)+"m";
+    window._offlineSummary = { hrsAway, passiveCoins, lines: passiveLines };
   }
 }
 
@@ -4435,6 +4511,14 @@ if (!S.playerName){
   showTitle();
 } else {
   log(`👷 Back on shift, <b>${pName()}</b>. The supply chain never sleeps.`, "good");
+}
+if (window._offlineSummary){
+  const _os = window._offlineSummary;
+  const _coinStr = _os.passiveCoins > 0 ? ` +<b>${fmt(_os.passiveCoins)} coins</b>` : '';
+  log(`🌙 <b>Away for ${_os.hrsAway}</b> —${_coinStr} earned while you slept.`, "good");
+  _os.lines.forEach(l => log(`&nbsp;&nbsp;${l}`, "dim"));
+  if (_os.passiveCoins > 0) toast(`🌙 Welcome back! +${fmt(_os.passiveCoins)} coins earned while away.`);
+  window._offlineSummary = null;
 }
 if (!hadSave){
   log("Mine Iron Ore, smelt it in the Steelworks, press Brackets, then deliver Contracts — or haggle with Marge in the Trade tab.");
