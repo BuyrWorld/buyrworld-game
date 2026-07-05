@@ -101,8 +101,6 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'lamp_2', kind: 'lamp', tx: 32, ty: 6,  w: 1, h: 1 },
   { id: 'lamp_3', kind: 'lamp', tx: 10, ty: 11, w: 1, h: 1 },
   { id: 'lamp_4', kind: 'lamp', tx: 32, ty: 11, w: 1, h: 1 },
-  { id: 'lamp_5', kind: 'lamp', tx: 36, ty: 6,  w: 1, h: 1 },
-  { id: 'lamp_6', kind: 'lamp', tx: 43, ty: 7,  w: 1, h: 1 },
   // --- Streetlamps (residential district) ---
   { id: 'lamp_r1', kind: 'lamp', tx: 49, ty: 5,  w: 1, h: 1 },
   { id: 'lamp_r2', kind: 'lamp', tx: 49, ty: 10, w: 1, h: 1 },

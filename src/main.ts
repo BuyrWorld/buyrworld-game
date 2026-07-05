@@ -396,7 +396,8 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
            x:homePos.x, y:homePos.y,
            tx:null, ty:null, facing:1, moving:false, dir:"down", indoor:false,
            phase:"sleep", quips:v.quips, quipIdx:0, quipTimer:Math.random()*20, wait:0,
-           wanderTimer:Math.random()*2, wTarget:null };
+           wanderTimer:Math.random()*2, wTarget:null,
+           iwx:0, iwy:0, iwTimer:Math.random()*3, iwTarget:null };
 });
 let CHAT_NPC = null; // villager the player is talking to inside a building
 // Night wildlife
@@ -611,7 +612,7 @@ function stationPos(skill, actId){
   }
   if (skill==="steelworks"){ const o=V_OBJECTS.find(x=>x.id==="furnace"); const a=objApproach(o); return {x:a.x, y:a.y}; }
   if (skill==="manufacturing"){ const o=V_OBJECTS.find(x=>x.id==="workshop"); const a=objApproach(o); return {x:a.x, y:a.y}; }
-  if (skill==="woodcutting"){ const o=V_OBJECTS.find(x=>x.kind==="tree" && x.ore===actId); if (o){ const r=objRect(o); return {x:r.x+r.w/2, y:r.y+r.h+4}; } }
+  if (skill==="woodcutting"){ const o=S.action?.objId ? V_OBJECTS.find(x=>x.id===S.action.objId) : V_OBJECTS.find(x=>x.kind==="tree" && x.ore===actId); if (o){ const r=objRect(o); return {x:r.x+r.w/2, y:r.y+r.h+4}; } }
   if (skill==="fishing"){ const o=V_OBJECTS.find(x=>x.id==="pier"); if(o){ const a=objApproach(o); return {x:a.x, y:a.y}; } return null; }
   return null;
 }
@@ -640,7 +641,7 @@ function villageTip(o){
   if (o.kind==="tree"){
     const locked = skillLvl("woodcutting") < o.lvl;
     const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
-    return `🪓 ${act ? act.n : o.ore}${locked ? " 🔒 Lv "+o.lvl : ""}`;
+    return `🌲 ${act ? act.n : o.ore}${locked ? " · Lv "+o.lvl+" required" : ""}`;
   }
   if (o.kind==="lamp" || o.kind==="plant") return "";
   if (o.kind==="bench") return "🪑 Bench";
@@ -657,11 +658,11 @@ function interactObj(o){
   if (o.kind==="fountain"){ toast("⛲ You toss a coin in. Feels lucky."); return; }
   if (o.kind==="tree"){
     if (skillLvl("woodcutting") < o.lvl){ toast(`Requires Woodcutting level ${o.lvl}.`); return; }
-    if (S.action && S.action.skill==="woodcutting" && S.action.id===o.ore){
+    if (S.action && S.action.skill==="woodcutting" && S.action.objId===o.id){
       S.action = null; renderNav(); toast("Stopped woodcutting."); save(); return;
     }
     const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
-    S.action = { skill:"woodcutting", id:o.ore, progress:0 };
+    S.action = { skill:"woodcutting", id:o.ore, objId:o.id, progress:0 };
     toast(`🪓 ${act ? act.n : "Chopping"}...`);
     log(`▶ Started: ${act ? act.n : "Chop Tree"}`);
     renderNav(); save(); return;
@@ -682,6 +683,7 @@ function interactObj(o){
     return;
   }
   S.tab = o.tab;
+  S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
@@ -699,18 +701,29 @@ function showWandererProfile(w){
   el.innerHTML = `<div class="vp-card"><div class="vp-name">${w.n}</div>${rows}<button class="vp-close" onclick="document.getElementById('villager-profile-modal').remove()">✕</button></div>`;
   document.body.appendChild(el);
 }
+function _scheduleStr(phase, workKind){
+  const hr = gameHour();
+  const hh = (h) => `${String(Math.floor(h)).padStart(2,"0")}:${h%1===0.5?"30":"00"}`;
+  if (phase==="sleep") return `😴 Sleeping · home until ${hh(6.5)}`;
+  if (phase==="work"){
+    if (workKind==="stall") return `🏪 At stall until ${hh(18.5)}`;
+    return `⚒️ At work until ${hh(18.5)}`;
+  }
+  return `🌿 Leisure until ${hh(22)}`;
+}
 function showVillagerProfile(v){
   const existing = document.getElementById("villager-profile-modal");
   if (existing) existing.remove();
   const homeObj = V_OBJECTS.find(o => o.id === v.homeId);
   const workObj = V_OBJECTS.find(o => o.id === v.workId);
-  const homeName = homeObj?.name || homeObj?.id || v.homeId;
-  const workName = workObj?.name || workObj?.id || v.workId;
+  const homeName = homeObj?.name || v.homeId;
+  const workName = workObj?.name || v.workId;
   const partnerName = v.partner ? (VILLAGER_STATE.find(p => p.id === v.partner)?.n || v.partner) : null;
   let rows = `<div class="vp-row"><span class="vp-lbl">Home</span><span class="vp-val">${homeName}</span></div>`;
   rows += `<div class="vp-row"><span class="vp-lbl">Works at</span><span class="vp-val">${workName}</span></div>`;
   if (partnerName) rows += `<div class="vp-row"><span class="vp-lbl">Partner</span><span class="vp-val">${partnerName}</span></div>`;
   if (v.children && v.children.length) rows += `<div class="vp-row"><span class="vp-lbl">Children</span><span class="vp-val">${v.children.join(", ")}</span></div>`;
+  rows += `<div class="vp-schedule">${_scheduleStr(v.phase, v.workKind)}</div>`;
   const el = document.createElement("div");
   el.id = "villager-profile-modal";
   el.innerHTML = `<div class="vp-card"><div class="vp-name">${v.n}</div>${rows}<button class="vp-close" onclick="document.getElementById('villager-profile-modal').remove()">✕</button></div>`;
@@ -999,17 +1012,21 @@ function drawObjects(ctx, t){
     }
     if (o.kind==="tree"){
       const cx = r.x + r.w/2;
-      const treeKey = o.ore==='pine' ? 'tree_small' : 'tree_large';
-      const treeActive = S.action?.skill==="woodcutting" && S.action?.id===o.ore;
-      const drawnTree = drawSprite(ctx, treeKey, cx, r.y+r.h+4, 52);
-      if (!drawnTree){
-        const sway = Math.sin(t*0.8 + o.tx*0.5)*2;
-        ctx.fillStyle='#5a3a20'; ctx.fillRect(cx-3, r.y+r.h-6, 6, 6);
-        ctx.fillStyle='#3a7032'; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-18, 14, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle='#4a8840'; ctx.beginPath(); ctx.arc(cx+sway-5, r.y+r.h-24, 8, 0, Math.PI*2); ctx.fill();
-      }
-      if (skillLvl("woodcutting") < o.lvl) drawEmojiC(ctx, "🔒", cx, r.y-4, 9);
-      if (treeActive) drawEmojiC(ctx, "🪓", cx+Math.sin(t*8)*3, r.y+r.h-22, 13);
+      const treeActive = S.action?.skill==="woodcutting" && S.action?.objId===o.id;
+      const locked = skillLvl("woodcutting") < o.lvl;
+      const sway = Math.sin(t*0.8 + o.tx*0.5)*2;
+      // bark & foliage colour by species; muted when locked
+      const bark = o.ore==="pine" ? "#7a5a2e" : o.ore==="oak" ? "#6a4828" : "#5a3818";
+      const leaf1 = locked ? (o.ore==="pine"?"#3a6030":o.ore==="oak"?"#4a5828":"#3a4820")
+                           : (o.ore==="pine"?"#4a9a3a":o.ore==="oak"?"#5a8040":"#3a7838");
+      const leaf2 = locked ? (o.ore==="pine"?"#2e5028":o.ore==="oak"?"#3a4820":"#2a3a18")
+                           : (o.ore==="pine"?"#5ab848":o.ore==="oak"?"#6a9050":"#4a8848");
+      ctx.fillStyle=bark; ctx.fillRect(cx-3, r.y+r.h-6, 6, 7);
+      ctx.fillStyle=leaf1; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-18, o.ore==="pine"?12:15, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle=leaf2; ctx.beginPath(); ctx.arc(cx+sway-(o.ore==="pine"?4:5), r.y+r.h-(o.ore==="pine"?25:28), o.ore==="pine"?7:10, 0, Math.PI*2); ctx.fill();
+      if (o.ore==="hardwood"){ ctx.fillStyle=leaf1; ctx.beginPath(); ctx.arc(cx+sway+4, r.y+r.h-26, 8, 0, Math.PI*2); ctx.fill(); }
+      if (locked){ ctx.fillStyle="rgba(0,0,0,.22)"; ctx.beginPath(); ctx.arc(cx, r.y+r.h-20, 16, 0, Math.PI*2); ctx.fill(); }
+      if (treeActive) drawEmojiC(ctx, "🪓", cx+Math.sin(t*10)*4, r.y+r.h-22, 13);
       continue;
     }
     if (o.kind==="lamp"){
@@ -1049,22 +1066,38 @@ function drawExtras(ctx, t){
   _drawFence(39*TILE, [5,6,10,11]); // west forest west fence
   _drawFence(47*TILE, [5,6,10,11]); // west forest east fence
   _drawFence(87*TILE, [5,6,10,11]); // east forest west fence
-  // park (residential, tx≈77-83, ty≈7-9): sandbox + slide + small tree
+  // park (residential, tx≈76-86, ty≈6-10): sand area + border + spaced equipment
   {
-    const pkX = 77*TILE, pkY = 7*TILE;
-    // sandbox pit
-    ctx.fillStyle="#8c6040"; ctx.fillRect(pkX+4,pkY+10,52,4); ctx.fillRect(pkX+4,pkY+38,52,4); ctx.fillRect(pkX+4,pkY+10,4,32); ctx.fillRect(pkX+52,pkY+10,4,32);
-    ctx.fillStyle="#dfc070"; ctx.fillRect(pkX+8,pkY+14,44,24);
-    ctx.fillStyle="#e8d080"; ctx.fillRect(pkX+10,pkY+16,40,20);
-    // slide tower + ramp
-    ctx.fillStyle="#6a4a2f"; ctx.fillRect(pkX+60,pkY+4,6,34);
-    ctx.fillStyle="#4a9adc"; ctx.fillRect(pkX+66,pkY+16,16,4);
-    ctx.fillStyle="#3a8acc";
-    ctx.beginPath(); ctx.moveTo(pkX+66,pkY+20); ctx.lineTo(pkX+82,pkY+36); ctx.lineTo(pkX+82,pkY+40); ctx.lineTo(pkX+66,pkY+24); ctx.closePath(); ctx.fill();
-    // small park tree
-    ctx.fillStyle="#7a5230"; ctx.fillRect(pkX+90,pkY+10,5,16);
-    ctx.fillStyle="#3f8b52"; ctx.beginPath(); ctx.arc(pkX+92,pkY+6,10,0,7); ctx.fill();
-    ctx.fillStyle="#4e9e62"; ctx.beginPath(); ctx.arc(pkX+88,pkY+10,6,0,7); ctx.fill();
+    const pkX = 76*TILE, pkY = 6*TILE, pkW = 10*TILE, pkH = 4*TILE;
+    // sand ground fill
+    ctx.fillStyle="#e8d898"; ctx.fillRect(pkX+4, pkY+4, pkW-8, pkH-8);
+    ctx.fillStyle="#e0d080"; ctx.fillRect(pkX+8, pkY+8, pkW-16, pkH-16);
+    // thin picket border
+    ctx.strokeStyle="#8c6040"; ctx.lineWidth=3; ctx.strokeRect(pkX+4, pkY+4, pkW-8, pkH-8);
+    for(let bx=pkX+14; bx<pkX+pkW-8; bx+=10){ ctx.fillStyle="#a07050"; ctx.fillRect(bx,pkY+1,4,6); }
+    for(let bx=pkX+14; bx<pkX+pkW-8; bx+=10){ ctx.fillStyle="#a07050"; ctx.fillRect(bx,pkY+pkH-6,4,6); }
+    // sandbox (left zone)
+    const sbX=pkX+12, sbY=pkY+pkH-46;
+    ctx.fillStyle="#7a4a20"; ctx.fillRect(sbX,sbY,38,4); ctx.fillRect(sbX,sbY+28,38,4); ctx.fillRect(sbX,sbY,4,32); ctx.fillRect(sbX+34,sbY,4,32);
+    ctx.fillStyle="#dfc878"; ctx.fillRect(sbX+4,sbY+4,30,24);
+    ctx.fillStyle="#ede8a0"; ctx.fillRect(sbX+7,sbY+7,22,16);
+    // slide (centre)
+    const slX=pkX+90, slY=pkY+10;
+    ctx.fillStyle="#6a4a2f"; ctx.fillRect(slX,slY,5,pkH-18);
+    ctx.fillStyle="#c94a6a"; ctx.fillRect(slX+5,slY+8,14,4); // slide top ledge
+    ctx.fillStyle="#e04060";
+    ctx.beginPath(); ctx.moveTo(slX+5,slY+12); ctx.lineTo(slX+22,pkY+pkH-14); ctx.lineTo(slX+22,pkY+pkH-10); ctx.lineTo(slX+5,slY+16); ctx.closePath(); ctx.fill();
+    // swings (right zone)
+    const swX=pkX+140, swY=pkY+14;
+    ctx.fillStyle="#6a4a2f"; ctx.fillRect(swX,swY,4,pkH-24); ctx.fillRect(swX+22,swY,4,pkH-24);
+    ctx.strokeStyle="#5a3a1a"; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(swX+2,swY+4); ctx.lineTo(swX+10,swY+34); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(swX+24,swY+4); ctx.lineTo(swX+16,swY+34); ctx.stroke();
+    ctx.fillStyle="#4a9ade"; ctx.fillRect(swX+7,swY+34,10,5);
+    // small park tree (far right)
+    ctx.fillStyle="#7a5230"; ctx.fillRect(pkX+pkW-22,pkY+10,5,pkH-20);
+    ctx.fillStyle="#3f8b52"; ctx.beginPath(); ctx.arc(pkX+pkW-20,pkY+8,11,0,7); ctx.fill();
+    ctx.fillStyle="#4e9e62"; ctx.beginPath(); ctx.arc(pkX+pkW-26,pkY+13,7,0,7); ctx.fill();
   }
   // residential flower strip (along path rows 5 and 10)
   for (let col = 50; col < 86; col += 5){
@@ -1223,6 +1256,35 @@ function drawWorkerAndVfx(ctx, t){
       if (near){
         playerTool = SKILL_TOOL[S.action.skill];
         VP.facing = p.x >= VP.x ? 1 : -1;
+        // activity particle effects at the station
+        const sw = Math.sin(t*9);
+        if (S.action.skill==="mining" && sw > 0.65){
+          ctx.save();
+          for(let i=0;i<4;i++){
+            const ang=t*11+i*1.7, rad=6+Math.random()*6;
+            ctx.fillStyle=["#c8c8cc","#e0d8c8","#a8a8b0","#f0e8c0"][i];
+            ctx.fillRect(p.x+Math.cos(ang)*rad, p.y-20+Math.sin(ang)*rad*0.4, 2, 2);
+          }
+          ctx.restore();
+        }
+        if (S.action.skill==="woodcutting" && sw > 0.55){
+          ctx.save();
+          for(let i=0;i<3;i++){
+            ctx.fillStyle=["#a06a3a","#c89060","#8a5020"][i];
+            ctx.fillRect(p.x+(Math.sin(t*12+i*2.1)*8), p.y-12+(i*3), 3, 2);
+          }
+          ctx.restore();
+        }
+        if (S.action.skill==="fishing"){
+          // rod casting line to water
+          ctx.save();
+          ctx.strokeStyle="rgba(180,200,255,.55)"; ctx.lineWidth=1;
+          const rodTip = { x: VP.x + VP.facing*10, y: VP.y - 18 };
+          const waterX = p.x + VP.facing*18, waterY = p.y + 8;
+          ctx.beginPath(); ctx.moveTo(rodTip.x, rodTip.y); ctx.quadraticCurveTo((rodTip.x+waterX)/2, rodTip.y-20, waterX, waterY); ctx.stroke();
+          ctx.fillStyle="rgba(100,180,255,.7)"; ctx.beginPath(); ctx.arc(waterX, waterY, 3+Math.sin(t*4)*1.2, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
       } else {
         drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers(), toolTierColor());
       }
@@ -1782,27 +1844,70 @@ function drawInterior(t){
     });
   }
   if (S.tab==="home"){
-    room("#5a7a4a","#6a8a5a","#d4c4a0","#c8b890","#4a3020");
+    // variant 0-4 based on which home was entered
+    const _hNum = parseInt((S.roomObjId||"home_01").replace(/\D/g,""))||1;
+    const _hv = (_hNum-1) % 5;
+    const _wallPals = [
+      ["#5a7a4a","#6a8a5a","#d4c4a0","#c8b890"],  // sage green walls
+      ["#6a5a7a","#7a6a8a","#d0c8e0","#c4b8d8"],  // lavender
+      ["#7a5a4a","#8a6a5a","#e0d0b8","#d4c4a8"],  // warm terracotta
+      ["#4a6a7a","#5a7a8a","#c8d8e0","#b8c8d0"],  // slate blue
+      ["#7a6a4a","#8a7a5a","#e0d4b0","#d4c8a0"],  // harvest gold
+    ];
+    const _rugPals = ["rgba(180,80,60,.35)","rgba(100,60,160,.3)","rgba(180,100,40,.35)","rgba(40,100,160,.3)","rgba(140,120,40,.3)"];
+    const _rugBorder = ["rgba(200,160,60,.5)","rgba(160,120,200,.5)","rgba(200,140,60,.5)","rgba(60,140,200,.5)","rgba(200,180,60,.5)"];
+    const [wt,wc,fa,fb] = _wallPals[_hv];
+    room(wt,wc,fa,fb,"#4a3020");
     winP(W*0.12, 38); winP(W*0.62, 38);
-    // fireplace (left wall)
-    ctx.fillStyle="#4a3020"; ctx.fillRect(8,46,28,H-60);
-    ctx.fillStyle="#3a2010"; ctx.fillRect(12,H-44,20,H-60);
-    ctx.fillStyle="#c94a1a"; ctx.fillRect(14,H-40,8,10); ctx.fillStyle="#e8721a"; ctx.fillRect(20,H-42,6,8); ctx.fillStyle="#ffd666"; ctx.fillRect(17,H-44,4,6);
-    // bed (right side)
-    ctx.fillStyle="#8c6040"; ctx.fillRect(W-58,60,50,60);
-    ctx.fillStyle="#c09060"; ctx.fillRect(W-56,62,46,18);
-    ctx.fillStyle="#e8c8a0"; ctx.fillRect(W-52,66,38,10);
-    ctx.fillStyle="#f0dfc0"; ctx.fillRect(W-54,82,42,34);
-    // small table + chair (centre)
-    ctx.fillStyle="#8c6040"; ctx.fillRect(W/2-18,H-50,36,28); ctx.fillRect(W/2-18,H-22,4,22); ctx.fillRect(W/2+14,H-22,4,22);
-    ctx.fillStyle="#c09060"; ctx.fillRect(W/2-16,H-48,32,4);
-    // tea cup on table
-    ctx.fillStyle="#f0e8d8"; ctx.fillRect(W/2-5,H-52,10,7);
-    ctx.fillStyle="#8c6040"; ctx.fillRect(W/2-7,H-46,14,2);
+    // shared: bed (position varies)
+    const _bx = _hv < 3 ? W-58 : 10;
+    ctx.fillStyle="#8c6040"; ctx.fillRect(_bx,60,50,60);
+    ctx.fillStyle="#c09060"; ctx.fillRect(_bx+2,62,46,18);
+    ctx.fillStyle=["#e8c8a0","#d8b8e8","#e8c8a0","#b8d8e8","#e0d8a0"][_hv]; ctx.fillRect(_bx+6,66,38,10);
+    ctx.fillStyle=["#f0dfc0","#e8d8f8","#f0dfc0","#d8eef8","#f0e8c0"][_hv]; ctx.fillRect(_bx+4,82,42,34);
     // rug
-    ctx.fillStyle="rgba(180,80,60,.35)"; ctx.fillRect(W/2-44,H-64,88,52);
-    ctx.strokeStyle="rgba(200,160,60,.5)"; ctx.lineWidth=2;
-    ctx.strokeRect(W/2-40,H-60,80,44);
+    ctx.fillStyle=_rugPals[_hv]; ctx.fillRect(W/2-44,H-64,88,52);
+    ctx.strokeStyle=_rugBorder[_hv]; ctx.lineWidth=2; ctx.strokeRect(W/2-40,H-60,80,44);
+    // variant-specific furniture
+    if (_hv===0){
+      // fireplace left, table centre
+      ctx.fillStyle="#4a3020"; ctx.fillRect(8,46,28,H-60); ctx.fillStyle="#c94a1a"; ctx.fillRect(14,H-40,8,10); ctx.fillStyle="#ffd666"; ctx.fillRect(17,H-44,4,6);
+      ctx.fillStyle="#8c6040"; ctx.fillRect(W/2-18,H-50,36,24); ctx.fillRect(W/2-18,H-26,4,22); ctx.fillRect(W/2+14,H-26,4,22);
+      ctx.fillStyle="#f0e8d8"; ctx.fillRect(W/2-5,H-52,10,6); // tea
+    } else if (_hv===1){
+      // bookshelf left + armchair + pot plant right
+      ctx.fillStyle="#5a3a20"; ctx.fillRect(10,50,22,H-65);
+      for(let bi=0;bi<6;bi++){ ctx.fillStyle=["#c94a3a","#4a6ec9","#4ac96a","#c9c94a","#9a4ac9","#c9804a"][bi]; ctx.fillRect(12,52+bi*14,18,12); }
+      // armchair
+      ctx.fillStyle="#7a5a80"; ctx.fillRect(W-55,H-55,40,30); ctx.fillRect(W-58,H-60,8,34); ctx.fillRect(W-18,H-60,8,34);
+      // pot plant
+      ctx.fillStyle="#6a4a20"; ctx.fillRect(W/2+30,H-44,12,18);
+      ctx.fillStyle="#3a8a3a"; ctx.beginPath(); ctx.arc(W/2+36,H-48,10,0,7); ctx.fill();
+    } else if (_hv===2){
+      // TV set + sofa
+      ctx.fillStyle="#2a2a2a"; ctx.fillRect(W/2-28,52,56,36); ctx.fillStyle="#1a1aff"; ctx.fillRect(W/2-24,55,48,28);
+      ctx.fillStyle="#3a2a14"; ctx.fillRect(W/2-4,88,8,12);
+      // sofa (dark orange)
+      ctx.fillStyle="#c97040"; ctx.fillRect(W/2-40,H-52,80,28); ctx.fillRect(W/2-44,H-60,12,34); ctx.fillRect(W/2+32,H-60,12,34);
+    } else if (_hv===3){
+      // desk left + bookshelf right
+      ctx.fillStyle="#6a4a30"; ctx.fillRect(10,55,32,18); ctx.fillRect(14,73,4,H-80); ctx.fillRect(34,73,4,H-80);
+      ctx.fillStyle="#5a8090"; ctx.fillRect(10,57,30,12); // writing pad
+      // bookshelf right
+      ctx.fillStyle="#5a3a20"; ctx.fillRect(W-32,50,22,H-65);
+      for(let bi=0;bi<5;bi++){ ctx.fillStyle=["#4a8ec9","#c94a4a","#4ac96a","#c9904a","#6a4ac9"][bi]; ctx.fillRect(W-30,52+bi*16,18,13); }
+    } else {
+      // two armchairs facing each other + round table + wall art
+      ctx.fillStyle="#8c7040"; ctx.fillRect(W/2-52,H-55,28,30); ctx.fillRect(W/2-56,H-62,8,36); ctx.fillRect(W/2-28,H-62,8,36);
+      ctx.fillStyle="#8c7040"; ctx.fillRect(W/2+24,H-55,28,30); ctx.fillRect(W/2+20,H-62,8,36); ctx.fillRect(W/2+48,H-62,8,36);
+      // round table
+      ctx.fillStyle="#a07850"; ctx.beginPath(); ctx.arc(W/2,H-42,14,0,7); ctx.fill();
+      // wall art frame
+      ctx.fillStyle="#6a4a20"; ctx.fillRect(W/2-20,58,40,32); ctx.fillStyle="#a0c8e0"; ctx.fillRect(W/2-17,61,34,25);
+      // hanging plant
+      ctx.fillStyle="#5a3a10"; ctx.fillRect(W-30,47,4,20);
+      ctx.fillStyle="#3a8a2a"; for(let pi=0;pi<4;pi++) { ctx.beginPath(); ctx.arc(W-28+Math.sin(pi*2)*8, 68+pi*6, 5, 0, 7); ctx.fill(); }
+    }
   }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
@@ -1848,50 +1953,29 @@ function drawInterior(t){
   // draw villagers who work in this room (indoor flag set by updateVillagers)
   const _tabWorkers = VILLAGER_STATE.filter(v => v.indoor && v.workTab===S.tab);
   _tabWorkers.forEach((v, i) => {
-    const vx = (i+1) / (_tabWorkers.length+1) * W;
-    const vy = H * 0.58;
-    (v as any)._ix = vx; (v as any)._iy = vy; // store for HTML overlay
-    drawPerson(ctx, vx, vy, v.hair, v.shirt, t, false, 1, null, "down", null, v.trouser, null, v.female);
+    // initialise interior position first time they arrive
+    if (!v.iwx){ v.iwx = (i+1)/(_tabWorkers.length+1)*W; v.iwy = H*0.58; }
+    drawPerson(ctx, v.iwx, v.iwy, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir||"down", null, v.trouser, null, v.female);
   });
-  // HTML name tags for indoor villagers (crisp, only when very close to IP)
+  // player drawn last so they render above furniture
+  const _iTool = SKILL_TOOL[active] || null;
+  drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null);
+  // crisp HTML overlays: name tags + chat panel
   const _iOverlay = document.getElementById("interior-overlay");
   if (_iOverlay){
     let _iHtml = "";
     _tabWorkers.forEach(v => {
-      const vx = (v as any)._ix, vy = (v as any)._iy;
-      if (vx === undefined) return;
-      const dist = Math.hypot(IP.x-vx, IP.y-vy);
-      if (dist < 26){
-        const pct_x = vx/W*100, pct_y = (vy-28)/H*100;
-        _iHtml += `<div class="int-vlbl" style="left:${pct_x.toFixed(1)}%;top:${pct_y.toFixed(1)}%">${v.n}</div>`;
+      const dist = Math.hypot(IP.x-v.iwx, IP.y-v.iwy);
+      if (dist < 28){
+        const px = v.iwx/W*100, py = (v.iwy-30)/H*100;
+        _iHtml += `<div class="int-vlbl" style="left:${px.toFixed(1)}%;top:${py.toFixed(1)}%">${v.n}</div>`;
       }
     });
-    _iOverlay.innerHTML = _iHtml;
-  }
-  // player drawn last so they render above furniture
-  const _iTool = SKILL_TOOL[active] || null;
-  drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null);
-  // conversation panel
-  if (CHAT_NPC){
-    const q = CHAT_NPC.quips[CHAT_NPC.quipIdx % CHAT_NPC.quips.length];
-    ctx.save();
-    ctx.fillStyle="rgba(30,22,14,.90)"; ctx.fillRect(10, 6, W-20, 44);
-    ctx.strokeStyle="#8c6947"; ctx.lineWidth=2; ctx.strokeRect(10,6,W-20,44);
-    ctx.fillStyle="#ffd666"; ctx.textAlign="left"; ctx.font="bold 9px monospace";
-    ctx.fillText(CHAT_NPC.n+":", 18, 20);
-    ctx.fillStyle="#f0e8d0"; ctx.font="9px monospace";
-    // word-wrap across two lines
-    const words = q.split(" "), maxW = W-36;
-    let line = "", lines = [];
-    for (const w of words){
-      const test = line ? line+" "+w : w;
-      if (ctx.measureText(test).width > maxW && line){ lines.push(line); line=w; } else line=test;
+    if (CHAT_NPC){
+      const q = CHAT_NPC.quips[CHAT_NPC.quipIdx % CHAT_NPC.quips.length];
+      _iHtml += `<div class="int-chat"><span class="int-chat-name">${CHAT_NPC.n}:</span><span class="int-chat-txt"> ${q}</span><span class="int-chat-dim"> · tap to dismiss</span></div>`;
     }
-    if (line) lines.push(line);
-    lines.slice(0,3).forEach((l,i)=>ctx.fillText(l, 18, 32+i*11));
-    ctx.fillStyle="#8a7060"; ctx.font="8px monospace"; ctx.textAlign="right";
-    ctx.fillText("[tap to dismiss]", W-14, 46);
-    ctx.restore();
+    _iOverlay.innerHTML = _iHtml;
   }
 }
 function drawTitleFX(t){
@@ -1962,7 +2046,7 @@ function villageFrame(ts){
     // auto-cancel action when player walks away from station
     if (S.action && VP.moving) {
       const sp = stationPos(S.action.skill, S.action.id);
-      if (sp && Math.hypot(VP.x-sp.x, VP.y-sp.y) > 3*TILE) { S.action = null; renderNav(); }
+      if (sp && Math.hypot(VP.x-sp.x, VP.y-sp.y) > 1.5*TILE) { S.action = null; renderNav(); }
     }
     if (VP.moving && t-lastDust > 0.16){
       lastDust = t;
@@ -2047,12 +2131,13 @@ function interiorClick(e){
   }
   // dismiss chat on tap outside (cycle quip first so next open shows a fresh line)
   if (CHAT_NPC){ CHAT_NPC.quipIdx = (CHAT_NPC.quipIdx+1) % CHAT_NPC.quips.length; CHAT_NPC = null; return; }
-  // check if click hits an interior villager
-  const tabWorkers = VILLAGER_STATE.filter(v => v.phase==="work" && v.workTab===S.tab);
+  // check if click hits an interior villager (use their actual wander position)
+  const tabWorkers = VILLAGER_STATE.filter(v => v.indoor && v.workTab===S.tab);
   const cw2 = icanvasW(), ch2 = icanvasH();
   for (let i=0; i<tabWorkers.length; i++){
-    const vx = (i+1)/(tabWorkers.length+1)*cw2, vy = ch2*0.58;
-    if (Math.hypot(cx-vx, cy-vy) < 22){ CHAT_NPC = tabWorkers[i]; return; }
+    const vx = tabWorkers[i].iwx || (i+1)/(tabWorkers.length+1)*cw2;
+    const vy = tabWorkers[i].iwy || ch2*0.58;
+    if (Math.hypot(cx-vx, cy-vy) < 26){ CHAT_NPC = tabWorkers[i]; return; }
   }
   IP.tx = Math.max(16, Math.min(icanvasW()-16, cx));
   IP.ty = Math.max(24, Math.min(icanvasH()-16, cy));
@@ -2139,7 +2224,12 @@ function updateClock(){
   }
   const h = gameHour(), hh = Math.floor(h), mm = Math.floor((h-hh)*60);
   const str = `${isNight()?"🌙":"☀️"} ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
-  if (str !== _lastClock){ _lastClock = str; el.textContent = str; }
+  if (str !== _lastClock){
+    _lastClock = str;
+    el.textContent = str;
+    const vc = document.getElementById("village-clock");
+    if (vc) vc.textContent = str;
+  }
 }
 const SAVE_KEY = "buyrworld_game_save_v1";
 const OFFLINE_CAP_MS = 8 * 3600 * 1000;
@@ -2263,7 +2353,23 @@ function updateVillagers(dt){
     const goesIndoor = v.phase === "work" && v.workKind === "bld";
     if (goesIndoor){
       const distToWork = Math.hypot(v.workPos.x - v.x, v.workPos.y - v.y);
-      if (distToWork < 2.5*TILE){ v.indoor = true; v.moving = false; continue; }
+      if (distToWork < 2.5*TILE){
+        v.indoor = true;
+        // wander within building interior canvas
+        v.iwTimer -= dt;
+        if (v.iwTimer <= 0 || !v.iwTarget){
+          v.iwTimer = 2 + Math.random()*3;
+          const iW = icanvasW(), iH = icanvasH();
+          v.iwTarget = { x: iW*0.15 + Math.random()*iW*0.7, y: iH*0.38 + Math.random()*iH*0.32 };
+        }
+        if (v.iwTarget){
+          const idx = v.iwTarget.x - v.iwx, idy = v.iwTarget.y - v.iwy;
+          const id = Math.hypot(idx, idy);
+          if (id > 4){ const s=50*dt; v.iwx+=idx/id*s; v.iwy+=idy/id*s; v.moving=true; v.facing=idx>=0?1:-1; }
+          else { v.iwTarget=null; v.moving=false; }
+        }
+        continue;
+      }
       v.indoor = false;
     } else {
       v.indoor = false;
@@ -2750,6 +2856,7 @@ function renderMain(){
         <div class="village-canvas-rel">
           <canvas id="village" width="${VIEW_W*pixelScale()}" height="${VIEW_H*pixelScale()}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${VIEW_W}/${VIEW_H};"></canvas>
           <div id="village-overlay"></div>
+          <div id="village-clock"></div>
         </div>
         <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD/arrows also work</div>
       </div>
