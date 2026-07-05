@@ -10,8 +10,8 @@ import { VMAP, V_OBJECTS, VCOLS, VROWS, TILE, VIEW_W, VIEW_H } from '../src/worl
 
 /* ---- items ---- */
 describe('ITEMS', () => {
-  it('has exactly 19 items', () => {
-    expect(Object.keys(ITEMS).length).toBe(19);
+  it('has exactly 24 items', () => {
+    expect(Object.keys(ITEMS).length).toBe(24);
   });
 
   it('every item has a non-empty name', () => {
@@ -35,10 +35,10 @@ describe('ITEMS', () => {
 
 /* ---- skills ---- */
 describe('SKILLS', () => {
-  const SKILL_IDS = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading'];
+  const SKILL_IDS = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading', 'fishing'];
 
-  it('has exactly 6 skills', () => {
-    expect(Object.keys(SKILLS).length).toBe(6);
+  it('has exactly 7 skills', () => {
+    expect(Object.keys(SKILLS).length).toBe(7);
   });
 
   it('contains all expected skill IDs', () => {
@@ -100,8 +100,8 @@ describe('SKILLS', () => {
 
 /* ---- npcs ---- */
 describe('NPCS', () => {
-  it('has exactly 4 traders', () => {
-    expect(NPCS.length).toBe(4);
+  it('has exactly 5 traders', () => {
+    expect(NPCS.length).toBe(5);
   });
 
   it('every NPC stock item is a valid item ID', () => {
@@ -126,10 +126,10 @@ describe('NPCS', () => {
 
 /* ---- upgrades ---- */
 describe('UPGRADES', () => {
-  const validSkills = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading'];
+  const validSkills = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading', 'woodcutting', 'fishing', 'tools'];
 
-  it('has exactly 10 upgrades', () => {
-    expect(UPGRADES.length).toBe(10);
+  it('has exactly 11 upgrades', () => {
+    expect(UPGRADES.length).toBe(11);
   });
 
   it('all upgrades reference a valid skill', () => {

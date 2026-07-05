@@ -78,6 +78,9 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'sign',        kind: 'sign',  tx: 10, ty: 11, w: 1, h: 1, tab: 'settings', name: 'Save Post',      ic: '💾' },
   // --- Forest cabin (east) ---
   { id: 'sawmill',     kind: 'bld',   tx: 41, ty: 3,  w: 3, h: 3, tab: 'woodcutting', name: 'Sawmill', ic: '🪓', wall: '#9a7050', roof: '#5a3a20' },
+  // --- Pier & fishmonger (beach) ---
+  { id: 'pier',         kind: 'bld',   tx: 22, ty: 16, w: 3, h: 2, tab: 'fishing', name: 'Pier',    ic: '🎣', wall: '#8c6947', roof: '#6a4a28' },
+  { id: 'stall_marina', kind: 'stall', tx: 17, ty: 16, w: 2, h: 2, tab: 'trade',   name: 'Marina',  lvl: 1,  awn: '#4da8cc', hair: '#8a5a20', shirt: '#4a7a9a' },
   // --- Streetlamps ---
   { id: 'lamp_1', kind: 'lamp', tx: 10, ty: 5,  w: 1, h: 1 },
   { id: 'lamp_2', kind: 'lamp', tx: 32, ty: 5,  w: 1, h: 1 },
@@ -95,4 +98,14 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'tree_oak3',   kind: 'tree', tx: 39, ty: 12, w: 1, h: 2, ore: 'oak',      lvl: 8  },
   { id: 'tree_hard1',  kind: 'tree', tx: 44, ty: 14, w: 1, h: 2, ore: 'hardwood', lvl: 20 },
   { id: 'tree_hard2',  kind: 'tree', tx: 46, ty: 13, w: 1, h: 2, ore: 'hardwood', lvl: 20 },
+  // --- Town decorations ---
+  { id: 'fountain',  kind: 'fountain', tx: 22, ty: 6,  w: 2, h: 2, name: 'Fountain' },
+  { id: 'bench_1',   kind: 'bench',    tx: 19, ty: 7,  w: 2, h: 1, name: 'Bench' },
+  { id: 'bench_2',   kind: 'bench',    tx: 26, ty: 7,  w: 2, h: 1, name: 'Bench' },
+  { id: 'pot_1',     kind: 'plant',    tx: 12, ty: 6,  w: 1, h: 1 },
+  { id: 'pot_2',     kind: 'plant',    tx: 27, ty: 12, w: 1, h: 1 },
+  { id: 'pot_3',     kind: 'plant',    tx: 11, ty: 9,  w: 1, h: 1 },
+  { id: 'pot_4',     kind: 'plant',    tx: 30, ty: 9,  w: 1, h: 1 },
+  { id: 'pot_5',     kind: 'plant',    tx: 31, ty: 6,  w: 1, h: 1 },
+  { id: 'flowerbed', kind: 'plant',    tx: 21, ty: 9,  w: 2, h: 1 },
 ];

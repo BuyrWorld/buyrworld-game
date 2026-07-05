@@ -1,26 +1,27 @@
-# ROADMAP.md — BuyrWorld Milestones (v1)
+# ROADMAP.md — BuyrWorld Milestones (v2, updated 05 Jul 2026)
 
-## Rules
+## Rules (unchanged, binding)
 - One milestone per prompt/session. Game fully playable after each.
-- Every milestone MUST end with a **visible change in index.html** (screenshot-able).
-- Keep all sims/tests green; add tests for new systems.
-- Tick the checkbox + bump the version string when done.
+- Every milestone MUST end with a visible change (screenshot-able).
+- Claude Code: before coding, give a 5-bullet plan and WAIT for approval. Build ONLY the named milestone, then stop.
+- Keep npm test, npm run check:data and npm run dev green.
 
-## Milestone format
-`M# — Name · visible outcome · touches`
+## Completed
+- [x] **M1 — Identity Pack** · logo + "My name is" badge
+- [x] **M2 — Modular Migration** · Vite+TS src/ structure
+- [x] **M3 — Data-Driven Content** · JSON registries, Quinn, new products
+- [x] **M4–M4.6 — Zones, day/night, customisation, asset pipeline** · enterable buildings, transitions
+- [x] **VF1–VF3 — Visual fix rounds (Claude chat, surgical)** · cosy Harvest-Moon interiors (all 8 rooms furnished + collision), compact 320×200 rooms, two-column room+panel layout, slim market stalls with goods + vendors that bob/turn, fountain/benches/planters/picket fence, height-normalised building sprites, lamp redesign (day-off/night-glow), 09:15 session start + capped night darkness, clock HUD, room name plates, action SFX (tink/clang/tick/thock), per-room music with slower 88bpm village theme, crisp HTML labels, no head halo, no floating name tag, "I can't swim… yet", forklift/racking/livery Depot, podium+10-chair Town Hall, pet-furnished Barn, log-pile Sawmill with goods shelf, 3× character preview
 
-## First 10 milestones
-- [x] **M1 — Identity Pack** · Redesigned "really cool" animated logo (gradient shine, orbiting freight arrow, parallax on title); "HI, MY NAME IS ___" name-badge moment: after entering a name, badge sticker animates onto the character and shows on the HUD + hover card. Version → v0.7. · index.html only
-- [x] **M2 — Modular Migration** · Split into Vite+TS modules per ARCHITECTURE.md with zero behaviour change; sims ported to Vitest and green; new pixel loading screen proves the swap. v0.8. · new /src, index.html
-- [x] **M3 — Data-Driven Content** · items/actions/buildings/npcs moved to JSON registries; prove it by adding 2 products (Sensor, Pallet Jack) + 1 trader via data only. `npm run check:data` validator. v0.9. · /src/data
-- [ ] **M4 — Day/Night & Streetlights** · Game clock, sky tint curve, streetlamp glow at night, NPCs head home in the evening (first routine band). v0.10. · world/daynight, actors
-- [ ] **M4.5 — Visual Overhaul Foundation** · HiDPI pixel-perfect canvas (DPR-aware), smoother camera easing, warm sunrise/sunset tint, tree wind sway, multi-layer water shimmer, path ruts + cliff cracks, varied grass flora, building foundation + window glints + door knob, birds in sky, UI button/nav/progress-bar transitions. No gameplay changes. · renderer.ts, drawTiles, drawObjects, drawExtras, drawVillage, index.html CSS
-- [ ] **M5 — Interactive Scenery** · Benches (rest buff), mailbox (daily reward), fruit trees (harvest), vending machine; each with cooldown + sparkle affordance. First hidden secret (alley behind Market). v0.11. · world/interact, data
-- [ ] **M6 — Engagement Heartbeat** · 20–30s event scheduler (NPC lines, price alerts, companion sightings, discovery sparkles) weighted by novelty; visible event ticker. v0.12. · systems/events
-- [ ] **M7 — River & Plaza Reshape** · De-grid the map: river with 2 bridges, central plaza fountain upgrade, organic paths, one landmark silhouette. v0.13. · world/map data chunks
-- [ ] **M8 — Retail High Street (District 2)** · First annexed district plot: unique palette, Coffee Shop (energy + micro-quests) and Retail Centre (first cosmetics: character shirt colours, badge styles). District ambience layer. v0.14. · districts.json, audio/ambience
-- [ ] **M9 — Quest Framework** · Data-driven quest system (fetch/craft/deliver/talk), quest log UI, 5 hand-written quests incl. Poppy & Sam chains; template grammar ready for AI Phase B. v0.15. · systems/questlog, data/quests
-- [ ] **M10 — Bank & Net Worth (Financial seed)** · Bank building: savings interest, first loan, net-worth screen combining coins+stock+assets; news ticker stub (Phase A events shift market). v0.16. · systems/economy seed
+## Next milestones (build in order, one at a time)
+- [x] **M5 — Tools & Fishing** · Tool tiers (wood→stone→iron→gold→diamond) for pick/axe/rod, colour-coded, bought/crafted, speed per tier; Fishing skill at the pier (rod spots, 5 fish types by level); Fishmonger NPC stall buys/sells catch; beach birds scatter when approached, occasionally land afar. Visible: new tools on character, fish in warehouse, fishmonger on beach.
+- [ ] **M6 — The Big Map & Living Villagers** · Map ~3× (grow east/south in chunks); 15 named NPCs with unique palettes; each has a furnished home (shared basics, individual touches, some multi-occupant); schedule 06:30–18:30 work / evening leisure / night in bed; speech bubbles docked at screen-bottom that minimise when NPC walks away; night wildlife (fox in woods, owls in trees, shark fin offshore). Visible: villagers commuting, homes enterable.
+- [ ] **M7 — Player House & Furniture** · Own house on the map; furniture placement (bed, TV, sofa, sink, shower, toilet, fridge, table+chairs, rugs); furniture trader stall; hats + extra clothing colours; items craftable in Sawmill/Workshop feed into furniture. Visible: decorated house saved/loaded.
+- [ ] **M8 — The Rose & Pallet (Pub)** · British pub: bar with pumps, pool table, wooden furniture, red carpet with black dots; NPCs visit after 18:30; landlord with rotating banter. Visible: pub interior, evening crowd.
+- [ ] **M9 — Title Screen & Character Creator** · Exciting animated intro with floating feature-words; improved mascot; full character customisation BEFORE starting; name required — red "Enter a name" if bypass attempted. Visible: new intro flow.
+- [ ] **M10 — Mischief & The Law** · Trespassing indicator (red, bottom-left) inside homes; sneak-steal small fridge items; sleeping NPCs wake if within 2 tiles → "GET OUT OR I'M CALLING THE POLICE!"; 10s to flee else Police arrive → holding cell 24h game-time (48h if carrying stolen goods); Police Station with 3 officers, cell, rotating comedy cellmate. Tone: cartoon/comedic, no violence. Visible: full loop working.
+- [ ] **M11 — Nightclub Themed Nights** · Club venue; aesthetic + NPC outfits + dialogue rotate every 7 game days: pop → rock → hip hop → trance → 80s; matching chiptune per theme. Visible: first two themes.
+- [ ] **M12 — Active Swing Mode (design-gated)** · Optional click-to-swing on rocks/trees (fewer clicks per resource at higher tool tiers) layered ON TOP of idle mode, not replacing it. Requires design sign-off: protect the idle/offline core loop.
 
-## Parking lot (M11+ candidates, do not start)
-Weather/seasons · Logistics Hub district · University courses · Housing/Estate Agent · Living-economy sim v1 · Exchange Floor · Analytics + Supabase cloud saves (M12 gate) · AI Phase B · Automation/robotics endgame · Multiplayer phase 1 (AI competitors).
+## Parking lot
+Weather/seasons · districts rollout (TOWN_DESIGN.md) · Bank/net-worth · living economy · analytics + cloud saves gate · AI Phase B (AI_SYSTEMS.md) · commissioned art pack drop-in (pipeline ready).

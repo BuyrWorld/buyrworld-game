@@ -1,16 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { DAY_DURATION_MS, gameHour, dayFraction, isNight, nightAlpha, lampGlow, skyTint } from '../src/world/daynight';
+import { DAY_DURATION_MS, BOOT_MS, BOOT_HOUR, gameHour, dayFraction, isNight, nightAlpha, lampGlow, skyTint } from '../src/world/daynight';
+
+/** Return a real timestamp that produces the given game hour. */
+function atGameHour(h: number): number {
+  const delta = ((h - BOOT_HOUR) % 24 + 24) % 24;
+  return BOOT_MS + (delta / 24) * DAY_DURATION_MS;
+}
 
 describe('gameHour', () => {
-  it('is 0 at the start of a cycle', () => {
-    expect(gameHour(0)).toBe(0);
+  it('equals BOOT_HOUR at session start', () => {
+    expect(gameHour(BOOT_MS)).toBeCloseTo(BOOT_HOUR, 5);
   });
-  it('is 12 at the halfway point', () => {
-    expect(gameHour(DAY_DURATION_MS / 2)).toBe(12);
+  it('advances 12 h after half a DAY_DURATION', () => {
+    const h1 = gameHour(BOOT_MS);
+    const h2 = gameHour(BOOT_MS + DAY_DURATION_MS / 2);
+    expect(((h2 - h1 + 24) % 24)).toBeCloseTo(12, 5);
   });
   it('is always in [0, 24)', () => {
-    for (let h = 0; h < 24; h++) {
-      const result = gameHour(h / 24 * DAY_DURATION_MS);
+    for (let i = 0; i < 24; i++) {
+      const result = gameHour(BOOT_MS + i / 24 * DAY_DURATION_MS);
       expect(result).toBeGreaterThanOrEqual(0);
       expect(result).toBeLessThan(24);
     }
@@ -18,57 +26,57 @@ describe('gameHour', () => {
 });
 
 describe('dayFraction', () => {
-  it('is 0 at midnight', () => {
-    expect(dayFraction(0)).toBeCloseTo(0, 5);
+  it('is close to 1 at noon', () => {
+    expect(dayFraction(atGameHour(12))).toBeGreaterThan(0.99);
   });
-  it('is 1 at noon', () => {
-    expect(dayFraction(DAY_DURATION_MS / 2)).toBeCloseTo(1, 5);
+  it('is close to 0 at midnight', () => {
+    expect(dayFraction(atGameHour(0))).toBeLessThan(0.01);
   });
   it('is always in [0, 1]', () => {
-    for (let h = 0; h < 24; h++) {
-      const f = dayFraction(h / 24 * DAY_DURATION_MS);
+    for (let i = 0; i < 24; i++) {
+      const f = dayFraction(BOOT_MS + i / 24 * DAY_DURATION_MS);
       expect(f).toBeGreaterThanOrEqual(0);
       expect(f).toBeLessThanOrEqual(1);
     }
   });
-  it('is symmetric around noon', () => {
-    const morning = dayFraction(9 / 24 * DAY_DURATION_MS);
-    const afternoon = dayFraction(15 / 24 * DAY_DURATION_MS);
+  it('is symmetric around noon (h=9 and h=15)', () => {
+    const morning   = dayFraction(atGameHour(9));
+    const afternoon = dayFraction(atGameHour(15));
     expect(morning).toBeCloseTo(afternoon, 5);
   });
 });
 
 describe('isNight', () => {
   it('is true at midnight (hour 0)', () => {
-    expect(isNight(0)).toBe(true);
+    expect(isNight(atGameHour(0))).toBe(true);
   });
   it('is true just before dawn (hour 5)', () => {
-    expect(isNight(5 / 24 * DAY_DURATION_MS)).toBe(true);
+    expect(isNight(atGameHour(5))).toBe(true);
   });
   it('is false during the day (hour 12)', () => {
-    expect(isNight(DAY_DURATION_MS / 2)).toBe(false);
+    expect(isNight(atGameHour(12))).toBe(false);
   });
   it('is false in the afternoon (hour 15)', () => {
-    expect(isNight(15 / 24 * DAY_DURATION_MS)).toBe(false);
+    expect(isNight(atGameHour(15))).toBe(false);
   });
   it('is true at hour 20', () => {
-    expect(isNight(20 / 24 * DAY_DURATION_MS)).toBe(true);
+    expect(isNight(atGameHour(20))).toBe(true);
   });
   it('is true at hour 22', () => {
-    expect(isNight(22 / 24 * DAY_DURATION_MS)).toBe(true);
+    expect(isNight(atGameHour(22))).toBe(true);
   });
 });
 
 describe('nightAlpha', () => {
   it('is 0 at noon', () => {
-    expect(nightAlpha(DAY_DURATION_MS / 2)).toBeCloseTo(0, 5);
+    expect(nightAlpha(atGameHour(12))).toBeCloseTo(0, 5);
   });
   it('is > 0 at midnight', () => {
-    expect(nightAlpha(0)).toBeGreaterThan(0);
+    expect(nightAlpha(atGameHour(0))).toBeGreaterThan(0);
   });
   it('is always in [0, 1]', () => {
-    for (let h = 0; h < 24; h++) {
-      const a = nightAlpha(h / 24 * DAY_DURATION_MS);
+    for (let i = 0; i < 24; i++) {
+      const a = nightAlpha(BOOT_MS + i / 24 * DAY_DURATION_MS);
       expect(a).toBeGreaterThanOrEqual(0);
       expect(a).toBeLessThanOrEqual(1);
     }
@@ -77,14 +85,14 @@ describe('nightAlpha', () => {
 
 describe('lampGlow', () => {
   it('is 0 at noon (lamps off)', () => {
-    expect(lampGlow(DAY_DURATION_MS / 2)).toBe(0);
+    expect(lampGlow(atGameHour(12))).toBe(0);
   });
   it('is > 0 at midnight (lamps on)', () => {
-    expect(lampGlow(0)).toBeGreaterThan(0);
+    expect(lampGlow(atGameHour(0))).toBeGreaterThan(0);
   });
   it('is always in [0, 1]', () => {
-    for (let h = 0; h < 24; h++) {
-      const g = lampGlow(h / 24 * DAY_DURATION_MS);
+    for (let i = 0; i < 24; i++) {
+      const g = lampGlow(BOOT_MS + i / 24 * DAY_DURATION_MS);
       expect(g).toBeGreaterThanOrEqual(0);
       expect(g).toBeLessThanOrEqual(1);
     }
@@ -93,21 +101,18 @@ describe('lampGlow', () => {
 
 describe('skyTint', () => {
   it('returns a comma-separated RGB string', () => {
-    const tint = skyTint(0);
-    expect(tint).toMatch(/^\d+,\d+,\d+$/);
+    expect(skyTint(BOOT_MS)).toMatch(/^\d+,\d+,\d+$/);
   });
   it('returns night indigo at midnight', () => {
-    expect(skyTint(0)).toBe('10,15,50');
+    expect(skyTint(atGameHour(0))).toBe('10,15,50');
   });
   it('returns warm colour at sunrise (hour 6)', () => {
-    const tint = skyTint(6 / 24 * DAY_DURATION_MS);
-    expect(tint).not.toBe('10,15,50');
+    expect(skyTint(atGameHour(6))).not.toBe('10,15,50');
   });
   it('returns warm colour at sunset (hour 18)', () => {
-    const tint = skyTint(18 / 24 * DAY_DURATION_MS);
-    expect(tint).not.toBe('10,15,50');
+    expect(skyTint(atGameHour(18))).not.toBe('10,15,50');
   });
-  it('returns night indigo at midday', () => {
-    expect(skyTint(DAY_DURATION_MS / 2)).toBe('10,15,50');
+  it('returns night indigo at midday (not sunrise/sunset window)', () => {
+    expect(skyTint(atGameHour(12))).toBe('10,15,50');
   });
 });

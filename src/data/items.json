@@ -16,6 +16,11 @@
   "servo_unit":  { "n": "Servo Unit",        "ic": "🤖", "v": 320 },
   "pallet_jack": { "n": "Pallet Jack",       "ic": "🛺", "v": 185 },
   "sensor":      { "n": "Sensor",            "ic": "📡", "v": 260 },
-  "wood":  { "n": "Wood",  "ic": "🪵", "v": 3  },
-  "plank": { "n": "Plank", "ic": "📏", "v": 9  }
+  "wood":     { "n": "Wood",     "ic": "🪵", "v": 3   },
+  "plank":    { "n": "Plank",    "ic": "📏", "v": 9   },
+  "sardine":  { "n": "Sardine",  "ic": "🐟", "v": 8   },
+  "mackerel": { "n": "Mackerel", "ic": "🐠", "v": 16  },
+  "bass":     { "n": "Bass",     "ic": "🐡", "v": 30  },
+  "salmon":   { "n": "Salmon",   "ic": "🍣", "v": 60  },
+  "tuna":     { "n": "Tuna",     "ic": "🐋", "v": 120 }
 }

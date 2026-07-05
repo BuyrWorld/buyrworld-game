@@ -22,5 +22,11 @@
     "title": "Port Salvo Wholesaler", "lvl": 35,
     "quip": "Nothing in this container by accident.",
     "stock": ["pallet_jack", "sensor", "servo_unit", "tech_alloy", "chassis"]
+  },
+  {
+    "id": "marina", "n": "Marina", "ic": "🧑‍🍳",
+    "title": "Pier Fishmonger", "lvl": 1,
+    "quip": "Fresh off the line, love. Never been near a tin.",
+    "stock": ["sardine", "mackerel", "bass", "salmon", "tuna"]
   }
 ]

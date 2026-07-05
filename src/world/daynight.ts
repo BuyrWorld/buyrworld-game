@@ -1,9 +1,14 @@
 /** One full game day = 24 real minutes. */
 export const DAY_DURATION_MS = 24 * 60 * 1000;
 
-/** Game hour [0, 24) derived from wall-clock time. */
+/** Session boot time — every session starts at a friendly mid-morning. */
+export const BOOT_MS = Date.now();
+export const BOOT_HOUR = 9.25;
+
+/** Game hour [0, 24). Starts at 09:15 each session so players see daylight first. */
 export function gameHour(now = Date.now()): number {
-  return (now % DAY_DURATION_MS) / DAY_DURATION_MS * 24;
+  const raw = BOOT_HOUR + ((now - BOOT_MS) / DAY_DURATION_MS) * 24;
+  return ((raw % 24) + 24) % 24;
 }
 
 /** 0 = midnight (darkest) → 1 = noon (brightest). */
@@ -18,9 +23,9 @@ export function isNight(now = Date.now()): boolean {
   return h < 6 || h >= 20;
 }
 
-/** Alpha for the dark blue night overlay drawn over the world canvas (0–0.32). */
+/** Alpha for the night overlay (0–0.20) — capped so the world always stays readable. */
 export function nightAlpha(now = Date.now()): number {
-  return Math.min(0.32, (1 - dayFraction(now)) * 0.52);
+  return Math.min(0.20, (1 - dayFraction(now)) * 0.42);
 }
 
 /** Lamp warm-glow intensity [0, 1]; 0 during daytime. */

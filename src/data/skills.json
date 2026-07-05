@@ -52,5 +52,16 @@
       { "id": "oak",      "n": "Chop Oak Tree",   "lvl": 8,  "ms": 5500, "xp": 22, "out": { "wood": 2 } },
       { "id": "hardwood", "n": "Fell Hardwood",   "lvl": 20, "ms": 7000, "xp": 40, "out": { "wood": 3, "plank": 1 } }
     ]
+  },
+  "fishing": {
+    "n": "Fishing", "ic": "🎣",
+    "desc": "Cast your line at the pier. Patience is the only skill that matters.",
+    "actions": [
+      { "id": "sardine",  "n": "Fish for Sardine",  "lvl": 1,  "ms": 5000,  "xp": 8,  "out": { "sardine": 1 } },
+      { "id": "mackerel", "n": "Fish for Mackerel", "lvl": 5,  "ms": 6500,  "xp": 15, "out": { "mackerel": 1 } },
+      { "id": "bass",     "n": "Catch Bass",        "lvl": 15, "ms": 8000,  "xp": 28, "out": { "bass": 1 } },
+      { "id": "salmon",   "n": "Catch Salmon",      "lvl": 30, "ms": 10000, "xp": 48, "out": { "salmon": 1 } },
+      { "id": "tuna",     "n": "Reel in Tuna",      "lvl": 55, "ms": 13000, "xp": 75, "out": { "tuna": 1 } }
+    ]
   }
 }

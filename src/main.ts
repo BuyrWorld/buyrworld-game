@@ -8,10 +8,10 @@ import { PETS } from './data/pets.ts';
 import { CLIENTS, CONTRACT_POOL } from './data/contracts.ts';
 import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS } from './world/map.ts';
-import { nightAlpha, lampGlow, isNight, skyTint } from './world/daynight.ts';
+import { nightAlpha, lampGlow, isNight, skyTint, gameHour } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS } from './player/customisation.ts';
-import { preloadAll, drawSprite } from './world/assets.ts';
+import { preloadAll, drawSprite, getSprite } from './world/assets.ts';
 
 /* =====================================================
    BuyrWorld v0.8 — Vite+TS modular entry point
@@ -144,6 +144,8 @@ function zoneForTab(tab){
   if (tab==="manufacturing") return "line";
   if (tab==="trade" || tab==="contracts") return "market";
   if (tab==="pets") return "barn";
+  if (tab==="woodcutting") return "barn";
+  if (tab==="upgrades" || tab==="ach") return "market";
   return "valley";
 }
 const MUSIC = (() => {
@@ -227,6 +229,41 @@ const MUSIC = (() => {
 function updateMusicZone(){
   if (MUSIC.unlocked && S.settings && S.settings.music) MUSIC.play(zoneForTab(S.tab));
 }
+/* ---------- action sound effects ---------- */
+const SFX = (() => {
+  let ctx = null, noise = null;
+  function ensure(){
+    if (!ctx){
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate*0.08), ctx.sampleRate);
+      const d = noise.getChannelData(0);
+      for (let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * (1 - i/d.length);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+  }
+  function osc(type, f0, f1, dur, vol, at=0){
+    const o = ctx.createOscillator(), g = ctx.createGain(), t0 = ctx.currentTime + at;
+    o.type = type; o.frequency.setValueAtTime(f0, t0);
+    if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0+dur);
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+    o.connect(g); g.connect(ctx.destination); o.start(t0); o.stop(t0+dur);
+  }
+  function hit(vol, dur, at=0){
+    const s = ctx.createBufferSource(), g = ctx.createGain(), t0 = ctx.currentTime + at;
+    s.buffer = noise; g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+    s.connect(g); g.connect(ctx.destination); s.start(t0);
+  }
+  return { play(skill){
+    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    try{
+      ensure();
+      if (skill==="mining"){ hit(0.10, 0.05); osc("square", 1500, 640, 0.07, 0.05); }
+      else if (skill==="steelworks"){ osc("square", 660, 200, 0.16, 0.06); hit(0.08, 0.10); }
+      else if (skill==="manufacturing"){ hit(0.07, 0.03); hit(0.07, 0.03, 0.08); }
+      else if (skill==="woodcutting"){ hit(0.12, 0.09); osc("triangle", 190, 90, 0.10, 0.07); }
+    }catch(e){}
+  }};
+})();
 function syncMusicButton(){
   const b = document.getElementById("btn-music");
   if (b) b.textContent = (S.settings && S.settings.music) ? "🔊" : "🔇";
@@ -311,7 +348,12 @@ const WANDERERS = [
 ];
 const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting"]);
+const BEACH_BIRDS = Array.from({length:7}, (_,i) => ({
+  x:(3+i*6)*TILE + Math.random()*TILE,
+  y:(17.1+i%2*0.7)*TILE,
+  vx:0, vy:0, state:"sit", flap:i*0.9,
+}));
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing"]);
 const STATION_DEFS = {
   mining:        [
     { fx:0.14, fy:0.44, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
@@ -328,23 +370,29 @@ const STATION_DEFS = {
     { fx:0.82, fy:0.48, sk:'prop_machine',  skill:'manufacturing', id:'wiring_loom',ic:'🔌', lbl:'Wiring Loom' },
   ],
   woodcutting:   [
-    { fx:0.22, fy:0.44, sk:'tree_small',    skill:'woodcutting',   id:'pine',       ic:'🌲', lbl:'Pine' },
-    { fx:0.52, fy:0.40, sk:'tree_large',    skill:'woodcutting',   id:'oak',        ic:'🌳', lbl:'Oak' },
-    { fx:0.80, fy:0.44, sk:'tree_large',    skill:'woodcutting',   id:'hardwood',   ic:'🪵', lbl:'Hardwood' },
+    { fx:0.18, fy:0.62, sk:'log_pine',      skill:'woodcutting',   id:'pine',       ic:'🌲', lbl:'Pine Logs' },
+    { fx:0.50, fy:0.62, sk:'log_oak',       skill:'woodcutting',   id:'oak',        ic:'🌳', lbl:'Oak Logs' },
+    { fx:0.82, fy:0.62, sk:'log_hard',      skill:'woodcutting',   id:'hardwood',   ic:'🪵', lbl:'Hardwood Logs' },
+  ],
+  fishing: [
+    { fx:0.25, fy:0.36, sk:'prop_hopper', skill:'fishing', id:'sardine',  ic:'🐟', lbl:'Sardine Spot' },
+    { fx:0.50, fy:0.30, sk:'prop_hopper', skill:'fishing', id:'mackerel', ic:'🐠', lbl:'Mackerel Spot' },
+    { fx:0.75, fy:0.36, sk:'prop_hopper', skill:'fishing', id:'bass',     ic:'🐡', lbl:'Bass Spot' },
   ],
 };
 // Skill interior canvas size (mining/steelworks/manufacturing/woodcutting)
 const INT_W = 320;
 const INT_H = 200;
 // Returns the current interior canvas logical dimensions
-function icanvasW(){ return STATION_DEFS[S.tab] ? INT_W : VIEW_W; }
-function icanvasH(){ return STATION_DEFS[S.tab] ? INT_H : VIEW_H; }
+function icanvasW(){ return INT_W; }
+function icanvasH(){ return INT_H; }
 
 const ZONE_TIPS = {
   mining:        { ic:"⛏️", n:"The Quarry",         tip:"Strike the vein to collect ore." },
   steelworks:    { ic:"🔥", n:"The Furnace",         tip:"Smelt ore into bars." },
   manufacturing: { ic:"⚙️", n:"The Workshop",        tip:"Craft components for the supply chain." },
   woodcutting:   { ic:"🪓", n:"The Sawmill",         tip:"Chop timber and mill planks." },
+  fishing:       { ic:"🎣", n:"The Pier",            tip:"Cast your line. Patience is a virtue." },
   contracts:     { ic:"📦", n:"The Depot",           tip:"Fulfil orders to earn Logistics XP." },
   trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
@@ -389,6 +437,33 @@ const INTERIOR_COLS = {
     {x:8,   y:29, w:16, h:44},  // cabinet left
     {x:296, y:29, w:16, h:44},  // cabinet right
   ],
+  contracts: [
+    {x:16,  y:84, w:54, h:16},  // clerk desk
+    {x:236, y:52, w:72, h:62},  // loading bay + lorry
+    {x:240, y:122,w:56, h:35},  // pallet stack
+    {x:20,  y:126,w:18, h:34},  // crate stack
+    {x:170, y:114,w:52, h:28},  // forklift
+    {x:62,  y:54, w:72, h:60},  // racking
+  ],
+  trade: [
+    {x:24,  y:58, w:278,h:30},  // trader counters row
+    {x:12,  y:144,w:22, h:26},  // barrel left
+    {x:288, y:144,w:22, h:26},  // barrel right
+  ],
+  pets: [
+    {x:14,  y:60, w:50, h:46},  // hay bales
+    {x:250, y:64, w:50, h:16},  // water trough
+  ],
+  upgrades: [
+    {x:141, y:58, w:38, h:28},  // podium
+    {x:16,  y:60, w:22, h:42},  // filing cabinet
+    {x:280, y:84, w:24, h:16},  // plant
+  ],
+  woodcutting: [
+    {x:36,  y:76, w:64, h:18},  // saw table
+    {x:244, y:132,w:50, h:26},  // log pile
+    {x:14,  y:142,w:50, h:14},  // plank stack
+  ],
 };
 const VKEYS = {};
 const VFX = [];
@@ -412,7 +487,7 @@ function solidAt(px, py){
   const t = tileAt(px, py);
   if (t==="T" || t==="W" || t==="C") return true;
   for (const o of V_OBJECTS){
-    if (o.kind==="lamp" || o.kind==="sign") continue;
+    if (o.kind==="lamp" || o.kind==="sign" || o.kind==="plant") continue;
     const r = objRect(o);
     if (px>=r.x && px<r.x+r.w && py>=r.y && py<r.y+r.h) return true;
   }
@@ -456,9 +531,19 @@ function stationPos(skill, actId){
   if (skill==="steelworks"){ const o=V_OBJECTS.find(x=>x.id==="furnace"); const a=objApproach(o); return {x:a.x, y:a.y}; }
   if (skill==="manufacturing"){ const o=V_OBJECTS.find(x=>x.id==="workshop"); const a=objApproach(o); return {x:a.x, y:a.y}; }
   if (skill==="woodcutting"){ const o=V_OBJECTS.find(x=>x.kind==="tree" && x.ore===actId); if (o){ const r=objRect(o); return {x:r.x+r.w/2, y:r.y+r.h+4}; } }
+  if (skill==="fishing"){ const o=V_OBJECTS.find(x=>x.id==="pier"); if(o){ const a=objApproach(o); return {x:a.x, y:a.y}; } return null; }
   return null;
 }
-const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓" };
+const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓", fishing:"🎣" };
+const TOOL_TIER_COLORS = ["#c8a060","#a0a0a0","#8090a8","#ffd666","#7ee0ff"]; // wood/stone/iron/gold/diamond
+function toolTier(){
+  if (S.upgrades.tool_diamond) return 4;
+  if (S.upgrades.tool_gold)    return 3;
+  if (S.upgrades.tool_iron)    return 2;
+  if (S.upgrades.tool_stone)   return 1;
+  return 0;
+}
+function toolTierColor(){ return TOOL_TIER_COLORS[toolTier()]; }
 function pushVfx(skill, act){
   const p = stationPos(skill, act.id);
   if (!p) return;
@@ -476,7 +561,9 @@ function villageTip(o){
     const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
     return `🪓 ${act ? act.n : o.ore}${locked ? " 🔒 Lv "+o.lvl : ""}`;
   }
-  if (o.kind==="lamp") return "";
+  if (o.kind==="lamp" || o.kind==="plant") return "";
+  if (o.kind==="bench") return "🪑 Bench";
+  if (o.kind==="fountain") return "⛲ Fountain";
   if (o.kind==="stall"){
     const locked = skillLvl("trading") < o.lvl;
     return `⚖️ ${o.name}'s Stall${locked ? " 🔒 Trading "+o.lvl : ""}`;
@@ -484,7 +571,9 @@ function villageTip(o){
   return `${o.ic||""} ${o.name}`;
 }
 function interactObj(o){
-  if (o.kind==="lamp") return;
+  if (o.kind==="lamp" || o.kind==="plant") return;
+  if (o.kind==="bench"){ toast("🪑 You rest your legs for a moment. Lovely."); return; }
+  if (o.kind==="fountain"){ toast("⛲ You toss a coin in. Feels lucky."); return; }
   if (o.kind==="tree"){
     if (skillLvl("woodcutting") < o.lvl){ toast(`Requires Woodcutting level ${o.lvl}.`); return; }
     if (S.action && S.action.skill==="woodcutting" && S.action.id===o.ore){
@@ -542,15 +631,13 @@ function villageClick(e){
   VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
   VP.pending = null;
 }
-function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser){
+function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor){
   skin    = skin    || "#f2c49a";
   trouser = trouser || "#4a5a8a";
   dir = dir || (facing>=0 ? "right" : "left");
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
   ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(0, 10-bob, 8, 3, 0, 0, 7); ctx.fill();
-  ctx.fillStyle="rgba(40,28,16,.55)";
-  ctx.fillRect(-8, -19, 16, 30);
   const legSwing = moving ? Math.sin(t*10)*3 : 0;
   ctx.fillStyle=trouser;
   ctx.fillRect(-5, 2, 4, 8+legSwing*0.4); ctx.fillRect(1, 2, 4, 8-legSwing*0.4);
@@ -573,6 +660,10 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     ctx.save();
     ctx.translate(facing*9, -4);
     ctx.rotate(facing * (swing*0.9 - 0.4));
+    if (toolColor){
+      ctx.fillStyle = toolColor + "99";
+      ctx.beginPath(); ctx.arc(facing*7, -6, 7, 0, 7); ctx.fill();
+    }
     ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(tool, facing*7, -6);
     ctx.restore();
@@ -691,11 +782,55 @@ function drawObjects(ctx, t){
       if (o.sparkle && Math.floor(t*3)%2) drawEmojiC(ctx,"✨",r.x+18,r.y+4,10);
       if (locked) drawEmojiC(ctx,"🔒",r.x+12,r.y-4,10);
     }
+    if (o.kind==="fountain"){
+      const fx = r.x + r.w/2, fy = r.y + r.h/2;
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(fx, fy+r.h/2-2, r.w/2, 4, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#b8b0a0"; ctx.beginPath(); ctx.arc(fx, fy, r.w/2-2, 0, 7); ctx.fill();
+      ctx.fillStyle="#8f887a"; ctx.beginPath(); ctx.arc(fx, fy, r.w/2-2, 0, 7); ctx.lineWidth=3; ctx.strokeStyle="#8f887a"; ctx.stroke();
+      ctx.fillStyle="#5db3d8"; ctx.beginPath(); ctx.arc(fx, fy, r.w/2-7, 0, 7); ctx.fill();
+      ctx.fillStyle="#8ed0ea"; ctx.fillRect(fx-9+((t*14)%14), fy-2, 6, 2);
+      ctx.fillStyle="#cfc8ba"; ctx.fillRect(fx-3, fy-9, 6, 9);
+      ctx.fillStyle="#e3dccc"; ctx.beginPath(); ctx.arc(fx, fy-10, 4, 0, 7); ctx.fill();
+      for (let i=0;i<5;i++){ const p=(t*1.5+i*0.2)%1; ctx.fillStyle=`rgba(255,255,255,${(0.85*(1-p)).toFixed(2)})`; ctx.fillRect(fx-1+Math.sin(p*7+i*2)*8, fy-10-p*10+p*p*14, 2, 2); }
+      continue;
+    }
+    if (o.kind==="bench"){
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(r.x+2, r.y+r.h-3, r.w-4, 3);
+      ctx.fillStyle="#7a5a38"; ctx.fillRect(r.x+3, r.y+2, r.w-6, 4);
+      ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+2, r.y+7, r.w-4, 7);
+      ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+2, r.y+9, r.w-4, 2);
+      ctx.fillStyle="#5a3e26"; ctx.fillRect(r.x+4, r.y+14, 3, 6); ctx.fillRect(r.x+r.w-7, r.y+14, 3, 6);
+      continue;
+    }
+    if (o.kind==="plant"){
+      const px = r.x + r.w/2;
+      if (r.w > TILE){ // flower bed
+        ctx.fillStyle="#6a4a2c"; ctx.fillRect(r.x+2, r.y+10, r.w-4, 12);
+        ctx.fillStyle="#7c5a38"; ctx.fillRect(r.x+2, r.y+8, r.w-4, 3);
+        for (let i=0;i<5;i++){ ctx.fillStyle=["#ff9db0","#ffd666","#b48ad9","#ff8a5c","#fff8e6"][i%5]; ctx.fillRect(r.x+6+i*8, r.y+11, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(r.x+7+i*8, r.y+15, 2, 5); }
+      } else { // terracotta pot
+        ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(px, r.y+21, 7, 2, 0, 0, 7); ctx.fill();
+        ctx.fillStyle="#b06a42"; ctx.fillRect(px-6, r.y+12, 12, 9);
+        ctx.fillStyle="#c97b50"; ctx.fillRect(px-7, r.y+10, 14, 3);
+        ctx.fillStyle="#3aa66a"; ctx.fillRect(px-1, r.y+3, 2, 8);
+        const _fc = ["#ff9db0","#ffd666","#b48ad9"][((o.tx||0)+(o.ty||0))%3];
+        ctx.fillStyle=_fc; ctx.fillRect(px-4, r.y, 3, 3); ctx.fillRect(px+1, r.y-2, 3, 3); ctx.fillRect(px-1, r.y+3, 3, 3);
+      }
+      continue;
+    }
     if (o.kind==="bld"){
       // drop shadow
       ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x+4, r.y+r.h, r.w-2, 5);
       // try Kenney sprite; fall back to procedural canvas building
-      const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, r.w + 16);
+      // normalise: cap sprite height so tall assets can't dwarf the village
+      let _dw = r.w + 14;
+      const _bimg = getSprite(`bld_${o.id}`);
+      if (_bimg){
+        const _asp = _bimg.naturalHeight / _bimg.naturalWidth;
+        const _maxH = r.h + 26;
+        if (_dw * _asp > _maxH) _dw = _maxH / _asp;
+      }
+      const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, _dw);
       if (!_spriteDrawn){
         // stone foundation strip
         ctx.fillStyle="#5a4030"; ctx.fillRect(r.x, r.y+r.h-5, r.w, 5);
@@ -727,12 +862,21 @@ function drawObjects(ctx, t){
         drawEmojiC(ctx,"✨", r.x+r.w-8, r.y+8, 10);
     }
     if (o.kind==="stall"){
-      ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+2, r.y+16, r.w-4, r.h-16);
-      ctx.fillStyle="#a97f52"; ctx.fillRect(r.x, r.y+14, r.w, 5);
-      for (let i=0;i<r.w;i+=8){ ctx.fillStyle = (i/8)%2 ? "#fff8e6" : o.awn; ctx.fillRect(r.x+i, r.y, 8, 10); }
-      if (!drawSprite(ctx, `npc_${o.id}`, r.x+r.w/2, r.y+18, 46))
-        drawPerson(ctx, r.x+r.w/2, r.y+12, o.hair, o.shirt, t+o.tx, false, 1);
-      if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", r.x+r.w/2, r.y-6, 10);
+      const scx = r.x + r.w/2;
+      // awning canopy on slim posts
+      ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+2, r.y+8, 3, r.h-18); ctx.fillRect(r.x+r.w-5, r.y+8, 3, r.h-18);
+      for (let i=0;i<r.w;i+=8){ ctx.fillStyle = (i/8)%2 ? "#fff8e6" : o.awn; ctx.fillRect(r.x+i, r.y, 8, 9); }
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(r.x, r.y+9, r.w, 2);
+      // vendor bobs gently; turns to face the player when nearby
+      const _bob = Math.sin(t*2 + o.tx)*1.2;
+      const _near = Math.hypot(VP.x-scx, VP.y-(r.y+r.h)) < 80;
+      drawPerson(ctx, scx, r.y+r.h-16+_bob, o.hair, o.shirt, t+o.tx, false, _near ? (VP.x>=scx?1:-1) : 1, null, "down");
+      // slim counter with this trader's actual goods on display
+      ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+1, r.y+r.h-12, r.w-2, 10);
+      ctx.fillStyle="#a97f52"; ctx.fillRect(r.x+1, r.y+r.h-14, r.w-2, 3);
+      const _npc = NPCS.find(n=>`stall_${n.id}`===o.id);
+      if (_npc){ _npc.stock.slice(0,3).forEach((it,k)=>{ const _it=ITEMS[it]; if(_it) drawEmojiC(ctx, _it.ic, r.x+9+k*14, r.y+r.h-16, 9); }); }
+      if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", scx, r.y-6, 10);
     }
     if (o.kind==="tree"){
       const cx = r.x + r.w/2;
@@ -751,9 +895,13 @@ function drawObjects(ctx, t){
     }
     if (o.kind==="lamp"){
       const lx = r.x + r.w/2, ly = r.y;
-      ctx.fillStyle='#4a3a2a'; ctx.fillRect(lx-2, ly-26, 4, 26);
-      ctx.fillStyle='#ffd666'; ctx.fillRect(lx-5, ly-32, 10, 7);
-      ctx.fillStyle='rgba(255,230,140,.4)'; ctx.beginPath(); ctx.arc(lx, ly-28, 9, 0, Math.PI*2); ctx.fill();
+      const _g = lampGlow();
+      ctx.fillStyle="rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(lx, ly+2, 6, 2, 0, 0, 7); ctx.fill();
+      ctx.fillStyle='#3a3230'; ctx.fillRect(lx-2, ly-30, 4, 32);
+      ctx.fillStyle='#2c2624'; ctx.fillRect(lx-6, ly-42, 12, 10);
+      ctx.fillStyle = _g > 0.05 ? `rgba(255,214,102,${(0.35+0.65*_g).toFixed(2)})` : '#5a6470';
+      ctx.fillRect(lx-4, ly-40, 8, 6);
+      ctx.fillStyle='#2c2624'; ctx.fillRect(lx-7, ly-45, 14, 3);
       continue;
     }
     if (o.kind==="sign"){
@@ -765,13 +913,32 @@ function drawObjects(ctx, t){
 }
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
-  // birds — three V-shapes drifting independently across the upper sky
+  // sky birds — three V-shapes drifting across the upper sky
   ctx.strokeStyle="rgba(40,30,20,0.6)"; ctx.lineWidth=1;
   for (let i=0;i<3;i++){
     const p=(t*0.038+i*0.37)%1;
     const bx=p*(VCOLS*TILE+160)-80, by=TILE*0.5+Math.sin(p*Math.PI*8)*7+i*19;
     if (by < TILE*3){
       ctx.beginPath(); ctx.moveTo(bx-5,by-2); ctx.lineTo(bx,by+2); ctx.lineTo(bx+5,by-2); ctx.stroke();
+    }
+  }
+  // beach birds — sit on sand, scatter when VP gets within 3 tiles
+  for (const b of BEACH_BIRDS){
+    b.flap += 0.09;
+    const bsx = Math.round(b.x - CAM.x), bsy = Math.round(b.y - CAM.y);
+    if (bsx < -12 || bsx > VIEW_W+12 || bsy < -12 || bsy > VIEW_H+12) continue;
+    if (b.state==="sit"){
+      ctx.fillStyle="#f8f4f0"; ctx.fillRect(bsx-3, bsy, 7, 3);
+      ctx.fillStyle="#f0a030"; ctx.fillRect(bsx+4, bsy+1, 2, 2);
+      ctx.fillStyle="#1a1614"; ctx.fillRect(bsx-1, bsy-1, 2, 2);
+      ctx.fillStyle="#c8c4c0"; ctx.fillRect(bsx-3, bsy+3, 3, 2); ctx.fillRect(bsx+2, bsy+3, 3, 2);
+    } else {
+      const wf = Math.sin(b.flap*7)*3;
+      ctx.fillStyle="#f8f4f0";
+      ctx.fillRect(bsx-7, bsy-1-wf, 6, 2);
+      ctx.fillRect(bsx+1, bsy-1+wf, 6, 2);
+      ctx.fillRect(bsx-2, bsy, 4, 3);
+      ctx.fillStyle="#f0a030"; ctx.fillRect(bsx+2, bsy+1, 2, 1);
     }
   }
   ctx.fillStyle="#8c6947";
@@ -839,7 +1006,7 @@ function drawWorkerAndVfx(ctx, t){
         playerTool = SKILL_TOOL[S.action.skill];
         VP.facing = p.x >= VP.x ? 1 : -1;
       } else {
-        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers());
+        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers(), toolTierColor());
       }
     }
   }
@@ -900,32 +1067,23 @@ function drawVillage(t){
   const playerTool = drawWorkerAndVfx(ctx, t);
   for (const w of WANDERERS){
     drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir);
-    if (w.tee){
-      ctx.fillStyle="#1c6ea4"; ctx.font="bold 5px monospace"; ctx.textAlign="center";
-      ctx.fillText(w.tee, w.x, w.y-1);
-    }
+
   }
   if (VP.tx!==null && VP.tx!==undefined){
     ctx.strokeStyle="rgba(255,248,230,.8)"; ctx.lineWidth=2;
     const rad = 6+Math.sin(t*8)*2;
     ctx.beginPath(); ctx.arc(VP.tx, VP.ty, rad, 0, 7); ctx.stroke();
   }
-  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers());
+  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null);
   ctx.restore();
   // HTML overlay: player name tag + nearest-interactable tooltip (crisp text, no canvas blurriness)
   const overlay = document.getElementById("village-overlay");
   if (overlay){
     let html = "";
-    if (S.playerName){
-      const lx = (VP.x - CAM.x) / VIEW_W * 100;
-      const ly = (VP.y - 28 - CAM.y) / VIEW_H * 100;
-      if (lx > 0 && lx < 100 && ly > -2 && ly < 100)
-        html += `<div class="vlbl" style="left:${lx.toFixed(1)}%;top:${ly.toFixed(1)}%">${S.playerName}</div>`;
-    }
     const near = nearestInteractable();
     if (near){
       const isN = near.kind==="npc";
-      const r = isN ? {x:near.w.x-12, y:near.w.y-36, w:24} : objRect(near);
+      const r = isN ? {x:near.w.x-12, y:near.w.y-12, w:24} : objRect(near);
       const label = isN ? ((near.w.id==="frost"?"❄️ ":"💬 ")+near.w.n) : villageTip(near);
       if (label){
         const tx = (r.x+(r.w||24)/2 - CAM.x) / VIEW_W * 100;
@@ -1000,6 +1158,31 @@ function drawInterior(t){
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   const W = cv.width / ratio, H = cv.height / ratio;
   const active = S.action ? S.action.skill : null;
+  // --- cosy room painter (Harvest-Moon-style wall band + tiled floor + exit mat) ---
+  const room = (wallTop, wall, floorA, floorB, trim="#4a3524") => {
+    ctx.fillStyle=wall; ctx.fillRect(0,0,W,46);
+    ctx.fillStyle=wallTop; ctx.fillRect(0,0,W,9);
+    ctx.fillStyle="rgba(0,0,0,.07)"; for(let x=18;x<W;x+=34) ctx.fillRect(x,9,2,35);
+    ctx.fillStyle=trim; ctx.fillRect(0,43,W,4);
+    for(let y=47;y<H;y+=16) for(let x=0;x<W;x+=16){ ctx.fillStyle=((x+y)>>4)%2? floorA:floorB; ctx.fillRect(x,y,16,16); }
+    ctx.fillStyle="rgba(0,0,0,.10)"; ctx.fillRect(0,47,8,H-47); ctx.fillRect(W-8,47,8,H-47);
+    ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(0,47,W,5);
+    ctx.fillStyle="#a04a42"; ctx.fillRect(W/2-18,H-15,36,13);
+    ctx.fillStyle="#c96a5a"; ctx.fillRect(W/2-15,H-13,30,9);
+    ctx.fillStyle="#fff8e6"; ctx.fillRect(W/2-2,H-12,4,5);
+    ctx.beginPath(); ctx.moveTo(W/2-5,H-7); ctx.lineTo(W/2+5,H-7); ctx.lineTo(W/2,H-3); ctx.closePath(); ctx.fill();
+  };
+  const crate = (x,y,w=16,h=14,c="#8c6947") => {
+    ctx.fillStyle=c; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1; ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    ctx.fillStyle="#5a3a20"; ctx.fillRect(x+w/2-1,y,2,h); ctx.fillRect(x,y+h/2-1,w,2);
+  };
+  const winP = (x,w=34) => {
+    ctx.fillStyle="#6a5240"; ctx.fillRect(x-2,12,w+4,26);
+    ctx.fillStyle="#a8ddf0"; ctx.fillRect(x,14,w,22);
+    ctx.fillStyle="rgba(255,255,255,.7)"; ctx.fillRect(x+3,16,8,7);
+    ctx.fillStyle="#6a5240"; ctx.fillRect(x+w/2-1,14,2,22); ctx.fillRect(x,24,w,2);
+  };
   if (S.tab==="mining"){
     // stone cave — 320×200 canvas
     ctx.fillStyle="#3a2e26"; ctx.fillRect(0,0,W,H);
@@ -1048,7 +1231,7 @@ function drawInterior(t){
     ctx.fillStyle="#2e2828"; for(let x=0;x<W;x+=16) ctx.fillRect(x,H-10,2,10);
     // 2 furnaces with animated flame (stations iron_bar@x=90, steel_bar@x=205)
     for(let f=0;f<2;f++){
-      const fx=31+f*100;
+      const fx=42+f*170;
       ctx.fillStyle="#5a4a42"; ctx.fillRect(fx,10,38,38);
       ctx.fillStyle="#3a2e2a"; ctx.fillRect(fx+6,16,26,22);
       ctx.fillStyle="#2b2320"; ctx.beginPath(); ctx.arc(fx+19,46,12,Math.PI,0); ctx.fill(); ctx.fillRect(fx+7,46,24,10);
@@ -1064,10 +1247,13 @@ function drawInterior(t){
     // tool rack (right)
     ctx.fillStyle="#6a4a28"; ctx.fillRect(244,103,6,29); ctx.fillStyle="#8c6947"; ctx.fillRect(240,103,14,3);
     drawEmojiC(ctx,"🔧",249,116,8); drawEmojiC(ctx,"🪛",249,126,8);
-    // quench barrel (left)
-    ctx.fillStyle="#4a5a6a"; ctx.fillRect(8,103,16,21); ctx.fillStyle="#5a7a8a"; ctx.fillRect(10,103,12,5);
-    ctx.strokeStyle="#3a4a5a"; ctx.lineWidth=1; for(const by of[108,114,119]) ctx.strokeRect(8,by,16,7);
-    drawEmojiC(ctx,"💧",16,111,7);
+    // quench barrel — wooden staves with water on top
+    ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(28,152,14,4,0,0,7); ctx.fill();
+    ctx.fillStyle="#7a5230"; ctx.fillRect(16,120,26,32);
+    ctx.fillStyle="#8c6947"; for(const bx of [16,25,34]) ctx.fillRect(bx,120,3,32);
+    ctx.fillStyle="#4a3018"; ctx.fillRect(15,126,28,3); ctx.fillRect(15,142,28,3);
+    ctx.fillStyle="#5db3d8"; ctx.beginPath(); ctx.ellipse(29,121,12,4,0,0,7); ctx.fill();
+    ctx.fillStyle="#8ed0ea"; ctx.fillRect(24,119,7,2);
     // coal pile (left)
     ctx.fillStyle="#1a1814"; ctx.fillRect(8,133,22,28); ctx.fillRect(10,127,16,8); ctx.fillRect(12,122,10,6);
     // crates (right)
@@ -1115,68 +1301,164 @@ function drawInterior(t){
       ctx.fillStyle="#5a8a9a"; ctx.fillRect(x+3,y+4,w-6,6);
       if(Math.floor(t*2)%2){ ctx.fillStyle="#ffd666"; ctx.fillRect(x+3,y+4,Math.floor((w-6)/2),3); }
     });
-  } else if (S.tab==="contracts"){
-    ctx.fillStyle="#6e5f4a"; ctx.fillRect(0,0,W,H);
-    const stock = Math.min(24, Math.floor(Object.values(S.items).reduce((a,b)=>a+b,0)/12));
-    for (let sh=0; sh<2; sh++){
-      ctx.fillStyle="#57493a"; ctx.fillRect(20, 30+sh*42, W-220, 8);
-      for (let i=0;i<12;i++){
-        if (sh*12+i < stock){ ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][i%3]; ctx.fillRect(26+i*26, 12+sh*42, 20, 18); ctx.strokeStyle="#8c6947"; ctx.strokeRect(26+i*26, 12+sh*42, 20, 18); }
-      }
+  } else if (S.tab==="fishing"){
+    // pier over sea — 320×200 canvas
+    ctx.fillStyle="#4da8cc"; ctx.fillRect(0,0,W,H);
+    // water shimmer
+    for(let wy=4;wy<H*.50;wy+=16){
+      ctx.fillStyle="rgba(255,255,255,0.22)";
+      if((Math.floor(wy/16)+Math.floor(t*2))%3===0) ctx.fillRect(6+(wy*13)%38,wy,W*.16,2);
+      if((Math.floor(wy/16)+Math.floor(t*1.4)+2)%4===0) ctx.fillRect(W*.55+(wy*7)%32,wy+4,W*.12,2);
     }
-    ctx.fillStyle="#4e7d5b"; ctx.fillRect(W-150, 20, 120, 70);
-    ctx.fillStyle="#2f3e35"; ctx.fillRect(W-140, 30, 100, 50);
-    ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(W-130,96,10,0,7); ctx.arc(W-50,96,10,0,7); ctx.fill();
-    drawEmojiC(ctx,"📋", W-190, H-40, 18);
-  } else if (S.tab==="trade"){
-    ctx.fillStyle="#7a5a3a"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#6a4c30"; for(let i=0;i<8;i++) ctx.fillRect(0,i*16,W,3);
-    const stalls = V_OBJECTS.filter(o=>o.kind==="stall");
-    stalls.forEach((o,i)=>{
-      const sx = 100+i*180;
-      ctx.fillStyle="#8c6947"; ctx.fillRect(sx-42, 66, 84, 30);
-      ctx.fillStyle=o.awn; ctx.fillRect(sx-42, 62, 84, 8);
-      if (!drawSprite(ctx, `npc_${o.id}`, sx, 64, 52))
-        drawPerson(ctx, sx, 62, o.hair, o.shirt, t+i, false, 1);
-      if (skillLvl("trading") < o.lvl) drawEmojiC(ctx,"🔒", sx, 34, 12);
+    // fish silhouettes drifting below surface
+    for(let i=0;i<5;i++){
+      const fx=(t*0.9+i*62)%(W+80)-40, fy=H*.15+Math.sin(t+i*1.3)*H*.09;
+      ctx.fillStyle="rgba(255,255,255,0.12)";
+      ctx.beginPath(); ctx.ellipse(fx, fy, 14, 5, Math.sin(t*0.4+i)*0.2, 0, 7); ctx.fill();
+    }
+    // pier deck planks
+    ctx.fillStyle="#8c6947"; ctx.fillRect(0,H*.50,W,H*.50);
+    for(let px=0;px<W;px+=13){ ctx.fillStyle="#7a5a38"; ctx.fillRect(px,H*.50,2,H*.50); }
+    for(let py=0;py<H*.50;py+=10){ ctx.fillStyle="#6a4a28"; ctx.fillRect(0,H*.50+py,W,2); }
+    // pier railing
+    ctx.fillStyle="#5a3a20"; ctx.fillRect(0,H*.44,W,5);
+    for(let rx=0;rx<W;rx+=32){ ctx.fillStyle="#6a4a28"; ctx.fillRect(rx,H*.44-2,5,18); }
+    // rod + bobber for each station
+    STATION_DEFS.fishing.forEach(st=>{
+      const sx=st.fx*W;
+      const bx=sx+Math.sin(t*1.8+st.fx*5)*9, by=H*.20+Math.sin(t*1.3+st.fx*4)*8;
+      ctx.strokeStyle="#5a3a1e"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(sx, H*.44); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.fillStyle="#dd4444"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, 7); ctx.fill();
+      ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.arc(bx, by, 4, Math.PI, 0); ctx.fill();
+      if(Math.sin(t*4.1+st.fx*11)>0.90){ ctx.fillStyle="rgba(255,255,255,.7)"; ctx.fillRect(bx-6,by+4,12,2); }
     });
+  } else if (S.tab==="contracts"){
+    room("#6a5a44","#8a7a62","#c9beac","#bfb2a0","#5a4a34");
+    winP(20);
+    const stock = Math.min(18, Math.floor(Object.values(S.items).reduce((a,b)=>a+b,0)/10));
+    for (let u=0;u<3;u++){
+      const ux=70+u*62;
+      ctx.fillStyle="#5f4f3c"; ctx.fillRect(ux,12,52,32);
+      for(const sy of [22,34]){ ctx.fillStyle="#7a6a52"; ctx.fillRect(ux+2,sy,48,4); }
+      for(let i=0;i<6;i++){ if (u*6+i<stock){ ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][i%3]; ctx.fillRect(ux+4+(i%3)*16, i<3?14:26, 14, 7); } }
+    }
+    ctx.fillStyle="#2c2824"; ctx.fillRect(236,52,72,62);
+    ctx.fillStyle="#4e7d5b"; ctx.fillRect(242,58,60,44);
+    ctx.fillStyle="#2f3e35"; ctx.fillRect(247,63,50,34);
+    ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(252,104,6,0,7); ctx.arc(292,104,6,0,7); ctx.fill();
+    for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#ffd666":"#2c2824"; ctx.fillRect(236+i*8,114,8,5); }
+    // lorry livery engraving
+    ctx.fillStyle="#e8e2d2"; ctx.fillRect(252,78,40,12);
+    ctx.fillStyle="#d9a86a"; ctx.fillRect(255,80,7,8); ctx.fillStyle="#5db3d8"; ctx.fillRect(257,82,3,3);
+    ctx.fillStyle="#453423"; ctx.font="600 6px 'IBM Plex Mono',monospace"; ctx.textAlign="left"; ctx.fillText("BUYR FREIGHT", 265, 87);
+    // forklift — orange body, black mast, forks
+    ctx.fillStyle="rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(188,142,22,4,0,0,7); ctx.fill();
+    ctx.fillStyle="#2c2824"; ctx.fillRect(198,110,5,30);
+    ctx.fillStyle="#8a8078"; ctx.fillRect(203,132,16,3); ctx.fillRect(203,138,16,3);
+    ctx.fillStyle="#e8961e"; ctx.fillRect(172,118,26,18);
+    ctx.fillStyle="#c97b20"; ctx.fillRect(172,118,26,5);
+    ctx.fillStyle="#3a3230"; ctx.fillRect(176,110,14,9);
+    ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(178,140,5,0,7); ctx.arc(194,140,5,0,7); ctx.fill();
+    // tall racking with boxes (left wall side)
+    ctx.fillStyle="#5a6a7a"; ctx.fillRect(64,54,6,60); ctx.fillRect(126,54,6,60);
+    for(const ry of [64,86,108]){ ctx.fillStyle="#7a8a9a"; ctx.fillRect(64,ry,68,4); }
+    for(let bi=0;bi<6;bi++){ ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][bi%3]; ctx.fillRect(70+(bi%3)*20, 52+Math.floor(bi/3)*22, 16, 11); }
+    ctx.fillStyle="#7a5a3a"; ctx.fillRect(16,92,54,8); ctx.fillStyle="#8c6c48"; ctx.fillRect(16,84,54,8);
+    drawEmojiC(ctx,"📋",30,80,9); drawEmojiC(ctx,"🖊️",52,80,8);
+    drawPerson(ctx, 43, 78, "#4a3a2a", "#5a7a5a", t, false, 1, null, "down");
+    ctx.fillStyle="#7a6040"; ctx.fillRect(240,150,56,7);
+    crate(244,136,20,14); crate(266,136,20,14,"#7a5a38"); crate(255,122,20,14,"#d9a86a");
+    crate(20,144,18,16); crate(20,126,18,16,"#7a5a38");
+    drawEmojiC(ctx,"🛒",120,150,13);
+  } else if (S.tab==="trade"){
+    room("#5a3e26","#7a5a3a","#c9a06a","#bd9560","#4a3018");
+    for(let i=0;i<16;i++){ ctx.fillStyle=["#ff8a5c","#ffd666","#6fb7d9","#ff9db0"][i%4]; const bx=10+i*19; ctx.beginPath(); ctx.moveTo(bx,10); ctx.lineTo(bx+14,10); ctx.lineTo(bx+7,20); ctx.closePath(); ctx.fill(); }
+    ctx.strokeStyle="#e8dcc0"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(6,10); ctx.lineTo(W-6,10); ctx.stroke();
+    ctx.fillStyle="#a4643c"; ctx.fillRect(W/2-52,116,104,46);
+    ctx.fillStyle="#c9855a"; ctx.fillRect(W/2-46,121,92,36);
+    ctx.fillStyle="#a4643c"; ctx.fillRect(W/2-30,131,60,16);
+    const AWN = { marge:"#ff8a5c", bolt:"#6fb7d9", perry:"#e8c94e", quinn:"#b48ad9" };
+    const LOOKS = { marge:["#c9a24b","#7cb46b"], bolt:["#3a3a3a","#c9723a"], perry:["#7a4a2a","#4a6ea9"], quinn:["#2a2a32","#8a4a8a"] };
+    NPCS.forEach((n,i)=>{
+      const sx = 24 + i*74;
+      const lk = LOOKS[n.id] || ["#4a3a2a","#888888"];
+      const _tb = Math.sin(t*2+i)*1.2;
+      const _fc = Math.abs(IP.x-(sx+28)) < 60 ? (IP.x>=sx+28?1:-1) : 1;
+      drawPerson(ctx, sx+28, 60+_tb, lk[0], lk[1], t+i, false, _fc, null, "down");
+      ctx.fillStyle="#8c6947"; ctx.fillRect(sx,66,56,22);
+      ctx.fillStyle="#a97f52"; ctx.fillRect(sx,64,56,5);
+      ctx.fillStyle=AWN[n.id]||"#ff8a5c"; ctx.fillRect(sx,57,56,8);
+      ctx.fillStyle="rgba(255,255,255,.35)"; for(let k=0;k<56;k+=14) ctx.fillRect(sx+k,57,7,8);
+      drawEmojiC(ctx, n.ic, sx+10, 77, 10);
+      if (skillLvl("trading") < n.lvl) drawEmojiC(ctx,"🔒", sx+46, 53, 10);
+    });
+    for(const bx of [12,288]){ ctx.fillStyle="#7a5230"; ctx.fillRect(bx,146,20,24); ctx.fillStyle="#5a3a20"; ctx.fillRect(bx,152,20,3); ctx.fillRect(bx,161,20,3); ctx.fillStyle="#8c6947"; ctx.fillRect(bx,146,20,4); }
+    drawEmojiC(ctx,"🧺", 60, 154, 13); drawEmojiC(ctx,"🍎", W-60, 154, 11);
   } else if (S.tab==="pets"){
-    ctx.fillStyle="#8a6a45"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#7a5c3a"; for(let i=0;i<10;i++) ctx.fillRect(i*60,0,4,H);
-    drawEmojiC(ctx,"🌾", 50, H-24, 26); drawEmojiC(ctx,"🌾", 90, H-20, 20); drawEmojiC(ctx,"🌾", W-60, H-22, 24);
-    if (!S.pets.owned.length) drawEmojiC(ctx,"❓", W/2, H/2, 30);
+    room("#5a3e22","#7c5a38","#caa870","#c09c62","#4a3018");
+    ctx.fillStyle="#5a4228"; ctx.fillRect(0,40,W,7);
+    ctx.fillStyle="#8c6c44"; ctx.fillRect(W-26,12,5,34); ctx.fillRect(W-14,12,5,34);
+    for(const ly of [16,24,32,40]){ ctx.fillStyle="#8c6c44"; ctx.fillRect(W-26,ly,17,3); }
+    winP(20,30);
+    for(const [hx,hy] of [[14,60],[14,84],[38,72]]){ ctx.fillStyle="#d9b968"; ctx.fillRect(hx,hy,26,20); ctx.strokeStyle="#a8842c"; ctx.lineWidth=1; ctx.strokeRect(hx+.5,hy+.5,25,19); ctx.fillStyle="#a8842c"; ctx.fillRect(hx,hy+6,26,2); ctx.fillRect(hx,hy+13,26,2); }
+    ctx.fillStyle="#6a4a2c"; ctx.fillRect(250,64,50,16);
+    ctx.fillStyle="#5db3d8"; ctx.fillRect(253,67,44,10);
+    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillRect(256+((t*20)%30),69,8,2);
+    drawEmojiC(ctx,"🥣", 232, 76, 11);
+    drawEmojiC(ctx,"🌾", 70, 160, 14); drawEmojiC(ctx,"🌾", 230, 156, 12); drawEmojiC(ctx,"🌾", 150, 168, 11);
+    if (!S.pets.owned.length){
+      ctx.fillStyle="#e8dcc0"; ctx.fillRect(W/2-34,14,68,26); ctx.strokeStyle="#8c6947"; ctx.strokeRect(W/2-34,14,68,26);
+      drawEmojiC(ctx,"❓", W/2, 27, 16);
+    }
     S.pets.owned.forEach((id,i)=>{
       const p = PETS.find(x=>x.id===id); if (!p) return;
-      const px = 80+i*90+Math.sin(t*1.2+i)*24, py = 62+Math.cos(t*0.9+i*2)*14;
-      drawEmojiC(ctx, p.ic, px, py+Math.sin(t*6+i)*2, 24);
-      if (S.pets.active===id) drawEmojiC(ctx,"⭐", px+12, py-14, 10);
+      const px = 60 + (i%5)*48 + Math.sin(t*1.1+i)*14, py = 112 + Math.floor(i/5)*32 + Math.cos(t*0.8+i*2)*8;
+      drawEmojiC(ctx, p.ic, px, py+Math.sin(t*5+i)*2, 18);
+      if (S.pets.active===id) drawEmojiC(ctx,"⭐", px+10, py-12, 9);
     });
   } else if (S.tab==="woodcutting"){
-    // sawmill interior — 320×200 canvas
-    ctx.fillStyle="#4a5a3a"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#3e4e30"; for(let i=0;i<7;i++) ctx.fillRect(0,i*16,W,3);
-    ctx.fillStyle="#6a5a40"; ctx.fillRect(0,H-22,W,22);
-    // 6 pillars spaced across 320px width
-    for(let i=0;i<6;i++){ ctx.fillStyle="#5a4a32"; ctx.fillRect(i*54,H-22,7,22); }
-    // 3 hanging lanterns within 320px
-    for(const lx of[80,160,240]){ ctx.fillStyle="rgba(255,214,102,.2)"; ctx.beginPath(); ctx.arc(lx,18,12,0,7); ctx.fill(); drawEmojiC(ctx,"🏮",lx,18,10); }
-    // log piles
-    drawEmojiC(ctx,"🪵", 40, H-14, 14); drawEmojiC(ctx,"🪵", 54, H-10, 11); drawEmojiC(ctx,"🪵", W-44, H-12, 13);
-  } else if (S.tab==="upgrades" || S.tab==="ach"){
-    ctx.fillStyle="#6a6252"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#57503f"; ctx.fillRect(0,H-30,W,30);
-    ctx.fillStyle="#8c6947"; ctx.fillRect(60, 50, 170, 44); ctx.fillStyle="#a9855c"; ctx.fillRect(60,50,170,8);
-    drawEmojiC(ctx,"🗂️", 100, 42, 16); drawEmojiC(ctx,"☕", 190, 42, 14);
-    ctx.fillStyle="#d9cdb0"; ctx.fillRect(300, 20, 200, 70); ctx.strokeStyle="#8c6947"; ctx.strokeRect(300,20,200,70);
-    if (S.tab==="upgrades"){
-      const owned = Object.keys(S.upgrades).length;
-      for (let i=0;i<Math.min(owned,10);i++){ ctx.fillStyle=["#fff","#ffe9c9","#e6f4ff"][i%3]; ctx.fillRect(310+(i%5)*38, 28+Math.floor(i/5)*32, 28, 24); ctx.fillStyle="#e05d5d"; ctx.fillRect(322+(i%5)*38, 26, 4, 4); }
-    } else {
-      const got = ACH.filter(a=>S.ach && S.ach[a.id]);
-      got.slice(0,10).forEach((a,i)=>{ drawEmojiC(ctx, a.ic, 320+(i%5)*38, 40+Math.floor(i/5)*32, 18); });
+    room("#465a36","#5c7044","#b08c58","#a68050","#3a4a28");
+    ctx.fillStyle="#6a5240"; ctx.fillRect(36,86,64,8); ctx.fillStyle="#7c6450"; ctx.fillRect(36,76,64,12);
+    ctx.fillStyle="#a8b0b8"; ctx.beginPath(); ctx.arc(68,76,9,0,7); ctx.fill();
+    ctx.fillStyle="#7a828a"; for(let a=0;a<8;a++){ const ang=a/8*6.283 + t*3; ctx.fillRect(68+Math.cos(ang)*9-1, 76+Math.sin(ang)*9-1, 3,3); }
+    for(const [lx,ly] of [[248,146],[268,146],[258,136]]){ ctx.fillStyle="#8a5a30"; ctx.fillRect(lx,ly,22,10); ctx.fillStyle="#c9955a"; ctx.beginPath(); ctx.arc(lx+22,ly+5,5,0,7); ctx.fill(); ctx.fillStyle="#8a5a30"; ctx.beginPath(); ctx.arc(lx+22,ly+5,3,0,7); ctx.fill(); }
+    ctx.fillStyle="#c9a05a"; ctx.fillRect(14,150,44,5); ctx.fillRect(18,144,44,5);
+    ctx.fillStyle="rgba(222,196,140,.5)"; for(const [dx,dy] of [[60,104],[84,110],[110,150]]){ ctx.beginPath(); ctx.ellipse(dx,dy,9,3,0,0,7); ctx.fill(); }
+    drawEmojiC(ctx,"🪚", 90, 70, 10);
+    // goods shelf — cut timber and wooden wares for sale
+    ctx.fillStyle="#5a4228"; ctx.fillRect(196,12,110,32);
+    ctx.fillStyle="#6e5234"; for(const sy of [22,36]) ctx.fillRect(198,sy,106,4);
+    ctx.fillStyle="#c9a05a"; ctx.fillRect(202,15,26,4); ctx.fillRect(204,20,26,4);
+    ctx.fillStyle="#a87c42"; ctx.fillRect(236,15,20,8);
+    drawEmojiC(ctx,"🪑", 270, 18, 11); drawEmojiC(ctx,"🧺", 292, 18, 10);
+    ctx.fillStyle="#c9a05a"; ctx.fillRect(202,28,30,4); ctx.fillRect(240,28,26,4);
+    drawEmojiC(ctx,"🥣", 284, 31, 9);
+  } else if (S.tab==="upgrades"){
+    room("#4e5a68","#6c7c8c","#cfc8b8","#c3bcac","#3e4a56");
+    winP(18,34);
+    ctx.fillStyle="#8c6947"; ctx.fillRect(W-124,12,104,30); ctx.fillStyle="#d9cdb0"; ctx.fillRect(W-121,15,98,24);
+    const owned = Object.keys(S.upgrades).length;
+    for (let i=0;i<Math.min(owned,8);i++){ ctx.fillStyle=["#ffffff","#ffe9c9","#e6f4ff"][i%3]; ctx.fillRect(W-117+(i%4)*24, 17+Math.floor(i/4)*11, 19, 9); ctx.fillStyle="#e05d5d"; ctx.fillRect(W-109+(i%4)*24, 16, 3, 3); }
+    // podium with speaker — the visitors' hall
+    ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(160,84,22,4,0,0,7); ctx.fill();
+    ctx.fillStyle="#6a5240"; ctx.fillRect(144,62,32,22);
+    ctx.fillStyle="#7c6450"; ctx.fillRect(141,58,38,6);
+    ctx.fillStyle="#e8c14e"; ctx.fillRect(156,66,8,6);
+    drawPerson(ctx, 160, 56, "#8a8a8a", "#b0574f", t, false, 1, null, "down");
+    // 10 brown chairs in two rows, all facing the podium
+    for (let row=0; row<2; row++) for (let ci=0; ci<5; ci++){
+      const chx = 78 + ci*34, chy = 104 + row*30;
+      ctx.fillStyle="rgba(0,0,0,.10)"; ctx.fillRect(chx+1, chy+13, 14, 3);
+      ctx.fillStyle="#8a5a34"; ctx.fillRect(chx, chy, 16, 12);
+      ctx.fillStyle="#6a4225"; ctx.fillRect(chx, chy+9, 16, 5);
+      ctx.fillStyle="#5a3a20"; ctx.fillRect(chx+1, chy+14, 3, 4); ctx.fillRect(chx+12, chy+14, 3, 4);
     }
-    drawEmojiC(ctx,"🏳️", 540, 34, 20);
-    drawPerson(ctx, 260, H-24, "#8a8a8a", "#b0574f", t, false, 1);
+    ctx.fillStyle="#5a6a7a"; ctx.fillRect(16,60,22,42); ctx.fillStyle="#48586a"; for(const cy of [66,80,92]) ctx.fillRect(18,cy,18,8);
+    drawEmojiC(ctx,"💼", 124, 79, 9);
+    drawEmojiC(ctx,"🪴", 292, 92, 15);
+    drawEmojiC(ctx,"🪴", 52, 96, 13);
+    drawEmojiC(ctx,"🕐", 60, 27, 12);
   }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
@@ -1186,7 +1468,19 @@ function drawInterior(t){
       const isActive = active===st.skill && S.action?.id===st.id;
       const locked = skillLvl(st.skill) < (findAction(st.skill, st.id)?.lvl || 0);
       // sprite or fallback box
-      if (!drawSprite(ctx, st.sk, sx, sy+12, 44)){
+      // ground shadow so props sit on the floor instead of floating
+      ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(sx, sy+16, 22, 5, 0, 0, 7); ctx.fill();
+      if (S.tab==="woodcutting"){
+        // milled log piles (indoor-appropriate — no trees in here)
+        const _n = st.id==='pine' ? 2 : st.id==='oak' ? 3 : 4;
+        const _tone = st.id==='hardwood' ? "#6a3e1e" : st.id==='oak' ? "#8a5a30" : "#a06a3a";
+        for (let li=0; li<_n; li++){
+          const lyr = Math.floor(li/2), _lx = sx-20+(li%2)*20-lyr*10, _ly = sy+6-lyr*9;
+          ctx.fillStyle = locked ? "#8a8078" : _tone; ctx.fillRect(_lx, _ly, 24, 9);
+          ctx.fillStyle = locked ? "#a8a098" : "#c9955a"; ctx.beginPath(); ctx.arc(_lx+24, _ly+4.5, 4.5, 0, 7); ctx.fill();
+          ctx.fillStyle = locked ? "#8a8078" : _tone; ctx.beginPath(); ctx.arc(_lx+24, _ly+4.5, 2.5, 0, 7); ctx.fill();
+        }
+      } else if (!drawSprite(ctx, st.sk, sx, sy+12, 44)){
         ctx.fillStyle = locked ? "#888" : isActive ? "#ffd666" : "#b09060";
         ctx.fillRect(sx-20, sy-16, 40, 32);
       }
@@ -1205,8 +1499,8 @@ function drawInterior(t){
   ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-10, 3, 3);
   drawEmojiC(ctx, "🚪", W/2, H-9, 11);
   // player drawn last so they render above furniture
-  const _iTool = active==="mining" ? "⛏️" : active==="steelworks" ? "🔨" : active==="manufacturing" ? "🔧" : active==="woodcutting" ? "🪓" : null;
-  drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers());
+  const _iTool = SKILL_TOOL[active] || null;
+  drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null);
 }
 function drawTitleFX(t){
   const cv = document.getElementById("titlefx");
@@ -1247,6 +1541,7 @@ function drawTitleFX(t){
   if (Math.floor(t*4)%3===0) drawEmojiC(ctx,"✨", (t*137)%W, (t*89)%(H*0.5), 12);
 }
 function villageFrame(ts){
+  updateClock();
   const t = ts/1000;
   const dt = Math.min(0.05, vLastT ? t-vLastT : 0.016);
   vLastT = t;
@@ -1255,6 +1550,11 @@ function villageFrame(ts){
     drawTitleFX(t);
   } else if (S.tab==="village"){
     moveActor(VP, dt, 104);
+    if (!globalThis._saidSwim && VP.y > 18.2*TILE){
+      globalThis._saidSwim = true;
+      toast(`🌊 ${pName()}: "I can't swim… yet."`);
+      log(`🌊 ${pName()} eyes the water: "I can't swim… yet."`);
+    }
     // walk-in building entry — fires when VP feet reach door bottom edge
     if (VP.enterCooldown > 0) VP.enterCooldown--;
     else if (!VP.pending) {
@@ -1278,6 +1578,7 @@ function villageFrame(ts){
       if (DUST.length > 14) DUST.shift();
     }
     updateWanderers(dt);
+    updateBeachBirds();
     if (VP.pending){
       const o = VP.pending;
       const ap = o.kind==="npc" ? {x:o.w.x, y:o.w.y+18} : objApproach(o);
@@ -1392,6 +1693,45 @@ function showTitle(){
   };
   t.onmouseleave = () => { box.style.transform = ""; };
 }
+if (typeof document !== 'undefined'){
+  const _st = document.createElement('style');
+  _st.textContent = `
+  .village-wrap{display:flex;flex-direction:column;gap:14px}
+  @media(min-width:980px){.village-wrap{flex-direction:row;align-items:flex-start}.village-canvas-panel{flex:1;min-width:0}.village-sidebar{flex:0 0 250px}}
+  .village-canvas-rel{position:relative}
+  #village-overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .vlbl{position:absolute;transform:translate(-50%,-100%);background:rgba(255,248,230,.96);border:2px solid #8c6947;color:#453423;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:4px;white-space:nowrap;box-shadow:2px 2px 0 rgba(70,50,30,.25);pointer-events:none}
+  .int-canvas-wrap .ilbl{position:absolute;transform:translate(-50%,0);background:rgba(69,52,35,.92);color:#fff8e6;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 0 rgba(0,0,0,.25)}
+  .ilbl-lock{color:#ffd666}
+  .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);background:rgba(176,87,79,.92);color:#fff8e6;font:600 10px 'IBM Plex Mono',monospace;padding:1px 7px;border-radius:4px;pointer-events:none}
+  .vhint{text-align:center}
+  .int-layout{display:flex;flex-direction:column;gap:14px}
+  @media(min-width:1080px){
+    .int-layout{flex-direction:row;align-items:flex-start}
+    .int-left{flex:0 0 auto;width:min(660px,46%)}
+    .int-left .int-canvas-wrap{margin:0}
+    .int-right{flex:1;min-width:0}
+  }
+  .int-right .panel{margin-bottom:14px}
+  .ilbl-room{position:absolute;left:6px;bottom:6px;background:rgba(69,52,35,.9);color:#ffd666;font:700 11px 'IBM Plex Mono',monospace;padding:2px 9px;border-radius:4px;pointer-events:none;letter-spacing:.5px}
+  #hud-time{font:700 12px 'IBM Plex Mono',monospace;color:#e8961e;background:rgba(69,52,35,.08);border:2px solid #8c694733;border-radius:6px;padding:4px 9px;white-space:nowrap}
+  `;
+  document.head.appendChild(_st);
+}
+let _lastClock = "";
+function updateClock(){
+  let el = document.getElementById("hud-time");
+  if (!el){
+    const host = document.querySelector(".stats") || document.querySelector("header");
+    if (!host) return;
+    el = document.createElement("div");
+    el.id = "hud-time";
+    host.appendChild(el);
+  }
+  const h = gameHour(), hh = Math.floor(h), mm = Math.floor((h-hh)*60);
+  const str = `${isNight()?"🌙":"☀️"} ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+  if (str !== _lastClock){ _lastClock = str; el.textContent = str; }
+}
 const SAVE_KEY = "buyrworld_game_save_v1";
 const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
@@ -1399,7 +1739,7 @@ function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null,
     playerName:"", settings:{ music:true }, prod:{}, tut:{ step:0, done:false }, ach:{},
-    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0} },
+    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0} },
     upgrades:{}, pets:{ owned:[], active:null },
     counters:{ actions:0, contracts:0, coinsEarned:0, trades:0 },
     action:null,
@@ -1423,6 +1763,11 @@ function load(){
       S = Object.assign(freshState(), parsed);
       if (!parsed.skills || !parsed.skills.trading) S.skills.trading = { xp:0 };
       if (!S.skills.woodcutting) S.skills.woodcutting = { xp:0 };
+      if (!S.skills.fishing) S.skills.fishing = { xp:0 };
+      // migrate old pick tier upgrades to unified tool tiers
+      if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
+      else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
+      else if (S.upgrades.pick1){ S.upgrades.tool_stone = true; delete S.upgrades.pick1; }
       if (!("settings" in parsed)) S.settings = { music:true };
       if (!("prod" in parsed)) S.prod = {};
       if (!("tut" in parsed)) S.tut = { step:99, done:true };
@@ -1448,12 +1793,48 @@ function findAction(skill, id){ return SKILLS[skill].actions.find(a=>a.id===id);
 function speedMult(skill){
   let m = 1;
   UPGRADES.forEach(u => { if (u.skill===skill && u.mult && S.upgrades[u.id]) m = Math.min(m, u.mult); });
+  // Tool tier upgrades apply to pick/axe/rod skills
+  if (skill==="mining" || skill==="woodcutting" || skill==="fishing"){
+    UPGRADES.forEach(u => { if (u.skill==="tools" && u.mult && S.upgrades[u.id]) m = Math.min(m, u.mult); });
+  }
   const pet = PETS.find(p=>p.id===S.pets.active);
   if (pet){
     if (pet.id==="forklift_fox" && skill==="mining") m *= 0.88;
     if (pet.id==="drone_owl" && skill==="manufacturing") m *= 0.88;
   }
   return m;
+}
+function updateBeachBirds(){
+  for (const b of BEACH_BIRDS){
+    if (b.state==="sit"){
+      if (Math.hypot(VP.x - b.x, VP.y - b.y) < 3*TILE){
+        b.state="fly"; b.vx=(Math.random()-0.5)*3; b.vy=-2.8-Math.random();
+      }
+    } else {
+      b.x += b.vx*1.4; b.y += b.vy*1.4; b.vx*=0.99;
+      // landing from fly-in (vy>0) — land when reaching sand
+      if (b.vy>0 && b.y >= 17.1*TILE){
+        if (Math.hypot(VP.x-b.x, VP.y-b.y)>3*TILE){ b.vy=0; b.vx=0; b.state="sit"; b.y=17.1*TILE+Math.random()*0.7*TILE; }
+        else { b.vy=-2; }
+      }
+      // flew off map — teleport to new sand spot
+      if (b.y<12*TILE || b.x<-TILE || b.x>(VCOLS+1)*TILE){
+        let nx=0,ny=0,tr=0;
+        do{ nx=(3+Math.floor(Math.random()*42))*TILE; ny=(17.1+Math.random()*0.8)*TILE; tr++; }
+        while(Math.hypot(VP.x-nx,VP.y-ny)<5*TILE && tr<20);
+        b.x=nx; b.y=ny; b.vx=0; b.vy=0; b.state="sit";
+      }
+    }
+  }
+  // occasionally send one bird flying in from above
+  if (Math.random() < 0.0003){
+    const b = BEACH_BIRDS[Math.floor(Math.random()*BEACH_BIRDS.length)];
+    if (b.state==="sit"){
+      let nx=0,ny=0,tr=0;
+      do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-17*TILE)<5*TILE && tr<20);
+      b.x=nx; b.y=13*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=2; b.state="fly";
+    }
+  }
 }
 function payMult(){
   let m = 1;
@@ -1528,6 +1909,7 @@ function completeAction(act, skill, silent){
   S.counters.actions++;
   rollPet(skill);
   if (!silent && typeof pushVfx === "function") pushVfx(skill, act);
+  if (!silent && typeof SFX !== "undefined") SFX.play(skill);
   tutCheck();
   achCheck();
   if (!silent){
@@ -1618,6 +2000,7 @@ const TABS = [
   { id:"steelworks", n:"Steelworks", ic:"🔥", skill:true },
   { id:"manufacturing", n:"Manufacturing", ic:"🏭", skill:true },
   { id:"woodcutting", n:"Woodcutting", ic:"🪓", skill:true },
+  { id:"fishing", n:"Fishing", ic:"🎣", skill:true },
   { id:"contracts", n:"Contracts", ic:"📋" },
   { id:"trade", n:"Trade", ic:"⚖️" },
   { id:"upgrades", n:"Upgrades", ic:"🛒" },
@@ -1823,9 +2206,9 @@ function interiorHtml(title){
     const topPct = ((st.fy + 0.12) * 100).toFixed(1);
     return `<div class="ilbl" style="left:${(st.fx*100).toFixed(1)}%;top:${topPct}%">${st.ic} ${st.lbl}${locked?` <span class="ilbl-lock">Lv${lvl}</span>`:''}</div>`;
   }).join('');
-  return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap">
+  return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap" style="max-width:${cw*2}px;margin:0 auto;position:relative;">
     <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
-    ${lbls}<div class="ilbl-exit">🚪 EXIT ↓</div>
+    ${lbls}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><div class="ilbl-exit">🚪 EXIT ↓</div>
   </div>
   <div class="vhint">${title} · WASD/tap · walk south to exit</div></div>`;
 }
@@ -1857,15 +2240,19 @@ function renderMain(){
       </div>
       <div class="village-sidebar">${renderInventoryPanel()}</div>
     </div>`;
-  else if (S.tab==="contracts") m.innerHTML = banner + interiorHtml("📦 Inside the Depot — shelves fill up as your warehouse does") + renderContracts();
-  else if (S.tab==="trade") m.innerHTML = banner + interiorHtml("⚖️ Inside the Market Hall") + renderTrade();
-  else if (S.tab==="upgrades") m.innerHTML = banner + interiorHtml("🛒 Inside the Town Hall — CapEx office") + renderUpgrades();
-  else if (S.tab==="pets") m.innerHTML = banner + interiorHtml("🐾 Inside the Companion Barn — your crew hangs out here") + renderPets();
   else if (S.tab==="ach") m.innerHTML = banner + renderAch();
   else if (S.tab==="character") m.innerHTML = banner + renderCharacterCustomisation();
   else if (S.tab==="settings") m.innerHTML = banner + renderSettings();
-  else if (S.tab==="woodcutting") m.innerHTML = banner + interiorHtml("🪓 Inside the Sawmill") + renderSkillPanel(S.tab);
-  else m.innerHTML = banner + interiorHtml(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop") + renderSkillPanel(S.tab);
+  else {
+    const _withRoom = (title, body) => banner + `<div class="int-layout"><div class="int-left">${interiorHtml(title)}</div><div class="int-right">${body}</div></div>`;
+    if (S.tab==="contracts") m.innerHTML = _withRoom("📦 Inside the Depot — shelves fill up as your warehouse does", renderContracts());
+    else if (S.tab==="trade") m.innerHTML = _withRoom("⚖️ Inside the Market Hall", renderTrade());
+    else if (S.tab==="upgrades") m.innerHTML = _withRoom("🛒 Inside the Town Hall — CapEx office", renderUpgrades());
+    else if (S.tab==="pets") m.innerHTML = _withRoom("🐾 Inside the Companion Barn — your crew hangs out here", renderPets());
+    else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
+    else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
+    else m.innerHTML = _withRoom(S.tab==="mining" ? "⛏️ Down in the Quarry" : S.tab==="steelworks" ? "🔥 Inside the Furnace" : "⚙️ Inside the Workshop", renderSkillPanel(S.tab));
+  }
   bindMain();
   setupVillage();
   setupInterior();
