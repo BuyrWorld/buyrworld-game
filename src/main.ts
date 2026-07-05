@@ -365,11 +365,10 @@ const WANDERERS = [
 ];
 const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
-const BEACH_BIRDS = Array.from({length:7}, (_,i) => ({
-  x:(3+i*6)*TILE + Math.random()*TILE,
-  y:(17.1+i%2*0.7)*TILE,
-  vx:0, vy:0, state:"sit", flap:i*0.9,
-}));
+const BEACH_BIRDS = [
+  { x:6*TILE, y:17.2*TILE, vx:0, vy:0, state:"sit", flap:0 },
+  { x:34*TILE, y:17.4*TILE, vx:0, vy:0, state:"sit", flap:1.4 },
+];
 // M6: villager runtime state (positions, phase, quip cycling)
 const VILLAGER_STATE = VILLAGERS.map(v => {
   const homeObj = V_OBJECTS.find(o => o.id === v.homeId);
@@ -381,10 +380,12 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
     ? { x: (workObj.tx + (workObj.w||2)/2)*TILE, y: (workObj.ty + (workObj.h||2))*TILE + 10 }
     : homePos;
   return { id:v.id, n:v.n, hair:v.hair, shirt:v.shirt, trouser:v.trouser,
-           homePos, workPos, x:homePos.x, y:homePos.y,
+           homePos, workPos, workTab: workObj?.tab || null,
+           x:homePos.x, y:homePos.y,
            tx:null, ty:null, facing:1, moving:false, dir:"down",
            phase:"sleep", quips:v.quips, quipIdx:0, quipTimer:Math.random()*20, wait:0 };
 });
+let CHAT_NPC = null; // villager the player is talking to inside a building
 // Night wildlife
 const FOX = { x:42*TILE, y:8*TILE, tx:null, ty:null, facing:1, moving:false, dir:"right", wait:0 };
 const OWLS = [
@@ -438,12 +439,10 @@ const ZONE_TIPS = {
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
   pets:          { ic:"🐾", n:"The Companion Barn",  tip:"Your crew lives here." },
 };
+let _zoneCardData = null; // { ic, n, shownAt }
 function showZoneCard(tab){
   const z = ZONE_TIPS[tab]; if (!z) return;
-  const card = document.getElementById("zone-card"); if (!card) return;
-  card.innerHTML = `<span class="zc-ic">${z.ic}</span><div><div class="zc-name">${z.n}</div><div class="zc-tip">${z.tip}</div></div>`;
-  card.className = "zc-show";
-  setTimeout(()=>{ card.className=""; card.innerHTML=""; }, 1300);
+  _zoneCardData = { ic: z.ic, n: z.n, shownAt: Date.now() };
 }
 
 // Solid collision rects for interior rooms (pixel coords on 320×200 canvas)
@@ -999,17 +998,32 @@ function drawExtras(ctx, t){
     const bsx = Math.round(b.x - CAM.x), bsy = Math.round(b.y - CAM.y);
     if (bsx < -12 || bsx > VIEW_W+12 || bsy < -12 || bsy > VIEW_H+12) continue;
     if (b.state==="sit"){
-      ctx.fillStyle="#f8f4f0"; ctx.fillRect(bsx-3, bsy, 7, 3);
-      ctx.fillStyle="#f0a030"; ctx.fillRect(bsx+4, bsy+1, 2, 2);
-      ctx.fillStyle="#1a1614"; ctx.fillRect(bsx-1, bsy-1, 2, 2);
-      ctx.fillStyle="#c8c4c0"; ctx.fillRect(bsx-3, bsy+3, 3, 2); ctx.fillRect(bsx+2, bsy+3, 3, 2);
+      // body
+      ctx.fillStyle="#f5f2ee"; ctx.fillRect(bsx-5,bsy-1,11,5);
+      // head bump
+      ctx.fillStyle="#f5f2ee"; ctx.fillRect(bsx-3,bsy-4,6,4);
+      // beak
+      ctx.fillStyle="#e8901a"; ctx.fillRect(bsx+3,bsy-2,4,2);
+      // eye
+      ctx.fillStyle="#1a1614"; ctx.fillRect(bsx+1,bsy-3,2,2);
+      // wing fold line
+      ctx.fillStyle="#c8c4c0"; ctx.fillRect(bsx-4,bsy+1,9,2);
+      // legs
+      ctx.fillStyle="#e8901a"; ctx.fillRect(bsx-2,bsy+4,2,3); ctx.fillRect(bsx+2,bsy+4,2,3);
     } else {
-      const wf = Math.sin(b.flap*7)*3;
-      ctx.fillStyle="#f8f4f0";
-      ctx.fillRect(bsx-7, bsy-1-wf, 6, 2);
-      ctx.fillRect(bsx+1, bsy-1+wf, 6, 2);
-      ctx.fillRect(bsx-2, bsy, 4, 3);
-      ctx.fillStyle="#f0a030"; ctx.fillRect(bsx+2, bsy+1, 2, 1);
+      const wf = Math.sin(b.flap*6)*4;
+      // body
+      ctx.fillStyle="#f5f2ee"; ctx.fillRect(bsx-3,bsy-1,6,4);
+      // left wing up
+      ctx.fillStyle="#dcdad6"; ctx.fillRect(bsx-12,bsy-2-wf,10,3);
+      // right wing down
+      ctx.fillStyle="#dcdad6"; ctx.fillRect(bsx+3,bsy-2+wf,10,3);
+      // head
+      ctx.fillStyle="#f5f2ee"; ctx.fillRect(bsx-2,bsy-4,5,4);
+      // beak
+      ctx.fillStyle="#e8901a"; ctx.fillRect(bsx+2,bsy-3,3,2);
+      // eye
+      ctx.fillStyle="#1a1614"; ctx.fillRect(bsx,bsy-3,2,2);
     }
   }
   ctx.fillStyle="#8c6947";
@@ -1723,9 +1737,6 @@ function drawInterior(t){
       ctx.globalAlpha = 1;
       if (locked) drawEmojiC(ctx, "🔒", sx+16, sy-28, 9);
       if (isActive){
-        const p = S.action.progress || 0;
-        ctx.fillStyle="rgba(0,0,0,.5)"; ctx.fillRect(sx-22, sy+26, 44, 5);
-        ctx.fillStyle="#ffd666"; ctx.fillRect(sx-22, sy+26, 44*p, 5);
         drawEmojiC(ctx, SKILL_TOOL[st.skill]||"⚒️", sx+Math.sin(t*8)*3, sy-10, 13);
       }
     });
@@ -1734,9 +1745,60 @@ function drawInterior(t){
   ctx.fillStyle="#6a4a2f"; ctx.fillRect(W/2-14, H-20, 28, 20);
   ctx.fillStyle="#c8a060"; ctx.fillRect(W/2-1, H-10, 3, 3);
   drawEmojiC(ctx, "🚪", W/2, H-9, 11);
+  // draw villagers who work in this room
+  const _tabWorkers = VILLAGER_STATE.filter(v => v.phase==="work" && v.workTab===S.tab);
+  _tabWorkers.forEach((v, i) => {
+    const vx = (i+1) / (_tabWorkers.length+1) * W;
+    const vy = H * 0.58;
+    drawPerson(ctx, vx, vy, v.hair, v.shirt, t, false, 1, null, "down", null, v.trouser);
+    // name tag above head
+    ctx.fillStyle="rgba(40,30,20,.72)"; ctx.fillRect(vx-18, vy-28, 36, 12);
+    ctx.fillStyle="#ffd666"; ctx.textAlign="center"; ctx.font="bold 8px monospace";
+    ctx.fillText(v.n, vx, vy-19);
+  });
   // player drawn last so they render above furniture
   const _iTool = SKILL_TOOL[active] || null;
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null);
+  // conversation panel
+  if (CHAT_NPC){
+    const q = CHAT_NPC.quips[CHAT_NPC.quipIdx % CHAT_NPC.quips.length];
+    ctx.save();
+    ctx.fillStyle="rgba(30,22,14,.90)"; ctx.fillRect(10, 6, W-20, 44);
+    ctx.strokeStyle="#8c6947"; ctx.lineWidth=2; ctx.strokeRect(10,6,W-20,44);
+    ctx.fillStyle="#ffd666"; ctx.textAlign="left"; ctx.font="bold 9px monospace";
+    ctx.fillText(CHAT_NPC.n+":", 18, 20);
+    ctx.fillStyle="#f0e8d0"; ctx.font="9px monospace";
+    // word-wrap across two lines
+    const words = q.split(" "), maxW = W-36;
+    let line = "", lines = [];
+    for (const w of words){
+      const test = line ? line+" "+w : w;
+      if (ctx.measureText(test).width > maxW && line){ lines.push(line); line=w; } else line=test;
+    }
+    if (line) lines.push(line);
+    lines.slice(0,3).forEach((l,i)=>ctx.fillText(l, 18, 32+i*11));
+    ctx.fillStyle="#8a7060"; ctx.font="8px monospace"; ctx.textAlign="right";
+    ctx.fillText("[tap to dismiss]", W-14, 46);
+    ctx.restore();
+  }
+  // zone card — centred in room, fades over 3 s
+  if (_zoneCardData){
+    const age = (Date.now() - _zoneCardData.shownAt) / 1000;
+    if (age < 3){
+      const alpha = age < 2.2 ? 1 : 1 - (age-2.2)/0.8;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle="rgba(30,22,14,.88)"; ctx.fillRect(W/2-70,H/2-22,140,44);
+      ctx.strokeStyle="#ffd666"; ctx.lineWidth=2; ctx.strokeRect(W/2-70,H/2-22,140,44);
+      ctx.fillStyle="#ffd666"; ctx.textAlign="center"; ctx.font="bold 14px monospace";
+      ctx.fillText(_zoneCardData.ic+" "+_zoneCardData.n, W/2, H/2-2);
+      ctx.fillStyle="#c9b090"; ctx.font="9px monospace";
+      ctx.fillText("walk south to exit", W/2, H/2+14);
+      ctx.restore();
+    } else {
+      _zoneCardData = null;
+    }
+  }
 }
 function drawTitleFX(t){
   const cv = document.getElementById("titlefx");
@@ -1846,6 +1908,7 @@ function villageFrame(ts){
     // exit building if player walks to the bottom door
     if (IP.y > icanvasH() - 18) {
       IP.tx = null; IP.ty = null; IP.moving = false;
+      CHAT_NPC = null;
       VP.enterCooldown = 90; // prevent stepping straight back in
       S.tab = "village"; renderNav(); renderMain();
     } else {
@@ -1887,6 +1950,15 @@ function interiorClick(e){
         return;
       }
     }
+  }
+  // dismiss chat on tap outside (cycle quip first so next open shows a fresh line)
+  if (CHAT_NPC){ CHAT_NPC.quipIdx = (CHAT_NPC.quipIdx+1) % CHAT_NPC.quips.length; CHAT_NPC = null; return; }
+  // check if click hits an interior villager
+  const tabWorkers = VILLAGER_STATE.filter(v => v.phase==="work" && v.workTab===S.tab);
+  const cw2 = icanvasW(), ch2 = icanvasH();
+  for (let i=0; i<tabWorkers.length; i++){
+    const vx = (i+1)/(tabWorkers.length+1)*cw2, vy = ch2*0.58;
+    if (Math.hypot(cx-vx, cy-vy) < 22){ CHAT_NPC = tabWorkers[i]; return; }
   }
   IP.tx = Math.max(16, Math.min(icanvasW()-16, cx));
   IP.ty = Math.max(24, Math.min(icanvasH()-16, cy));
