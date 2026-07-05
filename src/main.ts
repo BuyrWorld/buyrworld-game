@@ -7,7 +7,7 @@ import { UPGRADES } from './data/upgrades.ts';
 import { PETS } from './data/pets.ts';
 import { CLIENTS, CONTRACT_POOL } from './data/contracts.ts';
 import { TRACKS } from './audio/tracks.ts';
-import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS } from './world/map.ts';
+import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS, NORTH_EXT } from './world/map.ts';
 import { nightAlpha, lampGlow, isNight, skyTint, gameHour } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS } from './player/customisation.ts';
@@ -362,30 +362,30 @@ function achCheck(){
   }
 }
 const WANDERERS = [
-  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:16*TILE, y:5.45*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
-    area:[10,6,32,9], home:[13,7,17,9], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
-    route:[[11,5.45],[20,5.45],[31,5.45],[31,10.45],[20,10.45],[20.6,8.35],[11,10.45]],
+  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:16*TILE, y:(5.45+NORTH_EXT)*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
+    area:[10,6+NORTH_EXT,32,9+NORTH_EXT], home:[13,7+NORTH_EXT,17,9+NORTH_EXT], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
+    route:[[11,5.45+NORTH_EXT],[20,5.45+NORTH_EXT],[31,5.45+NORTH_EXT],[31,10.45+NORTH_EXT],[20,10.45+NORTH_EXT],[20.6,8.35+NORTH_EXT],[11,10.45+NORTH_EXT]],
     profile:{ job:"Supply Chain Professional", home:"The Valley Lodge", children:["Harison (6)"] } },
-  { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:14*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
-    area:[2,12,8,16], home:[2,12,5,13], tips:[
+  { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:(14+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
+    area:[2,12+NORTH_EXT,8,16+NORTH_EXT], home:[2,12+NORTH_EXT,5,13+NORTH_EXT], tips:[
       "Morning! My turnips go by lorry now. Fancy that.",
       "Frost says you're the new founder. Don't work too hard!",
       "The market stalls pay best on green-arrow days.",
     ],
     profile:{ job:"Turnip Farmer", home:"Poppy's Farm" } },
-  { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:27*TILE, y:17.5*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
-    area:[26,17,37,17.8], home:[27,17,35,17.8], tips:[
+  { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:27*TILE, y:(17.5+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
+    area:[26,17+NORTH_EXT,37,17.8+NORTH_EXT], home:[27,17+NORTH_EXT,35,17.8+NORTH_EXT], tips:[
       "One day ships'll dock here. Port Salvo, they'll call it.",
       "See that boat? Doesn't leak much anymore.",
       "Heaviest thing I ever lifted? A Cargo Turtle. True story.",
     ],
     profile:{ job:"Harbour Warden", home:"Dockside Hut" } },
 ];
-const VP = { x: 16*TILE, y: 6.5*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
+const VP = { x: 16*TILE, y: (6.5+NORTH_EXT)*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
-  { x:6*TILE, y:17.2*TILE, vx:0, vy:0, state:"sit", flap:0 },
-  { x:34*TILE, y:17.4*TILE, vx:0, vy:0, state:"sit", flap:1.4 },
+  { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
+  { x:34*TILE, y:(17.4+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:1.4 },
 ];
 // M6: villager runtime state (positions, phase, quip cycling)
 const VILLAGER_STATE = VILLAGERS.map(v => {
@@ -425,18 +425,18 @@ const CHILDREN_DATA = [
 const CHILDREN_STATE = CHILDREN_DATA.map((c,i) => {
   const homeObj = V_OBJECTS.find(o => o.id === c.homeId);
   const homePos = homeObj ? { x:(homeObj.tx+(homeObj.w||2)/2)*TILE, y:(homeObj.ty+(homeObj.h||2))*TILE+10 } : { x:60*TILE, y:5*TILE };
-  const parkPos = { x:(78+(i%6))*TILE, y:(7+Math.floor(i/6)*1.5)*TILE };
+  const parkPos = { x:(78+(i%6))*TILE, y:(7+NORTH_EXT+Math.floor(i/6)*1.5)*TILE };
   return { ...c, homePos, parkPos, x:homePos.x, y:homePos.y, phase:"sleep",
            tx:null, ty:null, facing:1, moving:false, dir:"down", wTarget:null, wanderTimer:Math.random()*3 };
 });
 // Night wildlife
-const FOX = { x:42*TILE, y:8*TILE, tx:null, ty:null, facing:1, moving:false, dir:"right", wait:0 };
+const FOX = { x:42*TILE, y:(8+NORTH_EXT)*TILE, tx:null, ty:null, facing:1, moving:false, dir:"right", wait:0 };
 const OWLS = [
-  { x:41.4*TILE, y:1.8*TILE, blink:0 },
-  { x:44.3*TILE, y:2.8*TILE, blink:0.7 },
-  { x:44.6*TILE, y:9.8*TILE, blink:1.4 },
+  { x:41.4*TILE, y:(1.8+NORTH_EXT)*TILE, blink:0 },
+  { x:44.3*TILE, y:(2.8+NORTH_EXT)*TILE, blink:0.7 },
+  { x:44.6*TILE, y:(9.8+NORTH_EXT)*TILE, blink:1.4 },
 ];
-const SHARK = { x:28*TILE, y:21.5*TILE, vx:0.35 };
+const SHARK = { x:28*TILE, y:(21.5+NORTH_EXT)*TILE, vx:0.35 };
 const WORLD_EVENTS = [
   { id:"ore_shortage", n:"Iron Ore Shortage",       msg:"A mine collapse disrupts supply — metal prices soaring.",        affects:["iron_ore","copper_ore","coal","bauxite"], mult:1.35 },
   { id:"fish_glut",    n:"Bumper Catch Season",     msg:"Excellent seas bring record catches — fish prices have fallen.",  affects:["sardine","mackerel","bass","salmon","tuna"], mult:0.72 },
@@ -705,11 +705,11 @@ function solidAt(px, py){
   {
     const _fr = Math.floor(py/TILE);
     // west forest west fence (col 39)
-    if (px >= 39*TILE-4 && px <= 39*TILE+8 && _fr >= 2 && _fr <= 16 && _fr!==5 && _fr!==6 && _fr!==10 && _fr!==11) return true;
+    if (px >= 39*TILE-4 && px <= 39*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
     // west forest east fence (col 47)
-    if (px >= 47*TILE-4 && px <= 47*TILE+8 && _fr >= 2 && _fr <= 16 && _fr!==5 && _fr!==6 && _fr!==10 && _fr!==11) return true;
+    if (px >= 47*TILE-4 && px <= 47*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
     // east forest west fence (col 87)
-    if (px >= 87*TILE-4 && px <= 87*TILE+8 && _fr >= 2 && _fr <= 16 && _fr!==5 && _fr!==6 && _fr!==10 && _fr!==11) return true;
+    if (px >= 87*TILE-4 && px <= 87*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
   }
   const t = tileAt(px, py);
   if (t==="T" || t==="W" || t==="C") return true;
@@ -1304,7 +1304,7 @@ function drawExtras(ctx, t){
   // helper: draw picket fence strip at given x-offset, rows 2-16, with gate rows skipped
   const _drawFence = (fxBase, gateRows) => {
     const _fx = fxBase - 4;
-    for (let fr = 2; fr <= 16; fr++){
+    for (let fr = 22; fr <= 36; fr++){
       if (gateRows.includes(fr)) continue;
       const fy = fr*TILE;
       ctx.fillStyle="#e8e2d2";
@@ -1315,12 +1315,35 @@ function drawExtras(ctx, t){
       ctx.fillStyle="#d9d2c2"; ctx.fillRect(_fx-3, fy+6, 22, 3); ctx.fillRect(_fx-3, fy+13, 22, 3);
     }
   };
-  _drawFence(39*TILE, [5,6,10,11]); // west forest west fence
-  _drawFence(47*TILE, [5,6,10,11]); // west forest east fence
-  _drawFence(87*TILE, [5,6,10,11]); // east forest west fence
+  _drawFence(39*TILE, [25,26,30,31]); // west forest west fence
+  _drawFence(47*TILE, [25,26,30,31]); // west forest east fence
+  _drawFence(87*TILE, [25,26,30,31]); // east forest west fence
+  // Retail high street — decorative bunting between lamp posts
+  {
+    const _ryBase = (4+NORTH_EXT)*TILE;  // retail street y pixel
+    const _rx0 = 5*TILE;
+    const _rx1 = 33*TILE;
+    // bunting string
+    ctx.strokeStyle="#8a6a4a"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-8); ctx.lineTo(_rx1, _ryBase-8); ctx.stroke();
+    // bunting flags every ~18px
+    const _flagColors = ["#e84060","#ffd666","#4a8ae8","#68cc68","#e86040","#c840e8"];
+    for(let bi=0; bi<Math.floor((_rx1-_rx0)/18); bi++){
+      const _bx = _rx0 + bi*18 + 4;
+      ctx.fillStyle = _flagColors[bi % _flagColors.length];
+      ctx.beginPath(); ctx.moveTo(_bx, _ryBase-9); ctx.lineTo(_bx-5, _ryBase-1); ctx.lineTo(_bx+5, _ryBase-1); ctx.closePath(); ctx.fill();
+    }
+    // "HIGH STREET" sign on a post at tx≈35
+    const _signX = 35*TILE, _signY = (3+NORTH_EXT)*TILE;
+    ctx.fillStyle="#3a2010"; ctx.fillRect(_signX-1, _signY, 3, TILE*2);
+    ctx.fillStyle="#c8a060"; ctx.fillRect(_signX-22, _signY+8, 46, 14);
+    ctx.fillStyle="#1a0c00"; ctx.font="bold 7px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("HIGH STREET", _signX+1, _signY+16);
+    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  }
   // park (tx:76-86, ty:6-10): traditional manicured park
   {
-    const pkX = 76*TILE, pkY = 6*TILE, pkW = 10*TILE, pkH = 4*TILE;
+    const pkX = 76*TILE, pkY = (6+NORTH_EXT)*TILE, pkW = 10*TILE, pkH = 4*TILE;
     const pcy = pkY + pkH/2;
     // rich grass base with mowed stripe texture
     ctx.fillStyle="#4e9e3a"; ctx.fillRect(pkX, pkY, pkW, pkH);
@@ -1355,17 +1378,13 @@ function drawExtras(ctx, t){
       const pc=["#ff3870","#ffd020","#9040d8","#28d888","#ff60c0","#38b0ff"];
       for(let k=0;k<6;k++){ ctx.fillStyle=pc[k]; ctx.beginPath(); ctx.arc(bx+5+k*4,by+9,3,0,Math.PI*2); ctx.fill(); }
     });
-    // iron railing — ornate dark green posts with cap detail + rails
-    ctx.fillStyle="#1a3a1a";
-    for(let px=pkX; px<=pkX+pkW; px+=10){
-      ctx.fillRect(px, pkY-6, 2, pkH+12);
-      ctx.fillRect(px-2, pkY-9, 6, 4);
-    }
-    ctx.fillStyle="#245024";
-    ctx.fillRect(pkX, pkY-2, pkW, 3); ctx.fillRect(pkX, pkY+pkH, pkW, 3);
-    ctx.fillStyle="#1a3a1a"; ctx.fillRect(pkX, pkY, 3, pkH); ctx.fillRect(pkX+pkW-3, pkY, 3, pkH);
-    // entrance gap in south rail
-    ctx.fillStyle="#4e9e3a"; ctx.fillRect(pkX+pkW/2-11, pkY+pkH, 22, 5);
+    // grey bitumen perimeter path (UK park tarmac)
+    ctx.fillStyle="#b0b0b0"; ctx.fillRect(pkX-6, pkY-6, pkW+12, 10);   // north edge
+    ctx.fillRect(pkX-6, pkY+pkH-4, pkW+12, 10);                         // south edge
+    ctx.fillRect(pkX-6, pkY-6, 10, pkH+12);                             // west edge
+    ctx.fillRect(pkX+pkW-4, pkY-6, 10, pkH+12);                         // east edge
+    ctx.fillStyle="#a0a0a0"; ctx.fillRect(pkX-5, pkY-5, pkW+10, 2);     // subtle kerb shadow north
+    ctx.fillRect(pkX-5, pkY+pkH+3, pkW+10, 2);                          // south
     // sandbox (SW area below E-W path)
     const sbX=pkX+8, sbY=pkY+pkH-36;
     ctx.fillStyle="#7a4a18";
@@ -1406,8 +1425,8 @@ function drawExtras(ctx, t){
   for (let col = 50; col < 86; col += 5){
     const colors = ["#ff9db0","#ffd666","#b48ad9","#7cd0a8"];
     const fc = colors[Math.floor(col/5)%4];
-    ctx.fillStyle=fc; ctx.fillRect(col*TILE+10, 4*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, 4*TILE+18, 2, 3);
-    ctx.fillStyle=colors[(Math.floor(col/5)+2)%4]; ctx.fillRect(col*TILE+10, 9*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, 9*TILE+18, 2, 3);
+    ctx.fillStyle=fc; ctx.fillRect(col*TILE+10, (4+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, (4+NORTH_EXT)*TILE+18, 2, 3);
+    ctx.fillStyle=colors[(Math.floor(col/5)+2)%4]; ctx.fillRect(col*TILE+10, (9+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, (9+NORTH_EXT)*TILE+18, 2, 3);
   }
   // sky birds — three V-shapes drifting across the upper sky
   ctx.strokeStyle="rgba(40,30,20,0.6)"; ctx.lineWidth=1;
@@ -3046,6 +3065,7 @@ function freshState(){
     dailyReward: { lastDate:"" },
     properties: [],
     rentAt: Date.now() + 5*60*1000,
+    loans: [],
   };
 }
 let S = freshState();
@@ -3102,6 +3122,7 @@ function load(){
       if (!("properties" in parsed)) S.properties = [];
       if (!Array.isArray(S.properties)) S.properties = [];
       if (!("rentAt" in parsed)) S.rentAt = Date.now() + 5*60*1000;
+      if (!S.loans) S.loans = [];
       return true;
     }
   } catch(e){}
@@ -3141,14 +3162,14 @@ function updateBeachBirds(){
     } else {
       b.x += b.vx*1.4; b.y += b.vy*1.4; b.vx*=0.99;
       // landing from fly-in (vy<0 coming down from above)
-      if (b.vy<0 && b.y >= 17.1*TILE){
-        if (Math.hypot(VP.x-b.x, VP.y-b.y)>3*TILE){ b.vy=0; b.vx=0; b.state="sit"; b.y=17.1*TILE+Math.random()*0.7*TILE; }
+      if (b.vy<0 && b.y >= (17.1+NORTH_EXT)*TILE){
+        if (Math.hypot(VP.x-b.x, VP.y-b.y)>3*TILE){ b.vy=0; b.vx=0; b.state="sit"; b.y=(17.1+NORTH_EXT)*TILE+Math.random()*0.7*TILE; }
         else { b.vy=-2; }
       }
       // flew into sea or off map — respawn on a far sand spot
-      if (b.y > 20*TILE || b.x < -TILE || b.x > (VCOLS+1)*TILE){
+      if (b.y > (20+NORTH_EXT)*TILE || b.x < -TILE || b.x > (VCOLS+1)*TILE){
         let nx=0,ny=0,tr=0;
-        do{ nx=(3+Math.floor(Math.random()*42))*TILE; ny=(17.1+Math.random()*0.8)*TILE; tr++; }
+        do{ nx=(3+Math.floor(Math.random()*42))*TILE; ny=(17.1+NORTH_EXT+Math.random()*0.8)*TILE; tr++; }
         while(Math.hypot(VP.x-nx,VP.y-ny)<6*TILE && tr<20);
         b.x=nx; b.y=ny; b.vx=0; b.vy=0; b.state="sit";
       }
@@ -3159,8 +3180,8 @@ function updateBeachBirds(){
     const b = BEACH_BIRDS[Math.floor(Math.random()*BEACH_BIRDS.length)];
     if (b.state==="sit"){
       let nx=0,tr=0;
-      do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-17*TILE)<6*TILE && tr<20);
-      b.x=nx; b.y=13*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=-2; b.state="fly";
+      do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-(17+NORTH_EXT)*TILE)<6*TILE && tr<20);
+      b.x=nx; b.y=(13+NORTH_EXT)*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=-2; b.state="fly";
     }
   }
 }
@@ -3341,6 +3362,15 @@ function updateRent(now){
   }
   S.rentAt = now + _period*60*1000;
   save();
+}
+function updateLoans(){
+  if (!S.loans || !S.loans.length) return;
+  const _now = Date.now();
+  const _dayMs = 24*60*60*1000;
+  S.loans.forEach(ln => {
+    const _elapsed = _now - (ln.lastAccrual || ln.borrowed);
+    if (_elapsed >= _dayMs){ ln.interestAccrued = (ln.interestAccrued||0) + ln.amount*0.05; ln.lastAccrual = _now; save(); }
+  });
 }
 function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
 function _villagerTileOk(x, y){
@@ -3923,8 +3953,33 @@ function renderMain(){
     else if (S.tab==="ach") m.innerHTML = _withRoom("🏆 Inside the Trophy Hall", renderAch());
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
-    else if (S.tab==="home") m.innerHTML = _withRoom("🏠 A Villager's Cottage", `<p style="color:var(--dim);font-size:12px;margin:8px 0">A cosy cottage — someone calls this place home.</p>`);
-    else if (S.tab==="school") m.innerHTML = _withRoom("🏫 Inside the Village School", `<p style="color:var(--dim);font-size:12px;margin:8px 0">Children hard at work. Two classrooms, one building.</p>`);
+    else if (S.tab==="home"){
+      const _homeVillager = VILLAGERS.find(v => v.homeId === S.roomObjId);
+      const _hvName = _homeVillager ? _homeVillager.n : "Someone";
+      const _hvQuip = _homeVillager ? _homeVillager.quips[Math.floor(Date.now()/8000) % _homeVillager.quips.length] : "A quiet life in the valley.";
+      const _hvFamily = _homeVillager
+        ? [_homeVillager.partner ? `Partner: ${_homeVillager.partner.charAt(0).toUpperCase()+_homeVillager.partner.slice(1)}` : null,
+           (_homeVillager.children && _homeVillager.children.length) ? `Children: ${_homeVillager.children.join(", ")}` : null
+          ].filter(Boolean).join(" · ")
+        : "";
+      m.innerHTML = _withRoom(`🏠 ${_hvName}'s Cottage`,
+        `<div class="panel" style="padding:10px">
+          <p style="margin:0 0 6px;font-size:13px"><b>${_hvName}</b>${_hvFamily ? `<span style="color:var(--dim);font-size:11px;margin-left:8px">${_hvFamily}</span>` : ""}</p>
+          <p style="color:var(--dim);font-size:12px;font-style:italic;margin:0 0 10px">"${_hvQuip}"</p>
+          <p style="font-size:11px;color:var(--dim);margin:0">Walk outside to chat with ${_hvName} in the village.</p>
+        </div>`
+      );
+    }
+    else if (S.tab==="school") m.innerHTML = _withRoom("🏫 Inside the Village School",
+      `<div class="panel" style="padding:10px">
+        <h3 style="margin:0 0 8px;font-size:13px">📚 Greenfield Village School</h3>
+        <p style="color:var(--dim);font-size:12px;margin:0 0 10px">Two classrooms, one dining hall. Teaching Greenfield's next generation since 1952.</p>
+        <div class="card" style="margin-bottom:6px"><span class="ic">📖</span><div class="body"><div class="nm">Literacy &amp; Numeracy</div><div class="ds">Morning session. Miss Haverstock's class can be heard from the lane.</div></div></div>
+        <div class="card" style="margin-bottom:6px"><span class="ic">🔬</span><div class="body"><div class="nm">Nature Studies</div><div class="ds">Afternoon trips to the valley — Frank lets them count the tree rings.</div></div></div>
+        <div class="card" style="margin-bottom:6px"><span class="ic">🎨</span><div class="body"><div class="nm">Art &amp; Craft</div><div class="ds">Drawings of the village. Daisy's watercolour is on the library wall.</div></div></div>
+        <p style="font-size:11px;color:var(--dim);margin:10px 0 0">For advanced study, visit the University in the east district.</p>
+      </div>`
+    );
     else if (S.tab==="bank"){
       const _spent = UPGRADES.filter(u=>S.upgrades[u.id]).reduce((s,u)=>s+u.cost,0)
                    + (HOME_TIERS[S.homeTier]?.cost||0) - (HOME_TIERS[0]?.cost||0);
@@ -3941,6 +3996,21 @@ function renderMain(){
           <tr><td style="padding:3px 0;color:var(--dim)">Next interest</td><td style="text-align:right">${fmt(Math.max(0, (S.interestAt - Date.now()) / 60000))} min</td></tr>
           </table>
         <p style="color:var(--dim);font-size:11px;margin:12px 0 0">Interest accrues automatically while you play. Keep a healthy balance!</p>
+        </div>
+        <div class="panel" style="padding:10px;margin-top:8px">
+          <h3 style="margin:0 0 8px;font-size:13px">🏦 Loans</h3>
+          ${S.loans.length === 0
+            ? '<p style="color:var(--dim);font-size:12px;margin:0 0 8px">No outstanding loans.</p>'
+            : S.loans.map((ln,i)=>`<div class="card" style="margin-bottom:6px;padding:6px 8px;display:flex;align-items:center;gap:8px">
+                <div style="flex:1;font-size:12px"><b>${fmt(ln.amount)}</b> borrowed · <span style="color:#ff8870">${fmt(Math.round(ln.interestAccrued))} interest</span></div>
+                <button data-loanrepay="${i}" style="background:#5a3a2a;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:11px" ${S.coins<ln.amount+Math.round(ln.interestAccrued)?'disabled':''}>Repay ${fmt(ln.amount+Math.round(ln.interestAccrued))}</button>
+              </div>`).join('')}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+            <button data-loanborrow="50"  style="background:#2a4a6a;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:11px">Borrow 50</button>
+            <button data-loanborrow="200" style="background:#2a4a6a;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:11px">Borrow 200</button>
+            <button data-loanborrow="500" style="background:#2a4a6a;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:11px">Borrow 500</button>
+          </div>
+          <p style="color:var(--dim);font-size:11px;margin:8px 0 0">5% daily interest. Repay when you can.</p>
         </div>`
       );
     }
@@ -4224,6 +4294,22 @@ function bindMain(){
     const [cid, qStr] = (b.dataset.posBuy||"").split("|");
     buyPosition(cid, parseInt(qStr)||1);
   });
+  document.querySelectorAll("[data-loanborrow]").forEach(b=>b.onclick=()=>{
+    const amt=parseInt(b.dataset.loanborrow);
+    S.coins+=amt;
+    S.loans.push({amount:amt, borrowed:Date.now(), interestAccrued:0});
+    toast(`🏦 Borrowed ${fmt(amt)} coins — 5% daily interest.`);
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-loanrepay]").forEach(b=>b.onclick=()=>{
+    const i=parseInt(b.dataset.loanrepay), ln=S.loans[i];
+    if (!ln) return;
+    const total=ln.amount+Math.round(ln.interestAccrued);
+    if (S.coins<total){ toast("Not enough coins to repay."); return; }
+    S.coins-=total; S.loans.splice(i,1);
+    toast(`✅ Loan repaid — ${fmt(total)} coins.`);
+    renderMain(); updateHud(); save();
+  });
   document.querySelectorAll("[data-enroll]").forEach(b=> b.onclick = ()=>{
     const _cid = b.dataset.enroll;
     const _c = COURSES.find(c=>c.id===_cid);
@@ -4334,6 +4420,7 @@ setInterval(()=>{
   updateBankInterest(now);
   updateRetail(now);
   updateRent(now);
+  updateLoans();
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
