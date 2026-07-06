@@ -4475,6 +4475,13 @@ function completeAction(act, skill, silent){
     for (const [id,q] of Object.entries(act.in)) S.items[id] -= effCost(act, id, q);
   }
   for (const [id,q] of Object.entries(act.out)){ addItem(id, q); S.prod[id] = (S.prod[id]||0) + q; }
+  // Occy: 20% chance to yield a bonus crafted item
+  if (S.pets.active === "occy" && skill === "crafting" && Math.random() < 0.20){
+    const _bonusId = Object.keys(act.out)[0];
+    addItem(_bonusId, 1);
+    S.prod[_bonusId] = (S.prod[_bonusId]||0) + 1;
+    if (!silent) toast(`🐙 Occy lends a tentacle — bonus ${ITEMS[_bonusId].n}!`);
+  }
   grantXp(skill, act.xp);
   S.counters.actions++;
   rollPet(skill);
@@ -4989,17 +4996,28 @@ function renderFishmongerWH(){
   return html;
 }
 function renderPets(){
-  let html = `<div class="panel"><h2>🦊 Logistics Companions<small>Rare colleagues found through honest work. One active at a time.</small></h2>`;
+  const _activePet = PETS.find(p=>p.id===S.pets.active && S.pets.owned.includes(p.id));
+  const _activeBanner = _activePet
+    ? `<div style="background:rgba(255,200,80,.12);border:1px solid rgba(255,200,80,.35);border-radius:4px;padding:6px 10px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:20px">${_activePet.ic}</span>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--amber)">${_activePet.n} is on shift</div>
+          <div style="font-size:11px;color:var(--dim)">${_activePet.ds}</div>
+        </div>
+       </div>`
+    : `<p style="font-size:12px;color:var(--dim);margin:0 0 10px">No companion on shift. Put one on shift to activate their bonus.</p>`;
+  let html = `<div class="panel"><h2>🦊 Logistics Companions<small>Rare colleagues found through honest work. One active at a time.</small></h2>${_activeBanner}`;
   PETS.forEach(p=>{
     const owned = S.pets.owned.includes(p.id);
     const active = S.pets.active === p.id;
+    const _srcHint = p.src==="contract" ? "delivering contracts" : `${p.src} actions`;
     html += `<div class="card ${owned?'owned':''} ${active?'activepet':''}">
       <span class="ic">${owned?p.ic:"❓"}</span>
       <div class="body">
         <div class="nm">${owned?p.n:"???"} <span class="rar-${p.rar}">[${p.rar}]</span></div>
-        <div class="ds">${owned ? p.ds : "Found via "+(p.src==="contract"?"delivering contracts":p.src+" actions")+"."}</div>
+        <div class="ds">${owned ? p.ds : `Hidden companion — found via ${_srcHint}.`}</div>
       </div>
-      ${owned ? (active ? `<span style="color:var(--amber);font-size:11px;">ON SHIFT</span>`
+      ${owned ? (active ? `<span style="color:var(--amber);font-size:11px;font-weight:700">ON SHIFT ⭐</span>`
                         : `<button class="btn" data-pet="${p.id}">Put on shift</button>`) : ""}
     </div>`;
   });
