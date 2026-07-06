@@ -323,9 +323,10 @@ const FROST_TIPS = [
 
 /* ---------- achievements ---------- */
 function prodSum(ids){ return ids.reduce((a,id)=>a+(S.prod[id]||0),0); }
-const ORES = ["iron_ore","copper_ore","coal","bauxite","rare_earth"];
-const BARS = ["iron_bar","copper_wire","steel_bar","alu_ingot","tech_alloy"];
-const GOODS = ["bracket","wiring_loom","gearbox","chassis","servo_unit"];
+const ORES    = ["iron_ore","copper_ore","coal","bauxite","rare_earth"];
+const BARS    = ["iron_bar","copper_wire","steel_bar","alu_ingot","tech_alloy"];
+const GOODS   = ["bracket","wiring_loom","gearbox","chassis","servo_unit"];
+const CRAFTED = ["berry_jam","herb_tea","carved_bowl","smoked_fish","gift_basket"];
 const ACH = [
   { id:"first_swing", ic:"⛏️", n:"First Swing",      ds:"Mine your first ore.",              r:10,   c:()=>prodSum(ORES)>=1 },
   { id:"ore_100",     ic:"🪨", n:"Quarry Regular",    ds:"Mine 100 ores.",                    r:50,   c:()=>prodSum(ORES)>=100 },
@@ -361,6 +362,12 @@ const ACH = [
   { id:"good_neighbour",ic:"📬", n:"Good Neighbour",    ds:"Complete a villager delivery request.", r:75,  c:()=>(S.counters?.deliveries||0)>=1 },
   { id:"postman",      ic:"🚚", n:"Village Postman",    ds:"Complete 10 villager delivery requests.", r:300, c:()=>(S.counters?.deliveries||0)>=10 },
   { id:"sea_legs",     ic:"⚓", n:"Sea Legs",          ds:"Unlock the Harbour District.",            r:200, c:()=>totalLvl()>=100 },
+  { id:"first_craft",    ic:"🫙", n:"First Pot",        ds:"Make your first crafted item.",                r:30,  c:()=>prodSum(CRAFTED)>=1 },
+  { id:"jam_maker",      ic:"🍓", n:"Jam Maker",         ds:"Pot your first Berry Jam.",                    r:25,  c:()=>(S.prod.berry_jam||0)>=1 },
+  { id:"smoke_master",   ic:"🐡", n:"Smoke Master",      ds:"Smoke your first fish at the clay oven.",      r:40,  c:()=>(S.prod.smoked_fish||0)>=1 },
+  { id:"gift_giver",     ic:"🧺", n:"Gift Giver",        ds:"Weave your first Gift Basket.",                r:75,  c:()=>(S.prod.gift_basket||0)>=1 },
+  { id:"artisan",        ic:"⚱️", n:"Artisan",           ds:"Craft 50 items in the Artisan's Shed.",        r:150, c:()=>prodSum(CRAFTED)>=50 },
+  { id:"master_artisan", ic:"🏺", n:"Master Artisan",    ds:"Craft 200 items in the Artisan's Shed.",       r:500, c:()=>prodSum(CRAFTED)>=200 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -375,7 +382,9 @@ const ACH_PROG = {
   total_100:   ()=>({ cur:Math.min(100,  totalLvl()),                                max:100   }),
   full_honours:()=>({ cur:Math.min(7,    S.degrees?.length||0),                      max:7     }),
   mogul:       ()=>({ cur:Math.min(3,    S.properties?.length||0),                   max:3     }),
-  postman:     ()=>({ cur:Math.min(10,  S.counters?.deliveries||0),                 max:10    }),
+  postman:        ()=>({ cur:Math.min(10,  S.counters?.deliveries||0),                max:10    }),
+  artisan:        ()=>({ cur:Math.min(50,  prodSum(CRAFTED)),                          max:50    }),
+  master_artisan: ()=>({ cur:Math.min(200, prodSum(CRAFTED)),                          max:200   }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
