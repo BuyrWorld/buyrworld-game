@@ -713,7 +713,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -4002,6 +4002,93 @@ function drawInterior(t){
     ctx.fillStyle="#fff8f0"; ctx.fillRect(W*0.45|0,47,36,16); ctx.fillStyle="#5a3a18"; ctx.font="bold 6px monospace";
     ctx.textAlign="left"; ctx.fillText("🛋️ FROM 20c",W*0.45+2|0,56); ctx.fillText("DELIVERY FREE",W*0.45+2|0,62); ctx.textAlign="left";
   }
+  if (S.tab==="pub"){
+    // The Rose & Pallet — classic British pub
+    room("#3a2010","#6a3820","#c8a060","#c09848","#1a0a04");
+    winP(W*0.10, 36); winP(W*0.68, 36);
+    // red carpet with black dot pattern (centre floor)
+    ctx.fillStyle="#9a1a10"; ctx.fillRect(60,80,200,100);
+    for(let _dy=0;_dy<5;_dy++) for(let _dx=0;_dx<10;_dx++){
+      ctx.fillStyle="rgba(0,0,0,.35)"; ctx.beginPath(); ctx.arc(68+_dx*20,90+_dy*20,2,0,7); ctx.fill();
+    }
+    // back wall bar counter
+    ctx.fillStyle="#2a1008"; ctx.fillRect(8,46,W-16,24);
+    ctx.fillStyle="#5a2c14"; ctx.fillRect(10,48,W-20,12);
+    ctx.fillStyle="#c89040"; ctx.fillRect(10,48,W-20,3);
+    // 3 beer tap pumps
+    const _tapXs=[W*0.28,W*0.48,W*0.68];
+    const _tapLabels=["VALE","STOUT","PALE"];
+    for(let _ti=0;_ti<3;_ti++){
+      const _tx2=_tapXs[_ti];
+      ctx.fillStyle="#7a5030"; ctx.fillRect(_tx2-2,26,4,22);
+      ctx.fillStyle="#c8a040"; ctx.fillRect(_tx2-5,22,10,6);
+      ctx.fillStyle="#402010"; ctx.beginPath(); ctx.arc(_tx2,25,4,0,7); ctx.fill();
+      ctx.fillStyle="rgba(255,248,220,.9)"; ctx.font="bold 5px monospace"; ctx.textAlign="center";
+      ctx.fillText(_tapLabels[_ti],_tx2,44); ctx.textAlign="left";
+    }
+    // fireplace left wall
+    ctx.fillStyle="#2a1408"; ctx.fillRect(6,60,34,62);
+    ctx.fillStyle="#3a1c10"; ctx.fillRect(10,64,26,54);
+    ctx.fillStyle="#1a0a04"; ctx.fillRect(12,82,22,34);
+    const _ffr=(Math.sin(Date.now()/200)*0.12+0.72);
+    ctx.fillStyle=`rgba(255,${110+Math.floor(Math.sin(Date.now()/280)*18)},20,${_ffr.toFixed(2)})`; ctx.fillRect(14,100,18,14);
+    ctx.fillStyle=`rgba(255,200,50,${(_ffr*0.65).toFixed(2)})`; ctx.fillRect(16,96,14,10);
+    ctx.fillStyle="#7a5030"; ctx.fillRect(8,120,34,4);
+    // pool table (centre-right)
+    const _ptX=158,_ptY=88;
+    ctx.fillStyle="#1a5a1a"; ctx.fillRect(_ptX,_ptY,118,70);
+    ctx.strokeStyle="#2a8a2a"; ctx.lineWidth=2; ctx.strokeRect(_ptX,_ptY,118,70);
+    ctx.fillStyle="#2a7a2a"; ctx.fillRect(_ptX+2,_ptY+2,114,66);
+    ctx.strokeStyle="#1a5a1a"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(_ptX+59,_ptY+2); ctx.lineTo(_ptX+59,_ptY+68); ctx.stroke();
+    // pool balls
+    for(const [bc,bx,by] of [["#e8e8e0",_ptX+22,_ptY+35],["#e84020",_ptX+88,_ptY+22],["#e8a020",_ptX+94,_ptY+32],["#2040e8",_ptX+86,_ptY+42]] as [string,number,number][]){
+      ctx.fillStyle=bc; ctx.beginPath(); ctx.arc(bx,by,4,0,7); ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,.35)"; ctx.beginPath(); ctx.arc(bx-1,by-1,1.5,0,7); ctx.fill();
+    }
+    // cue
+    ctx.strokeStyle="#a07040"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(_ptX-12,_ptY+35); ctx.lineTo(_ptX+22,_ptY+35); ctx.stroke();
+    // 2 round tables with stools (left side)
+    for(const [_tx3,_ty3] of [[W*0.10,H-62],[W*0.38,H-62]] as [number,number][]){
+      ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(_tx3,_ty3+10,18,6,0,0,7); ctx.fill();
+      ctx.fillStyle="#5a3010"; ctx.beginPath(); ctx.ellipse(_tx3,_ty3,18,9,0,0,7); ctx.fill();
+      ctx.fillStyle="#7a4a20"; ctx.beginPath(); ctx.ellipse(_tx3,_ty3,16,7,0,0,7); ctx.fill();
+      ctx.fillStyle="#4a2008"; ctx.fillRect(_tx3-1,_ty3+9,2,12);
+      for(const [_ox,_oy] of [[-26,0],[26,0]] as [number,number][]){
+        ctx.fillStyle="#5a2a10"; ctx.fillRect(_tx3+_ox-5,_ty3+_oy-5,10,8);
+        ctx.fillStyle="#3a1808"; ctx.fillRect(_tx3+_ox-2,_ty3+_oy+3,4,6);
+      }
+      drawEmojiC(ctx,"🍺",_tx3,_ty3-4,8);
+    }
+    // Rex landlord behind bar (white shirt)
+    drawPerson(ctx, W/2-18, 48, "#5a3a20", "#e8e8e0", t, false, 1, null, "down", "#c89060", "#2a1808", null, false);
+    ctx.fillStyle="rgba(255,255,255,.55)"; ctx.fillRect(W/2-22,38,8,18); // apron
+    // evening crowd
+    const _evHr=gameHour();
+    if (_evHr>=18.5||_evHr<2){
+      const _pats:[string,number,number,string,string,boolean][]=[
+        ["#8a4a20",W*0.10,H-68,"#4a6aaa","#2a2a4a",false],
+        ["#3a3a3a",W*0.38,H-64,"#c07040","#3a3020",true],
+        ["#c9a24b",W*0.10,H-80,"#4a8a3a","#2a3a20",false],
+        ["#6a3a20",W*0.38,H-78,"#9a3a60","#2a1a2a",true],
+      ];
+      for(const [h2,px2,py2,sh2,tr2,fem] of _pats) drawPerson(ctx,px2,py2,h2,sh2,t,false,1,null,"down",null,tr2,null,fem);
+      // patron speech bubble
+      const _qts=["*laughs*","Top drop!","Your round!","Cheers!","Grand pub this."];
+      const _qt=_qts[Math.floor(Date.now()/5000)%_qts.length];
+      const _bw=_qt.length*6+12;
+      ctx.fillStyle="rgba(255,248,220,.95)"; ctx.strokeStyle="#8a6040"; ctx.lineWidth=1;
+      ctx.fillRect(W*0.10-_bw/2,H-100,_bw,14); ctx.strokeRect(W*0.10-_bw/2,H-100,_bw,14);
+      ctx.fillStyle="#453423"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
+      ctx.fillText(_qt,W*0.10,H-90); ctx.textAlign="left";
+    }
+    // pub sign on back wall top-right
+    ctx.fillStyle="#2a1008"; ctx.fillRect(W-82,4,72,30);
+    ctx.fillStyle="#8a4020"; ctx.fillRect(W-80,6,68,26);
+    ctx.fillStyle="#ffd666"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
+    ctx.fillText("THE ROSE",W-45,18); ctx.fillText("& PALLET",W-45,28); ctx.textAlign="left";
+  }
   if (S.tab==="retail"){
     // Retail Stall interior — candy-bright, market feel
     room("#8a2040","#c04060","#fce8f0","#f8d8e8","#4a0820");
@@ -4289,6 +4376,7 @@ function drawTitleFX(t){
 function villageFrame(ts){
   pollGamepad();
   updateClock();
+  if (S.drunkUntil){ const _isDrunk=Date.now()<S.drunkUntil; document.body.classList.toggle("game-drunk",_isDrunk); if(!_isDrunk) S.drunkUntil=0; } else document.body.classList.remove("game-drunk");
   const t = ts/1000;
   const dt = Math.min(0.05, vLastT ? t-vLastT : 0.016);
   vLastT = t;
@@ -4486,6 +4574,8 @@ if (typeof document !== 'undefined'){
   .ilbl-room{position:absolute;left:6px;bottom:6px;background:rgba(69,52,35,.9);color:#ffd666;font:700 11px 'IBM Plex Mono',monospace;padding:2px 9px;border-radius:4px;pointer-events:none;letter-spacing:.5px}
   #hud-time{font:700 12px 'IBM Plex Mono',monospace;color:#e8961e;background:rgba(69,52,35,.08);border:2px solid #8c694733;border-radius:6px;padding:4px 9px;white-space:nowrap}
   .speech-dock{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(255,248,230,.97);border:2px solid #8c6947;color:#453423;font:600 11px/1.5 'IBM Plex Mono',monospace;padding:4px 14px;border-radius:6px;white-space:nowrap;box-shadow:2px 2px 0 rgba(70,50,30,.25);pointer-events:none;max-width:80%;text-align:center}
+  @keyframes drunk-sway{0%{transform:rotate(0deg)}20%{transform:rotate(-4deg)}50%{transform:rotate(5deg)}80%{transform:rotate(-3deg)}100%{transform:rotate(0deg)}}
+  body.game-drunk #village,body.game-drunk #interior{animation:drunk-sway 1.6s ease-in-out infinite;transform-origin:center center;filter:blur(.9px) saturate(1.6) brightness(1.08)}
   `;
   document.head.appendChild(_st);
 }
@@ -4553,6 +4643,10 @@ function freshState(){
     festival: { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[] as string[], notified:"" },
     ownedFurniture: {} as Record<string,number>,
     placedFurniture: [] as {id:string; slot:number}[],
+    pintBuff: 0,
+    pintsTonight: 0,
+    drunkUntil: 0,
+    pintDate: "",
   };
 }
 let S = freshState();
@@ -4636,6 +4730,10 @@ function load(){
       if (!("deliveries" in S.counters)) S.counters.deliveries = 0;
       if (!("exchangeProfits" in S.counters)) S.counters.exchangeProfits = 0;
       if (!("seNotified" in parsed)) S.seNotified = "";
+      if (!("pintBuff" in parsed)) S.pintBuff = 0;
+      if (!("pintsTonight" in parsed)) S.pintsTonight = 0;
+      if (!("drunkUntil" in parsed)) S.drunkUntil = 0;
+      if (!("pintDate" in parsed)) S.pintDate = "";
       return true;
     }
   } catch(e){}
@@ -4663,6 +4761,7 @@ function speedMult(skill){
     if (pet.id==="drone_owl" && skill==="manufacturing") m *= 0.88;
   }
   if (S.caffBuff && Date.now() < S.caffBuff) m *= 0.80;
+  if (S.pintBuff && Date.now() < S.pintBuff) m *= 0.90;
   const _sb = skillSpeedBonus(skill);
   if (_sb > 0) m *= (1 - _sb);
   const _kb = keepsakeSpeedBonus(skill);
@@ -6064,6 +6163,48 @@ function renderFurniturePlacement(): string {
     ${_placedHtml}${_ownedHtml}
   </div>`;
 }
+const REX_BANTER = [
+  "What'll it be then?",
+  "Quiet night for a Tuesday…",
+  "Pool table's free if you fancy a game.",
+  "They say this pub's been here since before the quarry. I believe it.",
+  "Lovely evening, isn't it? Weather's turning.",
+  "Mind the step on your way out. Caught three people on it today.",
+  "Local real ale, brewed up in the valley. Can't go wrong.",
+  "Regular? Good. I'll remember your face.",
+  "Kitchen closes at nine. Don't say I didn't warn you.",
+  "The darts board's a bit wonky but we blame gravity.",
+  "Aye, the stout's fresh on tonight. New barrel.",
+  "You look like you've had a long day. This'll sort you out.",
+];
+function renderPub(): string {
+  const _now = Date.now();
+  const _today = getTodayStr();
+  if ((S.pintDate||"") !== _today){ S.pintsTonight = 0; S.pintDate = _today; }
+  const _pintMs = (S.pintBuff||0) - _now;
+  const _drunkMs = (S.drunkUntil||0) - _now;
+  const _buffHtml = _pintMs > 0
+    ? `<div class="panel" style="background:rgba(120,60,10,.18);border:1px solid #8a4020;padding:8px;margin-bottom:8px"><b style="color:#e09030">🍺 Pint glow active!</b><br><span style="color:var(--dim);font-size:11px">Actions 10% faster · ${Math.ceil(_pintMs/1000)}s remaining</span></div>`
+    : "";
+  const _drunkHtml = _drunkMs > 0
+    ? `<div class="panel" style="background:rgba(255,200,20,.12);border:1px solid #e8a020;padding:8px;margin-bottom:8px"><b style="color:#e8a020">🌀 A bit wobbly…</b><br><span style="color:var(--dim);font-size:11px">The room is spinning. Sobering up in ${Math.ceil(_drunkMs/1000)}s.</span></div>`
+    : "";
+  const _banter = REX_BANTER[Math.floor(_now/10000) % REX_BANTER.length];
+  const _pints = S.pintsTonight || 0;
+  const _canBuy = S.coins >= 8;
+  return `
+    ${_buffHtml}${_drunkHtml}
+    <div class="panel" style="padding:10px">
+      <p style="margin:0 0 4px"><b>Rex</b> <span style="color:var(--dim);font-size:11px">— Landlord, The Rose & Pallet</span></p>
+      <p style="font-style:italic;color:#c89040;font-size:12px;margin:0 0 10px">"${_banter}"</p>
+      <hr style="border:none;border-top:1px solid #3a2810;margin:8px 0">
+      <p style="margin:0 0 6px"><b>Order at the Bar</b></p>
+      <p style="color:var(--dim);font-size:12px;margin:0 0 8px">Pints tonight: ${_pints}${_pints>=3?' <span style="color:#e8a020">— Rex is giving you a look.</span>':""}</p>
+      <button data-buy-pint="1" style="background:${_canBuy?"#5a2010":"#444"};color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px"${_canBuy?"":" disabled"}>🍺 Buy a Pint — 8 coins</button>
+      ${S.coins < 8 ? '<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Not enough coins.</p>' : ""}
+      <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Each pint: 10% action speed boost for 3 min. Three pints and the room gets a bit… interesting.</p>
+    </div>`;
+}
 function renderFurnitureShop(): string {
   const _owned = S.ownedFurniture || {};
   const _allItems = Object.entries(FURNITURE_DEFS);
@@ -6331,6 +6472,7 @@ function renderMain(){
     else if (S.tab==="seasonal_market"){ m.innerHTML = _withRoom("🎪 Seasonal Market", renderSeasonalMarket()); }
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
     else if (S.tab==="furniture_shop") m.innerHTML = _withRoom("🛋️ Nell's Home Store", renderFurnitureShop());
+    else if (S.tab==="pub") m.innerHTML = _withRoom("🍺 The Rose & Pallet", renderPub());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
     else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Greenfield Boat Hire", renderBoatHire());
@@ -6858,6 +7000,27 @@ function bindMain(){
     addFurniture(_id, 1);
     const _fd = FURNITURE_DEFS[_id];
     toast(`📦 ${_fd?.n||_id} picked up.`);
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  // pub pint purchase
+  document.querySelectorAll("[data-buy-pint]").forEach(b=> b.onclick = ()=>{
+    if (S.coins < 8){ toast("Not enough coins."); return; }
+    const _today = getTodayStr();
+    if ((S.pintDate||"") !== _today){ S.pintsTonight = 0; S.pintDate = _today; }
+    S.coins -= 8;
+    S.pintsTonight = (S.pintsTonight||0) + 1;
+    S.pintBuff = Math.max(S.pintBuff||0, Date.now()) + 3*60*1000;
+    if (S.pintsTonight === 3){
+      S.drunkUntil = Date.now() + 60*1000;
+      toast("🍺🍺🍺 Three pints in… hic! The room won't stop spinning!");
+      log(`🍺 <b>Three pints at The Rose & Pallet</b> — Rex: "Right, I think that's your lot, pal."`, "");
+    } else if (S.pintsTonight > 3){
+      S.drunkUntil = Math.max(S.drunkUntil||0, Date.now()) + 30*1000;
+      toast('🍺 Rex: "Maybe… hic… one more?"');
+    } else {
+      toast(`🍺 Pint ${S.pintsTonight}/3 — actions 10% faster for 3 min.`);
+      log(`🍺 <b>Pint at The Rose & Pallet</b>.`, "good");
+    }
     achCheck(); renderMain(); updateHud(); save();
   });
   // village beautification purchases
