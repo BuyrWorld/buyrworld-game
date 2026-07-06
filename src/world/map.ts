@@ -115,8 +115,10 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'notice_board',   kind: 'sign', tx: 35, ty: 3,  w: 1, h: 1, tab: 'notice_board',   name: 'Notice Board',     ic: '📋' },
   { id: 'furniture_shop', kind: 'bld',  tx: 37, ty: 2,  w: 2, h: 2, tab: 'furniture_shop', name: "Nell's Home Store", ic: '🛋️', wall: '#e8d8c0', roof: '#8a5a40' },
   { id: 'pub',            kind: 'bld',  tx: 52, ty: 2,  w: 3, h: 2, tab: 'pub',            name: 'The Rose & Pallet', ic: '🍺', wall: '#5a3020', roof: '#2a1010' },
+  { id: 'police_station', kind: 'bld',  tx: 57, ty: 2,  w: 3, h: 2, tab: 'police_station', name: 'Featherstone Police Station', ic: '🚔', wall: '#c0c8d8', roof: '#2a3a5a' },
   { id: 'lamp_retail_5',  kind: 'lamp', tx: 34, ty: 4,  w: 1, h: 1 },
   { id: 'lamp_retail_6',  kind: 'lamp', tx: 50, ty: 4,  w: 1, h: 1 },
+  { id: 'lamp_retail_7',  kind: 'lamp', tx: 55, ty: 4,  w: 1, h: 1 },
   // --- Retail district decorations ---
   { id: 'lamp_retail_1', kind: 'lamp', tx: 11, ty: 4, w: 1, h: 1 },
   { id: 'lamp_retail_2', kind: 'lamp', tx: 18, ty: 4, w: 1, h: 1 },

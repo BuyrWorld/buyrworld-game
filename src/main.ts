@@ -8,7 +8,7 @@ import { PETS } from './data/pets.ts';
 import { CLIENTS, CONTRACT_POOL } from './data/contracts.ts';
 import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS, NORTH_EXT } from './world/map.ts';
-import { nightAlpha, lampGlow, isNight, skyTint, gameHour } from './world/daynight.ts';
+import { nightAlpha, lampGlow, isNight, skyTint, gameHour, DAY_DURATION_MS } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_COLOURS, TROUSER_COLOURS, FACIAL_HAIR_STYLES, EYE_COLOURS, JACKET_COLOURS, SHOE_COLOURS, ACCESSORY_STYLES, SCARF_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
@@ -722,7 +722,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -1538,6 +1538,15 @@ function interactObj(o){
   S.tab = o.tab;
   S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
+  // set trespass flag when entering someone else's home
+  if (o.tab === "home"){
+    S.trespass = { active: true, homeId: o.id };
+    S.fleeUntil = 0;
+    if (isNight()) toast(`🤫 ${pName()}: "I probably shouldn't be in here…"`);
+  } else {
+    S.trespass = { active: false, homeId: null };
+    S.fleeUntil = 0;
+  }
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
 function showWandererProfile(w){
@@ -4157,6 +4166,82 @@ function drawInterior(t){
     ctx.fillStyle="#ffd666"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
     ctx.fillText("THE ROSE",W-45,18); ctx.fillText("& PALLET",W-45,28); ctx.textAlign="left";
   }
+  if (S.tab==="police_station"){
+    room("#1a2a5a","#c0c8d8","#d8e0ec","#ccd8e8","#2a3a5a");
+    winP(W*0.12,34); winP(W*0.65,34);
+    // crest on back wall
+    ctx.fillStyle="#2a3a5a"; ctx.fillRect(W/2-22,8,44,32);
+    ctx.fillStyle="#1a2a4a"; ctx.fillRect(W/2-20,10,40,28);
+    ctx.fillStyle="#ffd666"; ctx.font="bold 11px serif"; ctx.textAlign="center"; ctx.fillText("⚖",W/2,28); ctx.textAlign="left";
+    // reception desk
+    ctx.fillStyle="#3a4a6a"; ctx.fillRect(W/2-50,58,100,28);
+    ctx.fillStyle="#4a5a7a"; ctx.fillRect(W/2-48,60,96,14);
+    ctx.fillStyle="#ffd666"; ctx.fillRect(W/2-2,63,4,8);
+    // wanted poster board
+    ctx.fillStyle="#5a4030"; ctx.fillRect(W-44,10,36,52);
+    ctx.fillStyle="#f4e8d0"; ctx.fillRect(W-42,12,32,48);
+    ctx.fillStyle="#3a2020"; ctx.font="bold 5px monospace"; ctx.textAlign="center";
+    ctx.fillText("WANTED",W-26,21); ctx.fillText("have you",W-26,30); ctx.fillText("seen this",W-26,38); ctx.fillText("person?",W-26,46);
+    drawEmojiC(ctx,"❓",W-26,58,9); ctx.textAlign="left";
+    // filing cabinet
+    ctx.fillStyle="#4a5a6a"; ctx.fillRect(10,52,22,90);
+    for(let fi=0;fi<4;fi++){ ctx.fillStyle="#5a6a7a"; ctx.fillRect(12,54+fi*22,18,18); ctx.fillStyle="#c8a040"; ctx.fillRect(18,62+fi*22,6,2); }
+    // cell bars back-right
+    ctx.fillStyle="#3a3a4a"; ctx.fillRect(W-62,48,52,62);
+    ctx.fillStyle="#2a2a38"; ctx.fillRect(W-60,50,48,58);
+    ctx.fillStyle="#4a4a5a"; for(let bi=0;bi<5;bi++) ctx.fillRect(W-58+bi*8,50,4,58);
+    ctx.fillStyle="#c8a040"; ctx.fillRect(W-40,78,6,4);
+    // 3 officers
+    drawPerson(ctx,W/2,52,"#3a3a4a","#2a3a5a",t,false,1,null,"down","#d4b896","#1a2a4a",null,false);
+    drawPerson(ctx,W*0.16,H*0.62,"#4a4a3a","#2a3a5a",t,false,1,null,"down","#c8a070","#1a2a4a",null,false);
+    drawPerson(ctx,W*0.84,H*0.62,"#6a4a30","#2a3a5a",t,false,-1,null,"left","#d4b090","#1a2a4a",null,true);
+    // floor badge
+    ctx.fillStyle="#3a4a7a"; ctx.beginPath(); ctx.ellipse(W/2,H-28,36,14,0,0,7); ctx.fill();
+    ctx.fillStyle="#ffd666"; ctx.font="bold 5px monospace"; ctx.textAlign="center"; ctx.fillText("FEATHERSTONE CONSTABULARY",W/2,H-25); ctx.textAlign="left";
+  }
+  if (S.tab==="police_cell"){
+    // grim grey cell
+    ctx.fillStyle="#4a4a52"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#3a3a40"; ctx.fillRect(0,0,W,9);
+    for(let _gy=9;_gy<46;_gy+=14) for(let _gx=0;_gx<W;_gx+=28){ ctx.fillStyle="rgba(0,0,0,.09)"; ctx.fillRect(_gx,_gy,27,13); }
+    ctx.fillStyle="#5a5a62"; ctx.fillRect(0,47,W,H-47);
+    ctx.fillStyle="rgba(0,0,0,.06)"; for(let x=0;x<W;x+=20) ctx.fillRect(x,47,1,H-47);
+    // bars on left
+    ctx.fillStyle="#2a2a30"; ctx.fillRect(0,0,14,H);
+    ctx.fillStyle="#4a4a5a"; for(let bi=0;bi<4;bi++) ctx.fillRect(bi*3,0,2,H);
+    // barred window
+    ctx.fillStyle="#1a1a20"; ctx.fillRect(W-36,10,30,24);
+    ctx.fillStyle="#3a4a5a"; ctx.fillRect(W-34,12,26,20);
+    for(let bi=0;bi<3;bi++){ ctx.fillStyle="#2a2a2a"; ctx.fillRect(W-28+bi*6,12,2,20); }
+    // bed
+    ctx.fillStyle="#3a3a42"; ctx.fillRect(16,60,62,34);
+    ctx.fillStyle="#2a2a30"; ctx.fillRect(16,60,62,10);
+    ctx.fillStyle="#5a4a3a"; ctx.fillRect(18,70,58,22);
+    ctx.fillStyle="#4a3a2a"; ctx.fillRect(20,72,16,8);
+    // comedy bucket
+    ctx.fillStyle="#6a7a6a"; ctx.fillRect(W-22,H-32,14,20); ctx.fillStyle="#4a5a4a"; ctx.fillRect(W-22,H-32,14,4);
+    drawEmojiC(ctx,"🪣",W-15,H-22,11);
+    // graffiti
+    ctx.fillStyle="rgba(255,255,255,.22)"; ctx.font="bold 6px monospace";
+    ctx.fillText("I WOZ ERE",Math.round(W*0.40),34); ctx.fillText("♥ BETTY",Math.round(W*0.60),26);
+    // cellmate
+    const _cmX=W*0.72, _cmY=H*0.65;
+    drawPerson(ctx,_cmX,_cmY,"#3a3a3a","#5a5a5a",t,false,-1,null,"left","#c89060","#3a3a3a",null,false);
+    const _cLines=["First time? Heh. Won't be.","*snores loudly*","I was framed. Again.","The chips in here are terrible.","Officer Plonk's got it in for me.","You smell like someone else's house."];
+    const _cl=_cLines[Math.floor(Date.now()/6000)%_cLines.length];
+    const _cbw=_cl.length*5+14;
+    ctx.fillStyle="rgba(240,240,220,.9)"; ctx.strokeStyle="#6a6a7a"; ctx.lineWidth=1;
+    ctx.fillRect(_cmX-_cbw+12,_cmY-38,_cbw,14); ctx.strokeRect(_cmX-_cbw+12,_cmY-38,_cbw,14);
+    ctx.fillStyle="#2a2a3a"; ctx.font="bold 6px monospace"; ctx.textAlign="center";
+    ctx.fillText(_cl,_cmX-_cbw/2+12,_cmY-28); ctx.textAlign="left";
+    // blocked exit door
+    ctx.fillStyle="#3a3a42"; ctx.fillRect(W/2-14,H-20,28,20);
+    ctx.fillStyle="#4a4a52"; ctx.fillRect(W/2-12,H-18,24,16);
+    ctx.fillStyle="#3a3a48"; for(let bi2=0;bi2<3;bi2++) ctx.fillRect(W/2-10+bi2*7,H-18,3,16);
+    drawEmojiC(ctx,"🔒",W/2,H-8,10);
+    // player
+    drawPerson(ctx,IP.x,IP.y,plHair(),plShirt(),t,IP.moving,IP.facing,null,IP.dir,plSkin(),plTrousers(),null,plGender()==='female',1.0,plHat(),plHatColor(),plOpts());
+  }
   if (S.tab==="retail"){
     // Retail Stall interior — candy-bright, market feel
     room("#8a2040","#c04060","#fce8f0","#f8d8e8","#4a0820");
@@ -4400,6 +4485,17 @@ function drawInterior(t){
       const q = CHAT_NPC.quips[CHAT_NPC.quipIdx % CHAT_NPC.quips.length];
       _iHtml += `<div class="int-chat"><span class="int-chat-name">${CHAT_NPC.n}:</span><span class="int-chat-txt"> ${q}</span><span class="int-chat-dim"> · tap to dismiss</span></div>`;
     }
+    // trespass badge
+    if (S.tab==="home" && S.trespass?.active){
+      _iHtml += `<div style="position:absolute;left:6px;bottom:24px;background:rgba(180,20,20,.9);color:#fff;font:700 9px 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:3px;pointer-events:none;letter-spacing:.5px">⚠ TRESPASSING</div>`;
+    }
+    // flee countdown overlay
+    if (S.fleeUntil > 0){
+      const _rem = Math.max(0, S.fleeUntil - Date.now());
+      const _sec = Math.ceil(_rem / 1000);
+      const _pct = (_rem / 10000) * 100;
+      _iHtml += `<div style="position:absolute;top:4px;left:50%;transform:translateX(-50%);background:rgba(180,20,20,.92);color:#fff;font:700 10px 'IBM Plex Mono',monospace;padding:4px 14px 6px;border-radius:4px;pointer-events:none;text-align:center;white-space:nowrap">🚨 FLEE! ${_sec}s<div style="height:4px;background:rgba(255,255,255,.25);border-radius:2px;margin-top:3px"><div style="height:4px;background:#ff4040;border-radius:2px;width:${_pct.toFixed(1)}%;transition:width .2s"></div></div></div>`;
+    }
     _iOverlay.innerHTML = _iHtml;
   }
 }
@@ -4452,6 +4548,24 @@ function drawTitleFX(t){
     ctx.fillStyle="#453423"; ctx.fillText(_TW[_wi],_wx,_wy);
   }
   ctx.globalAlpha=1; ctx.textAlign="left";
+}
+const _STOLEN_FOODS = ["mushroom","berries","wild_herb","berry_jam","herb_tea","sardine"];
+function _arrestPlayer(){
+  const _fine = Math.floor(S.coins * 0.20);
+  S.coins = Math.max(0, S.coins - _fine);
+  const _dur = DAY_DURATION_MS * (S.stolen ? 2 : 1);
+  S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur };
+  S.trespass = { active: false, homeId: null };
+  S.stolen = false;
+  S.fleeUntil = 0;
+  S.tab = "police_cell";
+  IP.x = icanvasW()/2; IP.y = icanvasH() - 60;
+  IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
+  CHAT_NPC = null;
+  if (_fine > 0) log(`🚔 Arrested! ${fmt(_fine)} coin fine. Sentence: ${S.caught.maxTime === DAY_DURATION_MS ? "24" : "48"} game-hours.`, "bad");
+  else log(`🚔 Arrested! Sentence: ${S.caught.maxTime === DAY_DURATION_MS ? "24" : "48"} game-hours.`, "bad");
+  toast(`🚔 YOU'VE BEEN NICKED! ${_fine > 0 ? `${fmt(_fine)} coins fined.` : ""}`);
+  renderNav(); renderMain(); save();
 }
 function villageFrame(ts){
   pollGamepad();
@@ -4529,13 +4643,35 @@ function villageFrame(ts){
       }
     }
     // exit building if player walks to the bottom door
-    if (IP.y > icanvasH() - 18) {
+    const _cellLocked = S.tab==="police_cell" && S.caught?.active && Date.now() < S.caught.cellUntil;
+    if (IP.y > icanvasH() - 18 && !_cellLocked) {
       IP.tx = null; IP.ty = null; IP.moving = false;
       CHAT_NPC = null;
-      VP.enterCooldown = 90; // prevent stepping straight back in
+      // clear trespass on legitimate exit
+      if (S.trespass?.active){ S.trespass = { active: false, homeId: null }; S.fleeUntil = 0; }
+      if (S.caught?.active && !_cellLocked){ S.caught = { active: false, cellUntil: 0, maxTime: 0 }; }
+      VP.enterCooldown = 90;
       S.tab = "village"; renderNav(); renderMain();
     } else {
       drawInterior(t);
+      // trespass: check NPC proximity at night + flee timer
+      if (S.tab==="home" && S.trespass?.active){
+        const _now2 = Date.now();
+        if (S.fleeUntil > 0 && _now2 > S.fleeUntil){
+          _arrestPlayer();
+        } else if (S.fleeUntil === 0 && isNight()){
+          // bed zone is top-right of home interior
+          const _bedX = icanvasW()*0.75, _bedY = 70;
+          if (Math.hypot(IP.x-_bedX, IP.y-_bedY) < 48){
+            const _hv = VILLAGERS.find(v => v.homeId === S.roomObjId);
+            const _hvn = _hv ? _hv.n : "Someone";
+            S.fleeUntil = Date.now() + 10000;
+            toast(`😱 ${_hvn}: "GET OUT OR I'M CALLING THE POLICE! 🚨"`);
+            log(`🚨 ${_hvn} woke up! 10 seconds to flee!`, "bad");
+            renderMain();
+          }
+        }
+      }
     }
   } else {
     drawInterior(t);
@@ -4802,6 +4938,10 @@ function freshState(){
     pintsTonight: 0,
     drunkUntil: 0,
     pintDate: "",
+    trespass: { active: false, homeId: null as string|null },
+    stolen: false,
+    fleeUntil: 0,
+    caught: { active: false, cellUntil: 0, maxTime: 0 },
   };
 }
 let S = freshState();
@@ -4896,6 +5036,11 @@ function load(){
       if (!("pintsTonight" in parsed)) S.pintsTonight = 0;
       if (!("drunkUntil" in parsed)) S.drunkUntil = 0;
       if (!("pintDate" in parsed)) S.pintDate = "";
+      if (!("trespass" in parsed)) S.trespass = { active: false, homeId: null };
+      if (!("stolen" in parsed)) S.stolen = false;
+      if (!("fleeUntil" in parsed)) S.fleeUntil = 0;
+      if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
+      if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       return true;
     }
   } catch(e){}
@@ -6528,6 +6673,52 @@ function drawCharPreview(canvasId){
   drawPerson(ctx, 0, 0, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
   ctx.restore();
 }
+function renderPoliceCellPanel(){
+  const _now = Date.now();
+  const _cellUntil = S.caught?.cellUntil || 0;
+  const _maxTime = S.caught?.maxTime || DAY_DURATION_MS;
+  const _remaining = Math.max(0, _cellUntil - _now);
+  const _free = _remaining <= 0;
+  const _gameHrsLeft = Math.ceil(_remaining / (DAY_DURATION_MS / 24));
+  const _minsLeft = Math.ceil(_remaining / 60000);
+  const _pct = _free ? 0 : Math.round((_remaining / _maxTime) * 100);
+  if (_free){
+    return `<div class="panel" style="padding:10px">
+      <h3 style="color:#4aff88;margin:0 0 6px">🔓 Sentence served!</h3>
+      <p style="font-size:12px;color:var(--dim);margin:0 0 10px">Try to stay out of trouble, ${pName()}. Officer Plonk is watching.</p>
+      <button data-leave-cell style="background:#2a5a2a;color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px">🚶 Walk out</button>
+    </div>`;
+  }
+  const _dealCost = Math.max(20, Math.round(S.coins * 0.15));
+  const _canDeal = S.coins >= _dealCost;
+  return `<div class="panel" style="padding:10px">
+    <h3 style="color:#ff8870;margin:0 0 4px">🚔 In Custody — Featherstone Constabulary</h3>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_gameHrsLeft} game-hours remaining (~${_minsLeft} real min)</p>
+    <div style="height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin-bottom:10px">
+      <div style="height:6px;background:#ff5040;border-radius:3px;width:${_pct}%;transition:width 1s"></div>
+    </div>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Your cellmate: <b>Derek</b> — in for "aggressive parking".</p>
+    <p style="font-size:10px;color:var(--dim);margin:0 0 10px">💡 Officer Plonk does deals if you've got the coins.</p>
+    ${_canDeal
+      ? `<button data-deal-cell style="background:#4a3a1a;color:#ffd666;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px">🤝 Make a deal — pay ${fmt(_dealCost)} coins (halve sentence)</button>`
+      : `<p style="font-size:11px;color:var(--dim);margin:0">Need ${fmt(_dealCost)} coins to make a deal.</p>`}
+  </div>`;
+}
+function renderPoliceStationPanel(){
+  const _stolen = S.stolen;
+  const _fine = Math.floor(S.coins * 0.10);
+  return `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 4px">🚔 Featherstone Police Station</h3>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 10px">Serving Featherstone Valley since 1954. Officer Plonk on duty.</p>
+    <p style="font-size:12px;margin:0 0 8px"><b>Officer Plonk:</b> <i>"Keep it cosy out there."</i></p>
+    ${_stolen
+      ? `<div style="background:rgba(255,200,40,.1);border:1px solid rgba(255,200,40,.3);border-radius:4px;padding:8px 10px;margin-bottom:8px">
+          <p style="font-size:11px;color:#ffd666;margin:0 0 6px">🤚 You're carrying stolen goods. Best to come clean now — reduced sentence of 12 game-hours instead of 24.</p>
+          <button data-surrender style="background:#5a3a1a;color:#ffd666;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px">🙋 Hand yourself in (pay ${fmt(_fine)} coin fine, 12 game-hr sentence)</button>
+        </div>`
+      : `<p style="font-size:11px;color:var(--dim);margin:0">Nothing to report? Good. Keep it that way.</p>`}
+  </div>`;
+}
 function renderCharacterCustomisation(){
   const ap = S.appearance || DEFAULT_APPEARANCE;
   function swatchRow(label, arr, field){
@@ -6644,6 +6835,8 @@ function renderMain(){
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Featherstone Cycle Shop", renderBikeShop());
     else if (S.tab==="furniture_shop") m.innerHTML = _withRoom("🛋️ Nell's Home Store", renderFurnitureShop());
     else if (S.tab==="pub") m.innerHTML = _withRoom("🍺 The Rose & Pallet", renderPub());
+    else if (S.tab==="police_station") m.innerHTML = _withRoom("🚔 Featherstone Police Station", renderPoliceStationPanel());
+    else if (S.tab==="police_cell") m.innerHTML = _withRoom("🚔 Holding Cell — Featherstone Constabulary", renderPoliceCellPanel());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
     else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Featherstone Boat Hire", renderBoatHire());
@@ -6657,11 +6850,22 @@ function renderMain(){
            (_homeVillager.children && _homeVillager.children.length) ? `Children: ${_homeVillager.children.join(", ")}` : null
           ].filter(Boolean).join(" · ")
         : "";
+      const _isNightNow = isNight();
+      const _canSteal = _isNightNow && !S.stolen;
+      const _trespassBadge = `<div style="background:rgba(180,20,20,.9);color:#fff;font:700 9px 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:8px">⚠ TRESPASSING</div>`;
+      const _fleeBar = S.fleeUntil > 0
+        ? `<div style="background:rgba(180,20,20,.15);border:1px solid rgba(255,60,40,.5);border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#ff5040;font-weight:700">🚨 FLEE! ${Math.max(0,Math.ceil((S.fleeUntil-Date.now())/1000))}s to get out!</div>`
+        : "";
+      const _stealBtn = _isNightNow
+        ? `<button data-steal style="background:${_canSteal?"#2a1a3a":"#3a3a3a"};color:${_canSteal?"#d080ff":"#6a6a6a"};border:none;padding:5px 12px;border-radius:3px;cursor:${_canSteal?"pointer":"default"};font-size:11px;margin-top:6px"${_canSteal?"":" disabled"}>${_canSteal?"🤫 Steal from fridge":"✓ Already taken something — leave!"}</button>`
+        : `<p style="font-size:10px;color:var(--dim);margin:6px 0 0">Return at night (22:00–06:00) to… explore further.</p>`;
       m.innerHTML = _withRoom(`🏠 ${_hvName}'s Cottage`,
         `<div class="panel" style="padding:10px">
+          ${_trespassBadge}
+          ${_fleeBar}
           <p style="margin:0 0 6px;font-size:13px"><b>${_hvName}</b>${_hvFamily ? `<span style="color:var(--dim);font-size:11px;margin-left:8px">${_hvFamily}</span>` : ""}</p>
-          <p style="color:var(--dim);font-size:12px;font-style:italic;margin:0 0 10px">"${_hvQuip}"</p>
-          <p style="font-size:11px;color:var(--dim);margin:0">Walk outside to chat with ${_hvName} in the village.</p>
+          <p style="color:var(--dim);font-size:12px;font-style:italic;margin:0 0 6px">"${_hvQuip}"</p>
+          ${_stealBtn}
         </div>`
       );
     }
@@ -7193,6 +7397,59 @@ function bindMain(){
       log(`🍺 <b>Pint at The Rose & Pallet</b>.`, "good");
     }
     achCheck(); renderMain(); updateHud(); save();
+  });
+  // M10 — mischief handlers
+  document.querySelectorAll("[data-steal]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    if (!isNight()){ toast("Not a good time for this."); return; }
+    if (S.stolen){ toast("You've already taken something — leave!"); return; }
+    const _item = _STOLEN_FOODS[Math.floor(Math.random()*_STOLEN_FOODS.length)];
+    if (!S.items) S.items = {};
+    S.items[_item] = (S.items[_item]||0) + 1;
+    S.stolen = true;
+    const _stir = Math.random() < 0.25;
+    if (_stir){
+      toast(`😬 You heard something stir… grab what you can and get out!`);
+    } else {
+      toast(`🤫 Grabbed: ${_item.replace(/_/g," ")}. Now get out before they wake!`);
+    }
+    log(`🦹 ${pName()} pinched a <b>${_item.replace(/_/g," ")}</b> from ${VILLAGERS.find(v=>v.homeId===S.roomObjId)?.n||"someone"}'s fridge.`);
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-leave-cell]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    if (S.caught?.cellUntil > Date.now()){ toast("Sentence not served yet."); return; }
+    S.caught = { active: false, cellUntil: 0, maxTime: 0 };
+    S.trespass = { active: false, homeId: null };
+    S.stolen = false; S.fleeUntil = 0;
+    IP.tx = null; IP.ty = null; IP.moving = false;
+    VP.enterCooldown = 90;
+    S.tab = "village";
+    log(`🔓 ${pName()} released from the Featherstone holding cell.`, "good");
+    toast("🔓 You're free! Try to stay out of trouble.");
+    renderNav(); renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-deal-cell]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    const _dealCost = Math.max(20, Math.round(S.coins * 0.15));
+    if (S.coins < _dealCost){ toast("Not enough coins."); return; }
+    S.coins -= _dealCost;
+    const _halfRemaining = Math.round((S.caught.cellUntil - Date.now()) / 2);
+    S.caught.cellUntil = Date.now() + _halfRemaining;
+    toast(`🤝 Deal struck! ${fmt(_dealCost)} coins to Officer Plonk. Sentence halved.`);
+    log(`🤝 Paid Officer Plonk ${fmt(_dealCost)} coins — sentence halved.`, "");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-surrender]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    const _fine = Math.floor(S.coins * 0.10);
+    S.coins = Math.max(0, S.coins - _fine);
+    const _dur = Math.round(DAY_DURATION_MS / 2); // 12 game-hours
+    S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur };
+    S.stolen = false; S.trespass = { active: false, homeId: null }; S.fleeUntil = 0;
+    S.tab = "police_cell";
+    IP.x = icanvasW()/2; IP.y = icanvasH() - 60;
+    IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
+    CHAT_NPC = null;
+    if (_fine > 0) log(`🙋 ${pName()} handed themselves in. ${fmt(_fine)} coin fine. Reduced sentence.`, "");
+    toast(`🙋 Reduced sentence: 12 game-hours (about ${Math.round(_dur/60000)} real min).`);
+    renderNav(); renderMain(); updateHud(); save();
   });
   // village beautification purchases
   document.querySelectorAll("[data-beautify]").forEach(b=>{
