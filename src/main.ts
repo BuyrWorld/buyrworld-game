@@ -1630,6 +1630,7 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   const _acc = opts.accessory || 'none';
   const _scf = opts.scarfColor|| '#c04040';
   const _fem = female || false;
+  const _wave = !!(opts.waving);
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
   if (scale !== 1.0) ctx.scale(scale, scale);
@@ -1644,11 +1645,22 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   if (_sh){ ctx.fillStyle=_sh; ctx.fillRect(-6,8+legSwing*0.4,5,2); ctx.fillRect(0,8-legSwing*0.4,5,2); }
   // shirt body + arms
   ctx.fillStyle=shirt; ctx.fillRect(-7,-6,14,10);
-  ctx.fillRect(-9,-5+armSwing*0.3,3,8); ctx.fillRect(6,-5-armSwing*0.3,3,8);
+  ctx.fillRect(-9,-5+armSwing*0.3,3,8);                   // left arm always normal
+  if (!_wave) ctx.fillRect(6,-5-armSwing*0.3,3,8);         // right arm (skipped when waving)
   // hands
-  ctx.fillStyle=skin; ctx.fillRect(-9,2+armSwing*0.3,3,3); ctx.fillRect(6,2-armSwing*0.3,3,3);
+  ctx.fillStyle=skin; ctx.fillRect(-9,2+armSwing*0.3,3,3);
+  if (!_wave) ctx.fillRect(6,2-armSwing*0.3,3,3);
   // jacket overlay
-  if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); ctx.fillRect(-9,-5+armSwing*0.3,3,6); ctx.fillRect(6,-5-armSwing*0.3,3,6); }
+  if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); ctx.fillRect(-9,-5+armSwing*0.3,3,6); if(!_wave) ctx.fillRect(6,-5-armSwing*0.3,3,6); }
+  // waving right arm — raised and animated, drawn in character-space coords
+  if (_wave){
+    const _wa = Math.sin(t*3)*0.5;
+    ctx.save(); ctx.translate(7,-6); ctx.rotate(-1.1+_wa);
+    ctx.fillStyle=shirt;  ctx.fillRect(0,0,3,8);
+    if(_jk){ ctx.fillStyle=_jk; ctx.fillRect(0,0,3,6); }
+    ctx.fillStyle=skin;   ctx.fillRect(0,8,3,3);
+    ctx.restore();
+  }
   // head
   ctx.fillStyle=skin; ctx.fillRect(-5,-16,10,10);
   // scarf at neck
@@ -4781,6 +4793,7 @@ function setupInterior(){
 }
 
 let _titlePreviewRaf = 0;
+let _charPreviewRaf  = 0;
 function _drawTitlePreview(){
   const cv = document.getElementById("title-preview") as HTMLCanvasElement;
   if (!cv || document.getElementById("title")?.style.display === "none") return;
@@ -4797,11 +4810,7 @@ function _drawTitlePreview(){
   // player character — large scale, centre
   const _scale = 3.2;
   const _cx = W2/2, _cy = H2*0.72;
-  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, false, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), plOpts());
-  // wave arm animation — overlay a raised arm gesture
-  const _waveAng = Math.sin(t2*3)*0.6;
-  ctx2.save(); ctx2.translate(_cx+7*_scale, _cy-8*_scale); ctx2.rotate(-0.8+_waveAng);
-  ctx2.fillStyle=plSkin()||"#f2c49a"; ctx2.fillRect(-2,-10,4,10); ctx2.restore();
+  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, false, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), {...plOpts(), waving:true});
   _titlePreviewRaf = requestAnimationFrame(_drawTitlePreview);
 }
 function showTitle(){
@@ -6710,19 +6719,36 @@ function renderSettings(){
     <p style="font-size:11px;color:var(--dim);margin-top:10px;">Stats: ${fmt(S.counters.actions)} actions · ${fmt(S.counters.contracts)} contracts delivered · Total level ${totalLvl()}</p>
   </div>`;
 }
-function drawCharPreview(canvasId){
+function _animCharPreview(){
+  const cv = document.getElementById("char-preview") as HTMLCanvasElement;
+  if (!cv || S.tab !== "character"){ _charPreviewRaf = 0; return; }
+  const ctx = cv.getContext("2d") as CanvasRenderingContext2D;
+  const W2 = cv.width, H2 = cv.height, t2 = performance.now()/1000;
+  ctx.clearRect(0,0,W2,H2);
+  ctx.fillStyle="#9fd6a8"; ctx.fillRect(0,0,W2,H2);
+  ctx.fillStyle="#7cbf86"; ctx.fillRect(0,Math.round(H2*0.75),W2,Math.round(H2*0.25));
+  for(let _fi=0;_fi<4;_fi++){ ctx.fillStyle=(["#e84060","#ffd666","#f86040","#6fb7ff"] as string[])[_fi]; ctx.beginPath(); ctx.arc(14+_fi*24,Math.round(H2*0.79),3,0,7); ctx.fill(); }
+  ctx.save(); ctx.translate(Math.round(W2/2), H2-16); ctx.scale(3,3);
+  drawPerson(ctx,0,0,plHair(),plShirt(),t2,false,1,null,"down",plSkin(),plTrousers(),null,plGender()==='female',1.0,plHat(),plHatColor(),{...plOpts(),waving:true});
+  ctx.restore();
+  _charPreviewRaf = requestAnimationFrame(_animCharPreview);
+}
+function drawCharPreview(canvasId: string){
+  if (canvasId === "char-preview"){
+    cancelAnimationFrame(_charPreviewRaf);
+    _animCharPreview();
+    return;
+  }
+  // hud-portrait: single static frame
   const cv = document.getElementById(canvasId);
   if (!cv) return;
-  const ctx = cv.getContext("2d");
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  ctx.fillStyle="#9fd6a8"; ctx.fillRect(0, 0, cv.width, cv.height);
-  const big = canvasId === "char-preview";
-  const sc = big ? 3 : 1;
-  ctx.save();
-  ctx.translate(cv.width/2, cv.height - (big ? 20 : 12));
-  ctx.scale(sc, sc);
-  drawPerson(ctx, 0, 0, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
+  const ctx = (cv as HTMLCanvasElement).getContext("2d");
+  if (!ctx) return;
+  const W2 = (cv as HTMLCanvasElement).width, H2 = (cv as HTMLCanvasElement).height;
+  ctx.clearRect(0,0,W2,H2);
+  ctx.fillStyle="#9fd6a8"; ctx.fillRect(0,0,W2,H2);
+  ctx.save(); ctx.translate(Math.round(W2/2), H2-12);
+  drawPerson(ctx,0,0,plHair(),plShirt(),0,false,1,null,"down",plSkin(),plTrousers(),null,plGender()==='female',1.0,plHat(),plHatColor(),plOpts());
   ctx.restore();
 }
 function renderPoliceCellPanel(){
