@@ -371,6 +371,11 @@ const ACH = [
   { id:"village_patron",    ic:"🌸", n:"Village Patron",     ds:"Fund your first beautification project.",      r:50,  c:()=>(S.beautification?.length||0)>=1 },
   { id:"village_benefactor",ic:"🌺", n:"Village Benefactor", ds:"Fund 10 beautification projects.",            r:200, c:()=>(S.beautification?.length||0)>=10 },
   { id:"greenfield_champion",ic:"🏡",n:"Greenfield Champion",ds:"Complete all 50 beautification projects.",    r:2000,c:()=>(S.beautification?.length||0)>=50 },
+  { id:"first_best_friend", ic:"💖", n:"Best Friends",            ds:"Reach Best Friends with any villager.",                  r:200, c:()=>VILLAGERS.some(v=>friendLvl(v.id)>=5) },
+  { id:"social_butterfly",  ic:"🦋", n:"Social Butterfly",        ds:"Reach Friends level with all 17 villagers.",             r:500, c:()=>VILLAGERS.every(v=>friendLvl(v.id)>=2) },
+  { id:"request_1",         ic:"💌", n:"Good Samaritan",          ds:"Fulfil your first personal villager request.",           r:40,  c:()=>(S.counters?.requestsFulfilled||0)>=1 },
+  { id:"request_10",        ic:"🤝", n:"Helpful Neighbour",       ds:"Fulfil 10 personal villager requests.",                  r:150, c:()=>(S.counters?.requestsFulfilled||0)>=10 },
+  { id:"request_50",        ic:"🏅", n:"Pillar of the Community", ds:"Fulfil 50 personal villager requests.",                  r:500, c:()=>(S.counters?.requestsFulfilled||0)>=50 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -390,6 +395,8 @@ const ACH_PROG = {
   master_artisan: ()=>({ cur:Math.min(200, prodSum(CRAFTED)),                          max:200   }),
   village_benefactor:   ()=>({ cur:Math.min(10, S.beautification?.length||0),          max:10    }),
   greenfield_champion:  ()=>({ cur:Math.min(50, S.beautification?.length||0),          max:50    }),
+  request_10:           ()=>({ cur:Math.min(10, S.counters?.requestsFulfilled||0),     max:10    }),
+  request_50:           ()=>({ cur:Math.min(50, S.counters?.requestsFulfilled||0),     max:50    }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
@@ -920,6 +927,73 @@ const NB_POOL = [
   { npcId:'ida',    npcName:'Ida',    itemId:'smoked_fish', qty:2, reward:120, friendXp:12 },
   { npcId:'olive',  npcName:'Olive',  itemId:'smoked_fish', qty:1, reward:75,  friendXp:9  },
   { npcId:'edna',   npcName:'Edna',   itemId:'gift_basket', qty:1, reward:180, friendXp:15 },
+];
+// Personal requests — shown in the Village Friends panel, refresh every 24 h, scale with friendship level
+const PERSONAL_REQUESTS = [
+  { npcId:'agnes',  itemId:'berries',     qty:4, reward:50,  friendXp:8,  minLvl:0 },
+  { npcId:'agnes',  itemId:'wild_herb',   qty:3, reward:65,  friendXp:10, minLvl:1 },
+  { npcId:'agnes',  itemId:'herb_tea',    qty:2, reward:90,  friendXp:12, minLvl:2 },
+  { npcId:'agnes',  itemId:'gift_basket', qty:1, reward:165, friendXp:18, minLvl:3 },
+  { npcId:'bertie', itemId:'coal',        qty:4, reward:42,  friendXp:7,  minLvl:0 },
+  { npcId:'bertie', itemId:'iron_ore',    qty:5, reward:35,  friendXp:7,  minLvl:0 },
+  { npcId:'bertie', itemId:'iron_bar',    qty:3, reward:62,  friendXp:10, minLvl:2 },
+  { npcId:'bertie', itemId:'steel_bar',   qty:2, reward:82,  friendXp:12, minLvl:3 },
+  { npcId:'clara',  itemId:'berries',     qty:5, reward:55,  friendXp:8,  minLvl:0 },
+  { npcId:'clara',  itemId:'mushroom',    qty:3, reward:50,  friendXp:8,  minLvl:1 },
+  { npcId:'clara',  itemId:'berry_jam',   qty:2, reward:105, friendXp:14, minLvl:2 },
+  { npcId:'clara',  itemId:'gift_basket', qty:1, reward:168, friendXp:18, minLvl:3 },
+  { npcId:'derek',  itemId:'wood',        qty:6, reward:25,  friendXp:6,  minLvl:0 },
+  { npcId:'derek',  itemId:'plank',       qty:4, reward:50,  friendXp:8,  minLvl:1 },
+  { npcId:'derek',  itemId:'steel_bar',   qty:2, reward:82,  friendXp:12, minLvl:2 },
+  { npcId:'derek',  itemId:'gearbox',     qty:1, reward:110, friendXp:15, minLvl:3 },
+  { npcId:'edna',   itemId:'lamp',        qty:2, reward:80,  friendXp:10, minLvl:0 },
+  { npcId:'edna',   itemId:'vase',        qty:2, reward:105, friendXp:12, minLvl:1 },
+  { npcId:'edna',   itemId:'painting',    qty:1, reward:100, friendXp:14, minLvl:2 },
+  { npcId:'edna',   itemId:'gift_basket', qty:1, reward:178, friendXp:20, minLvl:3 },
+  { npcId:'frank',  itemId:'wood',        qty:6, reward:22,  friendXp:6,  minLvl:0 },
+  { npcId:'frank',  itemId:'plank',       qty:4, reward:50,  friendXp:8,  minLvl:1 },
+  { npcId:'frank',  itemId:'rare_wood',   qty:2, reward:182, friendXp:16, minLvl:3 },
+  { npcId:'gracie', itemId:'mushroom',    qty:4, reward:55,  friendXp:8,  minLvl:0 },
+  { npcId:'gracie', itemId:'berries',     qty:5, reward:50,  friendXp:8,  minLvl:0 },
+  { npcId:'gracie', itemId:'wild_herb',   qty:3, reward:62,  friendXp:10, minLvl:2 },
+  { npcId:'gracie', itemId:'berry_jam',   qty:2, reward:105, friendXp:13, minLvl:3 },
+  { npcId:'hector', itemId:'iron_bar',    qty:2, reward:35,  friendXp:7,  minLvl:0 },
+  { npcId:'hector', itemId:'bracket',     qty:4, reward:72,  friendXp:9,  minLvl:1 },
+  { npcId:'hector', itemId:'wiring_loom', qty:2, reward:96,  friendXp:12, minLvl:2 },
+  { npcId:'hector', itemId:'gearbox',     qty:1, reward:108, friendXp:15, minLvl:3 },
+  { npcId:'ida',    itemId:'sardine',     qty:5, reward:55,  friendXp:7,  minLvl:0 },
+  { npcId:'ida',    itemId:'mackerel',    qty:3, reward:62,  friendXp:9,  minLvl:1 },
+  { npcId:'ida',    itemId:'smoked_fish', qty:2, reward:132, friendXp:14, minLvl:2 },
+  { npcId:'ida',    itemId:'salmon',      qty:2, reward:142, friendXp:15, minLvl:3 },
+  { npcId:'jack',   itemId:'coal',        qty:5, reward:50,  friendXp:7,  minLvl:0 },
+  { npcId:'jack',   itemId:'iron_bar',    qty:3, reward:62,  friendXp:9,  minLvl:1 },
+  { npcId:'jack',   itemId:'steel_bar',   qty:2, reward:82,  friendXp:12, minLvl:2 },
+  { npcId:'kitty',  itemId:'bracket',     qty:3, reward:62,  friendXp:8,  minLvl:0 },
+  { npcId:'kitty',  itemId:'wiring_loom', qty:2, reward:96,  friendXp:12, minLvl:1 },
+  { npcId:'kitty',  itemId:'gearbox',     qty:1, reward:108, friendXp:14, minLvl:2 },
+  { npcId:'kitty',  itemId:'sensor',      qty:1, reward:292, friendXp:20, minLvl:4 },
+  { npcId:'lenny',  itemId:'wood',        qty:5, reward:20,  friendXp:5,  minLvl:0 },
+  { npcId:'lenny',  itemId:'plank',       qty:4, reward:48,  friendXp:8,  minLvl:1 },
+  { npcId:'lenny',  itemId:'rare_wood',   qty:2, reward:182, friendXp:16, minLvl:3 },
+  { npcId:'mabel',  itemId:'berries',     qty:6, reward:62,  friendXp:8,  minLvl:0 },
+  { npcId:'mabel',  itemId:'mushroom',    qty:4, reward:55,  friendXp:8,  minLvl:0 },
+  { npcId:'mabel',  itemId:'berry_jam',   qty:2, reward:105, friendXp:13, minLvl:2 },
+  { npcId:'mabel',  itemId:'herb_tea',    qty:2, reward:96,  friendXp:13, minLvl:2 },
+  { npcId:'ned',    itemId:'wood',        qty:8, reward:30,  friendXp:5,  minLvl:0 },
+  { npcId:'ned',    itemId:'plank',       qty:5, reward:56,  friendXp:8,  minLvl:1 },
+  { npcId:'ned',    itemId:'carved_bowl', qty:2, reward:118, friendXp:14, minLvl:2 },
+  { npcId:'ned',    itemId:'rare_wood',   qty:2, reward:182, friendXp:16, minLvl:3 },
+  { npcId:'olive',  itemId:'sardine',     qty:6, reward:62,  friendXp:8,  minLvl:0 },
+  { npcId:'olive',  itemId:'mackerel',    qty:3, reward:62,  friendXp:9,  minLvl:1 },
+  { npcId:'olive',  itemId:'smoked_fish', qty:2, reward:132, friendXp:14, minLvl:2 },
+  { npcId:'olive',  itemId:'tuna',        qty:1, reward:148, friendXp:16, minLvl:3 },
+  { npcId:'reg',    itemId:'iron_ore',    qty:5, reward:30,  friendXp:6,  minLvl:0 },
+  { npcId:'reg',    itemId:'coal',        qty:5, reward:50,  friendXp:7,  minLvl:0 },
+  { npcId:'reg',    itemId:'plank',       qty:4, reward:48,  friendXp:8,  minLvl:1 },
+  { npcId:'reg',    itemId:'iron_bar',    qty:3, reward:62,  friendXp:9,  minLvl:2 },
+  { npcId:'pearl',  itemId:'mackerel',    qty:5, reward:56,  friendXp:8,  minLvl:0 },
+  { npcId:'pearl',  itemId:'salmon',      qty:3, reward:96,  friendXp:12, minLvl:1 },
+  { npcId:'pearl',  itemId:'tuna',        qty:1, reward:148, friendXp:16, minLvl:3 },
 ];
 function isHarbourUnlocked(){ return totalLvl() >= 100; }
 function serviceCost(){ return Math.max(5, Math.round((100 - (S.bike?.condition ?? 100)) * 1.5)); }
@@ -3948,6 +4022,7 @@ function freshState(){
     schoolBuff: 0,
     beautification: [],
     prestigeIncomeAt: 0,
+    villagerRequests: {},
   };
 }
 let S = freshState();
@@ -3986,6 +4061,7 @@ function load(){
       if (!S.schoolBuff) S.schoolBuff = 0;
       if (!S.beautification) S.beautification = [];
       if (!S.prestigeIncomeAt) S.prestigeIncomeAt = 0;
+      if (!S.villagerRequests) S.villagerRequests = {};
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4377,6 +4453,53 @@ function updatePrestigeIncome(now){
   S.prestigeIncomeAt = now + 60000;
   save();
 }
+function generateVillagerRequest(npcId: string, now: number){
+  const lvl = friendLvl(npcId);
+  if (lvl < 1) return null;
+  const pool = PERSONAL_REQUESTS.filter(r => r.npcId === npcId && r.minLvl <= lvl);
+  if (!pool.length) return null;
+  const r = pool[Math.floor(Math.random() * pool.length)];
+  return { itemId: r.itemId, qty: r.qty, reward: r.reward, friendXp: r.friendXp, expiresAt: now + 24*60*60*1000 };
+}
+function updateVillagerRequests(now: number){
+  if (!S.villagerRequests) S.villagerRequests = {};
+  let changed = false;
+  for (const v of VILLAGERS){
+    const cur = S.villagerRequests[v.id];
+    if (!cur || now > cur.expiresAt){
+      const req = generateVillagerRequest(v.id, now);
+      if (req){ S.villagerRequests[v.id] = req; changed = true; }
+      else if (cur){ delete S.villagerRequests[v.id]; changed = true; }
+    }
+  }
+  if (changed) save();
+}
+(globalThis as any).fulfillVillagerRequest = function(npcId: string){
+  if (!S.villagerRequests) { toast("No active request."); return; }
+  const req = S.villagerRequests[npcId];
+  if (!req){ toast("No active request."); return; }
+  if ((S.items[req.itemId]||0) < req.qty){ toast("You don't have enough " + (ITEMS[req.itemId]?.n||req.itemId) + "."); return; }
+  S.items[req.itemId] = (S.items[req.itemId]||0) - req.qty;
+  S.coins += req.reward;
+  S.counters.coinsEarned = (S.counters.coinsEarned||0) + req.reward;
+  S.counters.requestsFulfilled = (S.counters.requestsFulfilled||0) + 1;
+  if (!S.friendships) S.friendships = {};
+  if (!S.friendships[npcId]) S.friendships[npcId] = { xp:0, lastChat:0 };
+  const wasLvl = friendLvl(npcId);
+  S.friendships[npcId].xp = (S.friendships[npcId].xp||0) + Math.round(req.friendXp * prestigeFriendXpMult());
+  delete S.villagerRequests[npcId];
+  const vn = VILLAGERS.find(v=>v.id===npcId)?.n || npcId;
+  const newLvl = friendLvl(npcId);
+  if (newLvl > wasLvl){
+    toast(`❤️ You're now ${FRIEND_LVL_NAMES[newLvl]} with ${vn}!`);
+    log(`❤️ Friendship up: <b>${vn}</b> — ${FRIEND_LVL_NAMES[newLvl]}`, "good");
+    if (newLvl === 4) grantFriendshipGift(npcId, vn);
+  } else {
+    toast(`💌 ${vn} thanks you! +${fmt(req.reward)} coins, +${req.friendXp} ❤️`);
+  }
+  log(`💌 Personal request fulfilled for <b>${vn}</b>: ${req.qty}× ${ITEMS[req.itemId]?.n||req.itemId} — +${fmt(req.reward)} coins`, "good");
+  achCheck(); renderMain(); updateHud(); save();
+};
 function updateLoans(){
   if (!S.loans || !S.loans.length) return;
   const _now = Date.now();
@@ -5444,11 +5567,22 @@ function renderMain(){
             const xpBar = nextThresh
               ? `<div style="background:rgba(255,255,255,.1);height:3px;border-radius:2px;margin-top:2px"><div style="background:#e07070;width:${Math.round(xp/nextThresh*100)}%;height:100%;border-radius:2px"></div></div>`
               : `<div style="height:3px"></div>`;
+            const req = S.villagerRequests?.[v.id];
+            const reqHtml = req ? (()=>{
+              const it = ITEMS[req.itemId];
+              const have = (S.items[req.itemId]||0) >= req.qty;
+              const ttl = Math.max(0, Math.ceil((req.expiresAt - Date.now()) / 3600000));
+              return `<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:4px 6px;margin-top:4px;display:flex;align-items:center;gap:6px">
+                <span style="font-size:14px">${it?.ic||'📦'}</span>
+                <span style="font-size:10px;color:var(--dim);flex:1">${v.n} needs ${req.qty}× ${it?.n||req.itemId} · <span style="color:#ffd666">+${fmt(req.reward)}c +${req.friendXp}❤️</span> <span style="opacity:.5">(${ttl}h)</span></span>
+                <button data-fulfill-req="${v.id}" style="background:${have?'#3a5a3a':'#444'};color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px"${have?'':' disabled'}>${have?'Fulfil':'Need more'}</button>
+              </div>`;
+            })() : (lvl >= 1 ? `<div style="font-size:10px;color:rgba(255,255,255,.25);margin:2px 0 4px">No request right now.</div>` : '');
             return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
               <span style="font-size:11px;min-width:52px;color:var(--dim)">${v.n}</span>
               <span>${heartsHtml(v.id,10)}</span>
               <span style="font-size:10px;color:var(--dim);flex:1">${FRIEND_LVL_NAMES[lvl]}${nextThresh?` · ${xp}/${nextThresh}`:''}</span>
-            </div>${xpBar}`;
+            </div>${xpBar}${reqHtml}`;
           }).join('')}
         </div>
         ${renderSettings()}`
@@ -5695,6 +5829,9 @@ function bindMain(){
     }
     S.retail.slots[_i] = { itemId:null, qty:0 };
     renderMain(); save();
+  });
+  document.querySelectorAll("[data-fulfill-req]").forEach(b=> b.onclick = ()=>{
+    fulfillVillagerRequest((b as HTMLElement).dataset.fulfillReq);
   });
   // village beautification purchases
   document.querySelectorAll("[data-beautify]").forEach(b=>{
@@ -5995,6 +6132,7 @@ setInterval(()=>{
   updateFriendGifts(now);
   updateNoticeBoard(now);
   updatePrestigeIncome(now);
+  updateVillagerRequests(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
