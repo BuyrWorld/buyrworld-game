@@ -1018,6 +1018,7 @@ const INTERIOR_COLS = {
   ],
 };
 const VKEYS = {};
+const GPKEYS: Record<string,boolean> = {}; // gamepad movement, kept separate so keyboard keys never get cleared
 const VFX = [];
 const DUST = [];
 let vLastT = 0, lastDust = 0;
@@ -1248,10 +1249,10 @@ function solidAt(px, py){
 }
 function moveActor(a, dt, speed, free=false){
   let dx=0, dy=0;
-  if ((a===VP||a===IP) && (VKEYS.ArrowLeft||VKEYS.a)) dx-=1;
-  if ((a===VP||a===IP) && (VKEYS.ArrowRight||VKEYS.d)) dx+=1;
-  if ((a===VP||a===IP) && (VKEYS.ArrowUp||VKEYS.w)) dy-=1;
-  if ((a===VP||a===IP) && (VKEYS.ArrowDown||VKEYS.s)) dy+=1;
+  if ((a===VP||a===IP) && (VKEYS.ArrowLeft||VKEYS.a||GPKEYS.ArrowLeft))  dx-=1;
+  if ((a===VP||a===IP) && (VKEYS.ArrowRight||VKEYS.d||GPKEYS.ArrowRight)) dx+=1;
+  if ((a===VP||a===IP) && (VKEYS.ArrowUp||VKEYS.w||GPKEYS.ArrowUp))    dy-=1;
+  if ((a===VP||a===IP) && (VKEYS.ArrowDown||VKEYS.s||GPKEYS.ArrowDown))  dy+=1;
   if (dx||dy){ a.tx=null; a.ty=null; if (a.pending!==undefined) a.pending=null; }
   else if (a.tx!==null && a.tx!==undefined){
     const vx=a.tx-a.x, vy=a.ty-a.y, d=Math.hypot(vx,vy);
@@ -3969,6 +3970,7 @@ function drawTitleFX(t){
   if (Math.floor(t*4)%3===0) drawEmojiC(ctx,"✨", (t*137)%W, (t*89)%(H*0.5), 12);
 }
 function villageFrame(ts){
+  pollGamepad();
   updateClock();
   const t = ts/1000;
   const dt = Math.min(0.05, vLastT ? t-vLastT : 0.016);
@@ -6425,6 +6427,7 @@ if (!TABS.some(t=>t.id===S.tab)) S.tab = "village";
 preloadAll();
 renderNav(); renderMain(); updateHud(); syncMusicButton();
 document.getElementById("btn-music").onclick = () => cycleVolume();
+document.getElementById("btn-fullscreen").onclick = () => toggleFullscreen();
 window.addEventListener("keydown", e => {
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){
@@ -6450,6 +6453,72 @@ if (window._offlineSummary){
 if (!hadSave){
   log("Mine Iron Ore, smelt it in the Steelworks, press Brackets, then deliver Contracts — or haggle with Marge in the Trade tab.");
 }
+
+/* ---- Fullscreen ---- */
+function toggleFullscreen(){
+  if (!document.fullscreenElement)
+    document.documentElement.requestFullscreen().catch(()=>{});
+  else
+    document.exitFullscreen().catch(()=>{});
+}
+document.addEventListener('fullscreenchange', ()=>{
+  const fs = !!document.fullscreenElement;
+  document.body.classList.toggle('fullscreen-mode', fs);
+  const btn = document.getElementById('btn-fullscreen');
+  if (btn) btn.textContent = fs ? '✕FS' : '⛶';
+});
+
+/* ---- Gamepad ---- */
+const _gpLastBtns: boolean[] = [];
+function pollGamepad(){
+  const pads = navigator.getGamepads ? navigator.getGamepads() : ([] as (Gamepad|null)[]);
+  const pad = Array.from(pads).find(p => p && p.connected) as Gamepad | undefined;
+  GPKEYS.ArrowLeft = false; GPKEYS.ArrowRight = false;
+  GPKEYS.ArrowUp   = false; GPKEYS.ArrowDown  = false;
+  if (!pad) return;
+  const lx = (pad.axes[0]||0), ly = (pad.axes[1]||0), dead = 0.20;
+  if (lx < -dead || pad.buttons[14]?.pressed) GPKEYS.ArrowLeft  = true;
+  if (lx >  dead || pad.buttons[15]?.pressed) GPKEYS.ArrowRight = true;
+  if (ly < -dead || pad.buttons[12]?.pressed) GPKEYS.ArrowUp    = true;
+  if (ly >  dead || pad.buttons[13]?.pressed) GPKEYS.ArrowDown  = true;
+  const prev = _gpLastBtns;
+  if (pad.buttons[0]?.pressed  && !prev[0])  gpInteract();
+  if (pad.buttons[1]?.pressed  && !prev[1])  gpBack();
+  if (pad.buttons[9]?.pressed  && !prev[9])  toggleFullscreen();
+  for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
+}
+function gpInteract(){
+  if (CHAT_NPC){ CHAT_NPC.quipIdx=(CHAT_NPC.quipIdx+1)%CHAT_NPC.quips.length; CHAT_NPC=null; renderMain(); return; }
+  if (INTERIOR_TABS.has(S.tab)){
+    const workers = VILLAGER_STATE.filter(v=>v.indoor && v.workTab===S.tab);
+    const nearest = workers.sort((a,b)=>Math.hypot(IP.x-a.iwx,IP.y-a.iwy)-Math.hypot(IP.x-b.iwx,IP.y-b.iwy))[0];
+    if (nearest && Math.hypot(IP.x-nearest.iwx, IP.y-nearest.iwy) < 60){ CHAT_NPC=nearest; renderMain(); }
+    return;
+  }
+  if (S.tab!=="village") return;
+  let bestO: any = null, bestD = Infinity;
+  for (const o of V_OBJECTS){
+    const ap = objApproach(o), d = Math.hypot(VP.x-ap.x, VP.y-ap.y);
+    if (d < 120 && d < bestD){ bestO=o; bestD=d; }
+  }
+  if (bestO){
+    if (bestD < 46) interactObj(bestO);
+    else { const ap=objApproach(bestO); VP.tx=ap.x; VP.ty=ap.y; VP.pending=bestO; }
+  }
+}
+function gpBack(){
+  if (CHAT_NPC){ CHAT_NPC=null; renderMain(); return; }
+  if (INTERIOR_TABS.has(S.tab)||S.tab!=="village"){ S.tab="village"; renderNav(); renderMain(); }
+}
+window.addEventListener('gamepadconnected', ()=>{
+  toast('🎮 Controller connected!');
+  const el = document.getElementById('gp-indicator');
+  if (el) el.style.display='flex';
+});
+window.addEventListener('gamepaddisconnected', ()=>{
+  const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+  if (!pads.length){ const el=document.getElementById('gp-indicator'); if (el) el.style.display='none'; }
+});
 
 let lastTick = Date.now();
 setInterval(()=>{

@@ -402,6 +402,27 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 @keyframes zcOut{ to{opacity:0;transform:scale(.9);} }
 .vhint{ font-size:11px; color:var(--dim); margin-top:6px; text-align:center; }
 
+/* ---------- fullscreen / TV mode ---------- */
+.fullscreen-mode main { max-width:100%; padding:8px 10px; }
+.fullscreen-mode header { padding:8px 12px; gap:10px; }
+.fullscreen-mode header h1 { font-size:16px; }
+.fullscreen-mode nav button { font-size:14px; padding:12px 16px; }
+.fullscreen-mode .stat .v { font-size:13px; }
+.fullscreen-mode .stat .l { font-size:11px; }
+.fullscreen-mode .card .nm { font-size:14px; }
+.fullscreen-mode .card .ds { font-size:12px; }
+.fullscreen-mode .btn { font-size:13px; padding:9px 16px; }
+.fullscreen-mode #log { height:100px; font-size:13px; }
+.fullscreen-mode .panel h2 { font-size:13px; }
+.fullscreen-mode .vlbl { font-size:13px; padding:2px 9px; }
+.fullscreen-mode .action .nm { font-size:13px; }
+.fullscreen-mode .action .meta { font-size:12px; }
+/* Xbox / TV safe-zone — slight inner margin so nothing clips behind bezel */
+.fullscreen-mode { padding:0; }
+@media (display-mode: fullscreen){
+  main { max-width:100%; }
+}
+
 /* ---------- character customisation ---------- */
 .cust-panel{ }
 .cust-preview-wrap{ display:flex; align-items:center; gap:14px; margin-bottom:16px; }
@@ -440,6 +461,8 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
     <div class="stat"><div class="v" id="hud-pet">—</div><div class="l">Companion</div></div>
     <div class="stat"><div class="v" id="hud-time">☀️ Day</div><div class="l">Time</div></div>
     <button id="btn-music" class="btn alt" title="Toggle music" aria-label="Toggle music" style="padding:6px 10px;">🔊</button>
+    <button id="btn-fullscreen" class="btn alt" title="Fullscreen (F11)" aria-label="Toggle fullscreen" style="padding:6px 10px;">⛶</button>
+    <div id="gp-indicator" title="Gamepad connected" style="display:none;align-items:center;gap:3px;font-size:11px;color:var(--mint)">🎮</div>
   </div>
 </header>
 
