@@ -3858,6 +3858,58 @@ function drawInterior(t){
       ctx.fillStyle="#a07850"; ctx.beginPath(); ctx.arc(W/2,H-42,16,0,7); ctx.fill();
       ctx.fillStyle="#b08860"; ctx.beginPath(); ctx.arc(W/2,H-42,11,0,7); ctx.fill();
     }
+    // --- NPC daily routine (time-of-day activity) ---
+    if (_v){
+      const _nHr=gameHour();
+      const _bubble=(txt:string,bx:number=W/2,by:number=H-80)=>{
+        const _bw=txt.length*5+14;
+        ctx.fillStyle="rgba(255,248,220,.93)"; ctx.strokeStyle="#8c6947"; ctx.lineWidth=1;
+        ctx.fillRect(bx-_bw/2,by,_bw,14); ctx.strokeRect(bx-_bw/2,by,_bw,14);
+        ctx.fillStyle="#453423"; ctx.font="bold 6px monospace"; ctx.textAlign="center"; ctx.fillText(txt,bx,by+10); ctx.textAlign="left";
+      };
+      if (_nHr>=22||_nHr<7){
+        // sleeping — head(s) peek above the duvet line
+        const _drawHead=(hx:number,hy:number,hc:string,fem2:boolean)=>{
+          ctx.fillStyle="#f2c49a"; ctx.beginPath(); ctx.arc(hx,hy,6,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle=hc; ctx.fillRect(hx-5,hy-10,10,5);
+          if(fem2){ctx.fillRect(hx-8,hy-6,3,10);}
+        };
+        _drawHead(_bX+10,_bY+10,_v.hair||"#6a4a2f",_v.female||false);
+        if(_bConf.d){
+          const _p2=VILLAGERS.find(v2=>v2.n.toLowerCase()===(_v.partner||"").toLowerCase());
+          _drawHead(_bX+_bW/2+6,_bY+10,_p2?.hair||"#c9a24b",_p2?.female||false);
+        }
+        ctx.globalAlpha=0.35+Math.sin(t*1.4)*0.25;
+        ctx.fillStyle="#5a4a8a"; ctx.font="bold 8px monospace";
+        ctx.fillText("Zzz",_bX+(_bConf.d?Math.round(_bW*0.6):18)+6,_bY-4);
+        ctx.globalAlpha=1;
+      } else if (_nHr>=7&&_nHr<9.5){
+        // morning routine — kitchen area left
+        drawPerson(ctx,W*0.2,H-34,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
+        drawEmojiC(ctx,"☕",W*0.34,H-50,13);
+        const _q=["Morning already...","Tea's on.","Right, a new day.","Early bird."][Math.floor(Date.now()/8000)%4];
+        _bubble(_q,W*0.2,H-78);
+      } else if (_nHr>=12&&_nHr<13.5){
+        // lunch — seated at rug/table area
+        drawPerson(ctx,W/2-16,H-30,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
+        drawEmojiC(ctx,"🥗",W/2+12,H-46,12);
+        const _q=["Lunch break!","Quick bite.","Lovely grub.","Back soon."][Math.floor(Date.now()/8000)%4];
+        _bubble(_q,W/2-16,H-78);
+      } else if (_nHr>=18.5&&_nHr<22){
+        // evening — relaxing lower area
+        drawPerson(ctx,W*0.28,H-34,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
+        const _q=["Feet up!","Long day.","Quiet evening.","Bliss."][Math.floor(Date.now()/8000)%4];
+        _bubble(_q,W*0.28,H-78);
+      } else {
+        // at work — sticky note on the table
+        ctx.fillStyle="#f4e8c8"; ctx.fillRect(W/2-24,H-52,48,28);
+        ctx.strokeStyle="#8a6a40"; ctx.lineWidth=0.8; ctx.strokeRect(W/2-24,H-52,48,28);
+        ctx.fillStyle="#6a4a20"; ctx.font="bold 5px monospace"; ctx.textAlign="center";
+        ctx.fillText("Gone to",W/2,H-40); ctx.fillText("work!",W/2,H-30);
+        ctx.fillText("— "+_v.n,W/2,H-22); ctx.textAlign="left";
+        drawEmojiC(ctx,"📌",W/2+22,H-54,8);
+      }
+    }
   }
   if (S.tab==="school"){
     // school interior — two classrooms split by centre wall
