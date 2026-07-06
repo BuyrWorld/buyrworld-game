@@ -112,6 +112,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'postoffice',  kind: 'bld',   tx: 15, ty: 2,  w: 2, h: 2, tab: 'postoffice',    name: 'Post Office',     ic: '📮', wall: '#e8e0d8', roof: '#b03020' },
   { id: 'estateagent', kind: 'bld',   tx: 22, ty: 2,  w: 2, h: 2, tab: 'estateagent',   name: 'Estate Agent',    ic: '🏘️', wall: '#d8e0e8', roof: '#2a4060' },
   { id: 'bike_shop',   kind: 'bld',   tx: 29, ty: 2,  w: 2, h: 2, tab: 'bike_shop',     name: 'Cycle Shop',      ic: '🚲', wall: '#c8d8c0', roof: '#3a6a3a' },
+  { id: 'notice_board', kind: 'sign', tx: 35, ty: 3,  w: 1, h: 1, tab: 'notice_board', name: 'Notice Board',    ic: '📋' },
   // --- Retail district decorations ---
   { id: 'lamp_retail_1', kind: 'lamp', tx: 11, ty: 4, w: 1, h: 1 },
   { id: 'lamp_retail_2', kind: 'lamp', tx: 18, ty: 4, w: 1, h: 1 },
@@ -243,6 +244,15 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'home_13', kind: 'bld', tx: 61, ty: 31, w: 2, h: 2, tab: 'home', name: "Mabel's Cottage",  ic: '🏠', wall: '#e0c8d0', roof: '#7a4a5a' },
   { id: 'home_14', kind: 'bld', tx: 66, ty: 31, w: 2, h: 2, tab: 'home', name: "Ned's Cottage",    ic: '🏠', wall: '#b8c8b0', roof: '#3a5a3a' },
   { id: 'home_15', kind: 'bld', tx: 71, ty: 31, w: 2, h: 2, tab: 'home', name: "Olive's Cottage",  ic: '🏠', wall: '#b0ccd8', roof: '#3a607a' },
+  // --- Harbour District (south-east, ty=31-35, unlocks at total level 100) ---
+  { id: 'home_16', kind: 'bld', tx: 77, ty: 31, w: 2, h: 2, tab: 'home', name: "Reg's Cottage",   ic: '🏠', wall: '#c8d8e0', roof: '#2a4a6a' },
+  { id: 'home_17', kind: 'bld', tx: 82, ty: 31, w: 2, h: 2, tab: 'home', name: "Pearl's Cottage", ic: '🏠', wall: '#d0e0d8', roof: '#2a5a4a' },
+  { id: 'harbour_office',  kind: 'bld', tx: 53, ty: 33, w: 2, h: 2, tab: 'harbour_office',  name: "Harbourmaster's",  ic: '⚓', wall: '#d8c8a8', roof: '#2a4a6a' },
+  { id: 'boat_hire',       kind: 'bld', tx: 60, ty: 33, w: 2, h: 2, tab: 'boat_hire',       name: 'Boat Hire',        ic: '⛵', wall: '#c8b89a', roof: '#3a5a3a' },
+  { id: 'fishmonger_wh',   kind: 'bld', tx: 67, ty: 33, w: 2, h: 2, tab: 'fishmonger_wh',   name: 'Fish Warehouse',   ic: '🐟', wall: '#8ab0a8', roof: '#1a3a3a' },
+  { id: 'lamp_harbour_1',  kind: 'lamp', tx: 55, ty: 36, w: 1, h: 1 },
+  { id: 'lamp_harbour_2',  kind: 'lamp', tx: 62, ty: 36, w: 1, h: 1 },
+  { id: 'lamp_harbour_3',  kind: 'lamp', tx: 69, ty: 36, w: 1, h: 1 },
   // --- Village School (north of park, accessible from east path row 25) ---
   { id: 'school',     kind: 'bld', tx: 76, ty: 22, w: 5, h: 3, tab: 'school',     name: 'Village School', ic: '🏫', wall: '#e8e4c0', roof: '#5a8a4a' },
   { id: 'university', kind: 'bld', tx: 82, ty: 22, w: 3, h: 3, tab: 'university', name: 'University',     ic: '🎓', wall: '#ddd8c0', roof: '#4a3a7a' },

@@ -360,6 +360,7 @@ const ACH = [
   { id:"in_the_black",  ic:"📈", n:"In the Black",       ds:"Close an exchange position at a profit.", r:200, c:()=>(S.counters?.exchangeProfits||0)>=1 },
   { id:"good_neighbour",ic:"📬", n:"Good Neighbour",    ds:"Complete a villager delivery request.", r:75,  c:()=>(S.counters?.deliveries||0)>=1 },
   { id:"postman",      ic:"🚚", n:"Village Postman",    ds:"Complete 10 villager delivery requests.", r:300, c:()=>(S.counters?.deliveries||0)>=10 },
+  { id:"sea_legs",     ic:"⚓", n:"Sea Legs",          ds:"Unlock the Harbour District.",            r:200, c:()=>totalLvl()>=100 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -564,7 +565,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -632,6 +633,10 @@ const ZONE_TIPS = {
   fishing:       { ic:"🎣", n:"The Pier",            tip:"Cast your line. Patience is a virtue." },
   foraging:      { ic:"🌿", n:"The Forager's Hut",  tip:"Gather what the forest freely gives." },
   bike_shop:     { ic:"🚲", n:"Cycle Shop",          tip:"Rent, repair and upgrade your bike." },
+  notice_board:  { ic:"📋", n:"Village Notice Board", tip:"Community tasks from your neighbours." },
+  harbour_office:{ ic:"⚓", n:"Harbourmaster's Office", tip:"Fast travel and harbour services." },
+  boat_hire:     { ic:"⛵", n:"Greenfield Boat Hire",   tip:"Hire a boat to cross the bay quickly." },
+  fishmonger_wh: { ic:"🐟", n:"Fish Warehouse",         tip:"Sell your catch in bulk at a premium." },
   contracts:     { ic:"📦", n:"The Depot",           tip:"Fulfil orders to earn Logistics XP." },
   trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
@@ -749,6 +754,7 @@ const FRIEND_LOVES: Record<string,string[]> = {
   gracie:['berries','mushroom'],  hector:['bracket','wiring_loom'], ida:['salmon','tuna'],
   jack:['coal','steel_bar'],      kitty:['gearbox','wiring_loom'], lenny:['plank','wood'],
   mabel:['berries','wild_herb'],  ned:['rare_wood','wood'],        olive:['salmon','tuna'],
+  reg:['iron_bar','coal'],        pearl:['salmon','tuna'],
 };
 const FRIEND_LVL_NAMES = ['Stranger','Acquaintance','Friends','Good Friends','Close Friends','Best Friends'];
 const FRIEND_GIFT: Record<string,string> = {
@@ -756,7 +762,62 @@ const FRIEND_GIFT: Record<string,string> = {
   edna:'painting', frank:'plank', gracie:'mushroom', hector:'bracket',
   ida:'salmon', jack:'coal', kitty:'gearbox', lenny:'wood',
   mabel:'berries', ned:'rare_wood', olive:'tuna',
+  reg:'plank', pearl:'mackerel',
 };
+const NB_POOL = [
+  { npcId:'agnes',  npcName:'Agnes',  itemId:'bracket',     qty:3, reward:60,  friendXp:8  },
+  { npcId:'agnes',  npcName:'Agnes',  itemId:'plank',       qty:5, reward:55,  friendXp:8  },
+  { npcId:'agnes',  npcName:'Agnes',  itemId:'wiring_loom', qty:2, reward:90,  friendXp:10 },
+  { npcId:'bertie', npcName:'Bertie', itemId:'coal',        qty:4, reward:40,  friendXp:6  },
+  { npcId:'bertie', npcName:'Bertie', itemId:'iron_ore',    qty:5, reward:30,  friendXp:6  },
+  { npcId:'bertie', npcName:'Bertie', itemId:'iron_bar',    qty:3, reward:55,  friendXp:8  },
+  { npcId:'clara',  npcName:'Clara',  itemId:'berries',     qty:5, reward:50,  friendXp:8  },
+  { npcId:'clara',  npcName:'Clara',  itemId:'mushroom',    qty:3, reward:45,  friendXp:8  },
+  { npcId:'clara',  npcName:'Clara',  itemId:'wild_herb',   qty:4, reward:60,  friendXp:8  },
+  { npcId:'derek',  npcName:'Derek',  itemId:'plank',       qty:4, reward:45,  friendXp:6  },
+  { npcId:'derek',  npcName:'Derek',  itemId:'bracket',     qty:3, reward:60,  friendXp:8  },
+  { npcId:'derek',  npcName:'Derek',  itemId:'steel_bar',   qty:2, reward:70,  friendXp:8  },
+  { npcId:'edna',   npcName:'Edna',   itemId:'painting',    qty:1, reward:100, friendXp:12 },
+  { npcId:'edna',   npcName:'Edna',   itemId:'vase',        qty:2, reward:100, friendXp:12 },
+  { npcId:'edna',   npcName:'Edna',   itemId:'lamp',        qty:2, reward:75,  friendXp:10 },
+  { npcId:'frank',  npcName:'Frank',  itemId:'wood',        qty:6, reward:25,  friendXp:5  },
+  { npcId:'frank',  npcName:'Frank',  itemId:'plank',       qty:4, reward:45,  friendXp:6  },
+  { npcId:'frank',  npcName:'Frank',  itemId:'rare_wood',   qty:2, reward:175, friendXp:14 },
+  { npcId:'gracie', npcName:'Gracie', itemId:'mushroom',    qty:4, reward:55,  friendXp:8  },
+  { npcId:'gracie', npcName:'Gracie', itemId:'berries',     qty:5, reward:50,  friendXp:8  },
+  { npcId:'gracie', npcName:'Gracie', itemId:'wild_herb',   qty:3, reward:55,  friendXp:8  },
+  { npcId:'hector', npcName:'Hector', itemId:'iron_bar',    qty:2, reward:35,  friendXp:6  },
+  { npcId:'hector', npcName:'Hector', itemId:'bracket',     qty:4, reward:65,  friendXp:8  },
+  { npcId:'hector', npcName:'Hector', itemId:'wiring_loom', qty:2, reward:90,  friendXp:10 },
+  { npcId:'ida',    npcName:'Ida',    itemId:'sardine',     qty:5, reward:55,  friendXp:7  },
+  { npcId:'ida',    npcName:'Ida',    itemId:'mackerel',    qty:3, reward:60,  friendXp:8  },
+  { npcId:'ida',    npcName:'Ida',    itemId:'bass',        qty:2, reward:75,  friendXp:8  },
+  { npcId:'jack',   npcName:'Jack',   itemId:'coal',        qty:5, reward:50,  friendXp:7  },
+  { npcId:'jack',   npcName:'Jack',   itemId:'steel_bar',   qty:2, reward:70,  friendXp:8  },
+  { npcId:'jack',   npcName:'Jack',   itemId:'iron_bar',    qty:3, reward:55,  friendXp:8  },
+  { npcId:'kitty',  npcName:'Kitty',  itemId:'gearbox',     qty:1, reward:100, friendXp:12 },
+  { npcId:'kitty',  npcName:'Kitty',  itemId:'bracket',     qty:4, reward:65,  friendXp:8  },
+  { npcId:'kitty',  npcName:'Kitty',  itemId:'wiring_loom', qty:2, reward:90,  friendXp:10 },
+  { npcId:'lenny',  npcName:'Lenny',  itemId:'wood',        qty:5, reward:20,  friendXp:5  },
+  { npcId:'lenny',  npcName:'Lenny',  itemId:'plank',       qty:4, reward:45,  friendXp:6  },
+  { npcId:'lenny',  npcName:'Lenny',  itemId:'bracket',     qty:3, reward:60,  friendXp:8  },
+  { npcId:'mabel',  npcName:'Mabel',  itemId:'berries',     qty:6, reward:60,  friendXp:8  },
+  { npcId:'mabel',  npcName:'Mabel',  itemId:'mushroom',    qty:4, reward:55,  friendXp:8  },
+  { npcId:'mabel',  npcName:'Mabel',  itemId:'wild_herb',   qty:3, reward:55,  friendXp:8  },
+  { npcId:'ned',    npcName:'Ned',    itemId:'rare_wood',   qty:2, reward:175, friendXp:14 },
+  { npcId:'ned',    npcName:'Ned',    itemId:'wood',        qty:8, reward:30,  friendXp:5  },
+  { npcId:'ned',    npcName:'Ned',    itemId:'plank',       qty:5, reward:55,  friendXp:7  },
+  { npcId:'olive',  npcName:'Olive',  itemId:'sardine',     qty:6, reward:60,  friendXp:8  },
+  { npcId:'olive',  npcName:'Olive',  itemId:'tuna',        qty:1, reward:140, friendXp:14 },
+  { npcId:'olive',  npcName:'Olive',  itemId:'mackerel',    qty:3, reward:60,  friendXp:8  },
+  { npcId:'reg',    npcName:'Reg',    itemId:'iron_bar',    qty:3, reward:55,  friendXp:8  },
+  { npcId:'reg',    npcName:'Reg',    itemId:'coal',        qty:5, reward:50,  friendXp:7  },
+  { npcId:'reg',    npcName:'Reg',    itemId:'plank',       qty:4, reward:45,  friendXp:6  },
+  { npcId:'pearl',  npcName:'Pearl',  itemId:'salmon',      qty:3, reward:90,  friendXp:10 },
+  { npcId:'pearl',  npcName:'Pearl',  itemId:'mackerel',    qty:5, reward:55,  friendXp:8  },
+  { npcId:'pearl',  npcName:'Pearl',  itemId:'tuna',        qty:1, reward:140, friendXp:14 },
+];
+function isHarbourUnlocked(){ return totalLvl() >= 100; }
 function serviceCost(){ return Math.max(5, Math.round((100 - (S.bike?.condition ?? 100)) * 1.5)); }
 function bikeSpeedMult(){
   if (!S.bike?.equipped) return 1.0;
@@ -1766,6 +1827,48 @@ function drawExtras(ctx, t){
       ctx.beginPath(); ctx.moveTo(ssx,ssy+4); ctx.lineTo(ssx+5,ssy-12); ctx.lineTo(ssx+10,ssy+4); ctx.closePath(); ctx.fill();
     }
   }
+  // Harbour District dock — jetty planks + mooring posts + anchored boat
+  {
+    const _dockY = 36*TILE - CAM.y;
+    const _dockX1 = 53*TILE - CAM.x;
+    const _dockW  = 18*TILE;
+    if (_dockY > -40 && _dockY < VIEW_H + 40){
+      // horizontal dock planks on sand row
+      ctx.fillStyle="#7a5a38";
+      for(let pi=0; pi<_dockW; pi+=TILE){
+        ctx.fillRect(_dockX1+pi, _dockY, TILE-2, 8);
+        ctx.fillStyle="#6a4a2a"; ctx.fillRect(_dockX1+pi, _dockY, TILE-2, 2);
+        ctx.fillStyle="#7a5a38";
+      }
+      // mooring posts
+      for(const _mx of [53,57,61,65,69,71]){
+        const _mpx = _mx*TILE - CAM.x;
+        ctx.fillStyle="#5a3a1e"; ctx.fillRect(_mpx, _dockY-8, 5, 16);
+        ctx.fillStyle="#7a5a38"; ctx.fillRect(_mpx, _dockY-10, 5, 4);
+        ctx.fillStyle="#c9a060"; ctx.beginPath(); ctx.arc(_mpx+2, _dockY-10, 3, 0, Math.PI*2); ctx.fill();
+      }
+      // rope lines between posts
+      ctx.strokeStyle="#8c6a3a"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+      for(let ri=0; ri<3; ri++){
+        const _rx1 = (53+ri*6)*TILE - CAM.x + 2;
+        const _rx2 = (59+ri*6)*TILE - CAM.x + 2;
+        ctx.beginPath(); ctx.moveTo(_rx1, _dockY-8); ctx.lineTo(_rx2, _dockY-8); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      // small anchored dingy near boat hire
+      const _bx = 62*TILE - CAM.x, _by = 37.5*TILE - CAM.y;
+      if (_by > -30 && _by < VIEW_H+30){
+        ctx.fillStyle="#c9a86a"; ctx.fillRect(_bx-14, _by, 28, 10);
+        ctx.fillStyle="#b09050"; ctx.fillRect(_bx-12, _by+2, 24, 6);
+        ctx.fillStyle="#e8d8a8"; ctx.fillRect(_bx-10, _by, 20, 3);
+        ctx.fillStyle="#8c6a38"; ctx.fillRect(_bx-2, _by-12, 2, 12);
+        ctx.fillStyle="#d8c890"; ctx.fillRect(_bx-10, _by-10, 10, 6);
+        // bob gently
+        const _bob2 = Math.sin(t*0.9)*1.5;
+        ctx.fillStyle="rgba(100,180,255,.3)"; ctx.fillRect(_bx-16, _by+10+_bob2, 32, 3);
+      }
+    }
+  }
 }
 function drawWorkerAndVfx(ctx, t){
   let playerTool = null;
@@ -1935,6 +2038,19 @@ function drawVillage(t){
         const _py = (_por.y - 14 - CAM.y) / VIEW_H * 100;
         if (_px > -5 && _px < 105 && _py > -5 && _py < 105)
           html += `<div class="vlbl" style="left:${_px.toFixed(1)}%;top:${_py.toFixed(1)}%;background:rgba(160,30,20,.92);color:#fff">📮 Parcel!</div>`;
+      }
+    }
+    // notice board active quest badge
+    if (S.noticeBoard?.quests?.length > 0 && !S.noticeBoard.quests.every((q:any)=>q.done)){
+      const _nbo = V_OBJECTS.find(o => o.id==="notice_board");
+      if (_nbo){
+        const _nbr = objRect(_nbo);
+        const _nbpx = (_nbr.x + _nbr.w/2 - CAM.x) / VIEW_W * 100;
+        const _nbpy = (_nbr.y - 14 - CAM.y) / VIEW_H * 100;
+        if (_nbpx > -5 && _nbpx < 105 && _nbpy > -5 && _nbpy < 105){
+          const _nbOpen = S.noticeBoard.quests.filter((q:any)=>!q.done).length;
+          html += `<div class="vlbl" style="left:${_nbpx.toFixed(1)}%;top:${_nbpy.toFixed(1)}%;background:rgba(60,80,140,.92);color:#fff">📋 ${_nbOpen} quest${_nbOpen!==1?'s':''}</div>`;
+        }
       }
     }
     // floating delivery request badge above the requesting villager
@@ -2567,6 +2683,124 @@ function drawInterior(t){
     // mechanic NPC
     const _mx = 130 + Math.sin(t*0.4)*10;
     drawPerson(ctx, _mx, 84, "#4a3820", "#3a4a8a", t, false, IP.x >= _mx ? 1 : -1, null, "down");
+  } else if (S.tab==="notice_board"){
+    // Community Hall — warm wood panels, large pinboard across back wall
+    room("#3a2a1a","#5a3a28","#c0a070","#b09060","#2a1810");
+    // pinboard spanning back wall
+    ctx.fillStyle="#7a5a38"; ctx.fillRect(16,10,W-32,34);
+    ctx.fillStyle="#c9a86a"; ctx.fillRect(18,12,W-36,30);
+    // pinned papers across the board
+    const _pprs:number[][] = [[22,14,54,22],[86,15,52,20],[148,14,58,24],[216,16,50,20],[274,13,26,22],[22,38,40,12],[76,37,52,14],[140,36,58,16],[210,38,46,12],[268,37,28,12]];
+    for(const [px,py,pw,ph] of _pprs){
+      ctx.fillStyle="#fffae0"; ctx.fillRect(px,py,pw,ph);
+      ctx.fillStyle="#c9c9a0";
+      for(let li=3;li<ph-2;li+=4) ctx.fillRect(px+3,py+li,pw-6,1);
+      ctx.fillStyle="#e04040"; ctx.beginPath(); ctx.arc(px+pw/2,py,2,0,7); ctx.fill();
+    }
+    // window right
+    winP(240, 34);
+    // title plaque
+    ctx.fillStyle="#5a3a1e"; ctx.fillRect(W/2-36,9,72,5);
+    drawEmojiC(ctx,"📋",W/2,H*0.19,13);
+    // bench left
+    ctx.fillStyle="#7a5a38"; ctx.fillRect(20,112,90,8); ctx.fillRect(20,120,10,36); ctx.fillRect(100,120,10,36);
+    // bench right
+    ctx.fillStyle="#7a5a38"; ctx.fillRect(210,112,90,8); ctx.fillRect(210,120,10,36); ctx.fillRect(290,120,10,36);
+    // corner plants
+    drawEmojiC(ctx,"🪴",12,110,14); drawEmojiC(ctx,"🪴",W-12,110,14);
+    // central table
+    ctx.fillStyle="#8c6947"; ctx.fillRect(W/2-44,132,88,8); ctx.fillRect(W/2-44,140,8,28); ctx.fillRect(W/2+36,140,8,28);
+    drawEmojiC(ctx,"📝",W/2-18,138,10); drawEmojiC(ctx,"☕",W/2+6,138,10); drawEmojiC(ctx,"📌",W/2-6,133,8);
+    // warden NPC near board
+    const _nbwx = 158 + Math.sin(t*0.3)*8;
+    drawPerson(ctx, _nbwx, 88, "#3a3a4a", "#6a3a3a", t, true, IP.x >= _nbwx ? 1 : -1, null, "down");
+  } else if (S.tab==="harbour_office"){
+    // Harbourmaster's Office — dark navy walls, nautical charts
+    room("#1a2830","#2a3848","#906840","#806030","#0a1820");
+    // porthole window left
+    ctx.fillStyle="#4a5a6a"; ctx.beginPath(); ctx.arc(42,28,18,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#7ab8d8"; ctx.beginPath(); ctx.arc(42,28,14,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="rgba(255,255,255,.4)"; ctx.beginPath(); ctx.arc(38,24,5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle="#3a4a5a"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(42,28,14,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle="#4a5a6a"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(42,14); ctx.lineTo(42,42); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(28,28); ctx.lineTo(56,28); ctx.stroke();
+    // anchor on wall
+    drawEmojiC(ctx,"⚓",W-36,28,16);
+    // chart table
+    ctx.fillStyle="#6a4828"; ctx.fillRect(W/2-48,88,96,10); ctx.fillRect(W/2-50,85,100,5);
+    ctx.fillStyle="#fffae0"; ctx.fillRect(W/2-44,65,88,22);
+    ctx.fillStyle="#a8b8c8"; for(let gx=0;gx<88;gx+=10) ctx.fillRect(W/2-44+gx,65,1,22);
+    for(let gy=0;gy<22;gy+=7) ctx.fillRect(W/2-44,65+gy,88,1);
+    ctx.fillStyle="#e84040"; ctx.fillRect(W/2+10,72,3,3); ctx.beginPath(); ctx.arc(W/2+11,71,6,0,Math.PI*2); ctx.stroke();
+    drawEmojiC(ctx,"🗺️",W/2,75,10);
+    // table legs
+    ctx.fillStyle="#5a3820"; ctx.fillRect(W/2-50,98,8,50); ctx.fillRect(W/2+42,98,8,50);
+    // rope coils
+    drawEmojiC(ctx,"🪝",W/2-70,108,14); drawEmojiC(ctx,"🪢",W/2+60,108,14);
+    // life preserver on wall
+    drawEmojiC(ctx,"🛟",W-32,80,16);
+    // reg NPC at chart table
+    const _hwx = W/2-24 + Math.sin(t*0.25)*6;
+    drawPerson(ctx, _hwx, 80, "#3a2a1a", "#2a4a6a", t, false, IP.x >= _hwx ? 1 : -1, null, "down");
+  } else if (S.tab==="boat_hire"){
+    // Boat Hire shack — weathered timber, sandy floor
+    room("#4a3820","#6a5030","#c0a060","#b09050","#2a1808");
+    // weather boards on back wall
+    ctx.fillStyle="#5a3a18"; for(let bx=0;bx<W;bx+=22) ctx.fillRect(bx,9,2,38);
+    // single round window
+    ctx.fillStyle="#4a5a4a"; ctx.beginPath(); ctx.arc(W/2,26,16,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#8ad0b0"; ctx.beginPath(); ctx.arc(W/2,26,12,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="rgba(255,255,255,.35)"; ctx.beginPath(); ctx.arc(W/2-3,22,5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle="#4a5a4a"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(W/2,26,12,0,Math.PI*2); ctx.stroke();
+    // hire counter
+    ctx.fillStyle="#8c6947"; ctx.fillRect(60,100,200,10); ctx.fillRect(56,96,208,6);
+    ctx.fillStyle="#a07850"; ctx.fillRect(60,101,200,8);
+    // hanging life preservers
+    drawEmojiC(ctx,"🛟",30,56,14); drawEmojiC(ctx,"🛟",W-30,56,14);
+    // oars stacked against wall
+    ctx.fillStyle="#6a4828"; ctx.fillRect(14,50,4,110); ctx.fillRect(20,50,4,110);
+    ctx.fillStyle="#8c6a40"; ctx.fillRect(12,50,8,12); ctx.fillRect(18,50,8,12);
+    // price board
+    ctx.fillStyle="#3a2010"; ctx.fillRect(W/2-48,56,96,32);
+    ctx.fillStyle="#c9a86a"; ctx.fillRect(W/2-46,58,92,28);
+    ctx.fillStyle="#3a2010"; ctx.font="7px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+    ctx.fillText("BOAT HIRE",W/2,68); ctx.fillText("10 coins per trip",W/2,79); ctx.textAlign="left";
+    // fishing nets on right
+    drawEmojiC(ctx,"🪣",W-30,100,12); drawEmojiC(ctx,"🎣",W-52,100,12);
+    // harbour keeper silhouette (no NPC inside — self-service)
+    drawEmojiC(ctx,"⛵",W/2+50,85,18);
+  } else if (S.tab==="fishmonger_wh"){
+    // Fish Warehouse — cool industrial blue-grey, crates and ice
+    room("#182828","#203038","#708080","#608070","#0a1818");
+    // industrial ceiling pipes
+    ctx.fillStyle="#2a3838"; ctx.fillRect(0,0,W,6);
+    for(const px of [60,140,210]) { ctx.fillStyle="#2a3838"; ctx.fillRect(px,6,5,20); }
+    // hanging lanterns (cold blue light)
+    for(const lx of [60,140,210]){
+      ctx.fillStyle="rgba(100,200,255,0.12)"; ctx.beginPath(); ctx.arc(lx,20,22,0,Math.PI*2); ctx.fill();
+      drawEmojiC(ctx,"💡",lx,18,9);
+    }
+    // fish crate racks
+    const _crate2 = (x,y,w=28,h=18) => {
+      ctx.fillStyle="#4a6860"; ctx.fillRect(x,y,w,h);
+      ctx.strokeStyle="#2a3838"; ctx.lineWidth=1; ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+      ctx.fillStyle="#2a3838"; ctx.fillRect(x+w/2-1,y,2,h); ctx.fillRect(x,y+h/2-1,w,2);
+      ctx.fillStyle="rgba(180,230,255,.25)"; ctx.fillRect(x+2,y+2,w-4,4);
+    };
+    [[20,60],[54,60],[88,60],[20,84],[54,84],[88,84],[160,60],[194,60],[228,60],[160,84],[194,84],[228,84]].forEach(([x,y])=>_crate2(x,y));
+    // ice bins
+    ctx.fillStyle="#6ab8d8"; for(let ix=20;ix<260;ix+=22) { ctx.fillStyle="#5aA8c8"; ctx.fillRect(ix,108,18,10); ctx.fillStyle="rgba(255,255,255,.4)"; ctx.fillRect(ix+2,108,6,4); }
+    // weighing scale in center
+    ctx.fillStyle="#4a4a5a"; ctx.fillRect(W/2-10,116,20,6); ctx.fillRect(W/2-14,120,28,4);
+    drawEmojiC(ctx,"⚖️",W/2,122,10);
+    // fish emoji scattered on crates
+    for(const [fx,fy,em] of [[32,66,"🐟"],[66,66,"🍣"],[100,66,"🐠"],[172,66,"🐋"],[206,66,"🐟"],[240,66,"🍣"]]){
+      drawEmojiC(ctx,em,fx,fy,8);
+    }
+    // pearl NPC
+    const _fwx = 150 + Math.sin(t*0.35)*10;
+    drawPerson(ctx, _fwx, 100, "#c9a060", "#3a7a5a", t, true, IP.x >= _fwx ? 1 : -1, null, "down");
   } else if (S.tab==="woodcutting"){
     room("#465a36","#5c7044","#b08c58","#a68050","#3a4a28");
     ctx.fillStyle="#6a5240"; ctx.fillRect(36,86,64,8); ctx.fillStyle="#7c6450"; ctx.fillRect(36,76,64,12);
@@ -3435,6 +3669,8 @@ function freshState(){
     seNotified: "",
     bike: { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 },
     friendships: {},
+    noticeBoard: { quests:[], lastRefresh:0 },
+    harbour: { boatTrips:0 },
   };
 }
 let S = freshState();
@@ -3467,6 +3703,8 @@ function load(){
       if (!S.treeRespawn) S.treeRespawn = {};
       if (!S.bike) S.bike = { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 };
       if (!S.friendships) S.friendships = {};
+      if (!S.noticeBoard) S.noticeBoard = { quests:[], lastRefresh:0 };
+      if (!S.harbour) S.harbour = { boatTrips:0 };
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -3824,6 +4062,29 @@ function updateFriendGifts(now){
       log(`💌 <b>${vn}</b> left a ${ITEMS[g].n} for you.`, "good");
       updateHud(); save();
     }
+  }
+}
+function generateNBQuests(){
+  const _shuffled = [...NB_POOL].sort(()=>Math.random()-0.5);
+  const _picked: any[] = [];
+  const _usedNpcs = new Set<string>();
+  for (const q of _shuffled){
+    if (_usedNpcs.has(q.npcId)) continue;
+    _usedNpcs.add(q.npcId);
+    _picked.push({ ...q, id: q.npcId+'_'+Date.now()+'_'+(Math.random()*9999|0), done:false });
+    if (_picked.length >= 4) break;
+  }
+  return _picked;
+}
+function updateNoticeBoard(now){
+  if (!S.noticeBoard) S.noticeBoard = { quests:[], lastRefresh:0 };
+  const _allDone = S.noticeBoard.quests.length > 0 && S.noticeBoard.quests.every((q:any)=>q.done);
+  const _stale = now - (S.noticeBoard.lastRefresh||0) > 30*60*1000;
+  if (S.noticeBoard.quests.length === 0 || _stale || _allDone){
+    S.noticeBoard.quests = generateNBQuests();
+    S.noticeBoard.lastRefresh = now;
+    if (S.noticeBoard.quests.length > 0) toast("📋 New quests on the Notice Board!");
+    save();
   }
 }
 function updateLoans(){
@@ -4448,6 +4709,123 @@ function renderUpgrades(){
   html += `</div>`;
   return html;
 }
+function renderNoticeBoard(){
+  const nb = S.noticeBoard || { quests:[], lastRefresh:0 };
+  const _now = Date.now();
+  const _refreshIn = Math.max(0, Math.ceil((30*60*1000 - (_now - (nb.lastRefresh||0))) / 60000));
+  let html = `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 6px;font-size:13px">📋 Village Notice Board</h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Community tasks from your neighbours. Complete them for coins and friendship XP.</p>`;
+  if (!nb.quests || nb.quests.length === 0){
+    html += `<p style="color:var(--dim);font-size:12px;font-style:italic;margin:0">No tasks pinned yet. Check back soon!</p>`;
+  } else {
+    for (const q of nb.quests as any[]){
+      const _item = ITEMS[q.itemId];
+      const _have = S.items[q.itemId]||0;
+      const _canDo = !q.done && _have >= q.qty;
+      html += `<div class="card" style="margin-bottom:8px;opacity:${q.done?0.5:1}">
+        <span class="ic">${_item?.ic||'📦'}</span>
+        <div class="body">
+          <div class="nm">${q.npcName} needs ${q.qty}× ${_item?.n||q.itemId}</div>
+          <div class="ds">💰 ${fmt(q.reward)} coins · +${q.friendXp} ❤️ XP · ${q.done?'✅ Complete':'have '+_have+'/'+q.qty}</div>
+          ${!q.done ? `<button class="btn" data-nbcomplete="${q.id}" ${_canDo?'':'disabled'} style="margin-top:4px;font-size:10px;padding:2px 8px">Hand In</button>` : ''}
+        </div>
+      </div>`;
+    }
+    const _done = (nb.quests as any[]).filter(q=>q.done).length;
+    html += `<p style="color:var(--dim);font-size:10px;margin:6px 0 0">${_done}/${nb.quests.length} complete · new quests in ~${_refreshIn} min</p>`;
+  }
+  html += `</div>`;
+  return html;
+}
+function renderHarbourOffice(){
+  if (!isHarbourUnlocked()) return `<div class="panel" style="padding:12px;text-align:center">
+    <p style="font-size:28px;margin:0 0 8px">⚓</p>
+    <h3 style="margin:0 0 8px;font-size:13px">Harbourmaster's Office</h3>
+    <p style="color:var(--dim);font-size:12px;margin:0 0 10px">The Harbour District opens when your total level reaches <b>100</b>.</p>
+    <p style="color:var(--dim);font-size:11px;margin:0">Current total level: <b>${totalLvl()}</b> / 100</p>
+  </div>`;
+  const _trips = S.harbour?.boatTrips||0;
+  return `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 6px;font-size:13px">⚓ Harbourmaster's Office</h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">"Welcome to Port Salvo — or as the locals call it, Greenfield Harbour. Good seas today." — Reg</p>
+    <div class="card" style="margin-bottom:8px">
+      <span class="ic">⚓</span>
+      <div class="body">
+        <div class="nm">Harbour District</div>
+        <div class="ds">Boat Hire offers fast travel to the Pier. The Fish Warehouse buys bulk catch at a 30% premium.</div>
+      </div>
+    </div>
+    <div class="card">
+      <span class="ic">🗺️</span>
+      <div class="body">
+        <div class="nm">Boat Trips Taken</div>
+        <div class="ds">You've made ${_trips} trip${_trips===1?'':'s'} across the bay.</div>
+      </div>
+    </div>
+  </div>`;
+}
+function renderBoatHire(){
+  if (!isHarbourUnlocked()) return `<div class="panel" style="padding:12px;text-align:center">
+    <p style="font-size:28px;margin:0 0 8px">⛵</p>
+    <h3 style="margin:0 0 8px;font-size:13px">Boat Hire</h3>
+    <p style="color:var(--dim);font-size:12px;margin:0">Unlocks at total level 100. Current: <b>${totalLvl()}</b> / 100</p>
+  </div>`;
+  const _atPier = Math.hypot(VP.x - 22.5*TILE, VP.y - 38*TILE) < 200;
+  return `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 6px;font-size:13px">⛵ Greenfield Boat Hire</h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">10 coins per crossing. Cross the bay to the Pier and back instantly.</p>
+    <div class="card" style="margin-bottom:8px">
+      <span class="ic">🎣</span>
+      <div class="body">
+        <div class="nm">Travel to the Pier</div>
+        <div class="ds">Cross to the fishing pier on the west side of the bay. (10 coins)</div>
+        <button class="btn" data-boat-travel="pier" ${S.coins<10?'disabled':''} style="margin-top:4px;font-size:10px">Hire a Boat (10c)</button>
+      </div>
+    </div>
+    <div class="card">
+      <span class="ic">⚓</span>
+      <div class="body">
+        <div class="nm">Travel to the Harbour</div>
+        <div class="ds">Return to the Harbour District from the pier. (10 coins)</div>
+        <button class="btn" data-boat-travel="harbour" ${S.coins<10?'disabled':''} style="margin-top:4px;font-size:10px">Return to Harbour (10c)</button>
+      </div>
+    </div>
+    <p style="color:var(--dim);font-size:10px;margin:8px 0 0">You have ${fmt(S.coins)} coins. Trips taken: ${S.harbour?.boatTrips||0}</p>
+  </div>`;
+}
+function renderFishmongerWH(){
+  if (!isHarbourUnlocked()) return `<div class="panel" style="padding:12px;text-align:center">
+    <p style="font-size:28px;margin:0 0 8px">🐟</p>
+    <h3 style="margin:0 0 8px;font-size:13px">Fish Warehouse</h3>
+    <p style="color:var(--dim);font-size:12px;margin:0">Unlocks at total level 100. Current: <b>${totalLvl()}</b> / 100</p>
+  </div>`;
+  const _fish = ["sardine","mackerel","bass","salmon","tuna"];
+  const _inStock = _fish.filter(f=>(S.items[f]||0)>0);
+  let html = `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 6px;font-size:13px">🐟 Fish Warehouse</h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">"Bring me what the sea gives you. I'll give you 30% above market." — Pearl</p>`;
+  if (_inStock.length === 0){
+    html += `<p style="color:var(--dim);font-size:12px;font-style:italic;margin:0">No fish in your inventory. Head to the Pier!</p>`;
+  } else {
+    for (const fid of _inStock){
+      const _qty = S.items[fid]||0;
+      const _baseV = ITEMS[fid].v;
+      const _premV = Math.round(_baseV * 1.3);
+      const _total = _qty * _premV;
+      html += `<div class="card" style="margin-bottom:6px">
+        <span class="ic">${ITEMS[fid].ic}</span>
+        <div class="body">
+          <div class="nm">${ITEMS[fid].n} × ${_qty}</div>
+          <div class="ds">${_premV} coins each (30% premium) = ${fmt(_total)} total</div>
+          <button class="btn" data-fw-sell="${fid}" style="margin-top:4px;font-size:10px">Sell All (${fmt(_total)}c)</button>
+        </div>
+      </div>`;
+    }
+  }
+  html += `</div>`;
+  return html;
+}
 function renderPets(){
   let html = `<div class="panel"><h2>🦊 Logistics Companions<small>Rare colleagues found through honest work. One active at a time.</small></h2>`;
   PETS.forEach(p=>{
@@ -4588,6 +4966,10 @@ function renderMain(){
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
+    else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
+    else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
+    else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Greenfield Boat Hire", renderBoatHire());
+    else if (S.tab==="fishmonger_wh") m.innerHTML = _withRoom("🐟 Pearl's Fish Warehouse", renderFishmongerWH());
     else if (S.tab==="home"){
       const _homeVillager = VILLAGERS.find(v => v.homeId === S.roomObjId);
       const _hvName = _homeVillager ? _homeVillager.n : "Someone";
@@ -4930,6 +5312,68 @@ function bindMain(){
     S.retail.slots[_i] = { itemId:null, qty:0 };
     renderMain(); save();
   });
+  // boat hire fast travel
+  document.querySelectorAll("[data-boat-travel]").forEach(b=>{
+    b.onclick = ()=>{
+      if (S.coins < 10){ toast("Not enough coins."); return; }
+      const _dest = (b as HTMLElement).dataset.boatTravel;
+      S.coins -= 10;
+      if (!S.harbour) S.harbour = { boatTrips:0 };
+      S.harbour.boatTrips = (S.harbour.boatTrips||0) + 1;
+      if (_dest === "pier"){
+        VP.x = 22.5*TILE; VP.y = 38.4*TILE;
+        toast("⛵ Crossing complete! You step off at the Pier.");
+        log("⛵ <b>Boat trip</b> — crossed to the Pier. -10 coins.", "good");
+      } else {
+        VP.x = 61*TILE; VP.y = 35.4*TILE;
+        toast("⛵ Crossing complete! You step off at the Harbour.");
+        log("⛵ <b>Boat trip</b> — returned to the Harbour. -10 coins.", "good");
+      }
+      S.tab = "village"; renderNav(); renderMain(); updateHud(); save();
+    };
+  });
+  // fishmonger warehouse sell
+  document.querySelectorAll("[data-fw-sell]").forEach(b=>{
+    b.onclick = ()=>{
+      const _fid = (b as HTMLElement).dataset.fwSell;
+      const _qty = S.items[_fid]||0;
+      if (_qty <= 0 || !ITEMS[_fid]){ toast("None in inventory."); return; }
+      const _premV = Math.round(ITEMS[_fid].v * 1.3);
+      const _total = _qty * _premV;
+      S.items[_fid] = 0;
+      S.coins += _total;
+      S.counters.coinsEarned = (S.counters.coinsEarned||0) + _total;
+      toast(`🐟 Sold ${_qty}× ${ITEMS[_fid].n} for ${fmt(_total)} coins (30% premium)!`);
+      log(`🐟 <b>Warehouse sale:</b> ${_qty}× ${ITEMS[_fid].n} → +${fmt(_total)} coins.`, "good");
+      renderMain(); updateHud(); save();
+    };
+  });
+  // notice board quest hand-in
+  document.querySelectorAll("[data-nbcomplete]").forEach(b=> {
+    b.onclick = ()=>{
+      const _qId = (b as HTMLElement).dataset.nbcomplete;
+      const _q = (S.noticeBoard?.quests as any[])?.find(q=>q.id===_qId);
+      if (!_q || _q.done){ toast("Quest not found."); return; }
+      if ((S.items[_q.itemId]||0) < _q.qty){ toast("Not enough " + (ITEMS[_q.itemId]?.n||_q.itemId) + "."); return; }
+      S.items[_q.itemId] = Math.max(0, (S.items[_q.itemId]||0) - _q.qty);
+      S.coins += _q.reward;
+      S.counters.coinsEarned = (S.counters.coinsEarned||0) + _q.reward;
+      _q.done = true;
+      if (!S.friendships[_q.npcId]) S.friendships[_q.npcId] = { xp:0, lastChat:0 };
+      const _wasLvl = friendLvl(_q.npcId);
+      S.friendships[_q.npcId].xp = (S.friendships[_q.npcId].xp||0) + _q.friendXp;
+      const _newLvl = friendLvl(_q.npcId);
+      if (_newLvl > _wasLvl){
+        toast(`❤️ You're now ${FRIEND_LVL_NAMES[_newLvl]} with ${_q.npcName}!`);
+        log(`❤️ Friendship up: <b>${_q.npcName}</b> — ${FRIEND_LVL_NAMES[_newLvl]}`, "good");
+        if (_newLvl === 4) grantFriendshipGift(_q.npcId, _q.npcName);
+      } else {
+        toast(`✅ Quest done! +${fmt(_q.reward)} coins, +${_q.friendXp} ❤️ with ${_q.npcName}.`);
+      }
+      log(`📋 Quest complete: <b>${_q.npcName}</b> — ${fmt(_q.reward)} coins earned.`, "good");
+      renderMain(); updateHud(); save();
+    };
+  });
   // daily reward
   document.querySelectorAll("[data-daily-claim]").forEach(b=> b.onclick = ()=>{
     if (S.dailyReward.lastDate === new Date().toDateString()){ toast("Already collected today."); return; }
@@ -5138,6 +5582,7 @@ setInterval(()=>{
   updateRent(now);
   updateLoans();
   updateFriendGifts(now);
+  updateNoticeBoard(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
