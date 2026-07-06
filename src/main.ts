@@ -47,7 +47,8 @@ function tradeBonus(){
   let b = skillLvl("trading") * 0.002;
   if (S.pets.active === "warehouse_panda") b += 0.05;
   if (S.degrees && S.degrees.includes("mkt_analysis")) b += 0.08;
-  return Math.min(b, 0.35);
+  b += perkSellBonus();
+  return Math.min(b, 0.60);
 }
 function eventMult(it){
   if (!S.worldEvent) return 1;
@@ -59,7 +60,7 @@ function eventMult(it){
 function buyPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  return Math.max(1, Math.round(ITEMS[it].v * d * 1.35 * eventMult(it) * seasonMult(it) * (1 - tradeBonus())));
+  return Math.max(1, Math.round(ITEMS[it].v * d * 1.35 * eventMult(it) * seasonMult(it) * (1 - tradeBonus()) * (1 - perkBuyDiscount())));
 }
 function sellPrice(npc, it){
   ensureMarket();
@@ -376,6 +377,8 @@ const ACH = [
   { id:"request_1",         ic:"💌", n:"Good Samaritan",          ds:"Fulfil your first personal villager request.",           r:40,  c:()=>(S.counters?.requestsFulfilled||0)>=1 },
   { id:"request_10",        ic:"🤝", n:"Helpful Neighbour",       ds:"Fulfil 10 personal villager requests.",                  r:150, c:()=>(S.counters?.requestsFulfilled||0)>=10 },
   { id:"request_50",        ic:"🏅", n:"Pillar of the Community", ds:"Fulfil 50 personal villager requests.",                  r:500, c:()=>(S.counters?.requestsFulfilled||0)>=50 },
+  { id:"first_perk",   ic:"⭐", n:"Rising Star",     ds:"Choose your first skill perk.",                        r:50,  c:()=>Object.keys(S.perks||{}).length>=1 },
+  { id:"fully_specced",ic:"🌟", n:"Fully Specced",   ds:"Choose all 3 perks in any one skill.",                 r:300, c:()=>Object.keys(SKILL_PERKS).some(sk=>[10,25,40].every(t=>S.perks?.[sk+'_'+t])) },
   { id:"spring_craft", ic:"🌸", n:"Spring Sprout",  ds:"Craft a seasonal spring item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['flower_crown','spring_tonic','blossom_jam'])>=1 },
   { id:"summer_craft", ic:"☀️", n:"Summer Glow",    ds:"Craft a seasonal summer item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['lemonade','sun_hat','honey_cake'])>=1 },
   { id:"autumn_craft", ic:"🍂", n:"Autumn Bounty",  ds:"Craft a seasonal autumn item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['spiced_cider','pickled_mushrooms','harvest_wreath'])>=1 },
@@ -679,6 +682,95 @@ const PRESTIGE_THRESHOLDS = [
   { at:200, coinsPm:5,  label:"+5 coins/min" },
 ];
 const SEASONAL_ITEMS = ['flower_crown','spring_tonic','blossom_jam','lemonade','sun_hat','honey_cake','spiced_cider','pickled_mushrooms','harvest_wreath','mulled_tea','pine_garland','winter_hamper'];
+const PERK_DEFS: Record<string,any> = {
+  // Mining
+  lucky_strike:    { label:'Lucky Strike',      ds:'15% chance of an extra ore per action.',      type:'yield',   val:0.15, skill:'mining' },
+  seam_reader:     { label:'Seam Reader',        ds:'Mining actions are 15% faster.',              type:'speed',   val:0.15, skill:'mining' },
+  motherlode:      { label:'Motherlode',         ds:'7% chance of triple ore output.',             type:'yield3',  val:0.07, skill:'mining' },
+  iron_lungs:      { label:'Iron Lungs',         ds:'Gain 20% more Mining XP.',                   type:'xp',      val:0.20, skill:'mining' },
+  deep_core:       { label:'Deep Core',          ds:'25% chance of an extra ore per action.',     type:'yield',   val:0.25, skill:'mining' },
+  efficient_blast: { label:'Efficient Blast',    ds:'Mining actions are 25% faster.',             type:'speed',   val:0.25, skill:'mining' },
+  // Steelworks
+  slag_return:     { label:'Slag Return',        ds:'15% chance of an extra bar per smelt.',      type:'yield',   val:0.15, skill:'steelworks' },
+  furnace_master:  { label:'Furnace Master',     ds:'Steelworks actions are 15% faster.',         type:'speed',   val:0.15, skill:'steelworks' },
+  perfect_alloy:   { label:'Perfect Alloy',      ds:'10% chance of double bar output.',           type:'yield',   val:0.10, skill:'steelworks' },
+  flux_economy:    { label:'Flux Economy',       ds:'Steelworks inputs cost 1 less (min 1).',     type:'effcost', val:1,    skill:'steelworks' },
+  grand_forge:     { label:'Grand Forge',        ds:'Steelworks actions are 25% faster.',         type:'speed',   val:0.25, skill:'steelworks' },
+  double_batch:    { label:'Double Batch',       ds:'20% chance of double bar output.',           type:'yield',   val:0.20, skill:'steelworks' },
+  // Manufacturing
+  assembly_line:   { label:'Assembly Line',      ds:'Manufacturing actions are 15% faster.',      type:'speed',   val:0.15, skill:'manufacturing' },
+  precision_fit:   { label:'Precision Fit',      ds:'12% chance of double component output.',     type:'yield',   val:0.12, skill:'manufacturing' },
+  quality_control: { label:'Quality Control',    ds:'Gain 20% more Manufacturing XP.',            type:'xp',      val:0.20, skill:'manufacturing' },
+  lean_prod:       { label:'Lean Production',    ds:'Manufacturing inputs cost 1 less (min 1).',  type:'effcost', val:1,    skill:'manufacturing' },
+  turbo_press:     { label:'Turbo Press',        ds:'Manufacturing actions are 25% faster.',      type:'speed',   val:0.25, skill:'manufacturing' },
+  master_builder:  { label:'Master Builder',     ds:'20% chance of double component output.',     type:'yield',   val:0.20, skill:'manufacturing' },
+  // Logistics
+  fast_lane:       { label:'Fast Lane',          ds:'Contract payouts are 10% higher.',           type:'pay',     val:0.10, skill:'logistics' },
+  bulk_deals:      { label:'Bulk Deals',         ds:'Earn 20% more Logistics XP.',                type:'xp',      val:0.20, skill:'logistics' },
+  premium_client:  { label:'Premium Client',     ds:'Contract payouts are 20% higher.',           type:'pay',     val:0.20, skill:'logistics' },
+  route_planner:   { label:'Route Planner',      ds:'Earn 30% more Logistics XP.',                type:'xp',      val:0.30, skill:'logistics' },
+  trade_empire:    { label:'Trade Empire',       ds:'Contract payouts are 30% higher.',           type:'pay',     val:0.30, skill:'logistics' },
+  load_master:     { label:'Load Master',        ds:'Earn 40% more Logistics XP.',                type:'xp',      val:0.40, skill:'logistics' },
+  // Trading
+  sharp_eye:       { label:'Sharp Eye',          ds:'Sell prices are 10% better.',                type:'sell',    val:0.10, skill:'trading' },
+  bulk_discount:   { label:'Bulk Discount',      ds:'Buy prices are 10% lower.',                  type:'buy',     val:0.10, skill:'trading' },
+  market_sense:    { label:'Market Sense',       ds:'Sell prices are 20% better.',                type:'sell',    val:0.20, skill:'trading' },
+  savvy_buyer:     { label:'Savvy Buyer',        ds:'Buy prices are 20% lower.',                  type:'buy',     val:0.20, skill:'trading' },
+  merchant_prince: { label:'Merchant Prince',    ds:'Sell prices are 30% better.',                type:'sell',    val:0.30, skill:'trading' },
+  arbitrage:       { label:'Arbitrage',          ds:'Sell +15%, buy −10% simultaneously.',        type:'arb',     sell:0.15, buy:0.10, skill:'trading' },
+  // Woodcutting
+  keen_edge:       { label:'Keen Edge',          ds:'Woodcutting actions are 15% faster.',        type:'speed',   val:0.15, skill:'woodcutting' },
+  timber_eye:      { label:'Timber Eye',         ds:'15% chance of an extra wood per chop.',      type:'yield',   val:0.15, skill:'woodcutting' },
+  lumber_jack:     { label:'Lumber Jack',        ds:'Woodcutting actions are 20% faster.',        type:'speed',   val:0.20, skill:'woodcutting' },
+  grove_sense:     { label:'Grove Sense',        ds:'20% chance of an extra wood per chop.',      type:'yield',   val:0.20, skill:'woodcutting' },
+  clear_cut:       { label:'Clear Cut',          ds:'Woodcutting actions are 30% faster.',        type:'speed',   val:0.30, skill:'woodcutting' },
+  rare_spotter:    { label:'Rare Spotter',       ds:'25% chance of an extra wood per chop.',      type:'yield',   val:0.25, skill:'woodcutting' },
+  // Fishing
+  steady_hand:     { label:'Steady Hand',        ds:'Fishing actions are 15% faster.',            type:'speed',   val:0.15, skill:'fishing' },
+  lucky_cast:      { label:'Lucky Cast',         ds:'15% chance of an extra fish per catch.',     type:'yield',   val:0.15, skill:'fishing' },
+  calm_waters:     { label:'Calm Waters',        ds:'Fishing actions are 25% faster.',            type:'speed',   val:0.25, skill:'fishing' },
+  big_haul:        { label:'Big Haul',           ds:'20% chance of double fish per catch.',       type:'yield',   val:0.20, skill:'fishing' },
+  deep_fisher:     { label:'Deep Fisher',        ds:'Fishing actions are 30% faster.',            type:'speed',   val:0.30, skill:'fishing' },
+  legend_catch:    { label:'Legend Catch',       ds:'25% chance of double fish per catch.',       type:'yield',   val:0.25, skill:'fishing' },
+  // Foraging
+  forest_eye:      { label:'Forest Eye',         ds:'Foraging actions are 15% faster.',           type:'speed',   val:0.15, skill:'foraging' },
+  bountiful_pick:  { label:'Bountiful Pick',     ds:'15% chance of double forage per gather.',    type:'yield',   val:0.15, skill:'foraging' },
+  hedge_wisdom:    { label:'Hedge Wisdom',       ds:'Foraging actions are 20% faster.',           type:'speed',   val:0.20, skill:'foraging' },
+  wild_bounty:     { label:'Wild Bounty',        ds:'20% chance of double forage per gather.',    type:'yield',   val:0.20, skill:'foraging' },
+  grove_mastery:   { label:'Grove Mastery',      ds:'Foraging actions are 30% faster.',           type:'speed',   val:0.30, skill:'foraging' },
+  natures_gift:    { label:"Nature's Gift",      ds:"25% chance of double forage per gather.",    type:'yield',   val:0.25, skill:'foraging' },
+  // Crafting
+  steady_craft:    { label:'Steady Craft',       ds:'Crafting actions are 15% faster.',           type:'speed',   val:0.15, skill:'crafting' },
+  artisan_luck:    { label:'Artisan Luck',       ds:'15% chance of crafting two items.',          type:'yield',   val:0.15, skill:'crafting' },
+  refined_touch:   { label:'Refined Touch',      ds:'Gain 20% more Crafting XP.',                 type:'xp',      val:0.20, skill:'crafting' },
+  material_sense:  { label:'Material Sense',     ds:'Crafting inputs cost 1 less (min 1).',       type:'effcost', val:1,    skill:'crafting' },
+  master_craft:    { label:'Master Craft',       ds:'25% chance of crafting two items.',          type:'yield',   val:0.25, skill:'crafting' },
+  festival_flair:  { label:'Festival Flair',     ds:'Festival sell price +25% for seasonal items.',type:'festival',val:0.25, skill:'crafting' },
+};
+const SKILL_PERKS: Record<string,Record<number,string[]>> = {
+  mining:        { 10:['lucky_strike','seam_reader'],    25:['motherlode','iron_lungs'],        40:['deep_core','efficient_blast']  },
+  steelworks:    { 10:['slag_return','furnace_master'],   25:['perfect_alloy','flux_economy'],   40:['grand_forge','double_batch']   },
+  manufacturing: { 10:['assembly_line','precision_fit'],  25:['quality_control','lean_prod'],    40:['turbo_press','master_builder'] },
+  logistics:     { 10:['fast_lane','bulk_deals'],         25:['premium_client','route_planner'], 40:['trade_empire','load_master']   },
+  trading:       { 10:['sharp_eye','bulk_discount'],      25:['market_sense','savvy_buyer'],     40:['merchant_prince','arbitrage']  },
+  woodcutting:   { 10:['keen_edge','timber_eye'],         25:['lumber_jack','grove_sense'],      40:['clear_cut','rare_spotter']     },
+  fishing:       { 10:['steady_hand','lucky_cast'],       25:['calm_waters','big_haul'],         40:['deep_fisher','legend_catch']   },
+  foraging:      { 10:['forest_eye','bountiful_pick'],    25:['hedge_wisdom','wild_bounty'],     40:['grove_mastery','natures_gift'] },
+  crafting:      { 10:['steady_craft','artisan_luck'],    25:['refined_touch','material_sense'], 40:['master_craft','festival_flair']},
+};
+function hasPerk(id: string){ return Object.values(S.perks||{}).includes(id); }
+function pendingPerk(skill: string){
+  if (!SKILL_PERKS[skill]) return null;
+  const lvl = skillLvl(skill);
+  for (const t of [10,25,40]) if (lvl >= t && !(S.perks?.[skill+'_'+t])) return t;
+  return null;
+}
+function skillSpeedBonus(skill: string){ return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.[skill+'_'+t]]; return s+(d&&d.type==='speed'?d.val:0); },0); }
+function skillXpBonus(skill: string){    return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.[skill+'_'+t]]; return s+(d&&d.type==='xp'   ?d.val:0); },0); }
+function perkPayBonus(){  return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['logistics_'+t]]; return s+(d&&d.type==='pay'?d.val:0); },0); }
+function perkSellBonus(){ return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['trading_'+t]]; return s+(d?(d.type==='sell'?d.val:d.type==='arb'?d.sell:0):0); },0); }
+function perkBuyDiscount(){ return Math.min(0.50,[10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['trading_'+t]]; return s+(d?(d.type==='buy'?d.val:d.type==='arb'?d.buy:0):0); },0)); }
+function perkEffcostActive(skill: string){ return [10,25,40].some(t=>{ const d=PERK_DEFS[S.perks?.[skill+'_'+t]]; return d&&d.type==='effcost'; }); }
 function villagePrestige(){ return BEAUTIFICATION.filter(b=>(S.beautification||[]).includes(b.id)).reduce((a,b)=>a+b.prestige,0); }
 function prestigeCoinsPm(){ return PRESTIGE_THRESHOLDS.filter(r=>r.coinsPm&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.coinsPm||0),0); }
 function prestigeFriendXpMult(){ return 1+PRESTIGE_THRESHOLDS.filter(r=>r.friendXpPct&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.friendXpPct||0),0)/100; }
@@ -4059,6 +4151,7 @@ function freshState(){
     beautification: [],
     prestigeIncomeAt: 0,
     villagerRequests: {},
+    perks: {},
   };
 }
 let S = freshState();
@@ -4098,6 +4191,7 @@ function load(){
       if (!S.beautification) S.beautification = [];
       if (!S.prestigeIncomeAt) S.prestigeIncomeAt = 0;
       if (!S.villagerRequests) S.villagerRequests = {};
+      if (!S.perks) S.perks = {};
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4157,7 +4251,9 @@ function speedMult(skill){
     if (pet.id==="drone_owl" && skill==="manufacturing") m *= 0.88;
   }
   if (S.caffBuff && Date.now() < S.caffBuff) m *= 0.80;
-  return m;
+  const _sb = skillSpeedBonus(skill);
+  if (_sb > 0) m *= (1 - _sb);
+  return Math.max(0.20, m);
 }
 function updateBeachBirds(){
   for (const b of BEACH_BIRDS){
@@ -4536,6 +4632,18 @@ function updateVillagerRequests(now: number){
   log(`💌 Personal request fulfilled for <b>${vn}</b>: ${req.qty}× ${ITEMS[req.itemId]?.n||req.itemId} — +${fmt(req.reward)} coins`, "good");
   achCheck(); renderMain(); updateHud(); save();
 };
+(globalThis as any).choosePerk = function(skill: string, level: number, perkId: string){
+  if (!S.perks) S.perks = {};
+  const key = skill + '_' + level;
+  if (S.perks[key]){ toast("Perk already chosen."); return; }
+  const opts = SKILL_PERKS[skill]?.[level];
+  if (!opts || !opts.includes(perkId)){ toast("Invalid perk."); return; }
+  S.perks[key] = perkId;
+  const def = PERK_DEFS[perkId];
+  toast(`⭐ ${def.label} unlocked! ${def.ds}`);
+  log(`⭐ <b>${def.label}</b> — ${def.ds}`, "good");
+  achCheck(); renderMain(); save();
+};
 function updateLoans(){
   if (!S.loans || !S.loans.length) return;
   const _now = Date.now();
@@ -4697,6 +4805,7 @@ function payMult(){
   const pet = PETS.find(p=>p.id===S.pets.active);
   if (pet && pet.id==="container_crab") m *= 1.15;
   if (pet && pet.id==="rail_rhino") m *= 1.30;
+  m *= (1 + perkPayBonus());
   return m;
 }
 function inputsFor(act){
@@ -4708,9 +4817,12 @@ function canAfford(act){
   return Object.entries(act.in).every(([id,q]) => itemCount(id) >= effCost(act, id, q));
 }
 function effCost(act, id, q){
-  const turtleActive = S.pets.active === "cargo_turtle";
-  if (turtleActive && SKILLS.steelworks.actions.some(a => a===act)) return Math.max(1, q-1);
-  return q;
+  let cost = q;
+  if (S.pets.active === "cargo_turtle" && SKILLS.steelworks.actions.some(a => a===act)) cost = Math.max(1, cost-1);
+  if (perkEffcostActive('steelworks')    && SKILLS.steelworks.actions.some(a => a===act))    cost = Math.max(1, cost-1);
+  if (perkEffcostActive('manufacturing') && SKILLS.manufacturing.actions.some(a => a===act)) cost = Math.max(1, cost-1);
+  if (perkEffcostActive('crafting')      && SKILLS.crafting.actions.some(a => a===act))      cost = Math.max(1, cost-1);
+  return cost;
 }
 
 function log(msg, cls){
@@ -4732,12 +4844,21 @@ function grantXp(skill, xp){
   if (_degCourse) xp = Math.round(xp * (1 + _degCourse.val));
   if ((S.schoolBuff||0) > Date.now()) xp = Math.round(xp * 1.15);
   const _pxm = prestigeXpMult(); if (_pxm > 1) xp = Math.round(xp * _pxm);
+  const _xpBonus = skillXpBonus(skill); if (_xpBonus > 0) xp = Math.round(xp * (1 + _xpBonus));
   const before = skillLvl(skill);
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
   if (after > before){
     toast(`${SKILLS[skill].ic} ${SKILLS[skill].n} LEVEL ${after}!`);
     log(`${SKILLS[skill].n} reached level <b>${after}</b>.`, "good");
+    if (SKILL_PERKS[skill]){
+      for (const t of [10,25,40]){
+        if (after >= t && before < t){
+          toast(`⭐ Perk unlocked! Open the ${SKILLS[skill].n} panel to choose your level ${t} talent.`);
+          log(`⭐ <b>${SKILLS[skill].n} perk</b> available at level ${t} — open the panel to choose.`, "good");
+        }
+      }
+    }
     renderNav();
   }
 }
@@ -4770,6 +4891,22 @@ function completeAction(act, skill, silent){
     addItem(_bonusId, 1);
     S.prod[_bonusId] = (S.prod[_bonusId]||0) + 1;
     if (!silent) toast(`🐙 Occy lends a tentacle — bonus ${ITEMS[_bonusId].n}!`);
+  }
+  // Yield perks: each chosen perk rolls independently
+  if (S.perks){
+    for (const t of [10,25,40]){
+      const _pid = S.perks[skill+'_'+t];
+      if (!_pid) continue;
+      const _def = PERK_DEFS[_pid];
+      if (!_def || (_def.type!=='yield' && _def.type!=='yield3')) continue;
+      if (Math.random() < _def.val){
+        const _bid = Object.keys(act.out)[0];
+        const _bq = _def.type==='yield3' ? act.out[_bid]*2 : act.out[_bid];
+        addItem(_bid, _bq);
+        S.prod[_bid] = (S.prod[_bid]||0) + _bq;
+        if (!silent) toast(`⭐ ${_def.label} — +${ITEMS[_bid].n}!`);
+      }
+    }
   }
   grantXp(skill, act.xp);
   S.counters.actions++;
@@ -5076,7 +5213,30 @@ function renderBikeShop(){
 function renderSkillPanel(skill){
   const sk = SKILLS[skill];
   const lvl = skillLvl(skill);
-  let html = `<div class="panel"><h2>${sk.ic} ${sk.n}<small>${sk.desc}</small></h2>${xpBarHtml(skill)}<div class="actions">`;
+  let html = `<div class="panel"><h2>${sk.ic} ${sk.n}<small>${sk.desc}</small></h2>${xpBarHtml(skill)}`;
+  // Perk choice card (pending)
+  const _pp = pendingPerk(skill);
+  if (_pp && SKILL_PERKS[skill]?.[_pp]){
+    const [opt1,opt2] = SKILL_PERKS[skill][_pp];
+    const d1=PERK_DEFS[opt1], d2=PERK_DEFS[opt2];
+    html += `<div style="background:linear-gradient(135deg,#2a4a10,#1a2a08);border:2px solid #7acf3a;border-radius:6px;padding:10px;margin:6px 0 10px">
+      <div style="font-weight:700;color:#8adf4a;font-size:11px;margin-bottom:8px;letter-spacing:.5px">⭐ LEVEL ${_pp} PERK — choose your talent</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <button data-perk="${skill}|${_pp}|${opt1}" style="background:#1a3a08;border:1px solid #5ab02a;color:#fff;padding:8px;border-radius:4px;cursor:pointer;text-align:left;line-height:1.4">
+          <div style="font-weight:700;font-size:11px">${d1.label}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.6);margin-top:2px">${d1.ds}</div>
+        </button>
+        <button data-perk="${skill}|${_pp}|${opt2}" style="background:#1a3a08;border:1px solid #5ab02a;color:#fff;padding:8px;border-radius:4px;cursor:pointer;text-align:left;line-height:1.4">
+          <div style="font-weight:700;font-size:11px">${d2.label}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.6);margin-top:2px">${d2.ds}</div>
+        </button>
+      </div>
+    </div>`;
+  } else {
+    const _activePerks = [10,25,40].map(t=>S.perks?.[skill+'_'+t]).filter(Boolean).map(id=>PERK_DEFS[id]).filter(Boolean);
+    if (_activePerks.length) html += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 8px">${_activePerks.map(d=>`<span style="background:#1a3a08;border:1px solid #4a8020;border-radius:3px;padding:2px 7px;font-size:10px;color:#8adf4a">⭐ ${d.label}</span>`).join('')}</div>`;
+  }
+  html += `<div class="actions">`;
   sk.actions.forEach(act => {
     const seasonLocked = act.season !== undefined && act.season !== getSeason();
     const locked = lvl < act.lvl || seasonLocked;
@@ -5874,13 +6034,18 @@ function bindMain(){
   document.querySelectorAll("[data-fulfill-req]").forEach(b=> b.onclick = ()=>{
     fulfillVillagerRequest((b as HTMLElement).dataset.fulfillReq);
   });
+  document.querySelectorAll("[data-perk]").forEach(b => b.onclick = ()=>{
+    const parts = (b as HTMLElement).dataset.perk.split('|');
+    choosePerk(parts[0], parseInt(parts[1]), parts[2]);
+  });
   document.querySelectorAll("[data-season-sell]").forEach(b=> b.onclick = ()=>{
     const _sd = SEASON_DEFS[getSeason()];
+    const _festMult = hasPerk('festival_flair') ? 1.25 : 1.0;
     let _total = 0;
     _sd.items.forEach(id => {
       const qty = S.items[id]||0;
       if (qty > 0 && ITEMS[id]){
-        const val = Math.round(ITEMS[id].v * 1.5 * qty);
+        const val = Math.round(ITEMS[id].v * 1.5 * _festMult * qty);
         S.coins += val; S.counters.coinsEarned = (S.counters.coinsEarned||0) + val;
         S.items[id] = 0; _total += val;
       }
