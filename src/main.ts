@@ -1170,6 +1170,41 @@ function drawChild(ctx, x, y, hair, shirt, t, moving, dir, trouser, female, sz){
   ctx.restore();
 }
 function drawEmojiC(ctx, em, x, y, px){ ctx.font = px+"px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(em, x, y); }
+function drawOccy(ctx, cx, cy, t, sz){
+  const s = sz / 18;
+  // tentacles — 8 animated wavy arms
+  ctx.lineWidth = Math.max(1, 2.5*s);
+  for(let i=0;i<8;i++){
+    const ox = cx + (i - 3.5) * 3.2 * s;
+    const wave = Math.sin(t*2.2 + i*0.75) * 4*s;
+    ctx.strokeStyle = i===3||i===4 ? "#2a70c0" : "#3a88d8";
+    ctx.beginPath();
+    ctx.moveTo(ox, cy + 6*s);
+    ctx.quadraticCurveTo(ox + wave, cy + 12*s, ox - wave*0.6, cy + 19*s);
+    ctx.stroke();
+  }
+  // body
+  ctx.fillStyle = "#4a9ae8";
+  ctx.beginPath(); ctx.ellipse(cx, cy, 13*s, 11*s, 0, 0, Math.PI*2); ctx.fill();
+  // mantle shading (top)
+  ctx.fillStyle = "#2a7ad0";
+  ctx.beginPath(); ctx.ellipse(cx, cy - 4*s, 13*s, 5*s, 0, 0, Math.PI*2); ctx.fill();
+  // highlight shimmer
+  ctx.fillStyle = "rgba(160,220,255,0.55)";
+  ctx.beginPath(); ctx.ellipse(cx - 4*s, cy - 4*s, 5*s, 3.5*s, -0.5, 0, Math.PI*2); ctx.fill();
+  // eyes — white
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath(); ctx.arc(cx - 5*s, cy - 1*s, 4*s, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 5*s, cy - 1*s, 4*s, 0, Math.PI*2); ctx.fill();
+  // pupils
+  ctx.fillStyle = "#111122";
+  ctx.beginPath(); ctx.arc(cx - 4.5*s, cy - 1*s, 2*s, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 5.5*s, cy - 1*s, 2*s, 0, Math.PI*2); ctx.fill();
+  // eye shine
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath(); ctx.arc(cx - 3.8*s, cy - 2*s, 0.9*s, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 6.2*s, cy - 2*s, 0.9*s, 0, Math.PI*2); ctx.fill();
+}
 function nearestInteractable(){
   let best=null, bd=56;
   for (const w of WANDERERS){
@@ -2609,7 +2644,9 @@ function drawInterior(t){
     S.pets.owned.forEach((id,i)=>{
       const p = PETS.find(x=>x.id===id); if (!p) return;
       const px = 60 + (i%5)*48 + Math.sin(t*1.1+i)*14, py = 112 + Math.floor(i/5)*32 + Math.cos(t*0.8+i*2)*8;
-      drawEmojiC(ctx, p.ic, px, py+Math.sin(t*5+i)*2, 18);
+      const _bob = py + Math.sin(t*5+i)*2;
+      if (p.id === "occy") drawOccy(ctx, px, _bob, t, 18);
+      else drawEmojiC(ctx, p.ic, px, _bob, 18);
       if (S.pets.active===id) drawEmojiC(ctx,"⭐", px+10, py-12, 9);
     });
   } else if (S.tab==="foraging"){
