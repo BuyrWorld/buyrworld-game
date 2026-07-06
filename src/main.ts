@@ -2854,6 +2854,65 @@ function drawInterior(t){
     // artisan NPC (moves slowly left/right near workbench)
     const _ax = 160 + Math.sin(t*0.4)*30;
     drawPerson(ctx, _ax, 60, "#7a5040", "#c9804a", t, false, Math.sin(t*0.4)>0 ? 1:-1, null, "down");
+  } else if (S.tab==="lore_stone"){
+    // mossy forest clearing — ancient boundary stone
+    ctx.fillStyle="#1a2e1a"; ctx.fillRect(0,0,W,H);
+    // canopy gradient at top
+    for(let i=0;i<32;i++){ ctx.fillStyle=`rgba(20,60,20,${(1-i/32)*0.8})`; ctx.fillRect(0,i*2,W,2); }
+    // forest floor — dark moss patches
+    ctx.fillStyle="#1e3a1e"; ctx.fillRect(0,H*0.52,W,H*0.48);
+    for(let x=0;x<W;x+=22){ ctx.fillStyle=x%44?"#243a22":"#2a4428"; ctx.fillRect(x,H*0.54,(x%44?18:16),H*0.46); }
+    // scattered moss clumps
+    for(const [mx,my] of [[28,H*0.62],[80,H*0.74],[140,H*0.58],[200,H*0.68],[260,H*0.60],[290,H*0.78]]){
+      ctx.fillStyle="#2e5a28"; ctx.beginPath(); ctx.ellipse(mx, my, 14, 5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#3a7a30"; ctx.beginPath(); ctx.ellipse(mx, my-2, 10, 4, 0, 0, 7); ctx.fill();
+    }
+    // tree trunks left and right (darker forest edge)
+    for(const [tx2,tw] of [[4,18],[W-22,18],[W*0.08|0,12],[W*0.88|0,12]]){
+      ctx.fillStyle="#0e1e0e"; ctx.fillRect(tx2, 0, tw, H);
+      ctx.fillStyle="#162616"; ctx.fillRect(tx2, 0, 4, H);
+    }
+    // ambient green glow from canopy
+    ctx.fillStyle="rgba(30,100,30,.12)"; ctx.fillRect(0,0,W,H*0.5);
+    // ancient stone — large grey monolith centre
+    const _sy = H*0.28, _sh = H*0.46, _sw = 52;
+    const _sx = W/2 - _sw/2;
+    // soft stone glow (magical ambient)
+    const _glowR = 0.18 + Math.abs(Math.sin(t*0.4))*0.08;
+    ctx.fillStyle=`rgba(160,200,160,${_glowR})`; ctx.beginPath(); ctx.ellipse(W/2, _sy+_sh*0.6, _sw+28, _sh*0.5, 0, 0, 7); ctx.fill();
+    // stone body
+    ctx.fillStyle="#6a7a6a"; ctx.fillRect(_sx, _sy, _sw, _sh);
+    ctx.fillStyle="#7a8a7a"; ctx.fillRect(_sx+2, _sy+2, _sw-4, 6);
+    ctx.fillStyle="#5a6a5a"; ctx.fillRect(_sx, _sy, 4, _sh); ctx.fillRect(_sx+_sw-4, _sy, 4, _sh);
+    // rune marks — pixel scratches
+    ctx.fillStyle="rgba(180,220,180,.55)";
+    for(const [rx,ry,rw,rh] of [
+      [_sx+10, _sy+14, 8,  2], [_sx+10, _sy+18, 8,  2], [_sx+14, _sy+14, 2,  6],
+      [_sx+26, _sy+12, 2,  10],[_sx+22, _sy+16, 8,  2],
+      [_sx+38, _sy+14, 6,  2], [_sx+38, _sy+20, 6,  2], [_sx+38, _sy+14, 2,  8],
+      [_sx+12, _sy+30, 10, 2], [_sx+28, _sy+28, 2,  8], [_sx+24, _sy+28, 8,  2], [_sx+24, _sy+36, 8,  2],
+    ]){ ctx.fillRect(rx, ry, rw, rh); }
+    // lichen patches
+    ctx.fillStyle="rgba(140,180,100,.3)"; ctx.beginPath(); ctx.ellipse(_sx+8, _sy+_sh*0.65, 10, 5, -0.3, 0, 7); ctx.fill();
+    ctx.fillStyle="rgba(100,160,80,.25)"; ctx.beginPath(); ctx.ellipse(_sx+_sw-6, _sy+_sh*0.45, 8, 4, 0.4, 0, 7); ctx.fill();
+    // ground shadow beneath stone
+    ctx.fillStyle="rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(W/2, _sy+_sh+4, _sw*0.7, 7, 0, 0, 7); ctx.fill();
+    // small wildflowers
+    for(const [fx,fy,fc] of [[60,H*0.72,"#ffeeaa"],[90,H*0.80,"#ffaacc"],[220,H*0.76,"#aaffcc"],[250,H*0.70,"#ffeeaa"]]){
+      ctx.fillStyle="#2a5a1a"; ctx.fillRect(fx, fy-8, 2, 10);
+      ctx.fillStyle=fc; ctx.beginPath(); ctx.arc(fx+1, fy-8, 4, 0, 7); ctx.fill();
+    }
+    // fox (wanders slowly) or owl at night
+    if (isNight()){
+      const _ox = 70 + Math.sin(t*0.2)*8;
+      drawEmojiC(ctx,"🦉", _ox, H*0.42, 14);
+    } else {
+      const _fx = 72 + Math.sin(t*0.3)*20;
+      ctx.fillStyle="#b06a30"; ctx.fillRect(_fx, H*0.66, 18, 8);
+      ctx.fillStyle="#8a4a20"; ctx.fillRect(_fx+14, H*0.66, 6, 5);
+      ctx.fillStyle="#c07a40"; ctx.fillRect(_fx, H*0.64, 8, 4);
+      ctx.fillStyle="#1a1a1a"; ctx.fillRect(_fx+16, H*0.65, 2, 2);
+    }
   } else if (S.tab==="woodcutting"){
     room("#465a36","#5c7044","#b08c58","#a68050","#3a4a28");
     ctx.fillStyle="#6a5240"; ctx.fillRect(36,86,64,8); ctx.fillStyle="#7c6450"; ctx.fillRect(36,76,64,12);
@@ -3724,6 +3783,7 @@ function freshState(){
     friendships: {},
     noticeBoard: { quests:[], lastRefresh:0 },
     harbour: { boatTrips:0 },
+    schoolBuff: 0,
   };
 }
 let S = freshState();
@@ -3759,6 +3819,7 @@ function load(){
       if (!S.friendships) S.friendships = {};
       if (!S.noticeBoard) S.noticeBoard = { quests:[], lastRefresh:0 };
       if (!S.harbour) S.harbour = { boatTrips:0 };
+      if (!S.schoolBuff) S.schoolBuff = 0;
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4335,6 +4396,7 @@ function toast(msg){
 function grantXp(skill, xp){
   const _degCourse = COURSES.find(c => c.skill===skill && c.perk==="xp" && S.degrees && S.degrees.includes(c.id));
   if (_degCourse) xp = Math.round(xp * (1 + _degCourse.val));
+  if ((S.schoolBuff||0) > Date.now()) xp = Math.round(xp * 1.15);
   const before = skillLvl(skill);
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
@@ -5042,16 +5104,39 @@ function renderMain(){
         </div>`
       );
     }
-    else if (S.tab==="school") m.innerHTML = _withRoom("🏫 Inside the Village School",
-      `<div class="panel" style="padding:10px">
-        <h3 style="margin:0 0 8px;font-size:13px">📚 Greenfield Village School</h3>
-        <p style="color:var(--dim);font-size:12px;margin:0 0 10px">Two classrooms, one dining hall. Teaching Greenfield's next generation since 1952.</p>
-        <div class="card" style="margin-bottom:6px"><span class="ic">📖</span><div class="body"><div class="nm">Literacy &amp; Numeracy</div><div class="ds">Morning session. Miss Haverstock's class can be heard from the lane.</div></div></div>
-        <div class="card" style="margin-bottom:6px"><span class="ic">🔬</span><div class="body"><div class="nm">Nature Studies</div><div class="ds">Afternoon trips to the valley — Frank lets them count the tree rings.</div></div></div>
-        <div class="card" style="margin-bottom:6px"><span class="ic">🎨</span><div class="body"><div class="nm">Art &amp; Craft</div><div class="ds">Drawings of the village. Daisy's watercolour is on the library wall.</div></div></div>
-        <p style="font-size:11px;color:var(--dim);margin:10px 0 0">For advanced study, visit the University in the east district.</p>
-      </div>`
-    );
+    else if (S.tab==="school") {
+      const _hr = gameHour();
+      const _isOpen = _hr >= 8.5 && _hr < 15.5;
+      const _inClass = CHILDREN_STATE.filter(c => c.phase === "school");
+      const _buffActive = (S.schoolBuff||0) > Date.now();
+      const _buffMins = _buffActive ? Math.ceil(((S.schoolBuff||0) - Date.now()) / 60000) : 0;
+      const _olderKids = _inClass.filter(c => c.age >= 8);
+      const _youngerKids = _inClass.filter(c => c.age < 8);
+      const _childRow = (c) => `<span style="display:inline-block;background:rgba(255,255,255,.07);border-radius:3px;padding:2px 6px;margin:2px;font-size:11px">
+        ${c.female?"👧":"👦"} ${c.n} <span style="color:var(--dim)">age ${c.age}</span></span>`;
+      m.innerHTML = _withRoom("🏫 Inside the Village School",
+        `<div class="panel" style="padding:10px">
+          <h3 style="margin:0 0 6px;font-size:13px">🏫 Greenfield Village School</h3>
+          <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Two classrooms, one dining hall. Teaching Greenfield since 1952.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="font-size:18px">${_isOpen ? "🟢" : "🔴"}</span>
+            <span style="font-size:12px;font-weight:700">${_isOpen ? "School open" : "School closed"}</span>
+            <span style="font-size:11px;color:var(--dim)">${_isOpen ? `Hours 8:30–15:30 · ${_inClass.length} pupils in` : "Opens at 8:30"}</span>
+          </div>
+          ${_isOpen && _olderKids.length ? `<p style="font-size:11px;color:var(--dim);margin:0 0 4px">📖 Miss Haverstock's class (age 8+)</p><div style="margin-bottom:8px">${_olderKids.map(_childRow).join("")}</div>` : ""}
+          ${_isOpen && _youngerKids.length ? `<p style="font-size:11px;color:var(--dim);margin:0 0 4px">🎨 Mr Bellamy's class (under 8)</p><div style="margin-bottom:8px">${_youngerKids.map(_childRow).join("")}</div>` : ""}
+          ${!_isOpen ? `<p style="font-size:12px;color:var(--dim);margin:0 0 10px">The classrooms are quiet. Come back during school hours to see the children at their desks.</p>` : ""}
+        </div>
+        <div class="panel" style="padding:10px;margin-top:8px">
+          <h3 style="margin:0 0 6px;font-size:13px">📦 Donate Supplies</h3>
+          <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Contribute stationery and books to the school. In return, the teachers share their methods — you gain +15% XP on all skills for 15 minutes.</p>
+          ${_buffActive
+            ? `<div style="background:rgba(74,255,136,.12);border:1px solid rgba(74,255,136,.3);border-radius:4px;padding:6px 10px;font-size:12px;color:#4aff88">📚 Education buff active — ${_buffMins} min remaining. All XP +15%.</div>`
+            : `<button data-school-donate style="background:#3a5a3a;color:#fff;border:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px">Donate Supplies — 100 coins</button>`}
+          <p style="font-size:10px;color:var(--dim);margin:8px 0 0">For advanced academic qualifications, visit the University in the east district.</p>
+        </div>`
+      );
+    }
     else if (S.tab==="bank"){
       const _spent = UPGRADES.filter(u=>S.upgrades[u.id]).reduce((s,u)=>s+u.cost,0)
                    + (HOME_TIERS[S.homeTier]?.cost||0) - (HOME_TIERS[0]?.cost||0);
@@ -5366,6 +5451,16 @@ function bindMain(){
     }
     S.retail.slots[_i] = { itemId:null, qty:0 };
     renderMain(); save();
+  });
+  // school supply donation
+  document.querySelectorAll("[data-school-donate]").forEach(b=>{
+    b.onclick = ()=>{
+      if (S.coins < 100){ toast("Need 100 coins to donate supplies."); return; }
+      S.coins -= 100;
+      S.schoolBuff = Date.now() + 15*60*1000;
+      toast("📚 Supplies donated! +15% XP on all skills for 15 minutes.");
+      renderMain(); updateHud(); save();
+    };
   });
   // boat hire fast travel
   document.querySelectorAll("[data-boat-travel]").forEach(b=>{
