@@ -387,8 +387,9 @@ const ACH = [
   { id:"daily_first", ic:"🎯", n:"Challenge Accepted",   ds:"Complete your first daily village challenge.",    r:50,  c:()=>(S.counters?.challengesClaimed||0)>=1 },
   { id:"daily_7",     ic:"🏅", n:"7-Day Habit",          ds:"Complete 7 daily village challenges.",            r:200, c:()=>(S.counters?.challengesClaimed||0)>=7 },
   { id:"daily_30",    ic:"🏆", n:"Dedicated Supplier",   ds:"Complete 30 daily village challenges.",           r:500, c:()=>(S.counters?.challengesClaimed||0)>=30 },
-  { id:"first_harvest",ic:"🌱", n:"First Harvest",       ds:"Harvest your first crop from the cottage garden.", r:40,  c:()=>(S.counters?.gardenHarvests||0)>=1 },
-  { id:"green_thumb",  ic:"🌻", n:"Green Thumb",         ds:"Harvest 20 crops from the cottage garden.",        r:150, c:()=>(S.counters?.gardenHarvests||0)>=20 },
+  { id:"first_harvest",ic:"🌱", n:"First Harvest",       ds:"Harvest your first crop from the cottage garden.", r:40,   c:()=>(S.counters?.gardenHarvests||0)>=1 },
+  { id:"green_thumb",  ic:"🌻", n:"Green Thumb",         ds:"Harvest 20 crops from the cottage garden.",        r:150,  c:()=>(S.counters?.gardenHarvests||0)>=20 },
+  { id:"beloved_greenfield", ic:"💝", n:"Beloved of Greenfield", ds:"Reach Best Friends with all 17 villagers and collect every keepsake.", r:2000, c:()=>(S.keepsakes?.length||0)>=17 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -413,6 +414,7 @@ const ACH_PROG = {
   daily_7:              ()=>({ cur:Math.min(7,  S.counters?.challengesClaimed||0),     max:7     }),
   daily_30:             ()=>({ cur:Math.min(30, S.counters?.challengesClaimed||0),     max:30    }),
   green_thumb:          ()=>({ cur:Math.min(20, S.counters?.gardenHarvests||0),        max:20    }),
+  beloved_greenfield:   ()=>({ cur:Math.min(17, S.keepsakes?.length||0),               max:17    }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
@@ -853,8 +855,8 @@ function pendingPerk(skill: string){
 }
 function skillSpeedBonus(skill: string){ return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.[skill+'_'+t]]; return s+(d&&d.type==='speed'?d.val:0); },0); }
 function skillXpBonus(skill: string){    return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.[skill+'_'+t]]; return s+(d&&d.type==='xp'   ?d.val:0); },0); }
-function perkPayBonus(){  return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['logistics_'+t]]; return s+(d&&d.type==='pay'?d.val:0); },0); }
-function perkSellBonus(){ return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['trading_'+t]]; return s+(d?(d.type==='sell'?d.val:d.type==='arb'?d.sell:0):0); },0); }
+function perkPayBonus(){  return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['logistics_'+t]]; return s+(d&&d.type==='pay'?d.val:0); },0) + keepsakePayBonus(); }
+function perkSellBonus(){ return [10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['trading_'+t]]; return s+(d?(d.type==='sell'?d.val:d.type==='arb'?d.sell:0):0); },0) + keepsakeSellBonus(); }
 function perkBuyDiscount(){ return Math.min(0.50,[10,25,40].reduce((s,t)=>{ const d=PERK_DEFS[S.perks?.['trading_'+t]]; return s+(d?(d.type==='buy'?d.val:d.type==='arb'?d.buy:0):0); },0)); }
 function perkEffcostActive(skill: string){ return [10,25,40].some(t=>{ const d=PERK_DEFS[S.perks?.[skill+'_'+t]]; return d&&d.type==='effcost'; }); }
 function villagePrestige(){ return BEAUTIFICATION.filter(b=>(S.beautification||[]).includes(b.id)).reduce((a,b)=>a+b.prestige,0); }
@@ -1235,6 +1237,94 @@ function heartsHtml(id: string, sz=11){
 function grantFriendshipGift(id: string, name: string){
   const g = FRIEND_GIFT[id];
   if (g && ITEMS[g]){ addItem(g, 3); toast(`🎁 ${name} gives you 3× ${ITEMS[g].n} as a gift!`); log(`🎁 <b>${name}</b> gifted you 3× ${ITEMS[g].n}`, "good"); }
+}
+
+const KEEPSAKE_DEFS: Record<string, { n:string; ic:string; bonus:string; type:string; skill?:string; val:number }> = {
+  agnes:  { n:"Agnes's Recipe Book",        ic:"📖", bonus:"+5% Crafting XP",          type:'xp',     skill:'crafting',       val:0.05 },
+  bertie: { n:"Bertie's Forging Stamp",     ic:"🔨", bonus:"+5% Steelworks speed",     type:'speed',  skill:'steelworks',     val:0.05 },
+  clara:  { n:"Clara's Seed Pouch",         ic:"🌱", bonus:"Garden crops 10% faster",  type:'garden',                         val:0.10 },
+  derek:  { n:"Derek's Blueprint Roll",     ic:"📐", bonus:"+5% Manufacturing speed",  type:'speed',  skill:'manufacturing',  val:0.05 },
+  edna:   { n:"Edna's Watercolour",         ic:"🎨", bonus:"+5% sell bonus",           type:'sell',                           val:0.05 },
+  frank:  { n:"Frank's Woodworking Plane",  ic:"🪚", bonus:"+5% Woodcutting XP",      type:'xp',     skill:'woodcutting',    val:0.05 },
+  gracie: { n:"Gracie's Forest Map",        ic:"🗺️", bonus:"+5% Foraging speed",      type:'speed',  skill:'foraging',       val:0.05 },
+  hector: { n:"Hector's Production Notes",  ic:"📋", bonus:"+5% Manufacturing XP",    type:'xp',     skill:'manufacturing',  val:0.05 },
+  ida:    { n:"Ida's Lucky Lure",           ic:"🎣", bonus:"+5% Fishing speed",        type:'speed',  skill:'fishing',        val:0.05 },
+  jack:   { n:"Jack's Mining Lamp",         ic:"🪔", bonus:"+5% Mining XP",           type:'xp',     skill:'mining',         val:0.05 },
+  kitty:  { n:"Kitty's Engineer's Spanner", ic:"🔧", bonus:"+5% Steelworks XP",       type:'xp',     skill:'steelworks',     val:0.05 },
+  lenny:  { n:"Lenny's Carved Axe Handle",  ic:"🪓", bonus:"+5% Woodcutting speed",   type:'speed',  skill:'woodcutting',    val:0.05 },
+  mabel:  { n:"Mabel's Preserving Jar",     ic:"🫙", bonus:"+5% Crafting speed",      type:'speed',  skill:'crafting',       val:0.05 },
+  ned:    { n:"Ned's Pressed Leaf",         ic:"🍃", bonus:"+5% Foraging XP",         type:'xp',     skill:'foraging',       val:0.05 },
+  olive:  { n:"Olive's Tide Chart",         ic:"🌊", bonus:"+5% Fishing XP",          type:'xp',     skill:'fishing',        val:0.05 },
+  reg:    { n:"Reg's Navigation Chart",     ic:"⚓", bonus:"+5% Logistics XP",        type:'xp',     skill:'logistics',      val:0.05 },
+  pearl:  { n:"Pearl's Market Scale",       ic:"⚖️", bonus:"+5% contract payout",     type:'pay',                            val:0.05 },
+};
+const KEEPSAKE_MSG: Record<string, string> = {
+  agnes:  "You've brought such warmth to my kitchen. Take my recipe book — may it fill your home with good smells.",
+  bertie: "I've watched you grow from a stranger into a real friend. Use my old stamp to mark your finest work.",
+  clara:  "These seeds came all the way from my grandmother's garden. I know they'll flourish in your care.",
+  derek:  "A builder is only as good as their plans. Take these — they hold the best ideas I never got around to.",
+  edna:   "Every painting tells a story. This one's of Greenfield on the day we first met. For you, always.",
+  frank:  "My father carved this plane from driftwood. Now it belongs to hands that know how to use it.",
+  gracie: "I've walked every trail on this map a hundred times. Now you can find your own favourites.",
+  hector: "These notes are everything I've learned about supply chains. Messy, but they work. Just like us.",
+  ida:    "A lucky lure is only lucky when you share it with someone you trust. That's you.",
+  jack:   "This lamp kept me safe in the deep seams for twenty years. Carry it with you — it'll never let you down.",
+  kitty:  "Every gear I've ever fixed, I've thought of as a small victory. This spanner's won a few. Take it.",
+  lenny:  "I carved this handle on a rainy afternoon, thinking of you. Silly, maybe. But there it is.",
+  mabel:  "Mum always said the best gifts come in jars. This one holds a bit of every season I can remember.",
+  ned:    "I pressed this leaf on the first autumn I met you. Some things are worth keeping.",
+  olive:  "The tide knows things the rest of us don't. Read the chart, trust the water, and you'll always find your way home.",
+  reg:    "Every port I've ever anchored at is on this chart. Now you can find them too — and maybe a few new ones.",
+  pearl:  "A fair scale is the most honest thing in any market. May it always tip in your favour.",
+};
+
+function keepsakeSpeedBonus(skill: string){ return (S.keepsakes||[]).reduce((s,id)=>{ const k=KEEPSAKE_DEFS[id]; return s+(k&&k.type==='speed'&&k.skill===skill?k.val:0); },0); }
+function keepsakeXpBonus(skill: string){    return (S.keepsakes||[]).reduce((s,id)=>{ const k=KEEPSAKE_DEFS[id]; return s+(k&&k.type==='xp'   &&k.skill===skill?k.val:0); },0); }
+function keepsakeSellBonus(){               return (S.keepsakes||[]).reduce((s,id)=>{ const k=KEEPSAKE_DEFS[id]; return s+(k&&k.type==='sell'               ?k.val:0); },0); }
+function keepsakePayBonus(){                return (S.keepsakes||[]).reduce((s,id)=>{ const k=KEEPSAKE_DEFS[id]; return s+(k&&k.type==='pay'                ?k.val:0); },0); }
+function keepsakeGardenBonus(){             return (S.keepsakes||[]).reduce((s,id)=>{ const k=KEEPSAKE_DEFS[id]; return s+(k&&k.type==='garden'             ?k.val:0); },0); }
+
+function showKeepsakeCeremony(id: string, name: string){
+  if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
+  if (S.keepsakes.includes(id)) return;
+  S.keepsakes.push(id);
+  const k = KEEPSAKE_DEFS[id];
+  if (!k) return;
+  const modal = document.getElementById('keepsake-modal');
+  if (!modal) return;
+  (document.getElementById('ks-name')  as HTMLElement).textContent = name;
+  (document.getElementById('ks-quote') as HTMLElement).textContent = `"${KEEPSAKE_MSG[id] || ''}"`;
+  (document.getElementById('ks-ic')        as HTMLElement).textContent = k.ic;
+  (document.getElementById('ks-item-name') as HTMLElement).textContent = k.n;
+  (document.getElementById('ks-bonus')     as HTMLElement).textContent = k.bonus;
+  modal.classList.add('open');
+  const btn = document.getElementById('ks-close-btn');
+  if (btn) btn.onclick = () => {
+    modal.classList.remove('open');
+    achCheck(); renderMain(); updateHud(); save();
+  };
+  log(`💖 <b>${name}</b> gave you a keepsake: ${k.ic} ${k.n} — ${k.bonus}`, "good");
+  toast(`💖 Best Friends with ${name}! You received: ${k.ic} ${k.n}`);
+}
+
+function renderKeepsakes(): string {
+  const ks = S.keepsakes || [];
+  if (ks.length === 0) return '';
+  const items = ks.map(id => {
+    const k = KEEPSAKE_DEFS[id]; if (!k) return '';
+    const v = VILLAGERS.find(v=>v.id===id);
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:20px">${k.ic}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700">${k.n}</div>
+        <div style="font-size:10px;color:var(--dim)">${v?v.n:'?'} · <span style="color:var(--mint)">${k.bonus}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="panel" style="padding:10px;margin-top:8px">
+    <h3 style="margin:0 0 8px;font-size:13px">💝 Keepsakes <span style="color:var(--dim);font-size:10px">(${ks.length}/17 best friends)</span></h3>
+    ${items}
+  </div>`;
 }
 function solidAt(px, py){
   // picket fences along forest edges — solid except path gates
@@ -4242,6 +4332,7 @@ function freshState(){
     perks: {},
     dailyChallenge: null,
     garden: [null, null, null, null],
+    keepsakes: [],
   };
 }
 let S = freshState();
@@ -4284,6 +4375,7 @@ function load(){
       if (!S.perks) S.perks = {};
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
+      if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4345,6 +4437,8 @@ function speedMult(skill){
   if (S.caffBuff && Date.now() < S.caffBuff) m *= 0.80;
   const _sb = skillSpeedBonus(skill);
   if (_sb > 0) m *= (1 - _sb);
+  const _kb = keepsakeSpeedBonus(skill);
+  if (_kb > 0) m *= (1 - _kb);
   return Math.max(0.20, m);
 }
 function updateBeachBirds(){
@@ -4514,6 +4608,7 @@ function deliverReq(){
     toast(`❤️ You're now ${FRIEND_LVL_NAMES[newLvl]} with ${vn}!`);
     log(`❤️ Friendship up: <b>${vn}</b> — ${FRIEND_LVL_NAMES[newLvl]}`, "good");
     if (newLvl === 4) grantFriendshipGift(id, vn);
+    if (newLvl === 5) showKeepsakeCeremony(id, vn);
   } else toast(`🎁 ${vn} loves the ${ITEMS[itemId].n}! +${xpGain} ❤️`);
   updateHud(); save();
 };
@@ -4718,6 +4813,7 @@ function updateVillagerRequests(now: number){
     toast(`❤️ You're now ${FRIEND_LVL_NAMES[newLvl]} with ${vn}!`);
     log(`❤️ Friendship up: <b>${vn}</b> — ${FRIEND_LVL_NAMES[newLvl]}`, "good");
     if (newLvl === 4) grantFriendshipGift(npcId, vn);
+    if (newLvl === 5) showKeepsakeCeremony(npcId, vn);
   } else {
     toast(`💌 ${vn} thanks you! +${fmt(req.reward)} coins, +${req.friendXp} ❤️`);
   }
@@ -4759,8 +4855,10 @@ function updateVillagerRequests(now: number){
   if (S.coins < crop.seedCost){ toast("Not enough coins."); return; }
   S.coins -= crop.seedCost;
   const now = Date.now();
-  S.garden[slot] = { cropId, plantedAt:now, readyAt:now+crop.ms };
-  toast(`🌱 ${crop.n} planted! Ready in ${crop.ms/60000} min.`);
+  const _gBonus = keepsakeGardenBonus();
+  const _ms = Math.round(crop.ms * (1 - _gBonus));
+  S.garden[slot] = { cropId, plantedAt:now, readyAt:now+_ms };
+  toast(`🌱 ${crop.n} planted! Ready in ${Math.round(_ms/60000)} min.`);
   renderMain(); updateHud(); save();
 };
 (globalThis as any).harvestGarden = function(slot: number){
@@ -4982,6 +5080,7 @@ function grantXp(skill, xp){
   if ((S.schoolBuff||0) > Date.now()) xp = Math.round(xp * 1.15);
   const _pxm = prestigeXpMult(); if (_pxm > 1) xp = Math.round(xp * _pxm);
   const _xpBonus = skillXpBonus(skill); if (_xpBonus > 0) xp = Math.round(xp * (1 + _xpBonus));
+  const _kxp = keepsakeXpBonus(skill); if (_kxp > 0) xp = Math.round(xp * (1 + _kxp));
   const before = skillLvl(skill);
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
@@ -5966,6 +6065,7 @@ function renderMain(){
           <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Tip: buy furniture from Finn's Stall to add bonus decor to your home.</p>
         </div>
         ${renderGarden()}
+        ${renderKeepsakes()}
         <div class="panel" style="padding:10px;margin-top:8px">
           <h3 style="margin:0 0 8px;font-size:13px">❤️ Village Friends</h3>
           ${VILLAGERS.map(v=>{
@@ -6345,6 +6445,7 @@ function bindMain(){
         toast(`❤️ You're now ${FRIEND_LVL_NAMES[_newLvl]} with ${_q.npcName}!`);
         log(`❤️ Friendship up: <b>${_q.npcName}</b> — ${FRIEND_LVL_NAMES[_newLvl]}`, "good");
         if (_newLvl === 4) grantFriendshipGift(_q.npcId, _q.npcName);
+        if (_newLvl === 5) showKeepsakeCeremony(_q.npcId, _q.npcName);
       } else {
         toast(`✅ Quest done! +${fmt(_q.reward)} coins, +${_q.friendXp} ❤️ with ${_q.npcName}.`);
       }
