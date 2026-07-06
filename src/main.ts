@@ -368,6 +368,9 @@ const ACH = [
   { id:"gift_giver",     ic:"🧺", n:"Gift Giver",        ds:"Weave your first Gift Basket.",                r:75,  c:()=>(S.prod.gift_basket||0)>=1 },
   { id:"artisan",        ic:"⚱️", n:"Artisan",           ds:"Craft 50 items in the Artisan's Shed.",        r:150, c:()=>prodSum(CRAFTED)>=50 },
   { id:"master_artisan", ic:"🏺", n:"Master Artisan",    ds:"Craft 200 items in the Artisan's Shed.",       r:500, c:()=>prodSum(CRAFTED)>=200 },
+  { id:"village_patron",    ic:"🌸", n:"Village Patron",     ds:"Fund your first beautification project.",      r:50,  c:()=>(S.beautification?.length||0)>=1 },
+  { id:"village_benefactor",ic:"🌺", n:"Village Benefactor", ds:"Fund 10 beautification projects.",            r:200, c:()=>(S.beautification?.length||0)>=10 },
+  { id:"greenfield_champion",ic:"🏡",n:"Greenfield Champion",ds:"Complete all 50 beautification projects.",    r:2000,c:()=>(S.beautification?.length||0)>=50 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -385,6 +388,8 @@ const ACH_PROG = {
   postman:        ()=>({ cur:Math.min(10,  S.counters?.deliveries||0),                max:10    }),
   artisan:        ()=>({ cur:Math.min(50,  prodSum(CRAFTED)),                          max:50    }),
   master_artisan: ()=>({ cur:Math.min(200, prodSum(CRAFTED)),                          max:200   }),
+  village_benefactor:   ()=>({ cur:Math.min(10, S.beautification?.length||0),          max:10    }),
+  greenfield_champion:  ()=>({ cur:Math.min(50, S.beautification?.length||0),          max:50    }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
@@ -574,12 +579,86 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
   { id:"manor_c",   n:"Greenfield Manor", desc:"The grand estate on the hill. Premium rental income.",  cost:35000, rent:25 },
 ];
+// Village beautification — 50 projects across 5 categories. Total prestige: 209. Total cost: ~500k.
+const BEAUTIFICATION = [
+  // 🌸 Gardens & Greenery
+  { id:"window_boxes",      cat:"Gardens",    ic:"🪴", n:"Window Boxes",           cost:150,   prestige:1,  ds:"Colourful blooms in every cottage window." },
+  { id:"herb_planters",     cat:"Gardens",    ic:"🌿", n:"Herb Planters",           cost:250,   prestige:1,  ds:"Rosemary and thyme line the market lane." },
+  { id:"rose_archway",      cat:"Gardens",    ic:"🌹", n:"Rose Archway",            cost:450,   prestige:2,  ds:"Climbing roses frame the market entrance." },
+  { id:"cottage_gardens",   cat:"Gardens",    ic:"🏡", n:"Cottage Gardens",         cost:700,   prestige:2,  ds:"Villagers tend their front patches with pride." },
+  { id:"village_green",     cat:"Gardens",    ic:"🌱", n:"Village Green Turf",      cost:1200,  prestige:3,  ds:"Fresh grass seeded on the village green." },
+  { id:"wildflower_meadow", cat:"Gardens",    ic:"🌼", n:"Wildflower Meadow",       cost:2000,  prestige:3,  ds:"A wildflower strip along the north forest path." },
+  { id:"kitchen_garden",    cat:"Gardens",    ic:"🥬", n:"Kitchen Garden",          cost:3500,  prestige:4,  ds:"A communal vegetable patch behind the café." },
+  { id:"topiary_bushes",    cat:"Gardens",    ic:"🌲", n:"Topiary Bushes",          cost:6000,  prestige:5,  ds:"Clipped into the shapes of valley animals." },
+  { id:"cherry_trees",      cat:"Gardens",    ic:"🌸", n:"Cherry Blossom Trees",    cost:10000, prestige:6,  ds:"Pink blossoms drift across the high street in spring." },
+  { id:"manor_gardens",     cat:"Gardens",    ic:"🏰", n:"Manor Gardens",           cost:22000, prestige:8,  ds:"Formal hedged gardens behind the estate agent." },
+  // 🪨 Paths & Infrastructure
+  { id:"gravel_paths",      cat:"Paths",      ic:"🪨", n:"Gravel Paths",            cost:200,   prestige:1,  ds:"Neat gravel laid between the market stalls." },
+  { id:"village_signpost",  cat:"Paths",      ic:"🪧", n:"Village Signpost",        cost:300,   prestige:1,  ds:"Points the way to the quarry, pier and forest." },
+  { id:"stone_kerbs",       cat:"Paths",      ic:"🧱", n:"Stone Kerbs",             cost:550,   prestige:2,  ds:"Raised stone edges tidy up the lane." },
+  { id:"nb_oak_frame",      cat:"Paths",      ic:"📋", n:"Notice Board Oak Frame",  cost:800,   prestige:2,  ds:"A proper carved oak frame for the notice board." },
+  { id:"cobblestone_sq",    cat:"Paths",      ic:"🔲", n:"Cobblestone Square",      cost:1600,  prestige:3,  ds:"Hand-laid cobbles around the market area." },
+  { id:"drystone_walls",    cat:"Paths",      ic:"🧱", n:"Dry Stone Walls",         cost:2800,  prestige:4,  ds:"Traditional walls separate the fields and lanes." },
+  { id:"picket_fences",     cat:"Paths",      ic:"🏡", n:"Picket Fences",           cost:4000,  prestige:4,  ds:"White-painted picket fences around the cottages." },
+  { id:"stone_gateposts",   cat:"Paths",      ic:"🏛️", n:"Stone Gateposts",        cost:7000,  prestige:5,  ds:"Carved stone posts mark the village entrance." },
+  { id:"cobbled_high_st",   cat:"Paths",      ic:"🏗️", n:"Cobbled High Street",    cost:14000, prestige:7,  ds:"Full hand-laid cobbling of the entire high street." },
+  { id:"village_arch",      cat:"Paths",      ic:"🏛️", n:"Village Arch",           cost:32000, prestige:9,  ds:"A grand stone arch over the main road into Greenfield." },
+  // 💡 Lighting & Atmosphere
+  { id:"candle_lanterns",   cat:"Lighting",   ic:"🕯️", n:"Candle Lanterns",        cost:280,   prestige:1,  ds:"Lanterns hung from market stall awnings." },
+  { id:"window_lights",     cat:"Lighting",   ic:"🪟", n:"Window Lights",           cost:420,   prestige:2,  ds:"Warm amber glow from cottage windows at dusk." },
+  { id:"fairy_lights",      cat:"Lighting",   ic:"✨", n:"Fairy Lights",            cost:900,   prestige:2,  ds:"Strung between the trees along the high street." },
+  { id:"iron_lamp_posts",   cat:"Lighting",   ic:"🏮", n:"Iron Lamp Posts",         cost:1400,  prestige:3,  ds:"Old-fashioned cast iron lamps along the lane." },
+  { id:"harbour_lanterns",  cat:"Lighting",   ic:"🏮", n:"Harbour Lanterns",        cost:2400,  prestige:3,  ds:"A string of lanterns along the harbour dock." },
+  { id:"forest_path_lights",cat:"Lighting",   ic:"🌲", n:"Forest Path Lights",      cost:3800,  prestige:4,  ds:"Softlit posts mark the north forest path at night." },
+  { id:"market_sq_lamps",   cat:"Lighting",   ic:"💡", n:"Market Square Lamps",     cost:6500,  prestige:5,  ds:"A ring of lamps illuminates the market square." },
+  { id:"fountain_lights",   cat:"Lighting",   ic:"💧", n:"Illuminated Fountain",    cost:9000,  prestige:6,  ds:"The stone fountain glows amber after dark." },
+  { id:"gas_street_lights", cat:"Lighting",   ic:"🔆", n:"Gas Street Lighting",     cost:18000, prestige:7,  ds:"Full gas lighting across every Greenfield street." },
+  { id:"beacon_tower",      cat:"Lighting",   ic:"🗼", n:"Beacon Tower",            cost:45000, prestige:10, ds:"A lit tower visible for miles at sea. Sailors call it home." },
+  // 🐦 Wildlife & Nature
+  { id:"bird_boxes",        cat:"Wildlife",   ic:"🐦", n:"Bird Boxes",              cost:180,   prestige:1,  ds:"Mounted on every cottage gable end." },
+  { id:"bat_houses",        cat:"Wildlife",   ic:"🦇", n:"Bat Houses",              cost:320,   prestige:1,  ds:"Evening visitors help with the insects." },
+  { id:"hedgehog_hotel",    cat:"Wildlife",   ic:"🦔", n:"Hedgehog Hotel",          cost:520,   prestige:2,  ds:"A sheltered corner behind Wren's Forager Hut." },
+  { id:"bee_hives",         cat:"Wildlife",   ic:"🐝", n:"Bee Hives",               cost:950,   prestige:2,  ds:"Local honey on the café menu and better forest pollination." },
+  { id:"butterfly_garden",  cat:"Wildlife",   ic:"🦋", n:"Butterfly Garden",        cost:1500,  prestige:3,  ds:"Buddleia and lavender planted near the school." },
+  { id:"duck_pond",         cat:"Wildlife",   ic:"🦆", n:"Duck Pond",               cost:2600,  prestige:4,  ds:"Ducks take up residence on the village green." },
+  { id:"squirrel_feeders",  cat:"Wildlife",   ic:"🐿️", n:"Squirrel Feeders",       cost:4200,  prestige:4,  ds:"The north forest children love watching them." },
+  { id:"owl_boxes",         cat:"Wildlife",   ic:"🦉", n:"Owl Boxes",               cost:7500,  prestige:5,  ds:"Barn owls nest in the old mill rafters." },
+  { id:"deer_path",         cat:"Wildlife",   ic:"🦌", n:"Deer Path",               cost:13000, prestige:6,  ds:"A corridor through the forest for red deer." },
+  { id:"wildlife_reserve",  cat:"Wildlife",   ic:"🌿", n:"Wildlife Reserve",        cost:28000, prestige:9,  ds:"A protected strip of the north forest. Frank loves it." },
+  // 🏛️ Landmarks & Prestige
+  { id:"village_bench",     cat:"Landmarks",  ic:"🪑", n:"Village Bench",           cost:380,   prestige:1,  ds:"Agnes likes to sit here of an afternoon." },
+  { id:"wishing_well",      cat:"Landmarks",  ic:"🪣", n:"Wishing Well",            cost:750,   prestige:2,  ds:"Three coins in for luck. People actually believe it." },
+  { id:"sundial",           cat:"Landmarks",  ic:"☀️", n:"Sundial",                 cost:1100,  prestige:3,  ds:"Erected by the school. It's mostly right." },
+  { id:"war_memorial",      cat:"Landmarks",  ic:"🏛️", n:"War Memorial",           cost:1900,  prestige:3,  ds:"Names of the valley's fallen, carved in stone." },
+  { id:"bandstand",         cat:"Landmarks",  ic:"🎶", n:"Bandstand",               cost:4500,  prestige:5,  ds:"Summer concerts on the village green." },
+  { id:"water_fountain",    cat:"Landmarks",  ic:"⛲", n:"Stone Fountain",           cost:8000,  prestige:6,  ds:"A stone drinking fountain in the market square." },
+  { id:"community_orchard", cat:"Landmarks",  ic:"🍎", n:"Community Orchard",       cost:15000, prestige:7,  ds:"Apple, pear and plum — free for all villagers." },
+  { id:"clock_tower",       cat:"Landmarks",  ic:"🕰️", n:"Clock Tower",             cost:38000, prestige:9,  ds:"Greenfield's landmark. The whole valley tells the time by it." },
+  { id:"village_hall",      cat:"Landmarks",  ic:"🏛️", n:"Village Hall Restoration",cost:65000, prestige:10, ds:"The old hall, fully restored. Greenfield's pride." },
+  { id:"valley_monument",   cat:"Landmarks",  ic:"🗿", n:"Valley Monument",         cost:110000,prestige:10, ds:"A grand stone monument to the heritage of the valley." },
+];
+const PRESTIGE_THRESHOLDS = [
+  { at:15,  coinsPm:1,  label:"+1 coin/min from village prestige" },
+  { at:30,  friendXpPct:5,  label:"+5% friendship XP on all interactions" },
+  { at:50,  coinsPm:2,  label:"+2 coins/min" },
+  { at:70,  xpPct:5,    label:"+5% all skill XP" },
+  { at:90,  coinsPm:3,  label:"+3 coins/min" },
+  { at:120, friendXpPct:10, label:"+10% friendship XP" },
+  { at:150, coinsPm:5,  label:"+5 coins/min" },
+  { at:175, rentPct:5,  label:"+5% rent income" },
+  { at:200, coinsPm:5,  label:"+5 coins/min" },
+];
+function villagePrestige(){ return BEAUTIFICATION.filter(b=>(S.beautification||[]).includes(b.id)).reduce((a,b)=>a+b.prestige,0); }
+function prestigeCoinsPm(){ return PRESTIGE_THRESHOLDS.filter(r=>r.coinsPm&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.coinsPm||0),0); }
+function prestigeFriendXpMult(){ return 1+PRESTIGE_THRESHOLDS.filter(r=>r.friendXpPct&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.friendXpPct||0),0)/100; }
+function prestigeXpMult(){ return 1+PRESTIGE_THRESHOLDS.filter(r=>r.xpPct&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.xpPct||0),0)/100; }
+function prestigeRentMult(){ return 1+PRESTIGE_THRESHOLDS.filter(r=>r.rentPct&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.rentPct||0),0)/100; }
 const EXCHANGE_COMMODITIES = [
   { id:"iron_ore",    n:"Iron Ore",    ic:"🪨", unit:50  },
   { id:"steel_bar",   n:"Steel Bar",   ic:"⛓️", unit:120 },
@@ -658,6 +737,7 @@ const ZONE_TIPS = {
   trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
   pets:          { ic:"🐾", n:"The Companion Barn",  tip:"Your crew lives here." },
+  village_fund:  { ic:"🌸", n:"The Village Fund",    tip:"Invest in Greenfield's beauty and earn prestige bonuses." },
 };
 let _zoneCardData = null;
 function showZoneCard(tab){
@@ -2900,6 +2980,42 @@ function drawInterior(t){
     // artisan NPC (moves slowly left/right near workbench)
     const _ax = 160 + Math.sin(t*0.4)*30;
     drawPerson(ctx, _ax, 60, "#7a5040", "#c9804a", t, false, Math.sin(t*0.4)>0 ? 1:-1, null, "down");
+  } else if (S.tab==="village_fund"){
+    // Village Fund committee room — round table, plans, framed projects, warm and civic
+    room("#3a4a2a","#506040","#c8b888","#bca878","#2a3a1a");
+    winP(W*0.06, 36); winP(W*0.70, 36);
+    // round committee table with plans
+    ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(W/2, H*0.56, 62, 18, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#7a5030"; ctx.beginPath(); ctx.ellipse(W/2, H*0.52, 60, 17, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#9a6840"; ctx.beginPath(); ctx.ellipse(W/2, H*0.50, 58, 15, 0, 0, 7); ctx.fill();
+    // papers / village plans on the table
+    ctx.fillStyle="#e8e0c0"; ctx.fillRect(W/2-24, H*0.44, 30, 20); ctx.fillStyle="#c8c0a0"; ctx.fillRect(W/2-22, H*0.46, 26, 16);
+    ctx.fillStyle="#4a8a4a"; ctx.fillRect(W/2-20, H*0.48, 22, 2); ctx.fillRect(W/2-20, H*0.51, 16, 2); ctx.fillRect(W/2-20, H*0.54, 18, 2);
+    ctx.fillStyle="#e0d8b8"; ctx.fillRect(W/2+2, H*0.45, 22, 16); ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(W/2+4, H*0.47, 18, 12);
+    // chairs around table
+    for(const [chx,chy,rot] of [[W/2-74,H*0.50,0],[W/2+74,H*0.50,0],[W/2-30,H*0.70,0],[W/2+30,H*0.70,0],[W/2,H*0.28,0]]){
+      ctx.fillStyle="#5a3a1e"; ctx.fillRect(chx-8, chy-6, 16, 12);
+      ctx.fillStyle="#3a2010"; ctx.fillRect(chx-6, chy+6, 12, 6);
+    }
+    // framed completed project pictures on walls
+    const _frames = [[28,14,"🌸"],[68,14,"🌲"],[108,14,"🏮"],[196,14,"🦋"],[236,14,"⛲"],[276,14,"🕰️"]];
+    _frames.forEach(([fx,fy,em], fi)=>{
+      const _done = (S.beautification||[]).length > fi;
+      ctx.fillStyle="#6a4a28"; ctx.fillRect(fx-2, fy-2, 22, 20);
+      ctx.fillStyle=_done?"#e8e0c8":"#2a2a2a"; ctx.fillRect(fx, fy, 18, 16);
+      if (_done) drawEmojiC(ctx, em, fx+9, fy+8, 11);
+      else { ctx.fillStyle="rgba(255,255,255,.08)"; ctx.fillRect(fx+2,fy+2,14,12); }
+    });
+    // prestige score on wall plaque
+    const _pv = villagePrestige();
+    ctx.fillStyle="#c9a030"; ctx.fillRect(W/2-28, 12, 56, 20);
+    ctx.fillStyle="#7a5010"; ctx.fillRect(W/2-26, 14, 52, 16);
+    ctx.fillStyle="#ffd060"; ctx.font="7px monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(`✨ ${_pv} / 209`, W/2, 22);
+    // committee member NPCs (two, wandering slowly)
+    const _cm1x = 90 + Math.sin(t*0.3)*15, _cm2x = 230 + Math.sin(t*0.4+1)*12;
+    drawPerson(ctx, _cm1x, H*0.38, "#5a3a2a", "#3a5a7a", t, false, Math.sin(t*0.3)>0?1:-1, null, "down");
+    drawPerson(ctx, _cm2x, H*0.38, "#4a5a3a", "#7a4a3a", t, true,  Math.sin(t*0.4)>0?1:-1, null, "down");
   } else if (S.tab==="lore_stone"){
     // mossy forest clearing — ancient boundary stone
     ctx.fillStyle="#1a2e1a"; ctx.fillRect(0,0,W,H);
@@ -3830,6 +3946,8 @@ function freshState(){
     noticeBoard: { quests:[], lastRefresh:0 },
     harbour: { boatTrips:0 },
     schoolBuff: 0,
+    beautification: [],
+    prestigeIncomeAt: 0,
   };
 }
 let S = freshState();
@@ -3866,6 +3984,8 @@ function load(){
       if (!S.noticeBoard) S.noticeBoard = { quests:[], lastRefresh:0 };
       if (!S.harbour) S.harbour = { boatTrips:0 };
       if (!S.schoolBuff) S.schoolBuff = 0;
+      if (!S.beautification) S.beautification = [];
+      if (!S.prestigeIncomeAt) S.prestigeIncomeAt = 0;
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4068,7 +4188,7 @@ function deliverReq(){
   const f = S.friendships[id];
   if (Date.now() - (f.lastChat||0) < 3*60*1000){ toast("💬 Come back later to chat."); return; }
   const wasLvl = friendLvl(id);
-  f.xp = (f.xp||0) + 2;
+  f.xp = (f.xp||0) + Math.round(2 * prestigeFriendXpMult());
   f.lastChat = Date.now();
   const vst = VILLAGER_STATE.find(v=>v.id===id);
   if (vst) vst.quipIdx = (vst.quipIdx+1) % vst.quips.length;
@@ -4084,7 +4204,7 @@ function deliverReq(){
   if (!S.friendships[id]) S.friendships[id] = { xp:0, lastChat:0 };
   const f = S.friendships[id];
   const loved = (FRIEND_LOVES[id]||[]).includes(itemId);
-  const xpGain = loved ? 15 : 3;
+  const xpGain = Math.round((loved ? 15 : 3) * prestigeFriendXpMult());
   const wasLvl = friendLvl(id);
   f.xp = (f.xp||0) + xpGain;
   S.items[itemId] = Math.max(0, (S.items[itemId]||0) - 1);
@@ -4192,10 +4312,10 @@ function updateRent(now){
   if (!S.properties || !S.properties.length) return;
   if (now < (S.rentAt||0)) return;
   const _period = 5; // minutes
-  const _total = S.properties.reduce((sum, pid) => {
+  const _total = Math.round(S.properties.reduce((sum, pid) => {
     const p = PROPERTIES.find(pr => pr.id===pid);
     return sum + (p ? p.rent * _period : 0);
-  }, 0);
+  }, 0) * prestigeRentMult());
   if (_total > 0){
     S.coins += _total;
     S.counters.coinsEarned = (S.counters.coinsEarned||0) + _total;
@@ -4247,6 +4367,15 @@ function updateNoticeBoard(now){
     if (S.noticeBoard.quests.length > 0) toast("📋 New quests on the Notice Board!");
     save();
   }
+}
+function updatePrestigeIncome(now){
+  const _cpm = prestigeCoinsPm();
+  if (_cpm <= 0) return;
+  if (now < (S.prestigeIncomeAt||0)) return;
+  S.coins += _cpm;
+  S.counters.coinsEarned = (S.counters.coinsEarned||0) + _cpm;
+  S.prestigeIncomeAt = now + 60000;
+  save();
 }
 function updateLoans(){
   if (!S.loans || !S.loans.length) return;
@@ -4443,6 +4572,7 @@ function grantXp(skill, xp){
   const _degCourse = COURSES.find(c => c.skill===skill && c.perk==="xp" && S.degrees && S.degrees.includes(c.id));
   if (_degCourse) xp = Math.round(xp * (1 + _degCourse.val));
   if ((S.schoolBuff||0) > Date.now()) xp = Math.round(xp * 1.15);
+  const _pxm = prestigeXpMult(); if (_pxm > 1) xp = Math.round(xp * _pxm);
   const before = skillLvl(skill);
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
@@ -5024,6 +5154,55 @@ function renderPets(){
   html += `</div>`;
   return html;
 }
+function renderBeautification(){
+  const _bought = S.beautification || [];
+  const _pv = villagePrestige();
+  const _maxPv = BEAUTIFICATION.reduce((a,b)=>a+b.prestige,0);
+  const _cpm = prestigeCoinsPm();
+  // active bonuses summary
+  const _bonuses = PRESTIGE_THRESHOLDS.filter(r=>_pv>=r.at);
+  const _next = PRESTIGE_THRESHOLDS.find(r=>_pv<r.at);
+  let html = `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 4px;font-size:13px">🌸 Village Beautification Fund</h3>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Invest in Greenfield's beauty. Each project raises Village Prestige and unlocks passive bonuses.</p>
+    <div style="background:rgba(255,255,255,.06);border-radius:4px;padding:6px 10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:12px;font-weight:700">✨ Village Prestige</span>
+        <span style="font-size:13px;color:#ffd666;font-weight:700">${_pv} / ${_maxPv}</span>
+      </div>
+      <div style="background:rgba(255,255,255,.1);border-radius:2px;height:5px;margin-bottom:6px">
+        <div style="background:#ffd666;height:5px;border-radius:2px;width:${Math.round(_pv/_maxPv*100)}%"></div>
+      </div>
+      ${_bonuses.length ? `<div style="font-size:10px;color:#4aff88">${_bonuses.map(r=>r.label).join(" · ")}</div>` : `<div style="font-size:10px;color:var(--dim)">Reach prestige 15 to unlock bonuses.</div>`}
+      ${_next ? `<div style="font-size:10px;color:var(--dim);margin-top:2px">Next bonus at ${_next.at} prestige: ${_next.label}</div>` : `<div style="font-size:10px;color:#ffd666;margin-top:2px">🏆 All prestige bonuses unlocked!</div>`}
+      ${_cpm>0 ? `<div style="font-size:10px;color:#4aff88;margin-top:2px">+${_cpm} coin${_cpm>1?"s":""}/min passive income</div>` : ""}
+    </div>`;
+  // projects grouped by category
+  const _cats = ["Gardens","Paths","Lighting","Wildlife","Landmarks"];
+  const _catIc: Record<string,string> = { Gardens:"🌸", Paths:"🪨", Lighting:"💡", Wildlife:"🐦", Landmarks:"🏛️" };
+  _cats.forEach(cat=>{
+    const _items = BEAUTIFICATION.filter(b=>b.cat===cat);
+    const _doneCount = _items.filter(b=>_bought.includes(b.id)).length;
+    html += `<div style="margin-bottom:4px"><p style="font-size:11px;font-weight:700;color:var(--dim);margin:8px 0 4px">${_catIc[cat]} ${cat} (${_doneCount}/${_items.length})</p>`;
+    _items.forEach(b=>{
+      const _owned = _bought.includes(b.id);
+      const _canAfford = S.coins >= b.cost;
+      html += `<div class="card" style="margin-bottom:4px;opacity:${_owned?0.7:1}">
+        <span class="ic">${b.ic}</span>
+        <div class="body">
+          <div class="nm">${b.n} <span style="font-size:9px;color:var(--dim)">+${b.prestige} prestige</span></div>
+          <div class="ds">${b.ds}</div>
+        </div>
+        ${_owned
+          ? `<span style="color:#4aff88;font-size:11px;white-space:nowrap">✓ Done</span>`
+          : `<button class="btn" data-beautify="${b.id}" ${_canAfford?'':'disabled'} style="font-size:10px;white-space:nowrap">${fmt(b.cost)}c</button>`}
+      </div>`;
+    });
+    html += `</div>`;
+  });
+  html += `<p style="font-size:10px;color:var(--dim);margin:8px 0 0">${_bought.length} of 50 projects funded · ${fmt(S.coins)} coins available</p></div>`;
+  return html;
+}
 function renderSettings(){
   return `<div class="panel"><h2>💾 Save & Data<small>${HAS_LS ? "Auto-saves to this browser every 15s." : "⚠️ Browser storage unavailable here — use export/import save strings."}</small></h2>
     <p style="font-size:12px;color:var(--dim);">Export your save string and keep it somewhere safe. Import it on any device.</p>
@@ -5146,6 +5325,7 @@ function renderMain(){
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
     else if (S.tab==="crafting") m.innerHTML = _withRoom("🧺 The Artisan's Shed", renderSkillPanel(S.tab));
+    else if (S.tab==="village_fund") m.innerHTML = _withRoom("🌸 The Village Fund", renderBeautification());
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
@@ -5516,6 +5696,23 @@ function bindMain(){
     S.retail.slots[_i] = { itemId:null, qty:0 };
     renderMain(); save();
   });
+  // village beautification purchases
+  document.querySelectorAll("[data-beautify]").forEach(b=>{
+    b.onclick = ()=>{
+      const _id = (b as HTMLElement).dataset.beautify;
+      const _proj = BEAUTIFICATION.find(x=>x.id===_id);
+      if (!_proj) return;
+      if ((S.beautification||[]).includes(_id)){ toast("Already funded."); return; }
+      if (S.coins < _proj.cost){ toast(`Need ${fmt(_proj.cost)} coins.`); return; }
+      S.coins -= _proj.cost;
+      if (!S.beautification) S.beautification = [];
+      S.beautification.push(_id);
+      const _pv = villagePrestige();
+      const _newBonus = PRESTIGE_THRESHOLDS.find(r=>r.at===_pv);
+      toast(`🌸 ${_proj.n} funded! +${_proj.prestige} prestige${_newBonus ? ` · Bonus unlocked: ${_newBonus.label}` : ""}`);
+      achCheck(); renderMain(); updateHud(); save();
+    };
+  });
   // school supply donation
   document.querySelectorAll("[data-school-donate]").forEach(b=>{
     b.onclick = ()=>{
@@ -5797,6 +5994,7 @@ setInterval(()=>{
   updateLoans();
   updateFriendGifts(now);
   updateNoticeBoard(now);
+  updatePrestigeIncome(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
