@@ -31,5 +31,10 @@
   "mushroom":  { "n": "Wild Mushroom",  "ic": "🍄", "v": 25 },
   "berries":   { "n": "Forest Berries", "ic": "🫐", "v": 18 },
   "wild_herb": { "n": "Wild Herbs",     "ic": "🌿", "v": 30 },
-  "rare_wood": { "n": "Rare Wood",      "ic": "🌟", "v": 80 }
+  "rare_wood": { "n": "Rare Wood",      "ic": "🌟", "v": 80 },
+  "berry_jam":   { "n": "Berry Jam",    "ic": "🫙", "v": 65  },
+  "herb_tea":    { "n": "Herb Tea",     "ic": "🍵", "v": 55  },
+  "carved_bowl": { "n": "Carved Bowl",  "ic": "🥣", "v": 48  },
+  "smoked_fish": { "n": "Smoked Fish",  "ic": "🐡", "v": 95  },
+  "gift_basket": { "n": "Gift Basket",  "ic": "🧺", "v": 145 }
 }

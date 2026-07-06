@@ -565,7 +565,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -612,6 +612,13 @@ const STATION_DEFS = {
     { fx:0.50, fy:0.72, sk:'prop_hopper', skill:'foraging', id:'gather_berries',  ic:'🫐', lbl:'Berries' },
     { fx:0.80, fy:0.72, sk:'prop_hopper', skill:'foraging', id:'gather_herb',     ic:'🌿', lbl:'Wild Herbs' },
   ],
+  crafting: [
+    { fx:0.14, fy:0.65, sk:'prop_machine', skill:'crafting', id:'make_jam',    ic:'🫙', lbl:'Berry Jam' },
+    { fx:0.32, fy:0.65, sk:'prop_machine', skill:'crafting', id:'make_tea',    ic:'🍵', lbl:'Herb Tea' },
+    { fx:0.50, fy:0.65, sk:'prop_machine', skill:'crafting', id:'carve_bowl',  ic:'🥣', lbl:'Carved Bowl' },
+    { fx:0.68, fy:0.65, sk:'prop_machine', skill:'crafting', id:'smoke_fish',  ic:'🐡', lbl:'Smoked Fish' },
+    { fx:0.86, fy:0.65, sk:'prop_machine', skill:'crafting', id:'gift_basket', ic:'🧺', lbl:'Gift Basket' },
+  ],
   fishing: [
     { fx:0.25, fy:0.36, sk:'prop_hopper', skill:'fishing', id:'sardine',  ic:'🐟', lbl:'Sardine Spot' },
     { fx:0.50, fy:0.30, sk:'prop_hopper', skill:'fishing', id:'mackerel', ic:'🐠', lbl:'Mackerel Spot' },
@@ -632,6 +639,7 @@ const ZONE_TIPS = {
   woodcutting:   { ic:"🪓", n:"The Sawmill",         tip:"Chop timber and mill planks." },
   fishing:       { ic:"🎣", n:"The Pier",            tip:"Cast your line. Patience is a virtue." },
   foraging:      { ic:"🌿", n:"The Forager's Hut",  tip:"Gather what the forest freely gives." },
+  crafting:      { ic:"🧺", n:"The Artisan's Shed",  tip:"Turn gathered goods into artisan products." },
   bike_shop:     { ic:"🚲", n:"Cycle Shop",          tip:"Rent, repair and upgrade your bike." },
   notice_board:  { ic:"📋", n:"Village Notice Board", tip:"Community tasks from your neighbours." },
   harbour_office:{ ic:"⚓", n:"Harbourmaster's Office", tip:"Fast travel and harbour services." },
@@ -749,12 +757,12 @@ const BIKE_WHEEL_TIER: Record<string,number> = { standard:0, sport:1, offroad:2,
 const BIKE_WHEEL_N: Record<string,string> = { standard:"Standard Wheels", sport:"Sport Wheels", offroad:"Off-road Tyres", mountain:"Mountain Bike" };
 // Friendship system
 const FRIEND_LOVES: Record<string,string[]> = {
-  agnes:['wild_herb','berries'],  bertie:['iron_bar','coal'],     clara:['berries','mushroom'],
-  derek:['steel_bar','iron_bar'], edna:['painting','vase'],       frank:['wood','plank'],
-  gracie:['berries','mushroom'],  hector:['bracket','wiring_loom'], ida:['salmon','tuna'],
-  jack:['coal','steel_bar'],      kitty:['gearbox','wiring_loom'], lenny:['plank','wood'],
-  mabel:['berries','wild_herb'],  ned:['rare_wood','wood'],        olive:['salmon','tuna'],
-  reg:['iron_bar','coal'],        pearl:['salmon','tuna'],
+  agnes:['wild_herb','berries','herb_tea'], bertie:['iron_bar','coal'],         clara:['berries','mushroom','berry_jam'],
+  derek:['steel_bar','iron_bar'],           edna:['painting','vase','gift_basket'], frank:['wood','plank'],
+  gracie:['berries','mushroom'],            hector:['bracket','wiring_loom'],    ida:['salmon','tuna','smoked_fish'],
+  jack:['coal','steel_bar'],                kitty:['gearbox','wiring_loom'],     lenny:['plank','wood'],
+  mabel:['berries','wild_herb','herb_tea','berry_jam'], ned:['rare_wood','wood'], olive:['salmon','tuna','smoked_fish'],
+  reg:['iron_bar','coal'],                  pearl:['salmon','tuna'],
 };
 const FRIEND_LVL_NAMES = ['Stranger','Acquaintance','Friends','Good Friends','Close Friends','Best Friends'];
 const FRIEND_GIFT: Record<string,string> = {
@@ -816,6 +824,13 @@ const NB_POOL = [
   { npcId:'pearl',  npcName:'Pearl',  itemId:'salmon',      qty:3, reward:90,  friendXp:10 },
   { npcId:'pearl',  npcName:'Pearl',  itemId:'mackerel',    qty:5, reward:55,  friendXp:8  },
   { npcId:'pearl',  npcName:'Pearl',  itemId:'tuna',        qty:1, reward:140, friendXp:14 },
+  { npcId:'agnes',  npcName:'Agnes',  itemId:'herb_tea',    qty:2, reward:90,  friendXp:10 },
+  { npcId:'clara',  npcName:'Clara',  itemId:'berry_jam',   qty:2, reward:95,  friendXp:10 },
+  { npcId:'mabel',  npcName:'Mabel',  itemId:'berry_jam',   qty:1, reward:55,  friendXp:8  },
+  { npcId:'mabel',  npcName:'Mabel',  itemId:'herb_tea',    qty:2, reward:90,  friendXp:10 },
+  { npcId:'ida',    npcName:'Ida',    itemId:'smoked_fish', qty:2, reward:120, friendXp:12 },
+  { npcId:'olive',  npcName:'Olive',  itemId:'smoked_fish', qty:1, reward:75,  friendXp:9  },
+  { npcId:'edna',   npcName:'Edna',   itemId:'gift_basket', qty:1, reward:180, friendXp:15 },
 ];
 function isHarbourUnlocked(){ return totalLvl() >= 100; }
 function serviceCost(){ return Math.max(5, Math.round((100 - (S.bike?.condition ?? 100)) * 1.5)); }
@@ -904,9 +919,10 @@ function stationPos(skill, actId){
   if (skill==="woodcutting"){ const o=S.action?.objId ? V_OBJECTS.find(x=>x.id===S.action.objId) : V_OBJECTS.find(x=>x.kind==="tree" && x.ore===actId); if (o){ const r=objRect(o); return {x:r.x+r.w/2, y:r.y+r.h+4}; } }
   if (skill==="fishing"){ const o=V_OBJECTS.find(x=>x.id==="pier"); if(o){ const a=objApproach(o); return {x:a.x, y:a.y}; } return null; }
   if (skill==="foraging"){ const o=V_OBJECTS.find(x=>x.id==="forager_hut"); if(o){ const a=objApproach(o); return {x:a.x, y:a.y}; } return null; }
+  if (skill==="crafting"){ const o=V_OBJECTS.find(x=>x.id==="artisan_shed"); if(o){ const a=objApproach(o); return {x:a.x, y:a.y}; } return null; }
   return null;
 }
-const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓", fishing:"🎣", foraging:"🌿" };
+const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓", fishing:"🎣", foraging:"🌿", crafting:"🫙" };
 const TREE_RESPAWN_MS: Record<string,number> = { pine:600000, oak:1200000, hardwood:7200000, rare_leaf:21600000 };
 function getTreeStage(o: any): number {
   const rd = S.treeRespawn?.[o.id];
@@ -2801,6 +2817,43 @@ function drawInterior(t){
     // pearl NPC
     const _fwx = 150 + Math.sin(t*0.35)*10;
     drawPerson(ctx, _fwx, 100, "#c9a060", "#3a7a5a", t, true, IP.x >= _fwx ? 1 : -1, null, "down");
+  } else if (S.tab==="crafting"){
+    // artisan shed — warm amber walls, central workbench, herb bundles, clay oven
+    room("#5a4020","#7a5a30","#c9a878","#b89868","#3a2a10");
+    winP(50, 36); winP(220, 36);
+    // hanging herb bundles from ceiling beam
+    ctx.fillStyle="#5a3a10"; ctx.fillRect(0, 9, W, 5);
+    for(const [hx, hem] of [[30,"🌿"],[68,"🫐"],[108,"🌿"],[148,"🌿"],[186,"🫐"],[224,"🌿"],[262,"🌿"],[300,"🌿"]]){
+      ctx.fillStyle="#6a4a20"; ctx.fillRect(hx+3, 14, 2, 8);
+      drawEmojiC(ctx, hem, hx+4, 27, 9);
+    }
+    // clay oven (right side — smoke fish station area)
+    ctx.fillStyle="#7a5a40"; ctx.fillRect(246, 52, 52, 42);
+    ctx.fillStyle="#5a3a20"; ctx.fillRect(248, 54, 48, 32);
+    ctx.fillStyle="#1a1010"; ctx.fillRect(256, 62, 32, 18);
+    const _glow = 0.25 + Math.abs(Math.sin(t*1.5))*0.25;
+    ctx.fillStyle=`rgba(255,120,30,${_glow})`; ctx.fillRect(258, 64, 28, 14);
+    drawEmojiC(ctx,"🔥", 272, 70, 11);
+    ctx.fillStyle="#4a3028"; ctx.fillRect(250, 86, 44, 6);
+    // central workbench
+    ctx.fillStyle="#5a3a18"; ctx.fillRect(70, 80, 180, 12);
+    ctx.fillStyle="#7a5028"; ctx.fillRect(70, 68, 180, 14);
+    ctx.fillStyle="#6a4020"; ctx.fillRect(72, 82, 2, 24); ctx.fillRect(246, 82, 2, 24);
+    ctx.fillRect(98, 82, 2, 24); ctx.fillRect(220, 82, 2, 24);
+    // items on workbench
+    for(const [ix, em] of [[88,"🫙"],[140,"🍵"],[192,"🥣"]]){
+      drawEmojiC(ctx, em, ix, 62, 11);
+    }
+    // jars shelf (left wall)
+    ctx.fillStyle="#6a4a28"; ctx.fillRect(12, 52, 44, 6); ctx.fillRect(12, 78, 44, 6);
+    for(const [jx, jy, jc] of [[16,42,"🫙"],[28,42,"🍵"],[40,42,"🥣"],[16,68,"🫙"],[28,68,"🫙"],[40,68,"🍵"]]){
+      drawEmojiC(ctx, jc, jx, jy, 9);
+    }
+    // gift basket on floor (right corner)
+    drawEmojiC(ctx,"🧺", 296, 130, 16);
+    // artisan NPC (moves slowly left/right near workbench)
+    const _ax = 160 + Math.sin(t*0.4)*30;
+    drawPerson(ctx, _ax, 60, "#7a5040", "#c9804a", t, false, Math.sin(t*0.4)>0 ? 1:-1, null, "down");
   } else if (S.tab==="woodcutting"){
     room("#465a36","#5c7044","#b08c58","#a68050","#3a4a28");
     ctx.fillStyle="#6a5240"; ctx.fillRect(36,86,64,8); ctx.fillStyle="#7c6450"; ctx.fillRect(36,76,64,12);
@@ -3646,7 +3699,7 @@ function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null,
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
-    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0} },
+    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
     counters:{ actions:0, contracts:0, coinsEarned:0, trades:0 },
@@ -3700,6 +3753,7 @@ function load(){
       if (!S.skills.woodcutting) S.skills.woodcutting = { xp:0 };
       if (!S.skills.fishing) S.skills.fishing = { xp:0 };
       if (!S.skills.foraging) S.skills.foraging = { xp:0 };
+      if (!S.skills.crafting) S.skills.crafting = { xp:0 };
       if (!S.treeRespawn) S.treeRespawn = {};
       if (!S.bike) S.bike = { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 };
       if (!S.friendships) S.friendships = {};
@@ -4965,6 +5019,7 @@ function renderMain(){
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
+    else if (S.tab==="crafting") m.innerHTML = _withRoom("🧺 The Artisan's Shed", renderSkillPanel(S.tab));
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
