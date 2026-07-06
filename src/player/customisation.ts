@@ -4,6 +4,8 @@ export interface Appearance {
   shirt:     string;
   trousers:  string;
   hairStyle: number;
+  hat:       string;
+  hatColor:  string;
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {
@@ -12,6 +14,8 @@ export const DEFAULT_APPEARANCE: Appearance = {
   shirt:     '#ff8a5c',
   trousers:  '#4a5a8a',
   hairStyle: 0,
+  hat:       'none',
+  hatColor:  '#2a1a0a',
 };
 
 export const SKIN_TONES = [
@@ -43,6 +47,10 @@ export const SHIRT_COLOURS = [
   { label: 'Crimson', v: '#c04040' },
   { label: 'Slate',   v: '#5a6a7a' },
   { label: 'Cream',   v: '#f2e8d0' },
+  { label: 'Forest',  v: '#2a5a2a' },
+  { label: 'Lemon',   v: '#d8c020' },
+  { label: 'Rose',    v: '#d06070' },
+  { label: 'Lavender',v: '#8070c0' },
 ];
 
 export const TROUSER_COLOURS = [
@@ -52,4 +60,20 @@ export const TROUSER_COLOURS = [
   { label: 'Black', v: '#2a2a32' },
   { label: 'Grey',  v: '#7a7a8a' },
   { label: 'Khaki', v: '#a09a6a' },
+];
+
+export const HAT_STYLES = [
+  { label: 'None',     v: 'none'     },
+  { label: 'Flat Cap', v: 'flat_cap' },
+  { label: 'Beanie',   v: 'beanie'   },
+  { label: 'Sun Hat',  v: 'sun_hat'  },
+];
+
+export const HAT_COLOURS = [
+  { label: 'Dark',  v: '#2a1a0a' },
+  { label: 'Navy',  v: '#1a2a5a' },
+  { label: 'Olive', v: '#4a5a20' },
+  { label: 'Rust',  v: '#8a3010' },
+  { label: 'Cream', v: '#e8d8b0' },
+  { label: 'Grey',  v: '#6a6a7a' },
 ];

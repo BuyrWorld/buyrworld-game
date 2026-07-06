@@ -10,8 +10,8 @@ import { VMAP, V_OBJECTS, VCOLS, VROWS, TILE, VIEW_W, VIEW_H } from '../src/worl
 
 /* ---- items ---- */
 describe('ITEMS', () => {
-  it('has exactly 24 items', () => {
-    expect(Object.keys(ITEMS).length).toBe(24);
+  it('has exactly 50 items', () => {
+    expect(Object.keys(ITEMS).length).toBe(50);
   });
 
   it('every item has a non-empty name', () => {
@@ -37,8 +37,8 @@ describe('ITEMS', () => {
 describe('SKILLS', () => {
   const SKILL_IDS = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading', 'fishing'];
 
-  it('has exactly 7 skills', () => {
-    expect(Object.keys(SKILLS).length).toBe(7);
+  it('has exactly 9 skills', () => {
+    expect(Object.keys(SKILLS).length).toBe(9);
   });
 
   it('contains all expected skill IDs', () => {
@@ -100,8 +100,8 @@ describe('SKILLS', () => {
 
 /* ---- npcs ---- */
 describe('NPCS', () => {
-  it('has exactly 5 traders', () => {
-    expect(NPCS.length).toBe(5);
+  it('has exactly 7 traders', () => {
+    expect(NPCS.length).toBe(7);
   });
 
   it('every NPC stock item is a valid item ID', () => {
@@ -161,8 +161,8 @@ describe('UPGRADES', () => {
 
 /* ---- pets ---- */
 describe('PETS', () => {
-  it('has exactly 6 companions', () => {
-    expect(PETS.length).toBe(6);
+  it('has exactly 7 companions', () => {
+    expect(PETS.length).toBe(7);
   });
 
   it('no duplicate pet IDs', () => {

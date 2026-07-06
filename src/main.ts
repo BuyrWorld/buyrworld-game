@@ -10,7 +10,7 @@ import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS, NORTH_EXT } from './world/map.ts';
 import { nightAlpha, lampGlow, isNight, skyTint, gameHour } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
-import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS } from './player/customisation.ts';
+import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
@@ -313,6 +313,8 @@ const plHair     = () => (S.appearance && S.appearance.hair)     || DEFAULT_APPE
 const plShirt    = () => (S.appearance && S.appearance.shirt)    || DEFAULT_APPEARANCE.shirt;
 const plSkin     = () => (S.appearance && S.appearance.skin)     || DEFAULT_APPEARANCE.skin;
 const plTrousers = () => (S.appearance && S.appearance.trousers) || DEFAULT_APPEARANCE.trousers;
+const plHat      = () => (S.appearance && S.appearance.hat)      || 'none';
+const plHatColor = () => (S.appearance && S.appearance.hatColor) || '#2a1a0a';
 
 const FROST_TIPS = [
   "Rocks respawn instantly round here. Union rules.",
@@ -390,6 +392,8 @@ const ACH = [
   { id:"first_harvest",ic:"🌱", n:"First Harvest",       ds:"Harvest your first crop from the cottage garden.", r:40,   c:()=>(S.counters?.gardenHarvests||0)>=1 },
   { id:"green_thumb",  ic:"🌻", n:"Green Thumb",         ds:"Harvest 20 crops from the cottage garden.",        r:150,  c:()=>(S.counters?.gardenHarvests||0)>=20 },
   { id:"beloved_greenfield", ic:"💝", n:"Beloved of Greenfield", ds:"Reach Best Friends with all 17 villagers and collect every keepsake.", r:2000, c:()=>(S.keepsakes?.length||0)>=17 },
+  { id:"home_decorated",    ic:"🛋️", n:"Home Sweet Home",    ds:"Place your first piece of furniture.",         r:50,   c:()=>(S.placedFurniture?.length||0)>=1 },
+  { id:"interior_designer", ic:"🏠", n:"Interior Designer",  ds:"Have 5 pieces of furniture placed at once.",   r:200,  c:()=>(S.placedFurniture?.length||0)>=5 },
   { id:"festival_goer",   ic:"🎪", n:"Festival Goer",    ds:"Attend your first seasonal festival.",        r:100,  c:()=>(S.festival?.attended?.length||0)>=1 },
   { id:"festival_regular",ic:"🎡", n:"Festival Regular",  ds:"Attend all four seasonal festivals.",          r:500,  c:()=>(S.festival?.attended?.length||0)>=4 },
   { id:"raffle_winner",   ic:"🎟️", n:"Raffle Winner",    ds:"Win 10 raffle prizes at village festivals.",   r:200,  c:()=>(S.counters?.raffleWins||0)>=10 },
@@ -418,6 +422,7 @@ const ACH_PROG = {
   daily_30:             ()=>({ cur:Math.min(30, S.counters?.challengesClaimed||0),     max:30    }),
   green_thumb:          ()=>({ cur:Math.min(20, S.counters?.gardenHarvests||0),        max:20    }),
   beloved_greenfield:   ()=>({ cur:Math.min(17, S.keepsakes?.length||0),               max:17    }),
+  interior_designer:    ()=>({ cur:Math.min(5,  S.placedFurniture?.length||0),          max:5     }),
   festival_regular:     ()=>({ cur:Math.min(4,  S.festival?.attended?.length||0),      max:4     }),
   raffle_winner:        ()=>({ cur:Math.min(10, S.counters?.raffleWins||0),            max:10    }),
 };
@@ -521,6 +526,36 @@ const FESTIVAL_DEFS: Record<string,{ n:string; ic:string; month:number; day:numb
   autumn: { n:"Harvest Feast",  ic:"🍂", month:9,  day:15, days:3, col:"#e8b060", col2:"#c85010", raffleItems:['spiced_cider','pickled_mushrooms','harvest_wreath'],  feastQty:2 },
   winter: { n:"Winter Market",  ic:"❄️", month:11, day:20, days:5, col:"#b0d8f8", col2:"#5080d0", raffleItems:['mulled_tea','pine_garland','winter_hamper'],           feastQty:2 },
 };
+// ---- FURNITURE SYSTEM ----
+const FURNITURE_DEFS: Record<string,{ n:string; ic:string; price:number; craftIn?:Record<string,number>; w:number; h:number; col:string }> = {
+  furn_bed:    { n:"Bed",     ic:"🛏️", price:80,  w:60, h:44, col:"#7a5030" },
+  furn_sofa:   { n:"Sofa",    ic:"🛋️", price:60,  w:64, h:28, col:"#8a6a80" },
+  furn_tv:     { n:"TV Set",  ic:"📺", price:90,  w:56, h:44, col:"#222222" },
+  furn_table:  { n:"Table",   ic:"🪑", price:40,  w:48, h:28, col:"#8a6040", craftIn:{ wood:4, plank:2 } },
+  furn_chair:  { n:"Chair",   ic:"🪑", price:20,  w:28, h:28, col:"#7a5a30", craftIn:{ wood:2, plank:1 } },
+  furn_rug_sm: { n:"Rug",     ic:"🧩", price:30,  w:64, h:44, col:"#c06830", craftIn:{ wood:3, berries:2 } },
+  furn_sink:   { n:"Sink",    ic:"🚰", price:50,  w:28, h:36, col:"#d0d8e0" },
+  furn_fridge: { n:"Fridge",  ic:"🧊", price:70,  w:28, h:44, col:"#e0e8f0" },
+  furn_shower: { n:"Shower",  ic:"🚿", price:55,  w:28, h:44, col:"#c8d8e8" },
+  furn_toilet: { n:"Toilet",  ic:"🚽", price:45,  w:28, h:32, col:"#e8e8e0" },
+};
+// 9 named room positions inside the myhome interior (INT_W=320, INT_H=200)
+const FURN_SPOTS = [
+  { slot:0, label:"Back Left",    px:12,  py:54  },
+  { slot:1, label:"Back Centre",  px:128, py:54  },
+  { slot:2, label:"Back Right",   px:240, py:54  },
+  { slot:3, label:"Mid Left",     px:12,  py:104 },
+  { slot:4, label:"Mid Centre",   px:128, py:104 },
+  { slot:5, label:"Mid Right",    px:240, py:104 },
+  { slot:6, label:"Front Left",   px:12,  py:150 },
+  { slot:7, label:"Front Centre", px:128, py:150 },
+  { slot:8, label:"Front Right",  px:240, py:150 },
+];
+function addFurniture(id: string, qty: number){
+  if (!S.ownedFurniture) S.ownedFurniture = {};
+  S.ownedFurniture[id] = (S.ownedFurniture[id]||0) + qty;
+}
+// ---- END FURNITURE SYSTEM ----
 const WORLD_EVENTS = [
   { id:"ore_shortage", n:"Iron Ore Shortage",       msg:"A mine collapse disrupts supply — metal prices soaring.",        affects:["iron_ore","copper_ore","coal","bauxite"], mult:1.35 },
   { id:"fish_glut",    n:"Bumper Catch Season",     msg:"Excellent seas bring record catches — fish prices have fallen.",  affects:["sardine","mackerel","bass","salmon","tuna"], mult:0.72 },
@@ -678,7 +713,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -1565,7 +1600,7 @@ function villageClick(e){
   VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
   VP.pending = null;
 }
-function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female, scale=1.0){
+function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female, scale=1.0, hat='none', hatColor='#2a1a0a'){
   skin    = skin    || "#f2c49a";
   trouser = trouser || "#4a5a8a";
   dir = dir || (facing>=0 ? "right" : "left");
@@ -1596,6 +1631,23 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     ctx.fillStyle="#17161a";
     if (dir==="down"){ ctx.fillRect(-3, -11, 2, 2); ctx.fillRect(2, -11, 2, 2); ctx.fillStyle="#c96f4a"; ctx.fillRect(-1, -8, 3, 1); }
     else { ctx.fillRect(facing>=0?0:-2, -11, 2, 2); ctx.fillRect(facing>=0?3:-5, -11, 2, 2); }
+  }
+  // hat (optional)
+  if (hat && hat !== 'none'){
+    ctx.fillStyle = hatColor || '#2a1a0a';
+    if (hat === 'flat_cap'){
+      ctx.fillRect(-8, -20, 16, 3);  // brim
+      ctx.fillRect(-5, -23, 10, 4);  // crown
+    } else if (hat === 'beanie'){
+      ctx.fillRect(-6, -23, 12, 7);  // crown
+      ctx.fillStyle = (hatColor||'#2a1a0a') + 'cc';
+      ctx.fillRect(-7, -17, 14, 3);  // rolled brim
+    } else if (hat === 'sun_hat'){
+      ctx.fillRect(-11, -18, 22, 3); // wide brim
+      ctx.fillRect(-5, -22, 10, 5);  // crown
+      ctx.fillStyle = (hatColor||'#c8a020') + '88';
+      ctx.fillRect(-10, -16, 22, 2); // brim shadow
+    }
   }
   if (tool){
     const swing = Math.sin(t*11);
@@ -2475,7 +2527,7 @@ function drawWorkerAndVfx(ctx, t){
           ctx.restore();
         }
       } else {
-        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers(), toolTierColor());
+        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers(), toolTierColor(), false, 1.0, plHat(), plHatColor());
       }
     }
   }
@@ -2568,7 +2620,7 @@ function drawVillage(t){
     ctx.beginPath(); ctx.moveTo(_bx+10,_by-3); ctx.lineTo(_bx+14,_by-3); ctx.lineTo(_bx+14,_by-7); ctx.stroke();
     ctx.restore();
   }
-  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null);
+  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, false, 1.0, plHat(), plHatColor());
   ctx.restore();
   // HTML overlay: player name tag + nearest-interactable tooltip (crisp text, no canvas blurriness)
   const overlay = document.getElementById("village-overlay");
@@ -3872,12 +3924,21 @@ function drawInterior(t){
       // decorative border strip
       ctx.fillStyle="rgba(160,120,50,.18)"; ctx.fillRect(0,H-48,W,2); ctx.fillRect(0,H-50,W,2);
     }
-    // bonus sprites if player owns furniture items
+    // bonus sprites if player owns legacy furniture items
     if (S.items && S.items["fancy_rug"] > 0) _ft(3, 7, W/2-48, H-40, 3, 2, "#c06830");
     if (S.items && S.items["lamp"]      > 0) _ft(20, 1, W-38, H-68, 1, 1, "#c09830");
     if (S.items && S.items["bookcase"]  > 0) _ft(8,  4, 8, 116, 1, 2, "#5a3a20");
     if (S.items && S.items["painting"]  > 0 && _ht < 3) _ft(16, 0, W/2-24, 10, 3, 1, "#5a3a20");
     if (S.items && S.items["vase"]      > 0) _ft(18, 0, W/2+8, 10, 1, 1, "#9a8060");
+    // placed furniture from the furniture system
+    for (const _pf of (S.placedFurniture||[])){
+      const _fd = FURNITURE_DEFS[_pf.id];
+      const _sp = FURN_SPOTS[_pf.slot];
+      if (!_fd || !_sp) continue;
+      ctx.fillStyle = _fd.col + "cc"; ctx.fillRect(_sp.px, _sp.py, _fd.w, _fd.h);
+      ctx.strokeStyle="rgba(0,0,0,.18)"; ctx.lineWidth=1; ctx.strokeRect(_sp.px, _sp.py, _fd.w, _fd.h);
+      drawEmojiC(ctx, _fd.ic, _sp.px + _fd.w/2, _sp.py + _fd.h/2, 14);
+    }
   }
   if (S.tab==="bank"){
     // Village Bank interior — marble-effect, clean columns
@@ -3913,6 +3974,33 @@ function drawInterior(t){
     ctx.fillStyle="#6a4020"; ctx.fillRect(22,H-44,14,18);
     ctx.fillStyle="#3a8a2a"; ctx.beginPath(); ctx.arc(29,H-46,10,0,7); ctx.fill();
     ctx.fillStyle="#4ab040"; ctx.beginPath(); ctx.arc(23,H-51,7,0,7); ctx.arc(35,H-51,7,0,7); ctx.fill();
+  }
+  if (S.tab==="furniture_shop"){
+    // Nell's Home Store interior — warm, cosy showroom
+    room("#7a5a3a","#a07050","#d4c4a0","#c8b890","#4a2a10");
+    winP(W*0.10, 36); winP(W*0.65, 36);
+    // back wall display shelf
+    ctx.fillStyle="#5a3a18"; ctx.fillRect(10,52,W-20,14); ctx.fillStyle="#8a6040"; ctx.fillRect(10,52,W-20,3);
+    // display furniture on shelf
+    drawEmojiC(ctx,"🛋️",40,62,12); drawEmojiC(ctx,"🛏️",90,62,12); drawEmojiC(ctx,"📺",140,62,12);
+    drawEmojiC(ctx,"🪑",190,62,12); drawEmojiC(ctx,"🧩",240,62,12); drawEmojiC(ctx,"🚽",285,62,12);
+    // floor rug sample display
+    ctx.fillStyle="#c06830aa"; ctx.fillRect(W/2-44,H-72,88,46);
+    ctx.strokeStyle="#8a4820"; ctx.lineWidth=1.5; ctx.strokeRect(W/2-40,H-68,80,38);
+    drawEmojiC(ctx,"🧩",W/2,H-50,16);
+    // sofa display left
+    ctx.fillStyle="#8a6a80"; ctx.fillRect(14,H-60,56,28); ctx.fillRect(10,H-64,12,32); ctx.fillRect(58,H-64,12,32);
+    ctx.fillStyle="#7a5a70"; ctx.fillRect(16,H-62,52,8);
+    drawEmojiC(ctx,"🛋️",40,H-54,11);
+    // fridge/sink display right
+    ctx.fillStyle="#e0e8f0"; ctx.fillRect(W-62,H-66,26,40); ctx.fillStyle="#d0d8e8"; ctx.fillRect(W-60,H-64,22,36);
+    ctx.fillStyle="#d0d8e0"; ctx.fillRect(W-34,H-60,22,34); ctx.fillStyle="#c0c8d0"; ctx.fillRect(W-32,H-58,18,30);
+    drawEmojiC(ctx,"🧊",W-49,H-48,10); drawEmojiC(ctx,"🚰",W-23,H-46,10);
+    // shopkeeper Nell (female, warm shirt)
+    drawPerson(ctx, W/2+60, 52, "#8a5a20", "#c86030", t, false, -1, null, "down", "#e8b880", "#4a3020", null, true);
+    // price tag on shelf
+    ctx.fillStyle="#fff8f0"; ctx.fillRect(W*0.45|0,47,36,16); ctx.fillStyle="#5a3a18"; ctx.font="bold 6px monospace";
+    ctx.textAlign="left"; ctx.fillText("🛋️ FROM 20c",W*0.45+2|0,56); ctx.fillText("DELIVERY FREE",W*0.45+2|0,62); ctx.textAlign="left";
   }
   if (S.tab==="retail"){
     // Retail Stall interior — candy-bright, market feel
@@ -4463,6 +4551,8 @@ function freshState(){
     garden: [null, null, null, null],
     keepsakes: [],
     festival: { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[] as string[], notified:"" },
+    ownedFurniture: {} as Record<string,number>,
+    placedFurniture: [] as {id:string; slot:number}[],
   };
 }
 let S = freshState();
@@ -4507,6 +4597,10 @@ function load(){
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
       if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+      if (!S.ownedFurniture) S.ownedFurniture = {};
+      if (!Array.isArray(S.placedFurniture)) S.placedFurniture = [];
+      if (S.appearance && !S.appearance.hat) S.appearance.hat = 'none';
+      if (S.appearance && !S.appearance.hatColor) S.appearance.hatColor = '#2a1a0a';
       if (!Array.isArray(S.festival.attended)) S.festival.attended = [];
       if (!("notified" in S.festival)) S.festival.notified = "";
       if (!("raffleWins" in S.counters)) S.counters.raffleWins = 0;
@@ -5930,6 +6024,80 @@ function renderPets(){
   html += `</div>`;
   return html;
 }
+function renderFurniturePlacement(): string {
+  const _placed = S.placedFurniture || [];
+  const _owned = S.ownedFurniture || {};
+  const _occupiedSlots = _placed.map(p=>p.slot);
+  const _freeSpots = FURN_SPOTS.filter(sp=>!_occupiedSlots.includes(sp.slot));
+  const _placedHtml = _placed.length === 0
+    ? `<p style="color:var(--dim);font-size:11px;margin:0 0 4px">Nothing placed yet. Buy furniture from 🛋️ Nell's Home Store on the high street.</p>`
+    : _placed.map(pf=>{
+        const fd=FURNITURE_DEFS[pf.id], sp=FURN_SPOTS[pf.slot];
+        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-size:16px">${fd?.ic||'?'}</span>
+          <span style="font-size:11px;flex:1"><b>${fd?.n||pf.id}</b> <span style="color:var(--dim)">${sp?.label||''}</span></span>
+          <button data-pickup-furn="${pf.id}|${pf.slot}" style="background:#555;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px">Pick Up</button>
+        </div>`;
+      }).join('');
+  const _ownedEntries = Object.entries(_owned).filter(([,qty])=>(qty as number)>0);
+  const _ownedHtml = _ownedEntries.length === 0 ? ''
+    : `<p style="font-size:10px;color:var(--dim);margin:8px 0 4px;font-weight:700">OWNED (unplaced):</p>` +
+      _ownedEntries.map(([id,qty])=>{
+        const fd=FURNITURE_DEFS[id];
+        if(!fd) return '';
+        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap">
+          <span style="font-size:16px">${fd.ic}</span>
+          <span style="font-size:11px;min-width:60px"><b>${fd.n}</b> ×${qty}</span>
+          ${_freeSpots.length===0
+            ? `<span style="font-size:10px;color:var(--warn)">Room full (9/9)</span>`
+            : `<select id="spot-sel-${id}" style="font-size:10px;padding:2px 4px;border-radius:3px;background:#333;color:#fff;border:1px solid #555">
+                ${_freeSpots.map(sp=>`<option value="${sp.slot}">${sp.label}</option>`).join('')}
+              </select>
+              <button data-place-furn="${id}" style="background:#3a5a3a;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px">Place</button>`
+          }
+        </div>`;
+      }).join('');
+  return `<div class="panel" style="padding:10px;margin-top:8px">
+    <h3 style="margin:0 0 8px;font-size:13px">🛋️ Room Furniture
+      <span style="color:var(--dim);font-weight:normal;font-size:10px">— ${_placed.length}/9 spots filled</span>
+    </h3>
+    ${_placedHtml}${_ownedHtml}
+  </div>`;
+}
+function renderFurnitureShop(): string {
+  const _owned = S.ownedFurniture || {};
+  const _allItems = Object.entries(FURNITURE_DEFS);
+  const _buyRows = _allItems.map(([id,fd])=>{
+    const have = _owned[id]||0;
+    const canBuy = S.coins >= fd.price;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+      <span style="font-size:20px">${fd.ic}</span>
+      <div style="flex:1;font-size:11px"><b>${fd.n}</b>${have>0?` <span style="color:var(--mint)">×${have} owned</span>`:''}</div>
+      <button data-buy-furn="${id}" style="background:${canBuy?'#5a3a1a':'#444'};color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px"${canBuy?'':' disabled'}>${fmt(fd.price)}c</button>
+    </div>`;
+  }).join('');
+  const _craftable = _allItems.filter(([,fd])=>fd.craftIn);
+  const _craftRows = _craftable.map(([id,fd])=>{
+    const ing = Object.entries(fd.craftIn!).map(([k,v])=>`${ITEMS[k]?.ic||''}${ITEMS[k]?.n||k}×${v}`).join(', ');
+    const canCraft = Object.entries(fd.craftIn!).every(([k,v])=>(S.items[k]||0)>=(v as number));
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+      <span style="font-size:20px">${fd.ic}</span>
+      <div style="flex:1;font-size:11px"><b>${fd.n}</b><br><span style="color:var(--dim)">${ing}</span></div>
+      <button data-craft-furn="${id}" style="background:${canCraft?'#1a5a3a':'#444'};color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px"${canCraft?'':' disabled'}>Craft</button>
+    </div>`;
+  }).join('');
+  return `<div class="panel" style="padding:10px;margin-bottom:8px">
+    <h2 style="margin:0 0 4px">🛋️ Nell's Home Store</h2>
+    <p style="color:var(--dim);font-size:12px;margin:0 0 10px">Nell gives you a warm smile. "See anything you like?"</p>
+    <h3 style="font-size:12px;margin:0 0 8px">🛍️ Buy Furniture</h3>
+    ${_buyRows}
+  </div>
+  <div class="panel" style="padding:10px;margin-bottom:8px">
+    <h3 style="font-size:12px;margin:0 0 6px">🪚 Craft Furniture <span style="color:var(--dim);font-weight:normal;font-size:10px">— uses materials from your inventory</span></h3>
+    ${_craftRows}
+  </div>
+  ${renderInventoryPanel()}`;
+}
 function renderSeasonalMarket(): string {
   const _sd = SEASON_DEFS[getSeason()];
   const _fst = isFestivalActive();
@@ -6054,7 +6222,7 @@ function drawCharPreview(canvasId){
   ctx.save();
   ctx.translate(cv.width/2, cv.height - (big ? 20 : 12));
   ctx.scale(sc, sc);
-  drawPerson(ctx, 0, 0, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers());
+  drawPerson(ctx, 0, 0, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers(), null, false, 1.0, plHat(), plHatColor());
   ctx.restore();
 }
 function renderCharacterCustomisation(){
@@ -6062,6 +6230,11 @@ function renderCharacterCustomisation(){
   function swatchRow(label, arr, field){
     return `<div class="cust-row"><div class="cust-lbl">${label}</div><div class="cust-swatches">${
       arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" data-cust="${field}" data-val="${c.v}" style="background:${c.v};" title="${c.label}" aria-label="${c.label}"></button>`).join('')
+    }</div></div>`;
+  }
+  function textRow(label, arr, field){
+    return `<div class="cust-row"><div class="cust-lbl">${label}</div><div class="cust-swatches" style="flex-wrap:wrap;gap:4px">${
+      arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" data-cust="${field}" data-val="${c.v}" style="background:${ap[field]===c.v?'var(--amber)':'rgba(255,255,255,.12)'};color:#fff;font-size:10px;padding:2px 6px;width:auto;height:auto;border-radius:3px;font-family:'IBM Plex Mono',monospace" aria-label="${c.label}">${c.label}</button>`).join('')
     }</div></div>`;
   }
   return `<div class="panel cust-panel">
@@ -6074,6 +6247,8 @@ function renderCharacterCustomisation(){
     ${swatchRow("Hair", HAIR_COLOURS, "hair")}
     ${swatchRow("Shirt", SHIRT_COLOURS, "shirt")}
     ${swatchRow("Trousers", TROUSER_COLOURS, "trousers")}
+    ${textRow("Hat", HAT_STYLES, "hat")}
+    ${swatchRow("Hat Colour", HAT_COLOURS, "hatColor")}
   </div>`;
 }
 function interiorHtml(title){
@@ -6155,6 +6330,7 @@ function renderMain(){
     else if (S.tab==="village_fund") m.innerHTML = _withRoom("🌸 The Village Fund", renderBeautification());
     else if (S.tab==="seasonal_market"){ m.innerHTML = _withRoom("🎪 Seasonal Market", renderSeasonalMarket()); }
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
+    else if (S.tab==="furniture_shop") m.innerHTML = _withRoom("🛋️ Nell's Home Store", renderFurnitureShop());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
     else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Greenfield Boat Hire", renderBoatHire());
@@ -6261,8 +6437,8 @@ function renderMain(){
           <p style="color:var(--dim);font-size:12px;margin:0 0 10px">${_tier.desc}</p>
           ${_upBtn}
           ${_next && !_canUp ? `<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Need ${fmt(_next.cost)} coins (${fmt(_next.cost-S.coins)} short)</p>` : ""}
-          <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Tip: buy furniture from Finn's Stall to add bonus decor to your home.</p>
         </div>
+        ${renderFurniturePlacement()}
         ${renderGarden()}
         ${renderKeepsakes()}
         <div class="panel" style="padding:10px;margin-top:8px">
@@ -6630,6 +6806,58 @@ function bindMain(){
     grantXp("crafting", 80);
     toast(`🍽️ Grand Feast provided! +400 coins and +80 crafting XP!`);
     log(`🍽️ <b>Grand Feast</b> — the village is grateful! +400 coins, +80 crafting XP`, "good");
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  // furniture shop — buy
+  document.querySelectorAll("[data-buy-furn]").forEach(b=> b.onclick = ()=>{
+    const _id = (b as HTMLElement).dataset.buyFurn!;
+    const _fd = FURNITURE_DEFS[_id]; if (!_fd){ toast("Unknown item."); return; }
+    if (S.coins < _fd.price){ toast("Not enough coins."); return; }
+    S.coins -= _fd.price; addFurniture(_id, 1);
+    toast(`🛋️ Bought ${_fd.n}! Place it in Your Cottage.`);
+    log(`🛋️ <b>${_fd.n}</b> purchased from Nell's Home Store.`, "good");
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  // furniture shop — craft from materials
+  document.querySelectorAll("[data-craft-furn]").forEach(b=> b.onclick = ()=>{
+    const _id = (b as HTMLElement).dataset.craftFurn!;
+    const _fd = FURNITURE_DEFS[_id]; if (!_fd?.craftIn){ toast("Not craftable."); return; }
+    for (const [k,v] of Object.entries(_fd.craftIn)){
+      if ((S.items[k]||0) < (v as number)){ toast(`Need more ${ITEMS[k]?.n||k}.`); return; }
+    }
+    for (const [k,v] of Object.entries(_fd.craftIn)) S.items[k] = (S.items[k]||0) - (v as number);
+    addFurniture(_id, 1);
+    grantXp("crafting", 15);
+    toast(`🪚 Crafted ${_fd.n}! Place it in Your Cottage.`);
+    log(`🪚 Crafted <b>${_fd.n}</b>.`, "good");
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  // myhome — place furniture
+  document.querySelectorAll("[data-place-furn]").forEach(b=> b.onclick = ()=>{
+    const _id = (b as HTMLElement).dataset.placeFurn!;
+    const _fd = FURNITURE_DEFS[_id]; if (!_fd){ toast("Unknown item."); return; }
+    if (!S.ownedFurniture || !S.ownedFurniture[_id] || S.ownedFurniture[_id] < 1){ toast("You don't own that."); return; }
+    const _sel = document.getElementById('spot-sel-'+_id) as HTMLSelectElement|null;
+    const _slot = _sel ? parseInt(_sel.value) : -1;
+    if (_slot < 0 || _slot > 8){ toast("Choose a room spot."); return; }
+    if ((S.placedFurniture||[]).some(p=>p.slot===_slot)){ toast("That spot is already occupied."); return; }
+    if (!S.placedFurniture) S.placedFurniture = [];
+    S.ownedFurniture[_id]--;
+    S.placedFurniture.push({ id:_id, slot:_slot });
+    toast(`🛋️ ${_fd.n} placed in ${FURN_SPOTS[_slot]?.label||'room'}.`);
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  // myhome — pick up furniture
+  document.querySelectorAll("[data-pickup-furn]").forEach(b=> b.onclick = ()=>{
+    const [_id, _slotStr] = ((b as HTMLElement).dataset.pickupFurn||'').split('|');
+    const _slot = parseInt(_slotStr);
+    if (!_id || isNaN(_slot)){ toast("Error picking up."); return; }
+    const _idx = (S.placedFurniture||[]).findIndex(p=>p.id===_id && p.slot===_slot);
+    if (_idx < 0){ toast("Not found."); return; }
+    S.placedFurniture.splice(_idx, 1);
+    addFurniture(_id, 1);
+    const _fd = FURNITURE_DEFS[_id];
+    toast(`📦 ${_fd?.n||_id} picked up.`);
     achCheck(); renderMain(); updateHud(); save();
   });
   // village beautification purchases

@@ -112,7 +112,9 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'postoffice',  kind: 'bld',   tx: 15, ty: 2,  w: 2, h: 2, tab: 'postoffice',    name: 'Post Office',     ic: '📮', wall: '#e8e0d8', roof: '#b03020' },
   { id: 'estateagent', kind: 'bld',   tx: 22, ty: 2,  w: 2, h: 2, tab: 'estateagent',   name: 'Estate Agent',    ic: '🏘️', wall: '#d8e0e8', roof: '#2a4060' },
   { id: 'bike_shop',   kind: 'bld',   tx: 29, ty: 2,  w: 2, h: 2, tab: 'bike_shop',     name: 'Cycle Shop',      ic: '🚲', wall: '#c8d8c0', roof: '#3a6a3a' },
-  { id: 'notice_board', kind: 'sign', tx: 35, ty: 3,  w: 1, h: 1, tab: 'notice_board', name: 'Notice Board',    ic: '📋' },
+  { id: 'notice_board',   kind: 'sign', tx: 35, ty: 3,  w: 1, h: 1, tab: 'notice_board',   name: 'Notice Board',     ic: '📋' },
+  { id: 'furniture_shop', kind: 'bld',  tx: 37, ty: 2,  w: 2, h: 2, tab: 'furniture_shop', name: "Nell's Home Store", ic: '🛋️', wall: '#e8d8c0', roof: '#8a5a40' },
+  { id: 'lamp_retail_5',  kind: 'lamp', tx: 34, ty: 4,  w: 1, h: 1 },
   // --- Retail district decorations ---
   { id: 'lamp_retail_1', kind: 'lamp', tx: 11, ty: 4, w: 1, h: 1 },
   { id: 'lamp_retail_2', kind: 'lamp', tx: 18, ty: 4, w: 1, h: 1 },
