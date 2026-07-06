@@ -82,7 +82,19 @@
       { "id": "make_tea",    "n": "Blend Herb Tea",     "lvl": 1,  "ms": 4000,  "xp": 14, "in": { "wild_herb": 3 },                                    "out": { "herb_tea": 1 } },
       { "id": "carve_bowl",  "n": "Carve Wooden Bowl",  "lvl": 3,  "ms": 5500,  "xp": 16, "in": { "wood": 3, "plank": 1 },                            "out": { "carved_bowl": 1 } },
       { "id": "smoke_fish",  "n": "Smoke Fish",         "lvl": 5,  "ms": 6000,  "xp": 22, "in": { "mackerel": 2, "coal": 1 },                         "out": { "smoked_fish": 1 } },
-      { "id": "gift_basket", "n": "Weave Gift Basket",  "lvl": 8,  "ms": 8000,  "xp": 35, "in": { "berry_jam": 1, "herb_tea": 1, "carved_bowl": 1 },   "out": { "gift_basket": 1 } }
+      { "id": "gift_basket", "n": "Weave Gift Basket",  "lvl": 8,  "ms": 8000,  "xp": 35, "in": { "berry_jam": 1, "herb_tea": 1, "carved_bowl": 1 },   "out": { "gift_basket": 1 } },
+      { "id": "make_flower_crown",    "n": "Weave Flower Crown",  "season": "spring", "lvl": 1, "ms": 5000, "xp": 20, "in": { "berries": 3, "wild_herb": 2 },                      "out": { "flower_crown": 1 } },
+      { "id": "brew_spring_tonic",    "n": "Brew Spring Tonic",   "season": "spring", "lvl": 3, "ms": 6000, "xp": 18, "in": { "wild_herb": 4, "mushroom": 2 },                     "out": { "spring_tonic": 1 } },
+      { "id": "pot_blossom_jam",      "n": "Pot Blossom Jam",     "season": "spring", "lvl": 5, "ms": 7000, "xp": 28, "in": { "berries": 6, "herb_tea": 1 },                       "out": { "blossom_jam": 1 } },
+      { "id": "squeeze_lemonade",     "n": "Squeeze Lemonade",    "season": "summer", "lvl": 1, "ms": 4000, "xp": 16, "in": { "berries": 5, "wild_herb": 1 },                      "out": { "lemonade": 1 } },
+      { "id": "weave_sun_hat",        "n": "Weave Sun Hat",       "season": "summer", "lvl": 3, "ms": 6000, "xp": 25, "in": { "rare_wood": 1, "wild_herb": 3 },                    "out": { "sun_hat": 1 } },
+      { "id": "bake_honey_cake",      "n": "Bake Honey Cake",     "season": "summer", "lvl": 5, "ms": 7000, "xp": 30, "in": { "berry_jam": 1, "berries": 3 },                      "out": { "honey_cake": 1 } },
+      { "id": "press_spiced_cider",   "n": "Press Spiced Cider",  "season": "autumn", "lvl": 1, "ms": 5000, "xp": 20, "in": { "berries": 4, "mushroom": 3 },                       "out": { "spiced_cider": 1 } },
+      { "id": "pickle_mushrooms",     "n": "Pickle Mushrooms",    "season": "autumn", "lvl": 3, "ms": 6000, "xp": 18, "in": { "mushroom": 5, "wild_herb": 2 },                     "out": { "pickled_mushrooms": 1 } },
+      { "id": "twine_harvest_wreath", "n": "Twine Harvest Wreath","season": "autumn", "lvl": 6, "ms": 8000, "xp": 35, "in": { "rare_wood": 1, "berries": 3, "wild_herb": 2 },      "out": { "harvest_wreath": 1 } },
+      { "id": "brew_mulled_tea",      "n": "Brew Mulled Tea",     "season": "winter", "lvl": 1, "ms": 5000, "xp": 22, "in": { "herb_tea": 2, "wild_herb": 2 },                     "out": { "mulled_tea": 1 } },
+      { "id": "string_pine_garland",  "n": "String Pine Garland", "season": "winter", "lvl": 3, "ms": 6000, "xp": 25, "in": { "wood": 4, "berries": 2 },                           "out": { "pine_garland": 1 } },
+      { "id": "pack_winter_hamper",   "n": "Pack Winter Hamper",  "season": "winter", "lvl": 7, "ms": 9000, "xp": 45, "in": { "smoked_fish": 1, "berry_jam": 1, "herb_tea": 1 },  "out": { "winter_hamper": 1 } }
     ]
   }
 }

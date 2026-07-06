@@ -376,6 +376,11 @@ const ACH = [
   { id:"request_1",         ic:"💌", n:"Good Samaritan",          ds:"Fulfil your first personal villager request.",           r:40,  c:()=>(S.counters?.requestsFulfilled||0)>=1 },
   { id:"request_10",        ic:"🤝", n:"Helpful Neighbour",       ds:"Fulfil 10 personal villager requests.",                  r:150, c:()=>(S.counters?.requestsFulfilled||0)>=10 },
   { id:"request_50",        ic:"🏅", n:"Pillar of the Community", ds:"Fulfil 50 personal villager requests.",                  r:500, c:()=>(S.counters?.requestsFulfilled||0)>=50 },
+  { id:"spring_craft", ic:"🌸", n:"Spring Sprout",  ds:"Craft a seasonal spring item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['flower_crown','spring_tonic','blossom_jam'])>=1 },
+  { id:"summer_craft", ic:"☀️", n:"Summer Glow",    ds:"Craft a seasonal summer item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['lemonade','sun_hat','honey_cake'])>=1 },
+  { id:"autumn_craft", ic:"🍂", n:"Autumn Bounty",  ds:"Craft a seasonal autumn item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['spiced_cider','pickled_mushrooms','harvest_wreath'])>=1 },
+  { id:"winter_craft", ic:"❄️", n:"Winter Warmth",  ds:"Craft a seasonal winter item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['mulled_tea','pine_garland','winter_hamper'])>=1 },
+  { id:"all_seasons",  ic:"🎪", n:"All Seasons",    ds:"Craft at least one item in every season.",             r:500, c:()=>prodSum(['flower_crown','spring_tonic','blossom_jam'])>=1&&prodSum(['lemonade','sun_hat','honey_cake'])>=1&&prodSum(['spiced_cider','pickled_mushrooms','harvest_wreath'])>=1&&prodSum(['mulled_tea','pine_garland','winter_hamper'])>=1 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -511,17 +516,29 @@ function getSeason(){
   if (m >= 8 && m <= 10) return "autumn";
   return "winter";
 }
+function daysLeftInSeason(){
+  const now = new Date(); const m = now.getMonth(); let next;
+  if (m >= 2 && m <= 4) next = new Date(now.getFullYear(), 5, 1);
+  else if (m >= 5 && m <= 7) next = new Date(now.getFullYear(), 8, 1);
+  else if (m >= 8 && m <= 10) next = new Date(now.getFullYear(), 11, 1);
+  else { const yr = m === 11 ? now.getFullYear()+1 : now.getFullYear(); next = new Date(yr, 2, 1); }
+  return Math.max(1, Math.ceil((next.getTime() - now.getTime()) / (24*60*60*1000)));
+}
 const SEASON_DEFS = {
-  spring: { n:"Spring", ic:"🌸", grass:"#8acc7a", skyOverlay:"rgba(255,200,220,.04)",
+  spring: { n:"Spring", ic:"🌸", grass:"#8acc7a", skyOverlay:"rgba(255,200,220,.04)", col:"#b8e890", col2:"#d890d8",
+    items:['flower_crown','spring_tonic','blossom_jam'], blurb:"The valley blooms. Gather what the hedgerows offer.",
     priceShift:{ wood:1.10, plank:1.10, sardine:1.12, mackerel:1.12, bass:1.10 },
     obs:["🌸 Blossom is on the trees along the valley path.","🌱 Fresh shoots are coming up along the village green.","🐦 The birds have started nesting. Spring is here.","☁️ April showers drift over the ridge. Classic.","🌷 Clara has put out new flower pots along the high street."] },
-  summer: { n:"Summer", ic:"☀️", grass:"#7cbf86", skyOverlay:"rgba(255,240,160,.04)",
+  summer: { n:"Summer", ic:"☀️", grass:"#7cbf86", skyOverlay:"rgba(255,240,160,.04)", col:"#ffe870", col2:"#ffb830",
+    items:['lemonade','sun_hat','honey_cake'], blurb:"Long days and warm nights. The stalls are busy.",
     priceShift:{ sardine:0.85, mackerel:0.85, bass:0.82, iron_ore:0.92, coal:0.80 },
     obs:["☀️ A long bright evening over Greenfield. Peak summer.","🌿 The valley is thick with green — everything's growing.","🍦 The days are long and warm. Even the furnace feels bearable.","🌞 Barely a cloud. The mountains are sharp on the horizon.","🦋 Butterflies over the park. The kids are loving this weather."] },
-  autumn: { n:"Autumn", ic:"🍂", grass:"#a8a858", skyOverlay:"rgba(200,140,60,.06)",
+  autumn: { n:"Autumn", ic:"🍂", grass:"#a8a858", skyOverlay:"rgba(200,140,60,.06)", col:"#e8b060", col2:"#c85010",
+    items:['spiced_cider','pickled_mushrooms','harvest_wreath'], blurb:"The harvest is in. Preserve and pickle before the frost.",
     priceShift:{ wood:1.18, plank:1.18, bracket:1.14, gearbox:1.14, iron_ore:1.08 },
     obs:["🍂 Leaves are coming down. The valley's gone copper and gold.","🍁 A sharp autumn morning — ground's already crunchy.","🌫️ Early mist in the valley. Classic October.","🍄 Frank found a huge fungus in the north wood. He's showing everyone.","🦔 Gracie spotted a hedgehog under the barn hedge last night."] },
-  winter: { n:"Winter", ic:"❄️", grass:"#c0cc99", skyOverlay:"rgba(160,190,230,.09)",
+  winter: { n:"Winter", ic:"❄️", grass:"#c0cc99", skyOverlay:"rgba(160,190,230,.09)", col:"#b0d8f8", col2:"#5080d0",
+    items:['mulled_tea','pine_garland','winter_hamper'], blurb:"Frost on the panes. Warm gifts are worth more.",
     priceShift:{ coal:1.35, iron_ore:1.20, sardine:1.22, mackerel:1.18, bass:1.15 },
     obs:["❄️ A proper frost this morning. Puddles crackled underfoot.","🌨️ Light snow expected by evening over the ridge.","🧥 Agnes has put the thick coat on — it's properly cold now.","🕯️ The lamplights look especially warm on a winter evening.","☃️ The kids built a snowman on the green. Max is delighted."] },
 };
@@ -586,7 +603,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -661,6 +678,7 @@ const PRESTIGE_THRESHOLDS = [
   { at:175, rentPct:5,  label:"+5% rent income" },
   { at:200, coinsPm:5,  label:"+5 coins/min" },
 ];
+const SEASONAL_ITEMS = ['flower_crown','spring_tonic','blossom_jam','lemonade','sun_hat','honey_cake','spiced_cider','pickled_mushrooms','harvest_wreath','mulled_tea','pine_garland','winter_hamper'];
 function villagePrestige(){ return BEAUTIFICATION.filter(b=>(S.beautification||[]).includes(b.id)).reduce((a,b)=>a+b.prestige,0); }
 function prestigeCoinsPm(){ return PRESTIGE_THRESHOLDS.filter(r=>r.coinsPm&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.coinsPm||0),0); }
 function prestigeFriendXpMult(){ return 1+PRESTIGE_THRESHOLDS.filter(r=>r.friendXpPct&&villagePrestige()>=r.at).reduce((a,r)=>a+(r.friendXpPct||0),0)/100; }
@@ -744,7 +762,8 @@ const ZONE_TIPS = {
   trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
   pets:          { ic:"🐾", n:"The Companion Barn",  tip:"Your crew lives here." },
-  village_fund:  { ic:"🌸", n:"The Village Fund",    tip:"Invest in Greenfield's beauty and earn prestige bonuses." },
+  village_fund:     { ic:"🌸", n:"The Village Fund",    tip:"Invest in Greenfield's beauty and earn prestige bonuses." },
+  seasonal_market:  { ic:"🎪", n:"Seasonal Market",     tip:"Exclusive seasonal crafts and festival trades." },
 };
 let _zoneCardData = null;
 function showZoneCard(tab){
@@ -994,6 +1013,23 @@ const PERSONAL_REQUESTS = [
   { npcId:'pearl',  itemId:'mackerel',    qty:5, reward:56,  friendXp:8,  minLvl:0 },
   { npcId:'pearl',  itemId:'salmon',      qty:3, reward:96,  friendXp:12, minLvl:1 },
   { npcId:'pearl',  itemId:'tuna',        qty:1, reward:148, friendXp:16, minLvl:3 },
+  // Seasonal requests — only generated when the matching season is active
+  { npcId:'agnes',  itemId:'flower_crown',      qty:1, reward:112, friendXp:15, minLvl:1, season:'spring' },
+  { npcId:'clara',  itemId:'blossom_jam',       qty:1, reward:122, friendXp:16, minLvl:2, season:'spring' },
+  { npcId:'gracie', itemId:'spring_tonic',      qty:2, reward:108, friendXp:14, minLvl:1, season:'spring' },
+  { npcId:'mabel',  itemId:'flower_crown',      qty:1, reward:112, friendXp:15, minLvl:1, season:'spring' },
+  { npcId:'edna',   itemId:'sun_hat',           qty:1, reward:122, friendXp:15, minLvl:2, season:'summer' },
+  { npcId:'mabel',  itemId:'lemonade',          qty:3, reward:108, friendXp:13, minLvl:1, season:'summer' },
+  { npcId:'pearl',  itemId:'honey_cake',        qty:1, reward:152, friendXp:16, minLvl:2, season:'summer' },
+  { npcId:'clara',  itemId:'lemonade',          qty:3, reward:108, friendXp:13, minLvl:1, season:'summer' },
+  { npcId:'ida',    itemId:'spiced_cider',      qty:2, reward:118, friendXp:14, minLvl:1, season:'autumn' },
+  { npcId:'ned',    itemId:'harvest_wreath',    qty:1, reward:175, friendXp:18, minLvl:3, season:'autumn' },
+  { npcId:'olive',  itemId:'pickled_mushrooms', qty:2, reward:108, friendXp:13, minLvl:2, season:'autumn' },
+  { npcId:'bertie', itemId:'spiced_cider',      qty:2, reward:118, friendXp:14, minLvl:1, season:'autumn' },
+  { npcId:'frank',  itemId:'pine_garland',      qty:2, reward:135, friendXp:15, minLvl:2, season:'winter' },
+  { npcId:'jack',   itemId:'mulled_tea',        qty:2, reward:120, friendXp:14, minLvl:1, season:'winter' },
+  { npcId:'edna',   itemId:'winter_hamper',     qty:1, reward:235, friendXp:22, minLvl:3, season:'winter' },
+  { npcId:'kitty',  itemId:'mulled_tea',        qty:3, reward:155, friendXp:16, minLvl:1, season:'winter' },
 ];
 function isHarbourUnlocked(){ return totalLvl() >= 100; }
 function serviceCost(){ return Math.max(5, Math.round((100 - (S.bike?.condition ?? 100)) * 1.5)); }
@@ -4456,7 +4492,7 @@ function updatePrestigeIncome(now){
 function generateVillagerRequest(npcId: string, now: number){
   const lvl = friendLvl(npcId);
   if (lvl < 1) return null;
-  const pool = PERSONAL_REQUESTS.filter(r => r.npcId === npcId && r.minLvl <= lvl);
+  const pool = PERSONAL_REQUESTS.filter(r => r.npcId === npcId && r.minLvl <= lvl && (r.season === undefined || r.season === getSeason()));
   if (!pool.length) return null;
   const r = pool[Math.floor(Math.random() * pool.length)];
   return { itemId: r.itemId, qty: r.qty, reward: r.reward, friendXp: r.friendXp, expiresAt: now + 24*60*60*1000 };
@@ -5042,12 +5078,16 @@ function renderSkillPanel(skill){
   const lvl = skillLvl(skill);
   let html = `<div class="panel"><h2>${sk.ic} ${sk.n}<small>${sk.desc}</small></h2>${xpBarHtml(skill)}<div class="actions">`;
   sk.actions.forEach(act => {
-    const locked = lvl < act.lvl;
+    const seasonLocked = act.season !== undefined && act.season !== getSeason();
+    const locked = lvl < act.lvl || seasonLocked;
     const running = S.action && S.action.skill===skill && S.action.id===act.id;
     const dur = (act.ms * speedMult(skill) / 1000).toFixed(1);
+    const _sDef = act.season ? SEASON_DEFS[act.season] : null;
+    const seasonBadge = _sDef ? ` <span style="font-size:9px;opacity:.65">${_sDef.ic}</span>` : '';
+    const metaText = lvl < act.lvl ? `Requires level ${act.lvl}` : seasonLocked ? `${_sDef.ic} ${_sDef.n} only` : `${dur}s · ${act.xp} XP`;
     html += `<button class="action ${running?'running':''}" data-skill="${skill}" data-act="${act.id}" ${locked?'disabled':''}>
-      <div class="nm"><span class="ic">${ITEMS[Object.keys(act.out)[0]].ic}</span>${act.n}</div>
-      <div class="meta">${locked ? `Requires level ${act.lvl}` : `${dur}s · ${act.xp} XP`}</div>
+      <div class="nm"><span class="ic">${ITEMS[Object.keys(act.out)[0]].ic}</span>${act.n}${seasonBadge}</div>
+      <div class="meta">${metaText}</div>
       <div class="io">${ioHtml(act)}</div>
       ${running ? `<div class="prog"><div class="fill" id="prog-${act.id}"></div></div><span class="stopbtn" data-stop="1">STOP</span>` : ""}
     </button>`;
@@ -5449,6 +5489,7 @@ function renderMain(){
     else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
     else if (S.tab==="crafting") m.innerHTML = _withRoom("🧺 The Artisan's Shed", renderSkillPanel(S.tab));
     else if (S.tab==="village_fund") m.innerHTML = _withRoom("🌸 The Village Fund", renderBeautification());
+    else if (S.tab==="seasonal_market"){ const _sd=SEASON_DEFS[getSeason()]; const _days=daysLeftInSeason(); const _sitems=_sd.items.map(id=>({id,it:ITEMS[id],qty:(S.items[id]||0)})); const _hasSome=_sitems.some(x=>x.qty>0); const _crafted=_sd.items.map(id=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:20px">${ITEMS[id].ic}</span><div style="flex:1;font-size:11px"><b>${ITEMS[id].n}</b><br><span style="color:var(--dim)">In stock: ${S.items[id]||0} &nbsp;·&nbsp; Crafted total: ${S.prod[id]||0} &nbsp;·&nbsp; Festival sell: ${fmt(Math.round(ITEMS[id].v*1.5))}c each</span></div></div>`).join(''); m.innerHTML=_withRoom(`${_sd.ic} ${_sd.n} Seasonal Market`, `<div class="panel" style="background:linear-gradient(135deg,${_sd.col}30,${_sd.col2}18);border:1px solid ${_sd.col}60;padding:12px;margin-bottom:8px"><h2 style="margin:0 0 4px">${_sd.ic} ${_sd.n} Festival</h2><p style="color:var(--dim);font-size:12px;margin:0 0 6px">${_sd.blurb}</p><p style="font-size:11px;color:${_sd.col2}">⏳ ${_days} day${_days===1?'':'s'} left this season</p></div><div class="panel" style="padding:10px;margin-bottom:8px"><h3 style="margin:0 0 8px;font-size:13px">🎪 Festival Sell <span style="color:var(--dim);font-weight:normal;font-size:10px">— 1.5× base value while in season</span></h3><p style="color:var(--dim);font-size:11px;margin:0 0 8px">Demand peaks during the festival. Sell now for a premium.</p>${_hasSome?`<button data-season-sell="1" style="background:#3a6a1a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🎪 Sell all ${_sd.ic} ${_sd.n} goods</button>`:`<p style="color:var(--dim);font-size:11px;margin:0">Head to the Artisan's Shed to craft some first.</p>`}</div><div class="panel" style="padding:10px">${_crafted}</div>`+renderInventoryPanel()); }
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
@@ -5832,6 +5873,23 @@ function bindMain(){
   });
   document.querySelectorAll("[data-fulfill-req]").forEach(b=> b.onclick = ()=>{
     fulfillVillagerRequest((b as HTMLElement).dataset.fulfillReq);
+  });
+  document.querySelectorAll("[data-season-sell]").forEach(b=> b.onclick = ()=>{
+    const _sd = SEASON_DEFS[getSeason()];
+    let _total = 0;
+    _sd.items.forEach(id => {
+      const qty = S.items[id]||0;
+      if (qty > 0 && ITEMS[id]){
+        const val = Math.round(ITEMS[id].v * 1.5 * qty);
+        S.coins += val; S.counters.coinsEarned = (S.counters.coinsEarned||0) + val;
+        S.items[id] = 0; _total += val;
+      }
+    });
+    if (!_total){ toast("Nothing seasonal to sell."); return; }
+    grantXp("trading", Math.round(_total * 0.05));
+    toast(`🎪 Festival sale! +${fmt(_total)} coins`);
+    log(`🎪 <b>${_sd.ic} ${_sd.n} Festival Sale</b> — +${fmt(_total)} coins`, "good");
+    achCheck(); renderMain(); updateHud(); save();
   });
   // village beautification purchases
   document.querySelectorAll("[data-beautify]").forEach(b=>{

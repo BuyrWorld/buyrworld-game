@@ -135,7 +135,8 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'forager_hut', kind: 'bld',   tx: 35, ty: 9,  w: 2, h: 2, tab: 'foraging',   name: "Wren's Forager Hut", ic: '🌿', wall: '#7a6a4a', roof: '#4a5a2a' },
   { id: 'stall_wren',  kind: 'stall', tx: 50, ty: 8,  w: 2, h: 2, tab: 'trade',      name: 'Wren',       lvl: 1,  awn: '#3a7a3a', hair: '#3a2a1a', shirt: '#4a7a3a' },
   { id: 'lore_stone',   kind: 'sign',  tx: 20, ty: 13, w: 1, h: 1, tab: 'lore_stone', name: 'Old Stone',  ic: '🪨' },
-  { id: 'village_fund', kind: 'sign',  tx: 43, ty: 2,  w: 1, h: 1, tab: 'village_fund', name: 'Village Fund', ic: '🌸' },
+  { id: 'village_fund',     kind: 'sign',  tx: 43, ty: 2,  w: 1, h: 1, tab: 'village_fund',    name: 'Village Fund',      ic: '🌸' },
+  { id: 'seasonal_market',  kind: 'sign',  tx: 47, ty: 2,  w: 1, h: 1, tab: 'seasonal_market', name: 'Seasonal Market',   ic: '🎪' },
   { id: 'artisan_shed', kind: 'bld',   tx: 39, ty: 9,  w: 2, h: 2, tab: 'crafting',   name: "Artisan's Shed", ic: '🧺', wall: '#c0a870', roof: '#6a4a20' },
   // --- North forest trees (west of path, cols 1-46) ---
   { id: 'tree_nf_h1',  kind: 'tree',  tx: 10, ty: 7,  w: 1, h: 2, ore: 'hardwood',   lvl: 20 },
