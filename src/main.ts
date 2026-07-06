@@ -10,7 +10,7 @@ import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS, NORTH_EXT } from './world/map.ts';
 import { nightAlpha, lampGlow, isNight, skyTint, gameHour } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
-import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, SHIRT_COLOURS, TROUSER_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
+import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_COLOURS, TROUSER_COLOURS, FACIAL_HAIR_STYLES, EYE_COLOURS, JACKET_COLOURS, SHOE_COLOURS, ACCESSORY_STYLES, SCARF_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
@@ -309,12 +309,21 @@ function cycleVolume(){
 /* ================= VILLAGE WORLD ================= */
 const CAM = { x:0, y:0 };
 // Derive player colours from S.appearance (falls back to defaults for legacy saves)
-const plHair     = () => (S.appearance && S.appearance.hair)     || DEFAULT_APPEARANCE.hair;
-const plShirt    = () => (S.appearance && S.appearance.shirt)    || DEFAULT_APPEARANCE.shirt;
-const plSkin     = () => (S.appearance && S.appearance.skin)     || DEFAULT_APPEARANCE.skin;
-const plTrousers = () => (S.appearance && S.appearance.trousers) || DEFAULT_APPEARANCE.trousers;
-const plHat      = () => (S.appearance && S.appearance.hat)      || 'none';
-const plHatColor = () => (S.appearance && S.appearance.hatColor) || '#2a1a0a';
+const plHair      = () => (S.appearance && S.appearance.hair)     || DEFAULT_APPEARANCE.hair;
+const plShirt     = () => (S.appearance && S.appearance.shirt)    || DEFAULT_APPEARANCE.shirt;
+const plSkin      = () => (S.appearance && S.appearance.skin)     || DEFAULT_APPEARANCE.skin;
+const plTrousers  = () => (S.appearance && S.appearance.trousers) || DEFAULT_APPEARANCE.trousers;
+const plHat       = () => (S.appearance && S.appearance.hat)      || 'none';
+const plHatColor  = () => (S.appearance && S.appearance.hatColor) || '#2a1a0a';
+const plGender    = () => (S.appearance && S.appearance.gender)   || 'male';
+const plHairStyle = () => (S.appearance && S.appearance.hairStyle != null) ? +S.appearance.hairStyle : 0;
+const plEyeColor  = () => (S.appearance && S.appearance.eyeColor) || '#17161a';
+const plFacialHair= () => (S.appearance && S.appearance.facialHair) || 'none';
+const plJacket    = () => (S.appearance && S.appearance.jacket)   || '';
+const plShoes     = () => (S.appearance && S.appearance.shoes)    || '#2a2a32';
+const plAccessory = () => (S.appearance && S.appearance.accessory)|| 'none';
+const plScarfColor= () => (S.appearance && S.appearance.scarfColor)|| '#c04040';
+const plOpts      = () => ({ hairStyle:plHairStyle(), eyeColor:plEyeColor(), facialHair:plFacialHair(), jacket:plJacket(), shoes:plShoes(), accessory:plAccessory(), scarfColor:plScarfColor() });
 
 const FROST_TIPS = [
   "Rocks respawn instantly round here. Union rules.",
@@ -1600,72 +1609,131 @@ function villageClick(e){
   VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
   VP.pending = null;
 }
-function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female, scale=1.0, hat='none', hatColor='#2a1a0a'){
+function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female, scale=1.0, hat='none', hatColor='#2a1a0a', opts:any={}){
   skin    = skin    || "#f2c49a";
   trouser = trouser || "#4a5a8a";
   dir = dir || (facing>=0 ? "right" : "left");
+  const _hs  = +( opts.hairStyle ?? 0 ) || 0;
+  const _eye = opts.eyeColor  || '#17161a';
+  const _fh  = opts.facialHair|| 'none';
+  const _jk  = opts.jacket    || '';
+  const _sh  = opts.shoes     || '';
+  const _acc = opts.accessory || 'none';
+  const _scf = opts.scarfColor|| '#c04040';
+  const _fem = female || false;
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
   if (scale !== 1.0) ctx.scale(scale, scale);
+  // shadow
   ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(0, 10-bob, 8, 3, 0, 0, 7); ctx.fill();
   const legSwing = moving ? Math.sin(t*10)*3 : 0;
+  const armSwing = moving ? Math.sin(t*10+3)*3 : 0;
+  // legs
   ctx.fillStyle=trouser;
   ctx.fillRect(-5, 2, 4, 8+legSwing*0.4); ctx.fillRect(1, 2, 4, 8-legSwing*0.4);
-  ctx.fillStyle=shirt; ctx.fillRect(-7, -6, 14, 10);
-  ctx.fillStyle=shirt;
-  const armSwing = moving ? Math.sin(t*10+3)*3 : 0;
-  ctx.fillRect(-9, -5+armSwing*0.3, 3, 8); ctx.fillRect(6, -5-armSwing*0.3, 3, 8);
-  ctx.fillStyle=skin; ctx.fillRect(-9, 2+armSwing*0.3, 3, 3); ctx.fillRect(6, 2-armSwing*0.3, 3, 3);
-  ctx.fillStyle=skin; ctx.fillRect(-5, -16, 10, 10);
+  // shoes
+  if (_sh){ ctx.fillStyle=_sh; ctx.fillRect(-6,8+legSwing*0.4,5,2); ctx.fillRect(0,8-legSwing*0.4,5,2); }
+  // shirt body + arms
+  ctx.fillStyle=shirt; ctx.fillRect(-7,-6,14,10);
+  ctx.fillRect(-9,-5+armSwing*0.3,3,8); ctx.fillRect(6,-5-armSwing*0.3,3,8);
+  // hands
+  ctx.fillStyle=skin; ctx.fillRect(-9,2+armSwing*0.3,3,3); ctx.fillRect(6,2-armSwing*0.3,3,3);
+  // jacket overlay
+  if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); ctx.fillRect(-9,-5+armSwing*0.3,3,6); ctx.fillRect(6,-5-armSwing*0.3,3,6); }
+  // head
+  ctx.fillStyle=skin; ctx.fillRect(-5,-16,10,10);
+  // scarf at neck
+  if (_acc==='scarf'){ ctx.fillStyle=_scf; ctx.fillRect(-6,-7,12,3); }
+  // hair
+  ctx.fillStyle=hair;
   if (dir==="up"){
-    ctx.fillStyle=hair; ctx.fillRect(-6, -18, 12, 10);
-    if (female){ ctx.fillRect(-8,-14,3,12); ctx.fillRect(5,-14,3,12); }
+    // back of head — all styles show a solid back cap
+    if (_hs===7){ ctx.fillRect(-8,-22,16,14); }            // afro: very wide back
+    else if (_hs===2){ ctx.fillRect(-7,-20,14,12); }       // curly: taller back
+    else { ctx.fillRect(-6,-18,12,10); }                   // default back cap
+    if (_hs===3){ ctx.fillRect(-3,-23,6,6); }              // bun bump on back
+    if (_hs===4){ ctx.fillRect(facing>=0?-7:4,-14,3,18); } // ponytail hanging down back
+    if (_fem && _hs<=1){ ctx.fillRect(-8,-14,3,12); ctx.fillRect(5,-14,3,12); } // female flowing back strands
   } else {
-    ctx.fillStyle=hair; ctx.fillRect(-6, -18, 12, 5);
-    if (female){
-      ctx.fillRect(-8, -16, 3, 15); // left flowing strand
-      ctx.fillRect(5, -16, 3, 15);  // right flowing strand
-    } else {
-      ctx.fillRect(-6, -16, 2, 5); ctx.fillRect(4, -16, 2, 5);
+    // front/side view — base cap + style
+    ctx.fillRect(-6,-18,12,5); // base hair cap
+    switch(_hs){
+      case 0: // straight
+        if (_fem){ ctx.fillRect(-8,-16,3,15); ctx.fillRect(5,-16,3,15); }
+        else { ctx.fillRect(-6,-16,2,5); ctx.fillRect(4,-16,2,5); }
+        break;
+      case 1: // wavy — slightly more volume
+        ctx.fillRect(-7,-18,14,5);
+        ctx.fillRect(-8,-16,3,10); ctx.fillRect(5,-16,3,7);
+        if (_fem){ ctx.fillRect(-8,-14,2,12); }
+        break;
+      case 2: // curly — wide puff
+        ctx.fillRect(-7,-20,14,7);
+        ctx.fillRect(-8,-17,3,9); ctx.fillRect(5,-17,3,9);
+        break;
+      case 3: // bun — tight sides + bun top
+        ctx.fillRect(-3,-23,6,6);                          // bun
+        ctx.fillRect(-6,-17,2,4); ctx.fillRect(4,-17,2,4); // tight sides
+        break;
+      case 4: // ponytail
+        ctx.fillRect(-5,-16,2,5);                          // left side
+        ctx.fillRect(facing>=0?4:-7,-17,3,16);             // ponytail (away from camera)
+        break;
+      case 5: // short crop — minimal
+        ctx.fillRect(-5,-18,10,3);                         // tighter cap
+        ctx.fillRect(-5,-16,1,3); ctx.fillRect(4,-16,1,3); // tiny stubs
+        break;
+      case 6: // side sweep
+        ctx.fillRect(-9,-17,6,4);                          // swept left
+        ctx.fillRect(4,-17,2,4);
+        break;
+      case 7: // afro — wide puff
+        ctx.fillRect(-8,-22,16,7);
+        ctx.fillRect(-10,-19,5,8); ctx.fillRect(5,-19,5,8);
+        break;
     }
-    ctx.fillStyle="#17161a";
-    if (dir==="down"){ ctx.fillRect(-3, -11, 2, 2); ctx.fillRect(2, -11, 2, 2); ctx.fillStyle="#c96f4a"; ctx.fillRect(-1, -8, 3, 1); }
-    else { ctx.fillRect(facing>=0?0:-2, -11, 2, 2); ctx.fillRect(facing>=0?3:-5, -11, 2, 2); }
+    // eyes
+    ctx.fillStyle=_eye;
+    if (dir==="down"){ ctx.fillRect(-3,-11,2,2); ctx.fillRect(2,-11,2,2); ctx.fillStyle="#c96f4a"; ctx.fillRect(-1,-8,3,1); }
+    else { ctx.fillRect(facing>=0?0:-2,-11,2,2); ctx.fillRect(facing>=0?3:-5,-11,2,2); }
+    // glasses
+    if (_acc==='glasses' && dir!=='up'){
+      ctx.save(); ctx.strokeStyle='#3a3a3a'; ctx.lineWidth=0.7;
+      if (dir==='down'){ ctx.strokeRect(-4,-13,3,3); ctx.strokeRect(1,-13,3,3); ctx.beginPath(); ctx.moveTo(-1,-11); ctx.lineTo(1,-11); ctx.stroke(); }
+      else { ctx.strokeRect(facing>=0?-1:-5,-13,3,3); }
+      ctx.restore();
+    }
+    // earrings
+    if (_acc==='earrings'){ ctx.fillStyle='#e8c040'; ctx.fillRect(-7,-12,2,3); ctx.fillRect(5,-12,2,3); }
+    // facial hair (drawn on chin, down/side only)
+    if (_fh!=='none'){
+      ctx.fillStyle=hair;
+      if (_fh==='stubble' && dir==='down'){ ctx.fillRect(-3,-9,2,1); ctx.fillRect(0,-9,2,1); ctx.fillRect(2,-9,2,1); ctx.fillRect(-2,-7,2,1); ctx.fillRect(1,-7,2,1); }
+      else if (_fh==='short'){ if(dir==='down') ctx.fillRect(-3,-9,7,3); else ctx.fillRect(facing>=0?0:-4,-9,4,3); }
+      else if (_fh==='full'){ if(dir==='down'){ ctx.fillRect(-4,-9,9,5); ctx.fillRect(-3,-6,8,2); } else ctx.fillRect(facing>=0?0:-4,-9,4,5); }
+    }
   }
   // hat (optional)
   if (hat && hat !== 'none'){
     ctx.fillStyle = hatColor || '#2a1a0a';
     if (hat === 'flat_cap'){
-      ctx.fillRect(-8, -20, 16, 3);  // brim
-      ctx.fillRect(-5, -23, 10, 4);  // crown
+      ctx.fillRect(-8,-20,16,3); ctx.fillRect(-5,-23,10,4);
     } else if (hat === 'beanie'){
-      ctx.fillRect(-6, -23, 12, 7);  // crown
-      ctx.fillStyle = (hatColor||'#2a1a0a') + 'cc';
-      ctx.fillRect(-7, -17, 14, 3);  // rolled brim
+      ctx.fillRect(-6,-23,12,7);
+      ctx.fillStyle = (hatColor||'#2a1a0a') + 'cc'; ctx.fillRect(-7,-17,14,3);
     } else if (hat === 'sun_hat'){
-      ctx.fillRect(-11, -18, 22, 3); // wide brim
-      ctx.fillRect(-5, -22, 10, 5);  // crown
-      ctx.fillStyle = (hatColor||'#c8a020') + '88';
-      ctx.fillRect(-10, -16, 22, 2); // brim shadow
+      ctx.fillRect(-11,-18,22,3); ctx.fillRect(-5,-22,10,5);
+      ctx.fillStyle = (hatColor||'#c8a020') + '88'; ctx.fillRect(-10,-16,22,2);
     }
   }
   if (tool){
     const swing = Math.sin(t*11);
-    ctx.save();
-    ctx.translate(facing*9, -4);
-    ctx.rotate(facing * (swing*0.9 - 0.4));
-    if (toolColor){
-      ctx.fillStyle = toolColor + "99";
-      ctx.beginPath(); ctx.arc(facing*7, -6, 7, 0, 7); ctx.fill();
-    }
+    ctx.save(); ctx.translate(facing*9,-4); ctx.rotate(facing*(swing*0.9-0.4));
+    if (toolColor){ ctx.fillStyle=toolColor+"99"; ctx.beginPath(); ctx.arc(facing*7,-6,7,0,7); ctx.fill(); }
     ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillText(tool, facing*7, -6);
+    ctx.fillText(tool, facing*7,-6);
     ctx.restore();
-    if (swing > 0.82){
-      ctx.fillStyle="#fff";
-      ctx.fillRect(facing*14+((Math.floor(t*11)*7)%6), -2, 2, 2);
-      ctx.fillRect(facing*17-((Math.floor(t*11)*5)%5), 2, 2, 2);
-    }
+    if (swing>0.82){ ctx.fillStyle="#fff"; ctx.fillRect(facing*14+((Math.floor(t*11)*7)%6),-2,2,2); ctx.fillRect(facing*17-((Math.floor(t*11)*5)%5),2,2,2); }
   }
   ctx.restore();
 }
@@ -2527,7 +2595,7 @@ function drawWorkerAndVfx(ctx, t){
           ctx.restore();
         }
       } else {
-        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers(), toolTierColor(), false, 1.0, plHat(), plHatColor());
+        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers(), toolTierColor(), plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
       }
     }
   }
@@ -2620,7 +2688,7 @@ function drawVillage(t){
     ctx.beginPath(); ctx.moveTo(_bx+10,_by-3); ctx.lineTo(_bx+14,_by-3); ctx.lineTo(_bx+14,_by-7); ctx.stroke();
     ctx.restore();
   }
-  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, false, 1.0, plHat(), plHatColor());
+  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
   ctx.restore();
   // HTML overlay: player name tag + nearest-interactable tooltip (crisp text, no canvas blurriness)
   const overlay = document.getElementById("village-overlay");
@@ -4316,7 +4384,7 @@ function drawInterior(t){
   });
   // player drawn last so they render above furniture
   const _iTool = SKILL_TOOL[active] || null;
-  drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null);
+  drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
   // crisp HTML overlays: name tags + chat panel
   const _iOverlay = document.getElementById("interior-overlay");
   if (_iOverlay){
@@ -4541,7 +4609,7 @@ function _drawTitlePreview(){
   // player character — large scale, centre
   const _scale = 3.2;
   const _cx = W2/2, _cy = H2*0.72;
-  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, false, 1, null, "down", plSkin(), plTrousers(), null, false, _scale, plHat(), plHatColor());
+  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, false, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), plOpts());
   // wave arm animation — overlay a raised arm gesture
   const _waveAng = Math.sin(t2*3)*0.6;
   ctx2.save(); ctx2.translate(_cx+7*_scale, _cy-8*_scale); ctx2.rotate(-0.8+_waveAng);
@@ -4569,9 +4637,24 @@ function showTitle(){
   const _custEl = document.getElementById("title-cust");
   function _renderCust(){
     if (!_custEl) return;
-    const sw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches">${arr.map(c=>`<button class="swatch${S.appearance[field]===c.v?' sel':''}" style="background:${c.v}" data-cf="${field}" data-cv="${c.v}" title="${c.label}"></button>`).join('')}</div></div>`;
-    const txtsw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches">${arr.map(c=>`<button class="swatch-txt${S.appearance[field]===(typeof c.v==='number'?c.v:c.v)?' sel':''}" data-cf="${field}" data-cv="${c.v}">${c.label}</button>`).join('')}</div></div>`;
-    _custEl.innerHTML = sw(SKIN_TONES,'skin','Skin') + sw(HAIR_COLOURS,'hair','Hair colour') + txtsw([{label:'Straight',v:0},{label:'Wavy',v:1},{label:'Curly',v:2}],'hairStyle','Hair style') + sw(SHIRT_COLOURS,'shirt','Shirt') + sw(TROUSER_COLOURS,'trousers','Trousers') + txtsw(HAT_STYLES,'hat','Hat') + sw(HAT_COLOURS,'hatColor','Hat colour');
+    const ap = S.appearance;
+    const sw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches">${arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" style="background:${c.v||'rgba(120,90,60,.25)'}" data-cf="${field}" data-cv="${c.v}" title="${c.label}"></button>`).join('')}</div></div>`;
+    const txtsw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches" style="flex-wrap:wrap;gap:3px">${arr.map(c=>`<button class="swatch-txt${ap[field]==c.v?' sel':''}" data-cf="${field}" data-cv="${c.v}">${c.label}</button>`).join('')}</div></div>`;
+    const genderRow = `<div class="cust-row"><div class="cust-lbl">Gender</div><div class="cust-swatches"><button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cf="gender" data-cv="male">♂ Male</button><button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cf="gender" data-cv="female">♀ Female</button></div></div>`;
+    _custEl.innerHTML = genderRow
+      + sw(SKIN_TONES,'skin','Skin')
+      + sw(HAIR_COLOURS,'hair','Hair colour')
+      + txtsw(HAIR_STYLE_LABELS,'hairStyle','Hair style')
+      + (ap.gender!=='female' ? txtsw(FACIAL_HAIR_STYLES,'facialHair','Facial hair') : '')
+      + sw(EYE_COLOURS,'eyeColor','Eye colour')
+      + sw(SHIRT_COLOURS,'shirt','Shirt')
+      + sw(JACKET_COLOURS,'jacket','Jacket')
+      + sw(TROUSER_COLOURS,'trousers','Trousers')
+      + sw(SHOE_COLOURS,'shoes','Shoes')
+      + txtsw(ACCESSORY_STYLES,'accessory','Accessory')
+      + (ap.accessory==='scarf' ? sw(SCARF_COLOURS,'scarfColor','Scarf colour') : '')
+      + txtsw(HAT_STYLES,'hat','Hat')
+      + sw(HAT_COLOURS,'hatColor','Hat colour');
     _custEl.querySelectorAll("[data-cf]").forEach(b=>{
       (b as HTMLElement).onclick = ()=>{
         const _f=(b as HTMLElement).dataset.cf, _v=(b as HTMLElement).dataset.cv;
@@ -4767,6 +4850,13 @@ function load(){
       if (!Array.isArray(S.placedFurniture)) S.placedFurniture = [];
       if (S.appearance && !S.appearance.hat) S.appearance.hat = 'none';
       if (S.appearance && !S.appearance.hatColor) S.appearance.hatColor = '#2a1a0a';
+      if (S.appearance && !S.appearance.gender) S.appearance.gender = 'male';
+      if (S.appearance && !S.appearance.facialHair) S.appearance.facialHair = 'none';
+      if (S.appearance && !S.appearance.eyeColor) S.appearance.eyeColor = '#17161a';
+      if (S.appearance && !('jacket' in S.appearance)) S.appearance.jacket = '';
+      if (S.appearance && !S.appearance.shoes) S.appearance.shoes = '#2a2a32';
+      if (S.appearance && !S.appearance.accessory) S.appearance.accessory = 'none';
+      if (S.appearance && !S.appearance.scarfColor) S.appearance.scarfColor = '#c04040';
       if (!Array.isArray(S.festival.attended)) S.festival.attended = [];
       if (!("notified" in S.festival)) S.festival.notified = "";
       if (!("raffleWins" in S.counters)) S.counters.raffleWins = 0;
@@ -6435,31 +6525,40 @@ function drawCharPreview(canvasId){
   ctx.save();
   ctx.translate(cv.width/2, cv.height - (big ? 20 : 12));
   ctx.scale(sc, sc);
-  drawPerson(ctx, 0, 0, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers(), null, false, 1.0, plHat(), plHatColor());
+  drawPerson(ctx, 0, 0, plHair(), plShirt(), 0, false, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
   ctx.restore();
 }
 function renderCharacterCustomisation(){
   const ap = S.appearance || DEFAULT_APPEARANCE;
   function swatchRow(label, arr, field){
     return `<div class="cust-row"><div class="cust-lbl">${label}</div><div class="cust-swatches">${
-      arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" data-cust="${field}" data-val="${c.v}" style="background:${c.v};" title="${c.label}" aria-label="${c.label}"></button>`).join('')
+      arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" data-cust="${field}" data-val="${c.v}" style="background:${c.v||'rgba(120,90,60,.25)'};" title="${c.label}" aria-label="${c.label}"></button>`).join('')
     }</div></div>`;
   }
   function textRow(label, arr, field){
     return `<div class="cust-row"><div class="cust-lbl">${label}</div><div class="cust-swatches" style="flex-wrap:wrap;gap:4px">${
-      arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" data-cust="${field}" data-val="${c.v}" style="background:${ap[field]===c.v?'var(--amber)':'rgba(255,255,255,.12)'};color:#fff;font-size:10px;padding:2px 6px;width:auto;height:auto;border-radius:3px;font-family:'IBM Plex Mono',monospace" aria-label="${c.label}">${c.label}</button>`).join('')
+      arr.map(c=>`<button class="swatch-txt${ap[field]==c.v?' sel':''}" data-cust="${field}" data-val="${c.v}" aria-label="${c.label}">${c.label}</button>`).join('')
     }</div></div>`;
   }
+  const genderRow = `<div class="cust-row"><div class="cust-lbl">Gender</div><div class="cust-swatches"><button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cust="gender" data-val="male">♂ Male</button><button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cust="gender" data-val="female">♀ Female</button></div></div>`;
   return `<div class="panel cust-panel">
     <h2>👤 Character<small>Customise your look. Saved automatically.</small></h2>
     <div class="cust-preview-wrap">
       <canvas id="char-preview" width="120" height="140" style="image-rendering:pixelated;display:block;border:2px solid var(--edge);background:#9fd6a8;"></canvas>
       <div class="cust-name">${S.playerName || "Founder"}</div>
     </div>
+    ${genderRow}
     ${swatchRow("Skin Tone", SKIN_TONES, "skin")}
     ${swatchRow("Hair", HAIR_COLOURS, "hair")}
+    ${textRow("Hair Style", HAIR_STYLE_LABELS, "hairStyle")}
+    ${ap.gender!=='female' ? textRow("Facial Hair", FACIAL_HAIR_STYLES, "facialHair") : ''}
+    ${swatchRow("Eye Colour", EYE_COLOURS, "eyeColor")}
     ${swatchRow("Shirt", SHIRT_COLOURS, "shirt")}
+    ${swatchRow("Jacket", JACKET_COLOURS, "jacket")}
     ${swatchRow("Trousers", TROUSER_COLOURS, "trousers")}
+    ${swatchRow("Shoes", SHOE_COLOURS, "shoes")}
+    ${textRow("Accessory", ACCESSORY_STYLES, "accessory")}
+    ${ap.accessory==='scarf' ? swatchRow("Scarf Colour", SCARF_COLOURS, "scarfColor") : ''}
     ${textRow("Hat", HAT_STYLES, "hat")}
     ${swatchRow("Hat Colour", HAT_COLOURS, "hatColor")}
   </div>`;
@@ -7300,7 +7399,7 @@ function bindMain(){
   });
   document.querySelectorAll("[data-cust]").forEach(b=> b.onclick = ()=>{
     if (!S.appearance) S.appearance = Object.assign({}, DEFAULT_APPEARANCE);
-    S.appearance[b.dataset.cust] = b.dataset.val;
+    S.appearance[b.dataset.cust] = b.dataset.cust==='hairStyle' ? parseInt(b.dataset.val) : b.dataset.val;
     renderMain(); updateHud(); save();
   });
   const ex = $("#btn-export");

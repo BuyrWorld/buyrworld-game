@@ -1,21 +1,35 @@
 export interface Appearance {
-  skin:      string;
-  hair:      string;
-  shirt:     string;
-  trousers:  string;
-  hairStyle: number;
-  hat:       string;
-  hatColor:  string;
+  skin:       string;
+  hair:       string;
+  shirt:      string;
+  trousers:   string;
+  hairStyle:  number;
+  hat:        string;
+  hatColor:   string;
+  gender:     'male' | 'female';
+  facialHair: string;
+  eyeColor:   string;
+  jacket:     string;
+  shoes:      string;
+  accessory:  string;
+  scarfColor: string;
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {
-  skin:      '#f2c49a',
-  hair:      '#6a4a2f',
-  shirt:     '#ff8a5c',
-  trousers:  '#4a5a8a',
-  hairStyle: 0,
-  hat:       'none',
-  hatColor:  '#2a1a0a',
+  skin:       '#f2c49a',
+  hair:       '#6a4a2f',
+  shirt:      '#ff8a5c',
+  trousers:   '#4a5a8a',
+  hairStyle:  0,
+  hat:        'none',
+  hatColor:   '#2a1a0a',
+  gender:     'male',
+  facialHair: 'none',
+  eyeColor:   '#17161a',
+  jacket:     '',
+  shoes:      '#2a2a32',
+  accessory:  'none',
+  scarfColor: '#c04040',
 };
 
 export const SKIN_TONES = [
@@ -36,6 +50,17 @@ export const HAIR_COLOURS = [
   { label: 'White',    v: '#f2f0f8' },
   { label: 'Teal',     v: '#2a8a9a' },
   { label: 'Rose',     v: '#d04080' },
+];
+
+export const HAIR_STYLE_LABELS = [
+  { label: 'Straight',   v: 0 },
+  { label: 'Wavy',       v: 1 },
+  { label: 'Curly',      v: 2 },
+  { label: 'Bun',        v: 3 },
+  { label: 'Ponytail',   v: 4 },
+  { label: 'Short Crop', v: 5 },
+  { label: 'Side Sweep', v: 6 },
+  { label: 'Afro',       v: 7 },
 ];
 
 export const SHIRT_COLOURS = [
@@ -60,6 +85,57 @@ export const TROUSER_COLOURS = [
   { label: 'Black', v: '#2a2a32' },
   { label: 'Grey',  v: '#7a7a8a' },
   { label: 'Khaki', v: '#a09a6a' },
+];
+
+export const FACIAL_HAIR_STYLES = [
+  { label: 'None',        v: 'none'    },
+  { label: 'Stubble',     v: 'stubble' },
+  { label: 'Short Beard', v: 'short'   },
+  { label: 'Full Beard',  v: 'full'    },
+];
+
+export const EYE_COLOURS = [
+  { label: 'Dark',  v: '#17161a' },
+  { label: 'Brown', v: '#7a4a20' },
+  { label: 'Blue',  v: '#3a6aaa' },
+  { label: 'Green', v: '#3a7a4a' },
+  { label: 'Grey',  v: '#6a7a8a' },
+  { label: 'Hazel', v: '#8a6a30' },
+];
+
+export const JACKET_COLOURS = [
+  { label: 'None',  v: ''        },
+  { label: 'Brown', v: '#7a5030' },
+  { label: 'Black', v: '#2a2a32' },
+  { label: 'Navy',  v: '#1a2a5a' },
+  { label: 'Olive', v: '#4a5a20' },
+  { label: 'Rust',  v: '#8a3010' },
+  { label: 'Teal',  v: '#1a6a6a' },
+];
+
+export const SHOE_COLOURS = [
+  { label: 'Black', v: '#2a2a32' },
+  { label: 'Brown', v: '#7a5030' },
+  { label: 'White', v: '#e8e8e8' },
+  { label: 'Red',   v: '#aa2020' },
+  { label: 'Blue',  v: '#2a4a8a' },
+  { label: 'Tan',   v: '#c09060' },
+];
+
+export const ACCESSORY_STYLES = [
+  { label: 'None',     v: 'none'     },
+  { label: 'Glasses',  v: 'glasses'  },
+  { label: 'Earrings', v: 'earrings' },
+  { label: 'Scarf',    v: 'scarf'    },
+];
+
+export const SCARF_COLOURS = [
+  { label: 'Red',    v: '#c04040' },
+  { label: 'Blue',   v: '#2a5aaa' },
+  { label: 'Green',  v: '#2a7a3a' },
+  { label: 'Gold',   v: '#d0a020' },
+  { label: 'Purple', v: '#7a3a9a' },
+  { label: 'Cream',  v: '#e8d8b0' },
 ];
 
 export const HAT_STYLES = [
