@@ -387,6 +387,8 @@ const ACH = [
   { id:"daily_first", ic:"🎯", n:"Challenge Accepted",   ds:"Complete your first daily village challenge.",    r:50,  c:()=>(S.counters?.challengesClaimed||0)>=1 },
   { id:"daily_7",     ic:"🏅", n:"7-Day Habit",          ds:"Complete 7 daily village challenges.",            r:200, c:()=>(S.counters?.challengesClaimed||0)>=7 },
   { id:"daily_30",    ic:"🏆", n:"Dedicated Supplier",   ds:"Complete 30 daily village challenges.",           r:500, c:()=>(S.counters?.challengesClaimed||0)>=30 },
+  { id:"first_harvest",ic:"🌱", n:"First Harvest",       ds:"Harvest your first crop from the cottage garden.", r:40,  c:()=>(S.counters?.gardenHarvests||0)>=1 },
+  { id:"green_thumb",  ic:"🌻", n:"Green Thumb",         ds:"Harvest 20 crops from the cottage garden.",        r:150, c:()=>(S.counters?.gardenHarvests||0)>=20 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -410,6 +412,7 @@ const ACH_PROG = {
   request_50:           ()=>({ cur:Math.min(50, S.counters?.requestsFulfilled||0),     max:50    }),
   daily_7:              ()=>({ cur:Math.min(7,  S.counters?.challengesClaimed||0),     max:7     }),
   daily_30:             ()=>({ cur:Math.min(30, S.counters?.challengesClaimed||0),     max:30    }),
+  green_thumb:          ()=>({ cur:Math.min(20, S.counters?.gardenHarvests||0),        max:20    }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
@@ -605,6 +608,13 @@ const HOME_TIERS = [
   { n:"Homely",         desc:"Cabinets, wall art, and a cosy reading nook.",           cost:4000  },
   { n:"Grand Cottage",  desc:"The finest cottage in the valley. Everything you need.", cost:12000 },
 ];
+const GARDEN_CROPS = [
+  { id:'berry_bush',   n:'Berry Bush',    ic:'🫐', seedCost:15,  ms:20*60*1000, out:{berries:6},              desc:'Juicy berries. Jams and requests.' },
+  { id:'herb_patch',   n:'Herb Patch',    ic:'🌿', seedCost:20,  ms:30*60*1000, out:{wild_herb:4},             desc:'Aromatic herbs for teas and tonics.' },
+  { id:'mushroom_log', n:'Mushroom Log',  ic:'🍄', seedCost:25,  ms:45*60*1000, out:{mushroom:5},              desc:'Grows best in shade. Steady yield.' },
+  { id:'wildflower',   n:'Wildflowers',   ic:'🌸', seedCost:30,  ms:60*60*1000, out:{berries:3, wild_herb:2},  desc:'Pretty and useful. Bees love them.' },
+];
+function plotsUnlocked(tier: number){ return Math.min(4, Math.max(0, tier)); }
 const DELIVERY_POOL = ["iron_ore","copper_ore","coal","iron_bar","steel_bar","bracket","wood","plank","sardine","mackerel","bass","wiring_loom","gearbox"];
 let _heartbeatAt = 0;
 const _heartbeatCD = {};
@@ -4231,6 +4241,7 @@ function freshState(){
     villagerRequests: {},
     perks: {},
     dailyChallenge: null,
+    garden: [null, null, null, null],
   };
 }
 let S = freshState();
@@ -4272,6 +4283,7 @@ function load(){
       if (!S.villagerRequests) S.villagerRequests = {};
       if (!S.perks) S.perks = {};
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
+      if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4736,6 +4748,37 @@ function updateVillagerRequests(now: number){
   S.counters.challengesClaimed = (S.counters.challengesClaimed||0) + 1;
   toast(`🎯 Daily Challenge complete! +${fmt(ch.reward)} coins`);
   log(`🎯 <b>Daily Challenge</b> — "${ch.ds}" Complete! +${fmt(ch.reward)} coins`, "good");
+  achCheck(); renderMain(); updateHud(); save();
+};
+(globalThis as any).plantGarden = function(slot: number, cropId: string){
+  const slots = plotsUnlocked(S.homeTier||0);
+  if (slot < 0 || slot >= slots){ toast("Plot not unlocked."); return; }
+  if (S.garden[slot]){ toast("Plot already in use."); return; }
+  const crop = GARDEN_CROPS.find(c=>c.id===cropId);
+  if (!crop){ toast("Unknown crop."); return; }
+  if (S.coins < crop.seedCost){ toast("Not enough coins."); return; }
+  S.coins -= crop.seedCost;
+  const now = Date.now();
+  S.garden[slot] = { cropId, plantedAt:now, readyAt:now+crop.ms };
+  toast(`🌱 ${crop.n} planted! Ready in ${crop.ms/60000} min.`);
+  renderMain(); updateHud(); save();
+};
+(globalThis as any).harvestGarden = function(slot: number){
+  const g = S.garden?.[slot];
+  if (!g){ toast("Nothing to harvest."); return; }
+  if (Date.now() < g.readyAt){ toast("Not ready yet!"); return; }
+  const crop = GARDEN_CROPS.find(c=>c.id===g.cropId);
+  if (!crop) return;
+  for (const [id, qty] of Object.entries(crop.out)){
+    addItem(id, qty as number);
+    S.prod[id] = (S.prod[id]||0) + (qty as number);
+  }
+  S.garden[slot] = null;
+  S.counters.gardenHarvests = (S.counters.gardenHarvests||0) + 1;
+  _gardenToasted[slot] = false;
+  const outStr = Object.entries(crop.out).map(([id,q])=>`${q}× ${ITEMS[id]?.n||id}`).join(' + ');
+  toast(`🌻 Harvested ${crop.n}! Got ${outStr}.`);
+  log(`🌱 <b>Garden harvest:</b> ${crop.n} → ${outStr}`, "good");
   achCheck(); renderMain(); updateHud(); save();
 };
 function updateLoans(){
@@ -5425,6 +5468,55 @@ function renderUpgrades(){
   html += `</div>`;
   return html;
 }
+function renderGarden(){
+  const _ht = S.homeTier||0;
+  const slots = plotsUnlocked(_ht);
+  if (slots === 0) return `<div class="panel" style="padding:10px;margin-top:8px;text-align:center">
+    <p style="font-size:22px;margin:0 0 4px">🌱</p>
+    <p style="font-size:12px;font-weight:600;margin:0 0 4px">Cottage Garden</p>
+    <p style="color:var(--dim);font-size:11px;margin:0">Upgrade your cottage to Tier 1 to plant your first plot.</p>
+  </div>`;
+  const now = Date.now();
+  let html = `<div class="panel" style="padding:10px;margin-top:8px">
+    <h3 style="margin:0 0 4px;font-size:13px">🌱 Cottage Garden</h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Grow crops passively — harvest when ready.</p>`;
+  for (let i=0; i<4; i++){
+    if (i >= slots){
+      html += `<div style="border:1px dashed #5a4a3a;border-radius:6px;padding:7px 10px;margin-bottom:7px;opacity:.4;text-align:center;font-size:10px;color:var(--dim)">🔒 Plot ${i+1} — unlocks at Cottage Tier ${i+1}</div>`;
+      continue;
+    }
+    const g = S.garden[i];
+    if (!g){
+      html += `<div style="border:1px solid #5a6a3a;border-radius:6px;padding:8px;margin-bottom:7px">
+        <p style="font-size:10px;color:var(--dim);margin:0 0 5px;font-weight:600">Plot ${i+1} — empty</p>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${GARDEN_CROPS.map(c=>`<button data-plant-garden="${i}|${c.id}" style="background:#1e3a10;color:#a8d870;border:1px solid #3a6a1a;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px"${S.coins<c.seedCost?' disabled':''} title="${c.desc} (${c.seedCost}c)">${c.ic} ${c.n} <span style="opacity:.65">${c.seedCost}c</span></button>`).join('')}
+        </div>
+      </div>`;
+    } else {
+      const ready = now >= g.readyAt;
+      const pct = Math.round(Math.min(1,(now-g.plantedAt)/(g.readyAt-g.plantedAt))*100);
+      const minLeft = ready ? 0 : Math.ceil((g.readyAt-now)/60000);
+      const crop = GARDEN_CROPS.find(c=>c.id===g.cropId);
+      const outStr = crop ? Object.entries(crop.out).map(([id,q])=>`${q}× ${ITEMS[id]?.n||id}`).join(' + ') : '';
+      html += `<div style="border:1px solid ${ready?'#40d040':'#3a6a1a'};border-radius:6px;padding:8px;margin-bottom:7px;background:${ready?'rgba(40,200,40,.06)':'transparent'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:12px;font-weight:600">${crop?.ic||'🌱'} ${crop?.n||g.cropId}</span>
+          <span style="font-size:10px;color:${ready?'#40d040':'var(--dim)'}">${ready?'✅ Ready!':minLeft+'m left'}</span>
+        </div>
+        <div style="background:#1a2a0a;border-radius:3px;height:4px;margin-bottom:6px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${ready?'#40d040':'#2a8a1a'};border-radius:3px;transition:width .5s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:10px;color:var(--dim)">Yields: ${outStr}</span>
+          ${ready?`<button data-harvest-garden="${i}" style="background:#28c828;color:#000;border:none;padding:3px 12px;border-radius:3px;cursor:pointer;font-size:10px;font-weight:bold">Harvest</button>`:''}
+        </div>
+      </div>`;
+    }
+  }
+  html += `</div>`;
+  return html;
+}
 function renderNoticeBoard(){
   const nb = S.noticeBoard || { quests:[], lastRefresh:0 };
   const _now = Date.now();
@@ -5873,6 +5965,7 @@ function renderMain(){
           ${_next && !_canUp ? `<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Need ${fmt(_next.cost)} coins (${fmt(_next.cost-S.coins)} short)</p>` : ""}
           <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Tip: buy furniture from Finn's Stall to add bonus decor to your home.</p>
         </div>
+        ${renderGarden()}
         <div class="panel" style="padding:10px;margin-top:8px">
           <h3 style="margin:0 0 8px;font-size:13px">❤️ Village Friends</h3>
           ${VILLAGERS.map(v=>{
@@ -6260,6 +6353,13 @@ function bindMain(){
     };
   });
   document.querySelectorAll("[data-challenge-claim]").forEach(b=> b.onclick = ()=> (globalThis as any).claimDailyChallenge());
+  document.querySelectorAll("[data-plant-garden]").forEach(b=> b.onclick = ()=>{
+    const [slot,cropId] = (b as HTMLElement).dataset.plantGarden.split('|');
+    (globalThis as any).plantGarden(parseInt(slot), cropId);
+  });
+  document.querySelectorAll("[data-harvest-garden]").forEach(b=> b.onclick = ()=>{
+    (globalThis as any).harvestGarden(parseInt((b as HTMLElement).dataset.harvestGarden));
+  });
   // daily reward
   document.querySelectorAll("[data-daily-claim]").forEach(b=> b.onclick = ()=>{
     if (S.dailyReward.lastDate === new Date().toDateString()){ toast("Already collected today."); return; }
@@ -6454,6 +6554,22 @@ if (!hadSave){
   log("Mine Iron Ore, smelt it in the Steelworks, press Brackets, then deliver Contracts — or haggle with Marge in the Trade tab.");
 }
 
+/* ---- Garden ---- */
+const _gardenToasted = [false, false, false, false];
+function updateGarden(now: number){
+  if (!Array.isArray(S.garden)) return;
+  const slots = plotsUnlocked(S.homeTier||0);
+  for (let i=0; i<slots; i++){
+    const g = S.garden[i];
+    if (g && now >= g.readyAt && !_gardenToasted[i]){
+      _gardenToasted[i] = true;
+      const crop = GARDEN_CROPS.find(c=>c.id===g.cropId);
+      if (crop) toast(`🌻 ${crop.n} is ready to harvest! Visit your cottage.`);
+    }
+    if (!g) _gardenToasted[i] = false;
+  }
+}
+
 /* ---- Fullscreen ---- */
 function toggleFullscreen(){
   if (!document.fullscreenElement)
@@ -6539,6 +6655,7 @@ setInterval(()=>{
   updatePrestigeIncome(now);
   updateVillagerRequests(now);
   updateDailyChallenge();
+  updateGarden(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
