@@ -30,5 +30,6 @@
   "bookcase":  { "n": "Bookcase",   "ic": "📚",  "v": 55  },
   "mushroom":  { "n": "Wild Mushroom",  "ic": "🍄", "v": 25 },
   "berries":   { "n": "Forest Berries", "ic": "🫐", "v": 18 },
-  "wild_herb": { "n": "Wild Herbs",     "ic": "🌿", "v": 30 }
+  "wild_herb": { "n": "Wild Herbs",     "ic": "🌿", "v": 30 },
+  "rare_wood": { "n": "Rare Wood",      "ic": "🌟", "v": 80 }
 }

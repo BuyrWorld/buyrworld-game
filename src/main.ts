@@ -389,9 +389,9 @@ function achCheck(){
   }
 }
 const WANDERERS = [
-  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:16*TILE, y:(5.45+NORTH_EXT)*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
-    area:[10,6+NORTH_EXT,32,9+NORTH_EXT], home:[13,7+NORTH_EXT,17,9+NORTH_EXT], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
-    route:[[11,5.45+NORTH_EXT],[20,5.45+NORTH_EXT],[31,5.45+NORTH_EXT],[31,10.45+NORTH_EXT],[20,10.45+NORTH_EXT],[20.6,8.35+NORTH_EXT],[11,10.45+NORTH_EXT]],
+  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:75*TILE, y:27*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
+    area:[49,24,79,30], home:[72,25,77,28], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
+    route:[[49,25.5],[62,25.5],[75,25.5],[75,29.5],[62,29.5],[49,29.5]],
     profile:{ job:"Supply Chain Professional", home:"The Valley Lodge", children:["Harison (6)"] } },
   { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:(14+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
     area:[2,12+NORTH_EXT,8,16+NORTH_EXT], home:[2,12+NORTH_EXT,5,13+NORTH_EXT], tips:[
@@ -408,7 +408,7 @@ const WANDERERS = [
     ],
     profile:{ job:"Harbour Warden", home:"Dockside Hut" } },
 ];
-const VP = { x: 16*TILE, y: (6.5+NORTH_EXT)*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
+const VP = { x: 75*TILE, y: 28*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
   { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
@@ -564,7 +564,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -606,6 +606,11 @@ const STATION_DEFS = {
     { fx:0.50, fy:0.62, sk:'log_oak',       skill:'woodcutting',   id:'oak',        ic:'🌳', lbl:'Oak Logs' },
     { fx:0.82, fy:0.62, sk:'log_hard',      skill:'woodcutting',   id:'hardwood',   ic:'🪵', lbl:'Hardwood Logs' },
   ],
+  foraging: [
+    { fx:0.20, fy:0.72, sk:'prop_hopper', skill:'foraging', id:'gather_mushroom', ic:'🍄', lbl:'Mushrooms' },
+    { fx:0.50, fy:0.72, sk:'prop_hopper', skill:'foraging', id:'gather_berries',  ic:'🫐', lbl:'Berries' },
+    { fx:0.80, fy:0.72, sk:'prop_hopper', skill:'foraging', id:'gather_herb',     ic:'🌿', lbl:'Wild Herbs' },
+  ],
   fishing: [
     { fx:0.25, fy:0.36, sk:'prop_hopper', skill:'fishing', id:'sardine',  ic:'🐟', lbl:'Sardine Spot' },
     { fx:0.50, fy:0.30, sk:'prop_hopper', skill:'fishing', id:'mackerel', ic:'🐠', lbl:'Mackerel Spot' },
@@ -625,6 +630,7 @@ const ZONE_TIPS = {
   manufacturing: { ic:"⚙️", n:"The Workshop",        tip:"Craft components for the supply chain." },
   woodcutting:   { ic:"🪓", n:"The Sawmill",         tip:"Chop timber and mill planks." },
   fishing:       { ic:"🎣", n:"The Pier",            tip:"Cast your line. Patience is a virtue." },
+  foraging:      { ic:"🌿", n:"The Forager's Hut",  tip:"Gather what the forest freely gives." },
   contracts:     { ic:"📦", n:"The Depot",           tip:"Fulfil orders to earn Logistics XP." },
   trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
@@ -747,6 +753,7 @@ function solidAt(px, py){
   if (t==="T" || t==="W" || t==="C") return true;
   for (const o of V_OBJECTS){
     if (o.kind==="lamp" || o.kind==="sign" || o.kind==="plant" || o.kind==="swing" || o.kind==="slide" || o.kind==="sandbox") continue;
+    if (o.kind==="tree" && S?.treeRespawn?.[o.id] && getTreeStage(o) < 2) continue;
     const r = objRect(o);
     if (px>=r.x && px<r.x+r.w && py>=r.y && py<r.y+r.h) return true;
   }
@@ -791,9 +798,20 @@ function stationPos(skill, actId){
   if (skill==="manufacturing"){ const o=V_OBJECTS.find(x=>x.id==="workshop"); const a=objApproach(o); return {x:a.x, y:a.y}; }
   if (skill==="woodcutting"){ const o=S.action?.objId ? V_OBJECTS.find(x=>x.id===S.action.objId) : V_OBJECTS.find(x=>x.kind==="tree" && x.ore===actId); if (o){ const r=objRect(o); return {x:r.x+r.w/2, y:r.y+r.h+4}; } }
   if (skill==="fishing"){ const o=V_OBJECTS.find(x=>x.id==="pier"); if(o){ const a=objApproach(o); return {x:a.x, y:a.y}; } return null; }
+  if (skill==="foraging"){ const o=V_OBJECTS.find(x=>x.id==="forager_hut"); if(o){ const a=objApproach(o); return {x:a.x, y:a.y}; } return null; }
   return null;
 }
-const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓", fishing:"🎣" };
+const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓", fishing:"🎣", foraging:"🌿" };
+const TREE_RESPAWN_MS: Record<string,number> = { pine:600000, oak:1200000, hardwood:7200000, rare_leaf:21600000 };
+function getTreeStage(o: any): number {
+  const rd = S.treeRespawn?.[o.id];
+  if (!rd) return 2;
+  const elapsed = Date.now() - rd.choppedAt;
+  const total = TREE_RESPAWN_MS[o.ore] || 600000;
+  if (elapsed >= total) { delete S.treeRespawn[o.id]; return 2; }
+  if (elapsed < total/3) return 0;
+  return 1;
+}
 const TOOL_TIER_COLORS = ["#c8a060","#a0a0a0","#8090a8","#ffd666","#7ee0ff"]; // wood/stone/iron/gold/diamond
 function toolTier(){
   if (S.upgrades.tool_diamond) return 4;
@@ -816,9 +834,11 @@ function villageTip(o){
     return `⛏️ ${ITEMS[o.ore].n}${locked ? " 🔒 Lv "+o.lvl : ""}`;
   }
   if (o.kind==="tree"){
+    if (S.treeRespawn?.[o.id]) { const st=getTreeStage(o); if (st===0) return "🌱 Seedling — regrowing..."; if (st===1) return "🌿 Sapling — nearly full..."; }
     const locked = skillLvl("woodcutting") < o.lvl;
     const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
-    return `🌲 ${act ? act.n : o.ore}${locked ? " · Lv "+o.lvl+" required" : ""}`;
+    const prefix = o.ore==="rare_leaf" ? "✨" : "🌲";
+    return `${prefix} ${act ? act.n : o.ore}${locked ? " · Lv "+o.lvl+" required" : ""}`;
   }
   if (o.kind==="lamp" || o.kind==="plant") return "";
   if (o.kind==="bench") return "🪑 Bench";
@@ -838,6 +858,10 @@ function interactObj(o){
   if (o.kind==="slide"){ toast("🎉 Wheee! You slide all the way down!"); return; }
   if (o.kind==="fountain"){ toast("⛲ You toss a coin in. Feels lucky."); return; }
   if (o.kind==="tree"){
+    if (S.treeRespawn?.[o.id]) {
+      const st = getTreeStage(o);
+      if (st < 2) { toast(st===0 ? "🌱 This seedling is still sprouting." : "🌿 This sapling needs more time to grow."); return; }
+    }
     if (skillLvl("woodcutting") < o.lvl){ toast(`Requires Woodcutting level ${o.lvl}.`); return; }
     if (S.action && S.action.skill==="woodcutting" && S.action.objId===o.id){
       S.action = null; renderNav(); toast("Stopped woodcutting."); save(); return;
@@ -1278,6 +1302,22 @@ function drawObjects(ctx, t){
     }
     if (o.kind==="tree"){
       const cx = r.x + r.w/2;
+      const stage = getTreeStage(o);
+      // Seedling stage
+      if (stage === 0) {
+        ctx.fillStyle="#5a8040"; ctx.fillRect(cx-1, r.y+r.h-5, 3, 5);
+        drawEmojiC(ctx, "🌱", cx, r.y+r.h-9, 11);
+        continue;
+      }
+      // Sapling stage
+      if (stage === 1) {
+        const bark2 = o.ore==="pine" ? "#7a5a2e" : "#6a4828";
+        ctx.fillStyle=bark2; ctx.fillRect(cx-2, r.y+r.h-5, 3, 6);
+        ctx.fillStyle=o.ore==="pine"?"#3a8a30":"#5a8040"; ctx.beginPath(); ctx.arc(cx, r.y+r.h-12, 9, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=o.ore==="pine"?"#4aaa3a":"#6a9850"; ctx.beginPath(); ctx.arc(cx, r.y+r.h-18, 6, 0, Math.PI*2); ctx.fill();
+        continue;
+      }
+      // Full tree
       const treeActive = S.action?.skill==="woodcutting" && S.action?.objId===o.id;
       const locked = skillLvl("woodcutting") < o.lvl;
       const sway = Math.sin(t*0.8 + o.tx*0.5);
@@ -1285,7 +1325,18 @@ function drawObjects(ctx, t){
       const l1 = locked ? (o.ore==="pine"?"#2a5028":o.ore==="oak"?"#3a4820":"#2a3818") : (o.ore==="pine"?"#3a8a30":o.ore==="oak"?"#5a8040":"#2a7030");
       const l2 = locked ? (o.ore==="pine"?"#1e4020":o.ore==="oak"?"#2a3810":"#1e2e10") : (o.ore==="pine"?"#4aaa3a":o.ore==="oak"?"#6a9850":"#3a8848");
       const l3 = locked ? "#3a4a20" : (o.ore==="pine"?"#5ac840":o.ore==="oak"?"#7aaa60":"#4a9860");
-      if (o.ore==="pine"){
+      if (o.ore==="rare_leaf"){
+        // exotic rare tree — pulsing purple/teal canopy
+        const rl1 = locked ? "#4a3a5a" : "#9a40d0";
+        const rl2 = locked ? "#3a2a4a" : "#7030a8";
+        const rl3 = locked ? "#5a4a6a" : "#c060e8";
+        ctx.fillStyle=bark; ctx.fillRect(cx-5, r.y+r.h-8, 10, 9);
+        ctx.fillStyle=rl1; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-24, 16, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=rl2; ctx.beginPath(); ctx.arc(cx-14+sway, r.y+r.h-30, 11, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=rl2; ctx.beginPath(); ctx.arc(cx+12+sway, r.y+r.h-28, 10, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle=rl3; ctx.beginPath(); ctx.arc(cx+sway*0.8, r.y+r.h-38, 8, 0, Math.PI*2); ctx.fill();
+        if (!locked && Math.floor(Date.now()/700)%3===0) drawEmojiC(ctx,"✨", cx+sway*2, r.y+r.h-44, 8);
+      } else if (o.ore==="pine"){
         // tall narrow triangular layered silhouette
         ctx.fillStyle=bark; ctx.fillRect(cx-2, r.y+r.h-6, 4, 7);
         ctx.fillStyle=l1; ctx.beginPath(); ctx.moveTo(cx+sway*1.5, r.y+r.h-30); ctx.lineTo(cx-13+sway, r.y+r.h-12); ctx.lineTo(cx+13+sway, r.y+r.h-12); ctx.closePath(); ctx.fill();
@@ -1352,7 +1403,7 @@ function drawExtras(ctx, t){
   _drawFence(87*TILE, [25,26,30,31]); // east forest west fence
   // Retail high street — decorative bunting between lamp posts
   {
-    const _ryBase = (4+NORTH_EXT)*TILE;  // retail street y pixel
+    const _ryBase = 4*TILE;  // retail HIGH STREET row y pixel (VMAP row 4)
     const _rx0 = 5*TILE;
     const _rx1 = 33*TILE;
     // bunting string
@@ -1366,7 +1417,7 @@ function drawExtras(ctx, t){
       ctx.beginPath(); ctx.moveTo(_bx, _ryBase-9); ctx.lineTo(_bx-5, _ryBase-1); ctx.lineTo(_bx+5, _ryBase-1); ctx.closePath(); ctx.fill();
     }
     // "HIGH STREET" sign on a post at tx≈35
-    const _signX = 35*TILE, _signY = (3+NORTH_EXT)*TILE;
+    const _signX = 35*TILE, _signY = 3*TILE;
     ctx.fillStyle="#3a2010"; ctx.fillRect(_signX-1, _signY, 3, TILE*2);
     ctx.fillStyle="#c8a060"; ctx.fillRect(_signX-22, _signY+8, 46, 14);
     ctx.fillStyle="#1a0c00"; ctx.font="bold 7px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
@@ -1402,6 +1453,30 @@ function drawExtras(ctx, t){
         ctx.beginPath(); ctx.moveTo(_bx, _ryBase-14); ctx.lineTo(_bx-5, _ryBase-6); ctx.lineTo(_bx+5, _ryBase-6); ctx.closePath(); ctx.fill();
       }
       for(let px=_rx0+20; px<_rx1-10; px+=52) drawEmojiC(ctx,"🎃", px, _ryBase-2, 9);
+    }
+    // Summer Fete billboard and NPC activities
+    if (_curSeason === "summer"){
+      // Billboard post at tx≈40, top of the retail backing area
+      const _billX = 40*TILE, _billY = 2*TILE;
+      ctx.fillStyle="#5a3a1a"; ctx.fillRect(_billX, _billY+12, 3, 22);
+      ctx.fillStyle="#e8d090"; ctx.fillRect(_billX-22, _billY, 48, 18);
+      ctx.fillStyle="#c04030"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText("☀️ SUMMER FETE", _billX+2, _billY+2);
+      ctx.fillStyle="#5a3010"; ctx.font="5px 'IBM Plex Mono',monospace";
+      ctx.fillText("Jun 1 – Aug 31", _billX+2, _billY+11);
+      ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+      // Fete NPC activities along the high street (picnic, ice cream, bunting helpers)
+      drawEmojiC(ctx,"🍦", 44*TILE+8,  _ryBase-6, 10);
+      drawEmojiC(ctx,"🎪", 46*TILE+4,  _ryBase-6, 10);
+      const _fns = t * 0.6;
+      // two fete visitors strolling
+      drawPerson(ctx, 5*TILE+4+Math.sin(_fns)*6, _ryBase+16, "#c09060","#ff8a5c", t, false, 1, null, "right");
+      drawPerson(ctx, 8*TILE+8+Math.cos(_fns*0.7)*8, _ryBase+16, "#6a8a40","#ffd666", t, false, -1, null, "left");
+      // picnic blanket near the post office
+      ctx.fillStyle="#d05858"; ctx.fillRect(15*TILE+4, _ryBase+14, 24, 14);
+      ctx.fillStyle="#f08080"; for(let pk=0;pk<3;pk++) ctx.fillRect(15*TILE+4+pk*8, _ryBase+14, 7, 13);
+      drawEmojiC(ctx,"🧺", 15*TILE+16, _ryBase+14, 12);
+      drawPerson(ctx, 16*TILE, _ryBase+26, "#8a5a20","#4a8ae8", t, true, 1, null, "down");
     }
   }
   // park (tx:76-86, ty:6-10): traditional manicured park
@@ -1551,12 +1626,12 @@ function drawExtras(ctx, t){
     }
   }
   ctx.fillStyle="#8c6947";
-  for (let i=0;i<5;i++) ctx.fillRect(28*TILE, 17.5*TILE+i*10, 2*TILE, 7);
-  ctx.fillStyle="#7a5a3a"; ctx.fillRect(28*TILE+4, 17.5*TILE, 4, 52); ctx.fillRect(30*TILE-8, 17.5*TILE, 4, 52);
+  for (let i=0;i<5;i++) ctx.fillRect(28*TILE, (17.5+NORTH_EXT)*TILE+i*10, 2*TILE, 7);
+  ctx.fillStyle="#7a5a3a"; ctx.fillRect(28*TILE+4, (17.5+NORTH_EXT)*TILE, 4, 52); ctx.fillRect(30*TILE-8, (17.5+NORTH_EXT)*TILE, 4, 52);
   const bob = Math.sin(t*1.6)*2;
-  { const bx = 31.4*TILE, by = 19.6*TILE + bob;
+  { const bx = 31.4*TILE, by = (19.6+NORTH_EXT)*TILE + bob;
     ctx.strokeStyle="#6a4a2f"; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(30*TILE+6, 18.6*TILE+8); ctx.quadraticCurveTo(bx-6, by-4, bx+4, by+3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(30*TILE+6, (18.6+NORTH_EXT)*TILE+8); ctx.quadraticCurveTo(bx-6, by-4, bx+4, by+3); ctx.stroke();
     ctx.fillStyle="rgba(20,60,90,.25)"; ctx.beginPath(); ctx.ellipse(bx+27, by+15, 26, 4, 0, 0, 7); ctx.fill();
     ctx.fillStyle="#8a3e34";
     ctx.beginPath(); ctx.moveTo(bx-4, by); ctx.lineTo(bx+50, by); ctx.lineTo(bx+58, by+5); ctx.lineTo(bx+46, by+13); ctx.lineTo(bx+2, by+13); ctx.lineTo(bx-10, by+5); ctx.closePath(); ctx.fill();
@@ -1569,49 +1644,49 @@ function drawExtras(ctx, t){
     ctx.fillStyle="#e8dcc0"; ctx.fillRect(bx+12, by-26, 3, 3);
   }
   if (tier>=2){
-    ctx.strokeStyle="#8c6947"; ctx.beginPath(); ctx.moveTo(12*TILE, 10.7*TILE); ctx.lineTo(20*TILE, 10.7*TILE); ctx.stroke();
+    ctx.strokeStyle="#8c6947"; ctx.beginPath(); ctx.moveTo(12*TILE, (10.7+NORTH_EXT)*TILE); ctx.lineTo(20*TILE, (10.7+NORTH_EXT)*TILE); ctx.stroke();
     for (let i=0;i<12;i++){
       ctx.fillStyle=["#ff8a5c","#ffd666","#6fb7d9","#ff9db0"][i%4];
       const bx = 12*TILE+i*16;
-      ctx.beginPath(); ctx.moveTo(bx, 10.7*TILE); ctx.lineTo(bx+12, 10.7*TILE); ctx.lineTo(bx+6, 10.7*TILE+8); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(bx, (10.7+NORTH_EXT)*TILE); ctx.lineTo(bx+12, (10.7+NORTH_EXT)*TILE); ctx.lineTo(bx+6, (10.7+NORTH_EXT)*TILE+8); ctx.closePath(); ctx.fill();
     }
-    const fx=15.9*TILE, fy=7.4*TILE;
+    const fx=15.9*TILE, fy=(7.4+NORTH_EXT)*TILE;
     ctx.fillStyle="#cfd8dd"; ctx.fillRect(fx-6, fy-2, 12, 8);
     for (let i=0;i<4;i++){ const p=(t*1.4+i*0.25)%1; ctx.fillStyle="rgba(255,255,255,"+(0.8*(1-p)).toFixed(2)+")"; ctx.fillRect(fx-2+Math.sin(p*7+i)*6, fy-4-p*14, 3, 3); }
   }
   if (tier>=3){
-    const sx=30.5*TILE, sy=13*TILE;
+    const sx=30.5*TILE, sy=(13+NORTH_EXT)*TILE;
     ctx.fillStyle="#cfc5b0"; ctx.fillRect(sx-10, sy+6, 20, 8);
     ctx.fillStyle="#e8c14e"; ctx.fillRect(sx-6, sy-14, 12, 20); ctx.fillRect(sx-9, sy-8, 3, 8); ctx.fillRect(sx+6, sy-8, 3, 8);
     ctx.fillStyle="#c9a02e"; ctx.fillRect(sx-4, sy-20, 8, 6);
     if (Math.floor(t*2)%2) drawEmojiC(ctx,"✨", sx+10, sy-18, 9);
   }
   if (S.upgrades.fleet1 && !S.upgrades.fleet2){
-    const vx=22.2*TILE, vy=3.4*TILE;
+    const vx=22.2*TILE, vy=(3.4+NORTH_EXT)*TILE;
     ctx.fillStyle="#e8e2d2"; ctx.fillRect(vx, vy, 30, 14);
     ctx.fillStyle="#6fb7d9"; ctx.fillRect(vx+20, vy+2, 8, 6);
     ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(vx+7,vy+15,4,0,7); ctx.arc(vx+24,vy+15,4,0,7); ctx.fill();
   }
   if (S.upgrades.fleet2){
-    const lx = ((t*46)%((VCOLS+4)*TILE))-2*TILE, ly=10*TILE+3;
+    const lx = ((t*46)%((VCOLS+4)*TILE))-2*TILE, ly=(10+NORTH_EXT)*TILE+3;
     ctx.fillStyle="#4e7d5b"; ctx.fillRect(lx, ly, 40, 15);
     ctx.fillStyle="#e8e2d2"; ctx.fillRect(lx+40, ly+3, 14, 12);
     ctx.fillStyle="#6fb7d9"; ctx.fillRect(lx+46, ly+5, 6, 5);
     ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(lx+9,ly+16,4,0,7); ctx.arc(lx+31,ly+16,4,0,7); ctx.arc(lx+48,ly+16,4,0,7); ctx.fill();
   }
   if (S.upgrades.fleet3){
-    ctx.fillStyle="#5a4a3a"; ctx.fillRect(0, 1*TILE+12, VCOLS*TILE, 4);
-    ctx.fillStyle="#3d332a"; for(let x=0;x<VCOLS*TILE;x+=12) ctx.fillRect(x, 1*TILE+10, 4, 8);
+    ctx.fillStyle="#5a4a3a"; ctx.fillRect(0, (1+NORTH_EXT)*TILE+12, VCOLS*TILE, 4);
+    ctx.fillStyle="#3d332a"; for(let x=0;x<VCOLS*TILE;x+=12) ctx.fillRect(x, (1+NORTH_EXT)*TILE+10, 4, 8);
     const trx = (t*70)%((VCOLS+8)*TILE)-4*TILE;
-    ctx.fillStyle="#b0574f"; ctx.fillRect(trx, 1*TILE, 34, 14);
-    ctx.fillStyle="#6fb7d9"; ctx.fillRect(trx+4, 1*TILE+3, 8, 6); ctx.fillRect(trx+16, 1*TILE+3, 8, 6);
-    ctx.fillStyle="#8a5a3c"; ctx.fillRect(trx+36, 1*TILE+2, 26, 12); ctx.fillRect(trx+64, 1*TILE+2, 26, 12);
-    ctx.fillStyle="rgba(200,200,210,.5)"; ctx.beginPath(); ctx.arc(trx-4, 1*TILE-4, 5, 0, 7); ctx.fill();
+    ctx.fillStyle="#b0574f"; ctx.fillRect(trx, (1+NORTH_EXT)*TILE, 34, 14);
+    ctx.fillStyle="#6fb7d9"; ctx.fillRect(trx+4, (1+NORTH_EXT)*TILE+3, 8, 6); ctx.fillRect(trx+16, (1+NORTH_EXT)*TILE+3, 8, 6);
+    ctx.fillStyle="#8a5a3c"; ctx.fillRect(trx+36, (1+NORTH_EXT)*TILE+2, 26, 12); ctx.fillRect(trx+64, (1+NORTH_EXT)*TILE+2, 26, 12);
+    ctx.fillStyle="rgba(200,200,210,.5)"; ctx.beginPath(); ctx.arc(trx-4, (1+NORTH_EXT)*TILE-4, 5, 0, 7); ctx.fill();
   }
   const stock = Object.values(S.items).reduce((a,b)=>a+b,0);
   const crates = Math.min(6, Math.floor(stock/40));
   for (let i=0;i<crates;i++){
-    const cx=22.1*TILE+(i%2)*11, cy=4.2*TILE-Math.floor(i/2)*10;
+    const cx=22.1*TILE+(i%2)*11, cy=(4.2+NORTH_EXT)*TILE-Math.floor(i/2)*10;
     ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][i%3]; ctx.fillRect(cx, cy, 10, 9);
     ctx.strokeStyle="#8c6947"; ctx.strokeRect(cx, cy, 10, 9);
   }
@@ -1837,6 +1912,21 @@ function drawVillage(t){
   if (alpha > 0.01){
     ctx.fillStyle = `rgba(${skyTint()},${alpha.toFixed(3)})`;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    // Extra darkness over forest areas at night
+    const _fExtra = Math.min(0.55, alpha * 1.6);
+    ctx.save(); ctx.fillStyle = `rgba(0,5,20,${_fExtra.toFixed(3)})`;
+    // North forest (VMAP rows 0-17, world y 0..18*TILE)
+    const _nfy1 = Math.max(0, 0 - CAM.y), _nfy2 = Math.min(VIEW_H, 18*TILE - CAM.y);
+    if (_nfy2 > _nfy1) ctx.fillRect(0, _nfy1, VIEW_W, _nfy2 - _nfy1);
+    // West forest strip (rows 22-36, cols 39-47)
+    const _wfy1 = Math.max(0, 22*TILE - CAM.y), _wfy2 = Math.min(VIEW_H, 36*TILE - CAM.y);
+    const _wfx1 = Math.max(0, 39*TILE - CAM.x), _wfx2 = Math.min(VIEW_W, 47*TILE - CAM.x);
+    if (_wfy2 > _wfy1 && _wfx2 > _wfx1) ctx.fillRect(_wfx1, _wfy1, _wfx2-_wfx1, _wfy2-_wfy1);
+    // East forest strip (rows 22-36, cols 87-94)
+    const _efy1 = _wfy1, _efy2 = _wfy2;
+    const _efx1 = Math.max(0, 87*TILE - CAM.x), _efx2 = Math.min(VIEW_W, 95*TILE - CAM.x);
+    if (_efy2 > _efy1 && _efx2 > _efx1) ctx.fillRect(_efx1, _efy1, _efx2-_efx1, _efy2-_efy1);
+    ctx.restore();
   }
   if (alpha > 0.08){
     const mAlpha = Math.min(1, (alpha - 0.08) / 0.22);
@@ -2293,6 +2383,47 @@ function drawInterior(t){
       drawEmojiC(ctx, p.ic, px, py+Math.sin(t*5+i)*2, 18);
       if (S.pets.active===id) drawEmojiC(ctx,"⭐", px+10, py-12, 9);
     });
+  } else if (S.tab==="foraging"){
+    // Forager's hut — warm woodland cabin
+    room("#3a5a2a","#4a6a34","#7a8a50","#6a7a44","#2a3a1a");
+    // ceiling beam with hanging dried herbs
+    ctx.fillStyle="#5a3a18"; ctx.fillRect(0, 9, W, 5);
+    for(let hx=22; hx<W-18; hx+=26){
+      ctx.strokeStyle="#8a6a30"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(hx, 14); ctx.lineTo(hx-3, 30); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hx+4, 14); ctx.lineTo(hx+7, 27); ctx.stroke();
+      const hc = ["#6a8a30","#7aaa40","#8a7a20","#5a9a50"][Math.floor(hx/26)%4];
+      ctx.fillStyle=hc; ctx.beginPath(); ctx.ellipse(hx-2, 31, 4, 7, -0.3, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(hx+7, 28, 3, 6, 0.3, 0, Math.PI*2); ctx.fill();
+    }
+    // window with forest view
+    winP(220, 38);
+    ctx.fillStyle="#3a5828"; ctx.fillRect(222, 14, 34, 20);
+    ctx.fillStyle="#4a7a34"; ctx.fillRect(222, 16, 34, 10);
+    ctx.fillStyle="#3a6028"; ctx.fillRect(222, 24, 34, 10);
+    // wicker baskets with forage goods
+    const _bskt = (bx:number, by:number, ic:string) => {
+      ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(bx, by+15, 14, 4, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle="#c9a24b"; ctx.beginPath(); ctx.ellipse(bx, by+8, 14, 9, 0, 0, Math.PI*2); ctx.fill(); ctx.fillRect(bx-14, by+8, 28, 7);
+      ctx.strokeStyle="#a07830"; ctx.lineWidth=1;
+      for(let k=0;k<5;k++){ ctx.beginPath(); ctx.moveTo(bx-14, by+9+k*1.4); ctx.lineTo(bx+14, by+9+k*1.4); ctx.stroke(); }
+      ctx.fillStyle="#8a6230"; ctx.beginPath(); ctx.ellipse(bx, by+8, 14, 3, 0, 0, Math.PI*2); ctx.fill();
+      drawEmojiC(ctx, ic, bx, by+2, 13);
+    };
+    _bskt(52, 104, "🍄");
+    _bskt(120, 112, "🫐");
+    _bskt(188, 108, "🌿");
+    // mossy stone left
+    ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(28, 156, 16, 5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle="#5a6a4a"; ctx.beginPath(); ctx.ellipse(28, 148, 16, 9, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle="#6a7a5a"; ctx.beginPath(); ctx.ellipse(28, 145, 10, 6, 0, 0, Math.PI*2); ctx.fill();
+    drawEmojiC(ctx,"🪨", 28, 143, 8);
+    // small table on the right with notes
+    ctx.fillStyle="#7a5a30"; ctx.fillRect(248, 98, 48, 10); ctx.fillRect(252, 108, 4, 32); ctx.fillRect(288, 108, 4, 32);
+    drawEmojiC(ctx,"📝", 270, 95, 10); drawEmojiC(ctx,"🌿", 290, 95, 9);
+    // Wren NPC inside
+    const _wnx = 156 + Math.sin(t*0.5)*14;
+    drawPerson(ctx, _wnx, 80, "#3a2a1a", "#4a7a3a", t, false, IP.x >= _wnx ? 1 : -1, null, "down");
   } else if (S.tab==="woodcutting"){
     room("#465a36","#5c7044","#b08c58","#a68050","#3a4a28");
     ctx.fillStyle="#6a5240"; ctx.fillRect(36,86,64,8); ctx.fillStyle="#7c6450"; ctx.fillRect(36,76,64,12);
@@ -3116,7 +3247,8 @@ function updateClock(){
     host.appendChild(el);
   }
   const h = gameHour(), hh = Math.floor(h), mm = Math.floor((h-hh)*60);
-  const str = `${isNight()?"🌙":"☀️"} ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+  const hh12 = hh%12||12, ampm = hh<12?"AM":"PM";
+  const str = `${isNight()?"🌙":"☀️"} ${hh12}:${String(mm).padStart(2,"0")} ${ampm}`;
   if (str !== _lastClock){
     _lastClock = str;
     el.textContent = str;
@@ -3131,7 +3263,8 @@ function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null,
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
-    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0} },
+    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0} },
+    treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
     counters:{ actions:0, contracts:0, coinsEarned:0, trades:0 },
     action:null,
@@ -3179,6 +3312,8 @@ function load(){
       if (!parsed.skills || !parsed.skills.trading) S.skills.trading = { xp:0 };
       if (!S.skills.woodcutting) S.skills.woodcutting = { xp:0 };
       if (!S.skills.fishing) S.skills.fishing = { xp:0 };
+      if (!S.skills.foraging) S.skills.foraging = { xp:0 };
+      if (!S.treeRespawn) S.treeRespawn = {};
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -3720,6 +3855,12 @@ function completeAction(act, skill, silent){
     const outName = Object.keys(act.out).map(id=>ITEMS[id].n).join(", ");
     log(`${SKILLS[skill].ic} ${act.n} → +${outName}`);
   }
+  // Tree chopping (direct click on tree): record respawn and stop action
+  if (skill==="woodcutting" && S.action && S.action.objId) {
+    if (!S.treeRespawn) S.treeRespawn = {};
+    S.treeRespawn[S.action.objId] = { choppedAt: Date.now() };
+    S.action = null;
+  }
   return true;
 }
 
@@ -4158,6 +4299,7 @@ function renderMain(){
     else if (S.tab==="ach") m.innerHTML = _withRoom("🏆 Inside the Trophy Hall", renderAch());
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
+    else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
     else if (S.tab==="home"){
       const _homeVillager = VILLAGERS.find(v => v.homeId === S.roomObjId);
       const _hvName = _homeVillager ? _homeVillager.n : "Someone";
@@ -4238,7 +4380,8 @@ function renderMain(){
           ${_upBtn}
           ${_next && !_canUp ? `<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Need ${fmt(_next.cost)} coins (${fmt(_next.cost-S.coins)} short)</p>` : ""}
           <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Tip: buy furniture from Finn's Stall to add bonus decor to your home.</p>
-        </div>`
+        </div>
+        ${renderSettings()}`
       );
     }
     else if (S.tab==="cafe"){

@@ -48,9 +48,19 @@
     "n": "Woodcutting", "ic": "🪓",
     "desc": "Fell trees in the Forest Edge to gather timber for crafting.",
     "actions": [
-      { "id": "pine",     "n": "Chop Pine Tree",  "lvl": 1,  "ms": 4000, "xp": 10, "out": { "wood": 1 } },
-      { "id": "oak",      "n": "Chop Oak Tree",   "lvl": 8,  "ms": 5500, "xp": 22, "out": { "wood": 2 } },
-      { "id": "hardwood", "n": "Fell Hardwood",   "lvl": 20, "ms": 7000, "xp": 40, "out": { "wood": 3, "plank": 1 } }
+      { "id": "pine",      "n": "Chop Pine Tree",  "lvl": 1,  "ms": 4000, "xp": 10, "out": { "wood": 1 } },
+      { "id": "oak",       "n": "Chop Oak Tree",   "lvl": 8,  "ms": 5500, "xp": 22, "out": { "wood": 2 } },
+      { "id": "hardwood",  "n": "Fell Hardwood",   "lvl": 20, "ms": 7000, "xp": 40, "out": { "wood": 3, "plank": 1 } },
+      { "id": "rare_leaf", "n": "Fell Rare Tree",  "lvl": 30, "ms": 9000, "xp": 80, "out": { "rare_wood": 2 } }
+    ]
+  },
+  "foraging": {
+    "n": "Foraging", "ic": "🌿",
+    "desc": "Gather wild mushrooms, berries and herbs from the forest clearing.",
+    "actions": [
+      { "id": "gather_mushroom", "n": "Pick Mushrooms", "lvl": 1,  "ms": 5000,  "xp": 8,  "out": { "mushroom": 1 } },
+      { "id": "gather_berries",  "n": "Gather Berries", "lvl": 3,  "ms": 6000,  "xp": 12, "out": { "berries": 2 } },
+      { "id": "gather_herb",     "n": "Collect Herbs",  "lvl": 8,  "ms": 7500,  "xp": 18, "out": { "wild_herb": 1 } }
     ]
   },
   "fishing": {
