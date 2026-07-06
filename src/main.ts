@@ -742,6 +742,21 @@ function tileAt(px, py){
 // Bike system
 const BIKE_WHEEL_TIER: Record<string,number> = { standard:0, sport:1, offroad:2, mountain:3 };
 const BIKE_WHEEL_N: Record<string,string> = { standard:"Standard Wheels", sport:"Sport Wheels", offroad:"Off-road Tyres", mountain:"Mountain Bike" };
+// Friendship system
+const FRIEND_LOVES: Record<string,string[]> = {
+  agnes:['wild_herb','berries'],  bertie:['iron_bar','coal'],     clara:['berries','mushroom'],
+  derek:['steel_bar','iron_bar'], edna:['painting','vase'],       frank:['wood','plank'],
+  gracie:['berries','mushroom'],  hector:['bracket','wiring_loom'], ida:['salmon','tuna'],
+  jack:['coal','steel_bar'],      kitty:['gearbox','wiring_loom'], lenny:['plank','wood'],
+  mabel:['berries','wild_herb'],  ned:['rare_wood','wood'],        olive:['salmon','tuna'],
+};
+const FRIEND_LVL_NAMES = ['Stranger','Acquaintance','Friends','Good Friends','Close Friends','Best Friends'];
+const FRIEND_GIFT: Record<string,string> = {
+  agnes:'wild_herb', bertie:'iron_bar', clara:'berries', derek:'plank',
+  edna:'painting', frank:'plank', gracie:'mushroom', hector:'bracket',
+  ida:'salmon', jack:'coal', kitty:'gearbox', lenny:'wood',
+  mabel:'berries', ned:'rare_wood', olive:'tuna',
+};
 function serviceCost(){ return Math.max(5, Math.round((100 - (S.bike?.condition ?? 100)) * 1.5)); }
 function bikeSpeedMult(){
   if (!S.bike?.equipped) return 1.0;
@@ -755,6 +770,17 @@ function bikeSpeedMult(){
   else                           mult = onForest ? 0.90 : 1.25; // standard
   // condition scales the speed bonus (but not the forest penalty)
   return mult >= 1.0 ? 1.0 + (mult - 1.0) * cond : mult;
+}
+// Friendship helpers
+function friendXp(id: string){ return (S.friendships?.[id]?.xp) ?? 0; }
+function friendLvl(id: string){ const x=friendXp(id); return x>=150?5:x>=100?4:x>=60?3:x>=30?2:x>=10?1:0; }
+function heartsHtml(id: string, sz=11){
+  const l = friendLvl(id);
+  return Array.from({length:5},(_,i)=>`<span style="font-size:${sz}px;opacity:${i<l?1:.18}">❤️</span>`).join('');
+}
+function grantFriendshipGift(id: string, name: string){
+  const g = FRIEND_GIFT[id];
+  if (g && ITEMS[g]){ addItem(g, 3); toast(`🎁 ${name} gives you 3× ${ITEMS[g].n} as a gift!`); log(`🎁 <b>${name}</b> gifted you 3× ${ITEMS[g].n}`, "good"); }
 }
 function solidAt(px, py){
   // picket fences along forest edges — solid except path gates
@@ -1897,7 +1923,7 @@ function drawVillage(t){
       if (vdist < TILE){
         const nlx = (v.x - CAM.x) / VIEW_W * 100;
         const nly = (v.y - 24 - CAM.y) / VIEW_H * 100;
-        html += `<div class="vlbl" style="left:${nlx.toFixed(1)}%;top:${nly.toFixed(1)}%">👤 ${v.n}</div>`;
+        html += `<div class="vlbl" style="left:${nlx.toFixed(1)}%;top:${nly.toFixed(1)}%">👤 ${v.n} ${heartsHtml(v.id,9)}</div>`;
       }
     }
     // post office daily reward badge
@@ -1935,7 +1961,28 @@ function drawVillage(t){
         html += `<div class="speech-dock"><b>${dockV.n}:</b> "Could you spare ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n}? I'll pay ${fmt(S.deliveryReq.reward)} coins!"${_btn}${_urg}</div>`;
       } else {
         const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
-        html += `<div class="speech-dock">${dockV.n}: "${q}"</div>`;
+        const _fId = dockV.id;
+        const _hHtml = heartsHtml(_fId, 10);
+        const _lastChat = S.friendships?.[_fId]?.lastChat || 0;
+        const _chatReady = Date.now() - _lastChat > 3*60*1000;
+        const _chatSec = _chatReady ? 0 : Math.ceil((3*60*1000-(Date.now()-_lastChat))/1000);
+        // Top inventory items as gift options (loved items first)
+        const _loved = FRIEND_LOVES[_fId]||[];
+        const _giftItems = Object.entries(S.items||{})
+          .filter(([id,qty])=>(qty as number)>0 && ITEMS[id])
+          .sort(([a],[b])=> (_loved.includes(a)?0:1) - (_loved.includes(b)?0:1))
+          .slice(0,5);
+        const _giftBtns = _giftItems.map(([id,qty])=>{
+          const lov = _loved.includes(id);
+          return `<button onclick="giftVillager('${_fId}','${id}')" style="background:${lov?'#5a3a7a':'#3a3a5a'};color:#fff;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;font-size:10px" title="${lov?'Loved gift!':ITEMS[id].n}">${ITEMS[id].ic||'🎁'}${lov?'★':''}</button>`;
+        }).join('');
+        html += `<div class="speech-dock">
+          <div style="margin-bottom:3px">${_hHtml} <b>${dockV.n}:</b> "${q}"</div>
+          <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+            <button onclick="chatVillager('${_fId}')" style="background:${_chatReady?'#3a5a3a':'#444'};color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px">${_chatReady?'💬 Chat':'💬 '+_chatSec+'s'}</button>
+            ${_giftBtns.length ? `<span style="color:rgba(0,0,0,.4);font-size:9px">gift:</span>${_giftBtns}` : ''}
+          </div>
+        </div>`;
       }
     }
     overlay.innerHTML = html;
@@ -3387,6 +3434,7 @@ function freshState(){
     loans: [],
     seNotified: "",
     bike: { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 },
+    friendships: {},
   };
 }
 let S = freshState();
@@ -3418,6 +3466,7 @@ function load(){
       if (!S.skills.foraging) S.skills.foraging = { xp:0 };
       if (!S.treeRespawn) S.treeRespawn = {};
       if (!S.bike) S.bike = { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 };
+      if (!S.friendships) S.friendships = {};
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -3613,6 +3662,42 @@ function deliverReq(){
   S.nextDeliveryAt = Date.now() + (10+Math.random()*15)*60*1000;
   achCheck(); renderMain(); updateHud(); save();
 }
+// Friendship globals called from inline onclick in speech dock
+(globalThis as any).chatVillager = function(id: string){
+  if (!S.friendships) S.friendships = {};
+  if (!S.friendships[id]) S.friendships[id] = { xp:0, lastChat:0 };
+  const f = S.friendships[id];
+  if (Date.now() - (f.lastChat||0) < 3*60*1000){ toast("💬 Come back later to chat."); return; }
+  const wasLvl = friendLvl(id);
+  f.xp = (f.xp||0) + 2;
+  f.lastChat = Date.now();
+  const vst = VILLAGER_STATE.find(v=>v.id===id);
+  if (vst) vst.quipIdx = (vst.quipIdx+1) % vst.quips.length;
+  const vn = VILLAGERS.find(v=>v.id===id)?.n || id;
+  const newLvl = friendLvl(id);
+  if (newLvl > wasLvl) { toast(`❤️ You're now ${FRIEND_LVL_NAMES[newLvl]} with ${vn}!`); log(`❤️ Friendship up: <b>${vn}</b> — ${FRIEND_LVL_NAMES[newLvl]}`, "good"); }
+  else toast(`💬 You chat with ${vn}. (+2 ❤️)`);
+  save();
+};
+(globalThis as any).giftVillager = function(id: string, itemId: string){
+  if (!ITEMS[itemId] || (S.items[itemId]||0) <= 0){ toast("You don't have that."); return; }
+  if (!S.friendships) S.friendships = {};
+  if (!S.friendships[id]) S.friendships[id] = { xp:0, lastChat:0 };
+  const f = S.friendships[id];
+  const loved = (FRIEND_LOVES[id]||[]).includes(itemId);
+  const xpGain = loved ? 15 : 3;
+  const wasLvl = friendLvl(id);
+  f.xp = (f.xp||0) + xpGain;
+  S.items[itemId] = Math.max(0, (S.items[itemId]||0) - 1);
+  const vn = VILLAGERS.find(v=>v.id===id)?.n || id;
+  const newLvl = friendLvl(id);
+  if (newLvl > wasLvl){
+    toast(`❤️ You're now ${FRIEND_LVL_NAMES[newLvl]} with ${vn}!`);
+    log(`❤️ Friendship up: <b>${vn}</b> — ${FRIEND_LVL_NAMES[newLvl]}`, "good");
+    if (newLvl === 4) grantFriendshipGift(id, vn);
+  } else toast(`🎁 ${vn} loves the ${ITEMS[itemId].n}! +${xpGain} ❤️`);
+  updateHud(); save();
+};
 function avgDrift(itemId){
   ensureMarket();
   let sum=0, cnt=0;
@@ -3721,6 +3806,25 @@ function updateRent(now){
   }
   S.rentAt = now + _period*60*1000;
   save();
+}
+function updateFriendGifts(now){
+  // Level 3+ friends occasionally send small gifts (once per 15 min per friend)
+  if (!S.friendships) return;
+  for (const [id, f] of Object.entries(S.friendships) as [string,any][]){
+    const lvl = friendLvl(id);
+    if (lvl < 3) continue;
+    const interval = lvl >= 5 ? 8*60*1000 : 15*60*1000;
+    if (now - (f.lastGift||0) < interval) continue;
+    f.lastGift = now;
+    const g = FRIEND_GIFT[id];
+    if (g && ITEMS[g]){
+      addItem(g, 1);
+      const vn = VILLAGERS.find(v=>v.id===id)?.n || id;
+      toast(`💌 ${vn} left you a ${ITEMS[g].n}!`);
+      log(`💌 <b>${vn}</b> left a ${ITEMS[g].n} for you.`, "good");
+      updateHud(); save();
+    }
+  }
 }
 function updateLoans(){
   if (!S.loans || !S.loans.length) return;
@@ -4565,6 +4669,22 @@ function renderMain(){
           ${_next && !_canUp ? `<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Need ${fmt(_next.cost)} coins (${fmt(_next.cost-S.coins)} short)</p>` : ""}
           <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Tip: buy furniture from Finn's Stall to add bonus decor to your home.</p>
         </div>
+        <div class="panel" style="padding:10px;margin-top:8px">
+          <h3 style="margin:0 0 8px;font-size:13px">❤️ Village Friends</h3>
+          ${VILLAGERS.map(v=>{
+            const lvl = friendLvl(v.id);
+            const xp = friendXp(v.id);
+            const nextThresh = [10,30,60,100,150][lvl] ?? null;
+            const xpBar = nextThresh
+              ? `<div style="background:rgba(255,255,255,.1);height:3px;border-radius:2px;margin-top:2px"><div style="background:#e07070;width:${Math.round(xp/nextThresh*100)}%;height:100%;border-radius:2px"></div></div>`
+              : `<div style="height:3px"></div>`;
+            return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+              <span style="font-size:11px;min-width:52px;color:var(--dim)">${v.n}</span>
+              <span>${heartsHtml(v.id,10)}</span>
+              <span style="font-size:10px;color:var(--dim);flex:1">${FRIEND_LVL_NAMES[lvl]}${nextThresh?` · ${xp}/${nextThresh}`:''}</span>
+            </div>${xpBar}`;
+          }).join('')}
+        </div>
         ${renderSettings()}`
       );
     }
@@ -5017,6 +5137,7 @@ setInterval(()=>{
   updateRetail(now);
   updateRent(now);
   updateLoans();
+  updateFriendGifts(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
