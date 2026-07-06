@@ -390,6 +390,9 @@ const ACH = [
   { id:"first_harvest",ic:"🌱", n:"First Harvest",       ds:"Harvest your first crop from the cottage garden.", r:40,   c:()=>(S.counters?.gardenHarvests||0)>=1 },
   { id:"green_thumb",  ic:"🌻", n:"Green Thumb",         ds:"Harvest 20 crops from the cottage garden.",        r:150,  c:()=>(S.counters?.gardenHarvests||0)>=20 },
   { id:"beloved_greenfield", ic:"💝", n:"Beloved of Greenfield", ds:"Reach Best Friends with all 17 villagers and collect every keepsake.", r:2000, c:()=>(S.keepsakes?.length||0)>=17 },
+  { id:"festival_goer",   ic:"🎪", n:"Festival Goer",    ds:"Attend your first seasonal festival.",        r:100,  c:()=>(S.festival?.attended?.length||0)>=1 },
+  { id:"festival_regular",ic:"🎡", n:"Festival Regular",  ds:"Attend all four seasonal festivals.",          r:500,  c:()=>(S.festival?.attended?.length||0)>=4 },
+  { id:"raffle_winner",   ic:"🎟️", n:"Raffle Winner",    ds:"Win 10 raffle prizes at village festivals.",   r:200,  c:()=>(S.counters?.raffleWins||0)>=10 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -415,6 +418,8 @@ const ACH_PROG = {
   daily_30:             ()=>({ cur:Math.min(30, S.counters?.challengesClaimed||0),     max:30    }),
   green_thumb:          ()=>({ cur:Math.min(20, S.counters?.gardenHarvests||0),        max:20    }),
   beloved_greenfield:   ()=>({ cur:Math.min(17, S.keepsakes?.length||0),               max:17    }),
+  festival_regular:     ()=>({ cur:Math.min(4,  S.festival?.attended?.length||0),      max:4     }),
+  raffle_winner:        ()=>({ cur:Math.min(10, S.counters?.raffleWins||0),            max:10    }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
@@ -509,6 +514,13 @@ const SEASONAL_EVENTS = [
   { id:"summer_fete",    n:"Summer Fete",        msg:"The summer fete is on — everyone's in a spending mood.",            affects:["sardine","mackerel","bass","wood","plank"], mult:1.20, months:[5,6,7] },
   { id:"harvest_season", n:"Harvest Festival",   msg:"Harvest festival — fresh goods and crafted items flying off stalls.",affects:["bracket","wood","plank","iron_ore"],        mult:1.22, months:[8,9,10] },
 ];
+// 3-day seasonal festival windows (month 0-indexed, real calendar dates)
+const FESTIVAL_DEFS: Record<string,{ n:string; ic:string; month:number; day:number; days:number; col:string; col2:string; raffleItems:string[]; feastQty:number }> = {
+  spring: { n:"Spring Fair",    ic:"🌸", month:3,  day:15, days:3, col:"#e890d8", col2:"#b8e890", raffleItems:['flower_crown','spring_tonic','blossom_jam'],          feastQty:2 },
+  summer: { n:"Summer Fete",    ic:"☀️", month:6,  day:15, days:3, col:"#ffe870", col2:"#ffb830", raffleItems:['lemonade','sun_hat','honey_cake'],                    feastQty:2 },
+  autumn: { n:"Harvest Feast",  ic:"🍂", month:9,  day:15, days:3, col:"#e8b060", col2:"#c85010", raffleItems:['spiced_cider','pickled_mushrooms','harvest_wreath'],  feastQty:2 },
+  winter: { n:"Winter Market",  ic:"❄️", month:11, day:20, days:5, col:"#b0d8f8", col2:"#5080d0", raffleItems:['mulled_tea','pine_garland','winter_hamper'],           feastQty:2 },
+};
 const WORLD_EVENTS = [
   { id:"ore_shortage", n:"Iron Ore Shortage",       msg:"A mine collapse disrupts supply — metal prices soaring.",        affects:["iron_ore","copper_ore","coal","bauxite"], mult:1.35 },
   { id:"fish_glut",    n:"Bumper Catch Season",     msg:"Excellent seas bring record catches — fish prices have fallen.",  affects:["sardine","mackerel","bass","salmon","tuna"], mult:0.72 },
@@ -537,6 +549,9 @@ function daysLeftInSeason(){
   else { const yr = m === 11 ? now.getFullYear()+1 : now.getFullYear(); next = new Date(yr, 2, 1); }
   return Math.max(1, Math.ceil((next.getTime() - now.getTime()) / (24*60*60*1000)));
 }
+function isFestivalActive(){ const d=new Date(),m=d.getMonth(),day=d.getDate(); for(const [season,f] of Object.entries(FESTIVAL_DEFS)){ if(m===f.month&&day>=f.day&&day<f.day+f.days) return { season, ...f }; } return null; }
+function daysLeftInFestival(){ const fst=isFestivalActive(); if(!fst) return 0; const d=new Date(),end=new Date(d.getFullYear(),fst.month,fst.day+fst.days); return Math.max(1,Math.ceil((end.getTime()-d.getTime())/(24*60*60*1000))); }
+function festivalFriendXpMult(){ return isFestivalActive() ? 2 : 1; }
 function getTodayStr(){ return new Date().toISOString().slice(0,10); }
 function dailySeed(s){ let h=0; for (let i=0;i<s.length;i++) h=(Math.imul(31,h)+s.charCodeAt(i))|0; return Math.abs(h); }
 function getDailyChallengeDef(){ return DAILY_CHALLENGE_POOL[dailySeed(getTodayStr()) % DAILY_CHALLENGE_POOL.length]; }
@@ -2202,6 +2217,18 @@ function drawExtras(ctx, t){
     ctx.beginPath(); ctx.moveTo(swX+30,swY+5); ctx.lineTo(swX+24+sa,swY+36); ctx.stroke();
     ctx.fillStyle="#1a4fc0"; ctx.fillRect(swX+4+sa,swY+36,20,5);
     ctx.fillStyle="#2860d8"; ctx.fillRect(swX+5+sa,swY+36,18,3);
+    // festival bunting across the park during active festivals
+    if (isFestivalActive()){
+      const _bColors = ['#e84040','#f0c030','#40a040','#4060e8','#e040c0','#f08020'];
+      const _bY = pkY + 3;
+      ctx.strokeStyle="rgba(80,50,20,.55)"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(pkX+2,_bY); ctx.lineTo(pkX+pkW-2,_bY); ctx.stroke();
+      for(let fi=0;fi<9;fi++){
+        const _fx = pkX+4 + fi*(pkW-8)/8;
+        ctx.fillStyle=_bColors[fi%_bColors.length];
+        ctx.beginPath(); ctx.moveTo(_fx-4,_bY); ctx.lineTo(_fx+4,_bY); ctx.lineTo(_fx,_bY+9); ctx.closePath(); ctx.fill();
+      }
+    }
   }
   // residential flower strip (along path rows 5 and 10)
   for (let col = 50; col < 86; col += 5){
@@ -4405,7 +4432,7 @@ function freshState(){
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
-    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0 },
+    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0 },
     action:null,
     contracts:[],
     tab:"village",
@@ -4435,6 +4462,7 @@ function freshState(){
     dailyChallenge: null,
     garden: [null, null, null, null],
     keepsakes: [],
+    festival: { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[] as string[], notified:"" },
   };
 }
 let S = freshState();
@@ -4478,6 +4506,10 @@ function load(){
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
+      if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+      if (!Array.isArray(S.festival.attended)) S.festival.attended = [];
+      if (!("notified" in S.festival)) S.festival.notified = "";
+      if (!("raffleWins" in S.counters)) S.counters.raffleWins = 0;
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4573,6 +4605,20 @@ function updateBeachBirds(){
       let nx=0,tr=0;
       do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-(17+NORTH_EXT)*TILE)<6*TILE && tr<20);
       b.x=nx; b.y=(13+NORTH_EXT)*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=-2; b.state="fly";
+    }
+  }
+}
+function updateFestivalNotification(){
+  const _fst = isFestivalActive();
+  if (!S.festival) return;
+  if (_fst){
+    const _fKey = _fst.season + new Date().getFullYear();
+    if (S.festival.notified !== _fKey){
+      S.festival.notified = _fKey;
+      if (!S.festival.attended.includes(_fst.season)) S.festival.attended.push(_fst.season);
+      toast(`🎪 The ${_fst.n} has begun! ${daysLeftInFestival()} days of double friendship XP!`);
+      log(`🎪 <b>${_fst.n}</b> is on in Greenfield! Visit the Seasonal Market for festival activities.`, "good");
+      achCheck(); save();
     }
   }
 }
@@ -4684,7 +4730,7 @@ function deliverReq(){
   const f = S.friendships[id];
   if (Date.now() - (f.lastChat||0) < 3*60*1000){ toast("💬 Come back later to chat."); return; }
   const wasLvl = friendLvl(id);
-  f.xp = (f.xp||0) + Math.round(2 * prestigeFriendXpMult());
+  f.xp = (f.xp||0) + Math.round(2 * prestigeFriendXpMult() * festivalFriendXpMult());
   f.lastChat = Date.now();
   const vst = VILLAGER_STATE.find(v=>v.id===id);
   if (vst) vst.quipIdx = (vst.quipIdx+1) % vst.quips.length;
@@ -4700,7 +4746,7 @@ function deliverReq(){
   if (!S.friendships[id]) S.friendships[id] = { xp:0, lastChat:0 };
   const f = S.friendships[id];
   const loved = (FRIEND_LOVES[id]||[]).includes(itemId);
-  const xpGain = Math.round((loved ? 15 : 3) * prestigeFriendXpMult());
+  const xpGain = Math.round((loved ? 15 : 3) * prestigeFriendXpMult() * festivalFriendXpMult());
   const wasLvl = friendLvl(id);
   f.xp = (f.xp||0) + xpGain;
   S.items[itemId] = Math.max(0, (S.items[itemId]||0) - 1);
@@ -4907,7 +4953,7 @@ function updateVillagerRequests(now: number){
   if (!S.friendships) S.friendships = {};
   if (!S.friendships[npcId]) S.friendships[npcId] = { xp:0, lastChat:0 };
   const wasLvl = friendLvl(npcId);
-  S.friendships[npcId].xp = (S.friendships[npcId].xp||0) + Math.round(req.friendXp * prestigeFriendXpMult());
+  S.friendships[npcId].xp = (S.friendships[npcId].xp||0) + Math.round(req.friendXp * prestigeFriendXpMult() * festivalFriendXpMult());
   delete S.villagerRequests[npcId];
   const vn = VILLAGERS.find(v=>v.id===npcId)?.n || npcId;
   const newLvl = friendLvl(npcId);
@@ -5884,6 +5930,57 @@ function renderPets(){
   html += `</div>`;
   return html;
 }
+function renderSeasonalMarket(): string {
+  const _sd = SEASON_DEFS[getSeason()];
+  const _fst = isFestivalActive();
+  const _sitems = _sd.items.map(id=>({ id, it:ITEMS[id], qty:(S.items[id]||0) }));
+  const _hasSome = _sitems.some(x=>x.qty>0);
+  const _craftedList = _sd.items.map(id=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:20px">${ITEMS[id].ic}</span><div style="flex:1;font-size:11px"><b>${ITEMS[id].n}</b><br><span style="color:var(--dim)">In stock: ${S.items[id]||0} &nbsp;·&nbsp; Crafted: ${S.prod[id]||0} &nbsp;·&nbsp; Sell: ${fmt(Math.round(ITEMS[id].v*1.5))}c each</span></div></div>`).join('');
+  const _sellBtn = _hasSome ? `<button data-season-sell="1" style="background:#3a6a1a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🎪 Sell all ${_sd.ic} goods</button>` : `<p style="color:var(--dim);font-size:11px;margin:0">Head to the Artisan's Shed to craft some first.</p>`;
+  if (!_fst){
+    // off-season: show normal seasonal sell panel
+    const _days = daysLeftInSeason();
+    return `<div class="panel" style="background:linear-gradient(135deg,${_sd.col}30,${_sd.col2}18);border:1px solid ${_sd.col}60;padding:12px;margin-bottom:8px"><h2 style="margin:0 0 4px">${_sd.ic} ${_sd.n} Season</h2><p style="color:var(--dim);font-size:12px;margin:0 0 6px">${_sd.blurb}</p><p style="font-size:11px;color:${_sd.col2}">⏳ ${_days} day${_days===1?'':'s'} left this season</p><p style="font-size:10px;color:var(--dim);margin:4px 0 0">The seasonal festival runs mid-month — check back then for games, raffle and grand feast!</p></div><div class="panel" style="padding:10px;margin-bottom:8px"><h3 style="margin:0 0 8px;font-size:13px">🎪 Seasonal Sell <span style="color:var(--dim);font-weight:normal;font-size:10px">— 1.5× base value while in season</span></h3>${_sellBtn}</div><div class="panel" style="padding:10px">${_craftedList}</div>${renderInventoryPanel()}`;
+  }
+  // FESTIVAL MODE
+  const _daysLeft = daysLeftInFestival();
+  const _today = getTodayStr();
+  const _fest = S.festival || { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+  const _raffleLeft = Math.max(0, 5 - (_fest.raffleDate === _today ? _fest.raffleCount : 0));
+  const _gamesAvail = _fest.gamesDate !== _today;
+  const _feastKey = _fst.season + new Date().getFullYear();
+  const _feastDone = _fest.feastId === _feastKey;
+  const _feastItems = _fst.raffleItems;
+  const _feastQty = _fst.feastQty;
+  const _canFeast = !_feastDone && _feastItems.every(id=>(S.items[id]||0)>=_feastQty);
+  const _feastNeeds = _feastItems.map(id=>`${ITEMS[id]?.ic||''} ${ITEMS[id]?.n||id} ×${_feastQty} (have ${S.items[id]||0})`).join(', ');
+  return `<div class="panel" style="background:linear-gradient(135deg,${_fst.col}40,${_fst.col2}28);border:2px solid ${_fst.col};padding:14px;margin-bottom:10px">
+    <h2 style="margin:0 0 4px">${_fst.ic} ${_fst.n} — Festival!</h2>
+    <p style="font-size:12px;color:var(--dim);margin:0 0 6px">Double friendship XP on all gifts and chats during the festival.</p>
+    <p style="font-size:11px;color:${_fst.col2}">🎉 ${_daysLeft} day${_daysLeft===1?'':'s'} remaining</p>
+  </div>
+  <div class="panel" style="padding:10px;margin-bottom:8px">
+    <h3 style="margin:0 0 6px;font-size:13px">🎟️ Raffle <span style="color:var(--dim);font-weight:normal;font-size:10px">— 25c per ticket · max 5 per day · ${_raffleLeft} left today</span></h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Win seasonal crafts, coins, or bonus XP — luck of the draw!</p>
+    ${_raffleLeft > 0 ? `<button data-festival-raffle="1" style="background:#7a3a8a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🎟️ Buy Raffle Ticket — 25c</button>` : `<p style="color:var(--dim);font-size:11px;margin:0">Come back tomorrow for more tickets.</p>`}
+  </div>
+  <div class="panel" style="padding:10px;margin-bottom:8px">
+    <h3 style="margin:0 0 6px;font-size:13px">🎡 Village Games <span style="color:var(--dim);font-weight:normal;font-size:10px">— 15c entry · once per day</span></h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Join in the fun and earn friendship with 3 random villagers.</p>
+    ${_gamesAvail ? `<button data-festival-games="1" style="background:#3a6a8a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🎡 Enter Village Games — 15c</button>` : `<p style="color:var(--amber);font-size:11px;margin:0">✅ You've played today — come back tomorrow!</p>`}
+  </div>
+  <div class="panel" style="padding:10px;margin-bottom:8px">
+    <h3 style="margin:0 0 6px;font-size:13px">🍽️ Grand Feast Order <span style="color:var(--dim);font-weight:normal;font-size:10px">— once per festival · 400c reward</span></h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Provide the festival feast: ${_feastNeeds}</p>
+    ${_feastDone ? `<p style="color:var(--amber);font-size:11px;margin:0">✅ Feast provided — well done!</p>` : _canFeast ? `<button data-festival-feast="1" style="background:#6a3a1a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🍽️ Provide the Grand Feast — 400c</button>` : `<p style="color:var(--dim);font-size:11px;margin:0">Craft more seasonal goods to fulfil the feast order.</p>`}
+  </div>
+  <div class="panel" style="padding:10px;margin-bottom:8px">
+    <h3 style="margin:0 0 6px;font-size:13px">🎪 Festival Sell <span style="color:var(--dim);font-weight:normal;font-size:10px">— 1.5× base value</span></h3>
+    ${_sellBtn}
+  </div>
+  <div class="panel" style="padding:10px">${_craftedList}</div>
+  ${renderInventoryPanel()}`;
+}
 function renderBeautification(){
   const _bought = S.beautification || [];
   const _pv = villagePrestige();
@@ -6056,7 +6153,7 @@ function renderMain(){
     else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
     else if (S.tab==="crafting") m.innerHTML = _withRoom("🧺 The Artisan's Shed", renderSkillPanel(S.tab));
     else if (S.tab==="village_fund") m.innerHTML = _withRoom("🌸 The Village Fund", renderBeautification());
-    else if (S.tab==="seasonal_market"){ const _sd=SEASON_DEFS[getSeason()]; const _days=daysLeftInSeason(); const _sitems=_sd.items.map(id=>({id,it:ITEMS[id],qty:(S.items[id]||0)})); const _hasSome=_sitems.some(x=>x.qty>0); const _crafted=_sd.items.map(id=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:20px">${ITEMS[id].ic}</span><div style="flex:1;font-size:11px"><b>${ITEMS[id].n}</b><br><span style="color:var(--dim)">In stock: ${S.items[id]||0} &nbsp;·&nbsp; Crafted total: ${S.prod[id]||0} &nbsp;·&nbsp; Festival sell: ${fmt(Math.round(ITEMS[id].v*1.5))}c each</span></div></div>`).join(''); m.innerHTML=_withRoom(`${_sd.ic} ${_sd.n} Seasonal Market`, `<div class="panel" style="background:linear-gradient(135deg,${_sd.col}30,${_sd.col2}18);border:1px solid ${_sd.col}60;padding:12px;margin-bottom:8px"><h2 style="margin:0 0 4px">${_sd.ic} ${_sd.n} Festival</h2><p style="color:var(--dim);font-size:12px;margin:0 0 6px">${_sd.blurb}</p><p style="font-size:11px;color:${_sd.col2}">⏳ ${_days} day${_days===1?'':'s'} left this season</p></div><div class="panel" style="padding:10px;margin-bottom:8px"><h3 style="margin:0 0 8px;font-size:13px">🎪 Festival Sell <span style="color:var(--dim);font-weight:normal;font-size:10px">— 1.5× base value while in season</span></h3><p style="color:var(--dim);font-size:11px;margin:0 0 8px">Demand peaks during the festival. Sell now for a premium.</p>${_hasSome?`<button data-season-sell="1" style="background:#3a6a1a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🎪 Sell all ${_sd.ic} ${_sd.n} goods</button>`:`<p style="color:var(--dim);font-size:11px;margin:0">Head to the Artisan's Shed to craft some first.</p>`}</div><div class="panel" style="padding:10px">${_crafted}</div>`+renderInventoryPanel()); }
+    else if (S.tab==="seasonal_market"){ m.innerHTML = _withRoom("🎪 Seasonal Market", renderSeasonalMarket()); }
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
@@ -6465,6 +6562,76 @@ function bindMain(){
     log(`🎪 <b>${_sd.ic} ${_sd.n} Festival Sale</b> — +${fmt(_total)} coins`, "good");
     achCheck(); renderMain(); updateHud(); save();
   });
+  // festival raffle
+  document.querySelectorAll("[data-festival-raffle]").forEach(b=> b.onclick = ()=>{
+    if (S.coins < 25){ toast("Not enough coins."); return; }
+    const _fst = isFestivalActive(); if (!_fst){ toast("No festival active."); return; }
+    const _today = getTodayStr();
+    if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+    if (S.festival.raffleDate !== _today){ S.festival.raffleDate = _today; S.festival.raffleCount = 0; }
+    if (S.festival.raffleCount >= 5){ toast("🎟️ No more tickets today — come back tomorrow!"); return; }
+    S.coins -= 25; S.festival.raffleCount++;
+    // prize pool: seasonal items, 50c, or 20 skill XP
+    const _skills = Object.keys(S.skills||{}).filter(sk=>sk!=='logistics'&&sk!=='trading');
+    const _pool = [..._fst.raffleItems, ..._fst.raffleItems, '50coins', `xp_${_skills[Math.floor(Math.random()*_skills.length)]}`];
+    const _prize = _pool[Math.floor(Math.random()*_pool.length)];
+    if (_prize === '50coins'){
+      S.coins += 50; S.counters.coinsEarned = (S.counters.coinsEarned||0)+50;
+      toast(`🎟️ Raffle: Lucky! You won 50 coins!`); log(`🎟️ Raffle prize: <b>50 coins</b>`, "good");
+    } else if (_prize.startsWith('xp_')){
+      const _sk = _prize.slice(3); grantXp(_sk, 20);
+      toast(`🎟️ Raffle: +20 ${_sk} XP!`); log(`🎟️ Raffle prize: <b>+20 ${_sk} XP</b>`, "good");
+    } else {
+      addItem(_prize, 1);
+      toast(`🎟️ Raffle: You won ${ITEMS[_prize]?.ic||''} ${ITEMS[_prize]?.n||_prize}!`);
+      log(`🎟️ Raffle prize: <b>${ITEMS[_prize]?.ic||''} ${ITEMS[_prize]?.n||_prize}</b>`, "good");
+    }
+    S.counters.raffleWins = (S.counters.raffleWins||0)+1;
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  // festival village games
+  document.querySelectorAll("[data-festival-games]").forEach(b=> b.onclick = ()=>{
+    if (S.coins < 15){ toast("Not enough coins."); return; }
+    const _fst = isFestivalActive(); if (!_fst){ toast("No festival active."); return; }
+    if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+    const _today = getTodayStr();
+    if (S.festival.gamesDate === _today){ toast("🎡 You've already played today!"); return; }
+    S.coins -= 15; S.festival.gamesDate = _today;
+    if (!S.friendships) S.friendships = {};
+    const _shuffled = [...VILLAGERS].sort(()=>Math.random()-.5).slice(0,3);
+    _shuffled.forEach(v=>{
+      if (!S.friendships[v.id]) S.friendships[v.id] = { xp:0, lastChat:0 };
+      const wasLvl = friendLvl(v.id);
+      S.friendships[v.id].xp = (S.friendships[v.id].xp||0) + Math.round(10 * prestigeFriendXpMult() * festivalFriendXpMult());
+      const newLvl = friendLvl(v.id);
+      if (newLvl > wasLvl){
+        toast(`❤️ ${v.n} — ${FRIEND_LVL_NAMES[newLvl]}!`);
+        if (newLvl === 4) grantFriendshipGift(v.id, v.n);
+        if (newLvl === 5) showKeepsakeCeremony(v.id, v.n);
+      }
+    });
+    const _names = _shuffled.map(v=>v.n).join(', ');
+    toast(`🎡 Great fun with ${_names}! Friendship XP gained.`);
+    log(`🎡 <b>Village Games</b> — warmer with ${_names}`, "good");
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  // festival grand feast
+  document.querySelectorAll("[data-festival-feast]").forEach(b=> b.onclick = ()=>{
+    const _fst = isFestivalActive(); if (!_fst){ toast("No festival active."); return; }
+    if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+    const _feastKey = _fst.season + new Date().getFullYear();
+    if (S.festival.feastId === _feastKey){ toast("🍽️ Feast already provided this festival!"); return; }
+    const _qty = _fst.feastQty;
+    const _ok = _fst.raffleItems.every(id=>(S.items[id]||0)>=_qty);
+    if (!_ok){ toast("You don't have enough feast items yet."); return; }
+    _fst.raffleItems.forEach(id=>{ S.items[id] = Math.max(0,(S.items[id]||0)-_qty); });
+    S.festival.feastId = _feastKey;
+    S.coins += 400; S.counters.coinsEarned = (S.counters.coinsEarned||0)+400;
+    grantXp("crafting", 80);
+    toast(`🍽️ Grand Feast provided! +400 coins and +80 crafting XP!`);
+    log(`🍽️ <b>Grand Feast</b> — the village is grateful! +400 coins, +80 crafting XP`, "good");
+    achCheck(); renderMain(); updateHud(); save();
+  });
   // village beautification purchases
   document.querySelectorAll("[data-beautify]").forEach(b=>{
     b.onclick = ()=>{
@@ -6541,7 +6708,7 @@ function bindMain(){
       _q.done = true;
       if (!S.friendships[_q.npcId]) S.friendships[_q.npcId] = { xp:0, lastChat:0 };
       const _wasLvl = friendLvl(_q.npcId);
-      S.friendships[_q.npcId].xp = (S.friendships[_q.npcId].xp||0) + _q.friendXp;
+      S.friendships[_q.npcId].xp = (S.friendships[_q.npcId].xp||0) + Math.round(_q.friendXp * prestigeFriendXpMult() * festivalFriendXpMult());
       const _newLvl = friendLvl(_q.npcId);
       if (_newLvl > _wasLvl){
         toast(`❤️ You're now ${FRIEND_LVL_NAMES[_newLvl]} with ${_q.npcName}!`);
@@ -6846,6 +7013,7 @@ setInterval(()=>{
   const beforeItems = JSON.stringify(S.items);
   tick(dt);
   updateWorldEvents();
+  updateFestivalNotification();
   updateWeather();
   updateDeliveries();
   updateStudying();
