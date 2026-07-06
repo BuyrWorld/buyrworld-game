@@ -384,6 +384,9 @@ const ACH = [
   { id:"autumn_craft", ic:"🍂", n:"Autumn Bounty",  ds:"Craft a seasonal autumn item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['spiced_cider','pickled_mushrooms','harvest_wreath'])>=1 },
   { id:"winter_craft", ic:"❄️", n:"Winter Warmth",  ds:"Craft a seasonal winter item at the Artisan's Shed.",  r:60,  c:()=>prodSum(['mulled_tea','pine_garland','winter_hamper'])>=1 },
   { id:"all_seasons",  ic:"🎪", n:"All Seasons",    ds:"Craft at least one item in every season.",             r:500, c:()=>prodSum(['flower_crown','spring_tonic','blossom_jam'])>=1&&prodSum(['lemonade','sun_hat','honey_cake'])>=1&&prodSum(['spiced_cider','pickled_mushrooms','harvest_wreath'])>=1&&prodSum(['mulled_tea','pine_garland','winter_hamper'])>=1 },
+  { id:"daily_first", ic:"🎯", n:"Challenge Accepted",   ds:"Complete your first daily village challenge.",    r:50,  c:()=>(S.counters?.challengesClaimed||0)>=1 },
+  { id:"daily_7",     ic:"🏅", n:"7-Day Habit",          ds:"Complete 7 daily village challenges.",            r:200, c:()=>(S.counters?.challengesClaimed||0)>=7 },
+  { id:"daily_30",    ic:"🏆", n:"Dedicated Supplier",   ds:"Complete 30 daily village challenges.",           r:500, c:()=>(S.counters?.challengesClaimed||0)>=30 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -405,6 +408,8 @@ const ACH_PROG = {
   greenfield_champion:  ()=>({ cur:Math.min(50, S.beautification?.length||0),          max:50    }),
   request_10:           ()=>({ cur:Math.min(10, S.counters?.requestsFulfilled||0),     max:10    }),
   request_50:           ()=>({ cur:Math.min(50, S.counters?.requestsFulfilled||0),     max:50    }),
+  daily_7:              ()=>({ cur:Math.min(7,  S.counters?.challengesClaimed||0),     max:7     }),
+  daily_30:             ()=>({ cur:Math.min(30, S.counters?.challengesClaimed||0),     max:30    }),
 };
 function achCheck(){
   if (!S.ach) S.ach = {};
@@ -526,6 +531,46 @@ function daysLeftInSeason(){
   else if (m >= 8 && m <= 10) next = new Date(now.getFullYear(), 11, 1);
   else { const yr = m === 11 ? now.getFullYear()+1 : now.getFullYear(); next = new Date(yr, 2, 1); }
   return Math.max(1, Math.ceil((next.getTime() - now.getTime()) / (24*60*60*1000)));
+}
+function getTodayStr(){ return new Date().toISOString().slice(0,10); }
+function dailySeed(s){ let h=0; for (let i=0;i<s.length;i++) h=(Math.imul(31,h)+s.charCodeAt(i))|0; return Math.abs(h); }
+function getDailyChallengeDef(){ return DAILY_CHALLENGE_POOL[dailySeed(getTodayStr()) % DAILY_CHALLENGE_POOL.length]; }
+function dailyChallengeProgress(){
+  const dc = S.dailyChallenge;
+  if (!dc) return { done:false, pct:0, cur:0, max:0 };
+  const ch = DAILY_CHALLENGE_POOL.find(c=>c.id===dc.id);
+  if (!ch) return { done:false, pct:0, cur:0, max:0 };
+  if (ch.type === 'prod'){
+    const ids = Object.keys(ch.items);
+    let totalCur=0, totalMax=0, allDone=true;
+    for (const id of ids){
+      const goal = ch.items[id];
+      const cur = Math.min(goal, Math.max(0, (S.prod[id]||0) - (dc.baseline?.[id]||0)));
+      totalCur += cur; totalMax += goal;
+      if (cur < goal) allDone = false;
+    }
+    return { done:allDone, pct:totalMax>0?totalCur/totalMax:0, cur:totalCur, max:totalMax };
+  }
+  if (ch.type === 'counter'){
+    const cur = Math.min(ch.qty, Math.max(0, (S.counters[ch.counter]||0) - (dc.baselineCounters?.[ch.counter]||0)));
+    return { done:cur>=ch.qty, pct:ch.qty>0?cur/ch.qty:0, cur, max:ch.qty };
+  }
+  if (ch.type === 'coins'){
+    const cur = Math.min(ch.qty, Math.max(0, (S.counters.coinsEarned||0) - (dc.baselineCoins||0)));
+    return { done:cur>=ch.qty, pct:ch.qty>0?cur/ch.qty:0, cur, max:ch.qty };
+  }
+  return { done:false, pct:0, cur:0, max:0 };
+}
+function updateDailyChallenge(){
+  const today = getTodayStr();
+  if (S.dailyChallenge && S.dailyChallenge.date === today) return;
+  const ch = getDailyChallengeDef();
+  if (!ch) return;
+  const baseline: any = {}, baselineCounters: any = {};
+  if (ch.type === 'prod' && ch.items) for (const id of Object.keys(ch.items)) baseline[id] = S.prod[id]||0;
+  if (ch.type === 'counter') baselineCounters[ch.counter] = S.counters[ch.counter]||0;
+  S.dailyChallenge = { date:today, id:ch.id, baseline, baselineCounters, baselineCoins:ch.type==='coins'?(S.counters.coinsEarned||0):0, claimed:false };
+  save();
 }
 const SEASON_DEFS = {
   spring: { n:"Spring", ic:"🌸", grass:"#8acc7a", skyOverlay:"rgba(255,200,220,.04)", col:"#b8e890", col2:"#d890d8",
@@ -682,6 +727,37 @@ const PRESTIGE_THRESHOLDS = [
   { at:200, coinsPm:5,  label:"+5 coins/min" },
 ];
 const SEASONAL_ITEMS = ['flower_crown','spring_tonic','blossom_jam','lemonade','sun_hat','honey_cake','spiced_cider','pickled_mushrooms','harvest_wreath','mulled_tea','pine_garland','winter_hamper'];
+const DAILY_CHALLENGE_POOL = [
+  { id:'ch_mine_iron',     type:'prod',    items:{iron_ore:12},                  reward:120, ic:'⛏️', ds:'Mine 12 Iron Ore.' },
+  { id:'ch_mine_coal',     type:'prod',    items:{coal:10},                      reward:140, ic:'⚫', ds:'Dig 10 Coal.' },
+  { id:'ch_mine_rare',     type:'prod',    items:{rare_earth:3},                 reward:280, ic:'💎', ds:'Extract 3 Rare Earths.' },
+  { id:'ch_smelt_iron',    type:'prod',    items:{iron_bar:8},                   reward:160, ic:'🔩', ds:'Smelt 8 Iron Bars.' },
+  { id:'ch_smelt_steel',   type:'prod',    items:{steel_bar:5},                  reward:220, ic:'⛓️', ds:'Smelt 5 Steel Bars.' },
+  { id:'ch_forge_alloy',   type:'prod',    items:{tech_alloy:2},                 reward:320, ic:'✨', ds:'Forge 2 Tech Alloys.' },
+  { id:'ch_make_bracket',  type:'prod',    items:{bracket:8},                    reward:130, ic:'🧱', ds:'Press 8 Brackets.' },
+  { id:'ch_make_gearbox',  type:'prod',    items:{gearbox:3},                    reward:200, ic:'⚙️', ds:'Assemble 3 Gearboxes.' },
+  { id:'ch_make_sensor',   type:'prod',    items:{sensor:2},                     reward:300, ic:'📡', ds:'Assemble 2 Sensors.' },
+  { id:'ch_deliver_3',     type:'counter', counter:'contracts',         qty:3,   reward:220, ic:'🚚', ds:'Complete 3 contracts.' },
+  { id:'ch_deliver_5',     type:'counter', counter:'contracts',         qty:5,   reward:380, ic:'🚚', ds:'Complete 5 contracts.' },
+  { id:'ch_trade_10',      type:'counter', counter:'trades',            qty:10,  reward:150, ic:'⚖️', ds:'Make 10 market trades.' },
+  { id:'ch_earn_600',      type:'coins',                                qty:600, reward:180, ic:'💰', ds:'Earn 600 coins from any source.' },
+  { id:'ch_chop_wood',     type:'prod',    items:{wood:15},                      reward:120, ic:'🪵', ds:'Chop 15 Wood.' },
+  { id:'ch_fell_rare',     type:'prod',    items:{rare_wood:4},                  reward:240, ic:'🌟', ds:'Fell 4 Rare Trees.' },
+  { id:'ch_fish_sardine',  type:'prod',    items:{sardine:10},                   reward:110, ic:'🐟', ds:'Catch 10 Sardines.' },
+  { id:'ch_fish_mackerel', type:'prod',    items:{mackerel:6},                   reward:140, ic:'🐠', ds:'Catch 6 Mackerel.' },
+  { id:'ch_fish_salmon',   type:'prod',    items:{salmon:3},                     reward:230, ic:'🍣', ds:'Catch 3 Salmon.' },
+  { id:'ch_forage_berries',type:'prod',    items:{berries:15},                   reward:120, ic:'🫐', ds:'Gather 15 Forest Berries.' },
+  { id:'ch_forage_herb',   type:'prod',    items:{wild_herb:8},                  reward:150, ic:'🌿', ds:'Collect 8 Wild Herbs.' },
+  { id:'ch_forage_mush',   type:'prod',    items:{mushroom:10},                  reward:130, ic:'🍄', ds:'Pick 10 Wild Mushrooms.' },
+  { id:'ch_craft_jam',     type:'prod',    items:{berry_jam:3},                  reward:190, ic:'🫙', ds:'Pot 3 Berry Jams.' },
+  { id:'ch_craft_basket',  type:'prod',    items:{gift_basket:2},                reward:300, ic:'🧺', ds:'Weave 2 Gift Baskets.' },
+  { id:'ch_craft_smoked',  type:'prod',    items:{smoked_fish:3},                reward:220, ic:'🐡', ds:'Smoke 3 Fish.' },
+  { id:'ch_request_2',     type:'counter', counter:'requestsFulfilled', qty:2,   reward:210, ic:'💌', ds:'Fulfil 2 villager personal requests.' },
+  { id:'ch_fish_smoke',    type:'prod',    items:{mackerel:4, smoked_fish:2},    reward:280, ic:'🎣', ds:'Catch 4 Mackerel and smoke 2 Fish.' },
+  { id:'ch_forage_craft',  type:'prod',    items:{berries:10, berry_jam:2},      reward:230, ic:'🫐', ds:'Gather 10 Berries and pot 2 Berry Jams.' },
+  { id:'ch_mine_smelt',    type:'prod',    items:{iron_ore:10, iron_bar:4},      reward:230, ic:'⛏️', ds:'Mine 10 Ore and smelt 4 Iron Bars.' },
+  { id:'ch_chop_craft',    type:'prod',    items:{wood:8, herb_tea:2},           reward:200, ic:'🪵', ds:'Chop 8 Wood and blend 2 Herb Teas.' },
+];
 const PERK_DEFS: Record<string,any> = {
   // Mining
   lucky_strike:    { label:'Lucky Strike',      ds:'15% chance of an extra ore per action.',      type:'yield',   val:0.15, skill:'mining' },
@@ -4152,6 +4228,7 @@ function freshState(){
     prestigeIncomeAt: 0,
     villagerRequests: {},
     perks: {},
+    dailyChallenge: null,
   };
 }
 let S = freshState();
@@ -4192,6 +4269,7 @@ function load(){
       if (!S.prestigeIncomeAt) S.prestigeIncomeAt = 0;
       if (!S.villagerRequests) S.villagerRequests = {};
       if (!S.perks) S.perks = {};
+      if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4643,6 +4721,20 @@ function updateVillagerRequests(now: number){
   toast(`⭐ ${def.label} unlocked! ${def.ds}`);
   log(`⭐ <b>${def.label}</b> — ${def.ds}`, "good");
   achCheck(); renderMain(); save();
+};
+(globalThis as any).claimDailyChallenge = function(){
+  if (!S.dailyChallenge || S.dailyChallenge.claimed){ toast("Already claimed."); return; }
+  const prog = dailyChallengeProgress();
+  if (!prog.done){ toast("Challenge not complete yet!"); return; }
+  const ch = DAILY_CHALLENGE_POOL.find(c=>c.id===S.dailyChallenge.id);
+  if (!ch) return;
+  S.dailyChallenge.claimed = true;
+  S.coins += ch.reward;
+  S.counters.coinsEarned = (S.counters.coinsEarned||0) + ch.reward;
+  S.counters.challengesClaimed = (S.counters.challengesClaimed||0) + 1;
+  toast(`🎯 Daily Challenge complete! +${fmt(ch.reward)} coins`);
+  log(`🎯 <b>Daily Challenge</b> — "${ch.ds}" Complete! +${fmt(ch.reward)} coins`, "good");
+  achCheck(); renderMain(); updateHud(); save();
 };
 function updateLoans(){
   if (!S.loans || !S.loans.length) return;
@@ -5335,9 +5427,29 @@ function renderNoticeBoard(){
   const nb = S.noticeBoard || { quests:[], lastRefresh:0 };
   const _now = Date.now();
   const _refreshIn = Math.max(0, Math.ceil((30*60*1000 - (_now - (nb.lastRefresh||0))) / 60000));
+  const _dch = getDailyChallengeDef();
+  const _prog = dailyChallengeProgress();
+  const _dc = S.dailyChallenge;
+  const _pct = Math.round((_prog.pct||0)*100);
   let html = `<div class="panel" style="padding:10px">
     <h3 style="margin:0 0 6px;font-size:13px">📋 Village Notice Board</h3>
-    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Community tasks from your neighbours. Complete them for coins and friendship XP.</p>`;
+    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Community tasks from your neighbours. Complete them for coins and friendship XP.</p>
+    <div style="background:linear-gradient(135deg,#1e3a1e,#0f2a1a);border-radius:8px;padding:10px;margin-bottom:12px;border:1px solid #2e6a2e">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-size:11px;font-weight:bold;color:#90d870">🎯 Today's Village Challenge</span>
+        <span style="font-size:9px;color:#4a7a4a">Resets at midnight</span>
+      </div>
+      <div style="font-size:12px;color:#c8f0a8;margin-bottom:7px">${_dch?.ic||'🎯'} ${_dch?.ds||'Loading…'}</div>
+      <div style="background:#0a1a0a;border-radius:3px;height:5px;margin-bottom:6px;overflow:hidden">
+        <div style="width:${_pct}%;height:100%;background:${_prog.done?'#40e040':'#1a8a1a'};transition:width .4s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:10px;color:#5a8a5a">${_prog.cur}/${_prog.max} · Reward: 💰 ${fmt(_dch?.reward||0)}</span>
+        ${_dc?.claimed ? `<span style="font-size:10px;color:#40e040;font-weight:bold">✅ Claimed!</span>`
+          : _prog.done ? `<button class="btn" data-challenge-claim style="font-size:10px;padding:2px 10px;background:#28c828;color:#000;font-weight:bold">Claim Reward</button>`
+          : ''}
+      </div>
+    </div>`;
   if (!nb.quests || nb.quests.length === 0){
     html += `<p style="color:var(--dim);font-size:12px;font-style:italic;margin:0">No tasks pinned yet. Check back soon!</p>`;
   } else {
@@ -6145,6 +6257,7 @@ function bindMain(){
       renderMain(); updateHud(); save();
     };
   });
+  document.querySelectorAll("[data-challenge-claim]").forEach(b=> b.onclick = ()=> (globalThis as any).claimDailyChallenge());
   // daily reward
   document.querySelectorAll("[data-daily-claim]").forEach(b=> b.onclick = ()=>{
     if (S.dailyReward.lastDate === new Date().toDateString()){ toast("Already collected today."); return; }
@@ -6356,6 +6469,7 @@ setInterval(()=>{
   updateNoticeBoard(now);
   updatePrestigeIncome(now);
   updateVillagerRequests(now);
+  updateDailyChallenge();
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
