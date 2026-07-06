@@ -15,5 +15,5 @@ export const PETS: Pet[] = [
   { id: 'rail_rhino',      n: 'Rail Rhino',      ic: '🦏', rar: 'legendary', src: 'contract',      chance: 1/250, ds: '+30% contract payouts while active.' },
   { id: 'cargo_turtle',    n: 'Cargo Turtle',    ic: '🐢', rar: 'legendary', src: 'steelworks',    chance: 1/900, ds: 'Steelworks actions cost 1 less input (min 1).' },
   { id: 'warehouse_panda', n: 'Warehouse Panda', ic: '🐼', rar: 'rare',      src: 'trading',       chance: 1/120, ds: '+5% better buy & sell prices while active.' },
-  { id: 'occy',           n: 'Occy',           ic: '🐙', rar: 'legendary', src: 'crafting',      chance: 1/600, ds: 'Crafting actions occasionally yield a bonus item.' },
+  { id: 'occy',           n: 'Crafty Occy',    ic: '🐙', rar: 'legendary', src: 'crafting',      chance: 1/600, ds: 'Crafting actions occasionally yield a bonus item.' },
 ];
