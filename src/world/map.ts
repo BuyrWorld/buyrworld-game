@@ -111,10 +111,12 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'retail',      kind: 'bld',   tx: 8,  ty: 2,  w: 2, h: 2, tab: 'retail',        name: 'Retail Stall',    ic: '🛍️', wall: '#f8d0d8', roof: '#e84060' },
   { id: 'postoffice',  kind: 'bld',   tx: 15, ty: 2,  w: 2, h: 2, tab: 'postoffice',    name: 'Post Office',     ic: '📮', wall: '#e8e0d8', roof: '#b03020' },
   { id: 'estateagent', kind: 'bld',   tx: 22, ty: 2,  w: 2, h: 2, tab: 'estateagent',   name: 'Estate Agent',    ic: '🏘️', wall: '#d8e0e8', roof: '#2a4060' },
+  { id: 'bike_shop',   kind: 'bld',   tx: 29, ty: 2,  w: 2, h: 2, tab: 'bike_shop',     name: 'Cycle Shop',      ic: '🚲', wall: '#c8d8c0', roof: '#3a6a3a' },
   // --- Retail district decorations ---
   { id: 'lamp_retail_1', kind: 'lamp', tx: 11, ty: 4, w: 1, h: 1 },
   { id: 'lamp_retail_2', kind: 'lamp', tx: 18, ty: 4, w: 1, h: 1 },
   { id: 'lamp_retail_3', kind: 'lamp', tx: 25, ty: 4, w: 1, h: 1 },
+  { id: 'lamp_retail_4', kind: 'lamp', tx: 32, ty: 4, w: 1, h: 1 },
   { id: 'rplant_1', kind: 'plant', tx: 5,  ty: 4, w: 1, h: 1 },
   { id: 'rplant_2', kind: 'plant', tx: 12, ty: 4, w: 1, h: 1 },
   { id: 'rplant_3', kind: 'plant', tx: 19, ty: 4, w: 1, h: 1 },

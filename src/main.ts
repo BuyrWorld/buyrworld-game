@@ -564,7 +564,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -631,6 +631,7 @@ const ZONE_TIPS = {
   woodcutting:   { ic:"🪓", n:"The Sawmill",         tip:"Chop timber and mill planks." },
   fishing:       { ic:"🎣", n:"The Pier",            tip:"Cast your line. Patience is a virtue." },
   foraging:      { ic:"🌿", n:"The Forager's Hut",  tip:"Gather what the forest freely gives." },
+  bike_shop:     { ic:"🚲", n:"Cycle Shop",          tip:"Rent, repair and upgrade your bike." },
   contracts:     { ic:"📦", n:"The Depot",           tip:"Fulfil orders to earn Logistics XP." },
   trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
@@ -737,6 +738,23 @@ function tileAt(px, py){
   const c = Math.floor(px/TILE), r = Math.floor(py/TILE);
   if (c<0||r<0||c>=VCOLS||r>=VROWS) return "T";
   return VMAP[r][c];
+}
+// Bike system
+const BIKE_WHEEL_TIER: Record<string,number> = { standard:0, sport:1, offroad:2, mountain:3 };
+const BIKE_WHEEL_N: Record<string,string> = { standard:"Standard Wheels", sport:"Sport Wheels", offroad:"Off-road Tyres", mountain:"Mountain Bike" };
+function serviceCost(){ return Math.max(5, Math.round((100 - (S.bike?.condition ?? 100)) * 1.5)); }
+function bikeSpeedMult(){
+  if (!S.bike?.equipped) return 1.0;
+  const onForest = tileAt(VP.x, VP.y) === 'F';
+  const wheels = S.bike.wheels || 'standard';
+  const cond = Math.max(0, S.bike.condition ?? 100) / 100;
+  let mult: number;
+  if (wheels === 'mountain')     mult = onForest ? 1.30 : 1.35;
+  else if (wheels === 'offroad') mult = 1.25;
+  else if (wheels === 'sport')   mult = onForest ? 0.90 : 1.35;
+  else                           mult = onForest ? 0.90 : 1.25; // standard
+  // condition scales the speed bonus (but not the forest penalty)
+  return mult >= 1.0 ? 1.0 + (mult - 1.0) * cond : mult;
 }
 function solidAt(px, py){
   // picket fences along forest edges — solid except path gates
@@ -1839,6 +1857,21 @@ function drawVillage(t){
     const rad = 6+Math.sin(t*8)*2;
     ctx.beginPath(); ctx.arc(VP.tx, VP.ty, rad, 0, 7); ctx.stroke();
   }
+  // bike beneath player when equipped
+  if (S.bike?.equipped){
+    const _bc = S.bike.color || '#e84040';
+    const _bx = VP.x, _by = VP.y + 8;
+    ctx.save();
+    ctx.strokeStyle = _bc; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(_bx-10, _by, 7, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(_bx+10, _by, 7, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = '#7a5a38'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(_bx-10,_by); ctx.lineTo(_bx+1,_by-7); ctx.lineTo(_bx+10,_by); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(_bx+1,_by-7); ctx.lineTo(_bx-4,_by+1); ctx.stroke();
+    ctx.strokeStyle = _bc; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(_bx+10,_by-3); ctx.lineTo(_bx+14,_by-3); ctx.lineTo(_bx+14,_by-7); ctx.stroke();
+    ctx.restore();
+  }
   drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null);
   ctx.restore();
   // HTML overlay: player name tag + nearest-interactable tooltip (crisp text, no canvas blurriness)
@@ -1972,6 +2005,14 @@ function drawVillage(t){
       rg.addColorStop(0.45, `rgba(255,200,80,${(glow*0.28).toFixed(2)})`);
       rg.addColorStop(1, 'rgba(255,180,60,0)');
       ctx.fillStyle = rg; ctx.fillRect(lx-80, ly-80, 160, 160);
+    }
+    // bike light — warm radial glow around player when equipped
+    if (S.bike?.equipped && S.bike?.hasLight){
+      const _blrg = ctx.createRadialGradient(VP.x, VP.y, 0, VP.x, VP.y, 90);
+      _blrg.addColorStop(0, `rgba(255,240,180,${Math.min(0.70, glow*0.70).toFixed(2)})`);
+      _blrg.addColorStop(0.4, `rgba(255,220,140,${(glow*0.30).toFixed(2)})`);
+      _blrg.addColorStop(1, 'rgba(255,200,80,0)');
+      ctx.fillStyle = _blrg; ctx.fillRect(VP.x-90, VP.y-90, 180, 180);
     }
     ctx.restore();
   }
@@ -2424,6 +2465,61 @@ function drawInterior(t){
     // Wren NPC inside
     const _wnx = 156 + Math.sin(t*0.5)*14;
     drawPerson(ctx, _wnx, 80, "#3a2a1a", "#4a7a3a", t, false, IP.x >= _wnx ? 1 : -1, null, "down");
+  } else if (S.tab==="bike_shop"){
+    // Cycle Shop — mechanic's workshop
+    room("#2a3828","#384838","#907860","#806850","#1a2818");
+    // pegboard tool wall
+    ctx.fillStyle="#5a4830"; ctx.fillRect(0, 9, W, 36);
+    ctx.fillStyle="#3a3020";
+    for(let hx=10; hx<W-6; hx+=14) for(let hy=14; hy<42; hy+=10){
+      ctx.beginPath(); ctx.arc(hx, hy, 1.5, 0, Math.PI*2); ctx.fill();
+    }
+    for(const [ic,tx] of [["🔧",32],["🔩",68],["🔨",110],["⚙️",152],["🔧",192],["✂️",234],["🔩",274],["🔨",308]] as [string,number][]){
+      drawEmojiC(ctx, ic, tx, 36, 8);
+    }
+    // window right
+    winP(230, 34);
+    // bike display rack
+    const _drawBike = (bx:number, by:number, col:string) => {
+      ctx.save();
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(bx,by+13,15,3,0,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=col; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(bx-12,by,9,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx+12,by,9,0,Math.PI*2); ctx.stroke();
+      ctx.lineWidth=0.5; ctx.strokeStyle="rgba(255,255,255,.25)";
+      for(let a=0;a<4;a++){
+        const ag=a*Math.PI/4;
+        ctx.beginPath(); ctx.moveTo(bx-12+Math.cos(ag)*9,by+Math.sin(ag)*9); ctx.lineTo(bx-12-Math.cos(ag)*9,by-Math.sin(ag)*9); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bx+12+Math.cos(ag)*9,by+Math.sin(ag)*9); ctx.lineTo(bx+12-Math.cos(ag)*9,by-Math.sin(ag)*9); ctx.stroke();
+      }
+      ctx.strokeStyle=col; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(bx-12,by); ctx.lineTo(bx+1,by-10); ctx.lineTo(bx+12,by); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx+1,by-10); ctx.lineTo(bx-4,by+1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx+12,by-4); ctx.lineTo(bx+16,by-4); ctx.lineTo(bx+16,by-9); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx-2,by-12); ctx.lineTo(bx+3,by-12); ctx.stroke();
+      ctx.restore();
+    };
+    _drawBike(72, 80, S.bike?.color || '#e84040');
+    _drawBike(168, 84, '#4070c0');
+    _drawBike(252, 78, '#3a8a3a');
+    // workbench left
+    ctx.fillStyle="#7a5a30"; ctx.fillRect(0,118,110,8); ctx.fillRect(0,126,8,42);
+    ctx.fillStyle="#8a6a40"; ctx.fillRect(2,115,106,5);
+    drawEmojiC(ctx,"🔧",28,112,9); drawEmojiC(ctx,"⚙️",58,112,9); drawEmojiC(ctx,"🔩",86,112,9);
+    // condition gauge on workbench
+    const _cond = Math.round(S.bike?.condition ?? 100);
+    ctx.fillStyle="#2a2a1a"; ctx.fillRect(108,126,60,8);
+    ctx.fillStyle = _cond>60?"#4aff88":_cond>30?"#ffd666":"#ff6a6a";
+    ctx.fillRect(108,126,Math.round(60*_cond/100),8);
+    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.font="7px monospace"; ctx.textAlign="center"; ctx.fillText(_cond+"%",138,134); ctx.textAlign="left";
+    // parts shelf right
+    ctx.fillStyle="#7a5a30";
+    for(const sy of [100,120,140]) ctx.fillRect(200,sy,116,5);
+    drawEmojiC(ctx,"🛞",218,116,10); drawEmojiC(ctx,"🛞",244,116,10); drawEmojiC(ctx,"⚙️",270,116,10); drawEmojiC(ctx,"🔩",294,116,10);
+    drawEmojiC(ctx,"🪣",212,136,8); drawEmojiC(ctx,"🔦",240,136,8); drawEmojiC(ctx,"💡",268,136,8); drawEmojiC(ctx,"🪛",296,136,8);
+    // mechanic NPC
+    const _mx = 130 + Math.sin(t*0.4)*10;
+    drawPerson(ctx, _mx, 84, "#4a3820", "#3a4a8a", t, false, IP.x >= _mx ? 1 : -1, null, "down");
   } else if (S.tab==="woodcutting"){
     room("#465a36","#5c7044","#b08c58","#a68050","#3a4a28");
     ctx.fillStyle="#6a5240"; ctx.fillRect(36,86,64,8); ctx.fillStyle="#7c6450"; ctx.fillRect(36,76,64,12);
@@ -3048,7 +3144,12 @@ function villageFrame(ts){
   if (tl && tl.style.display !== "none"){
     drawTitleFX(t);
   } else if (S.tab==="village"){
-    moveActor(VP, dt, 104);
+    moveActor(VP, dt, 104 * bikeSpeedMult());
+    // degrade bike condition when riding (faster in forest)
+    if (S.bike?.equipped && VP.moving){
+      const _onF = tileAt(VP.x, VP.y) === 'F';
+      S.bike.condition = Math.max(0, (S.bike.condition ?? 100) - dt * (_onF ? 0.17 : 0.083));
+    }
     if (VP.y > 18.2*TILE && (!globalThis._swimAt || performance.now() - globalThis._swimAt > 6000)){
       globalThis._swimAt = performance.now();
       toast(`🌊 ${pName()}: "I can't swim… yet."`);
@@ -3248,7 +3349,8 @@ function updateClock(){
   }
   const h = gameHour(), hh = Math.floor(h), mm = Math.floor((h-hh)*60);
   const hh12 = hh%12||12, ampm = hh<12?"AM":"PM";
-  const str = `${isNight()?"🌙":"☀️"} ${hh12}:${String(mm).padStart(2,"0")} ${ampm}`;
+  const _bikePrefix = S.bike?.equipped ? "🚲 " : "";
+  const str = `${_bikePrefix}${isNight()?"🌙":"☀️"} ${hh12}:${String(mm).padStart(2,"0")} ${ampm}`;
   if (str !== _lastClock){
     _lastClock = str;
     el.textContent = str;
@@ -3284,6 +3386,7 @@ function freshState(){
     rentAt: Date.now() + 5*60*1000,
     loans: [],
     seNotified: "",
+    bike: { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 },
   };
 }
 let S = freshState();
@@ -3314,6 +3417,7 @@ function load(){
       if (!S.skills.fishing) S.skills.fishing = { xp:0 };
       if (!S.skills.foraging) S.skills.foraging = { xp:0 };
       if (!S.treeRespawn) S.treeRespawn = {};
+      if (!S.bike) S.bike = { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 };
       // migrate old pick tier upgrades to unified tool tiers
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
@@ -4067,6 +4171,85 @@ function ioHtml(act){
   s += Object.entries(act.out).map(([id,q])=>`${q}× ${ITEMS[id].n}`).join(", ");
   return s;
 }
+function renderBikeShop(){
+  const b = S.bike || {};
+  const cond = Math.round(b.condition ?? 100);
+  const condCol = cond > 60 ? "#4aff88" : cond > 30 ? "#ffd666" : "#ff6a6a";
+  const condBar = `<div style="background:rgba(255,255,255,.1);height:6px;border-radius:3px;margin:3px 0 8px"><div style="background:${condCol};width:${cond}%;height:100%;border-radius:3px"></div></div>`;
+  const BIKE_COLORS = [
+    { hex:'#e84040', lbl:'Red'    },
+    { hex:'#4070c0', lbl:'Blue'   },
+    { hex:'#3a8a3a', lbl:'Green'  },
+    { hex:'#c8b020', lbl:'Yellow' },
+    { hex:'#1a1a1a', lbl:'Black'  },
+    { hex:'#c050c0', lbl:'Purple' },
+  ];
+  const WHEEL_UPS = [
+    { id:'sport',    n:'Sport Wheels',  cost:200, desc:'+35% road speed. Slows in forest like standard.' },
+    { id:'offroad',  n:'Off-road Tyres', cost:300, desc:'+25% everywhere — maintains speed in forest.' },
+    { id:'mountain', n:'Mountain Bike', cost:500, desc:'Best everywhere: +35% road, +30% forest.' },
+  ];
+  let html = `<div class="panel" style="padding:10px">`;
+  if (!b.owned){
+    html += `<h3 style="margin:0 0 6px;font-size:13px">🚲 Buy a Bike</h3>
+    <p style="color:var(--dim);font-size:12px;margin:0 0 10px">A sturdy town bike — 25% faster on roads and paths. Slows down off-road.</p>
+    <button data-bikerent="1" style="background:${S.coins>=150?'#3a7a3a':'#555'};color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px"${S.coins>=150?'':' disabled'}>🚲 Buy Bike — 150 coins</button>
+    ${S.coins<150?`<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Need 150 coins (${fmt(150-S.coins)} short)</p>`:''}`;
+  } else {
+    const curTier = BIKE_WHEEL_TIER[b.wheels||'standard'] ?? 0;
+    html += `<h3 style="margin:0 0 4px;font-size:13px">Your Bike</h3>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:3px">${BIKE_WHEEL_N[b.wheels||'standard']} · <span style="color:${condCol}">Condition ${cond}%</span></div>
+    ${condBar}
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <button data-bikeequip="1" style="background:${b.equipped?'#5a7a5a':'#3a4a3a'};color:#fff;border:none;padding:4px 14px;border-radius:3px;cursor:pointer;font-size:12px">${b.equipped?'🛑 Park Bike':'🚲 Ride Bike'}</button>
+      ${cond < 100
+        ? `<button data-bikeservice="1" style="background:${S.coins>=serviceCost()?'#5a5a2a':'#555'};color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px"${S.coins>=serviceCost()?'':' disabled'}>🔧 Service — ${fmt(serviceCost())} coins</button>`
+        : `<span style="color:#4aff88;font-size:12px;line-height:1;padding:4px 0">✓ Tip-top condition</span>`
+      }
+    </div>
+    </div>
+    <div class="panel" style="padding:10px;margin-top:8px">
+    <h3 style="margin:0 0 8px;font-size:13px">🎨 Colour Respray — 30 coins</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">`;
+    for (const c of BIKE_COLORS){
+      const active = (b.color||'#e84040') === c.hex;
+      html += `<button data-bikecolor="${c.hex}" title="${c.lbl}" style="background:${c.hex};width:28px;height:28px;border-radius:50%;border:${active?'3px solid #fff':'2px solid rgba(255,255,255,.2)'};cursor:pointer"${active||S.coins>=30?'':' disabled'}></button>`;
+    }
+    html += `</div>
+    <h3 style="margin:0 0 6px;font-size:13px">⬆️ Wheel Upgrades</h3>`;
+    for (const wu of WHEEL_UPS){
+      const thisTier = BIKE_WHEEL_TIER[wu.id];
+      const isOwned = curTier >= thisTier;
+      const isNext = !isOwned && thisTier === curTier + 1;
+      const canBuy = isNext && S.coins >= wu.cost;
+      html += `<div class="card" style="margin-bottom:5px;padding:5px 8px;${isOwned?'opacity:.45':''}">
+        <span class="ic">${isOwned?'✅':'🔄'}</span>
+        <div class="body">
+          <div class="nm">${wu.n}${isOwned?' <span style="color:var(--dim);font-weight:400">(owned)</span>':' — '+fmt(wu.cost)+' coins'}</div>
+          <div class="ds">${wu.desc}</div>
+          ${!isOwned?`<button data-bikewheels="${wu.id}" style="margin-top:4px;background:${canBuy?'#4a6a8a':'#555'};color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px"${canBuy?'':' disabled'}>Buy</button>`:''}
+        </div>
+      </div>`;
+    }
+    if (!b.hasLight){
+      html += `<div class="card" style="margin-top:6px;padding:5px 8px">
+        <span class="ic">💡</span>
+        <div class="body">
+          <div class="nm">Bike Light — 150 coins</div>
+          <div class="ds">Illuminates the path around you at night.</div>
+          <button data-bikelight="1" style="margin-top:4px;background:${S.coins>=150?'#6a5a2a':'#555'};color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px"${S.coins>=150?'':' disabled'}>Buy</button>
+        </div>
+      </div>`;
+    } else {
+      html += `<div class="card" style="margin-top:6px;padding:5px 8px;opacity:.45">
+        <span class="ic">💡</span><div class="body"><div class="nm">Bike Light (owned)</div></div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  if (!b.owned) html += `</div>`;
+  return html;
+}
 function renderSkillPanel(skill){
   const sk = SKILLS[skill];
   const lvl = skillLvl(skill);
@@ -4300,6 +4483,7 @@ function renderMain(){
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
+    else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
     else if (S.tab==="home"){
       const _homeVillager = VILLAGERS.find(v => v.homeId === S.roomObjId);
       const _hvName = _homeVillager ? _homeVillager.n : "Someone";
@@ -4669,6 +4853,52 @@ function bindMain(){
     toast(`✅ Loan repaid — ${fmt(total)} coins.`);
     renderMain(); updateHud(); save();
   });
+  // bike shop handlers
+  document.querySelectorAll("[data-bikerent]").forEach(b=> b.onclick = ()=>{
+    if (S.coins < 150){ toast("Need 150 coins."); return; }
+    S.coins -= 150; S.bike.owned = true;
+    toast("🚲 Bike purchased! Equip it from the Cycle Shop.");
+    log("🚲 <b>Bike purchased</b> — 25% faster on roads.", "good");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-bikeequip]").forEach(b=> b.onclick = ()=>{
+    S.bike.equipped = !S.bike.equipped;
+    toast(S.bike.equipped ? "🚲 Bike equipped — ride on!" : "🛑 Bike parked.");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-bikeservice]").forEach(b=> b.onclick = ()=>{
+    const cost = serviceCost();
+    if (S.coins < cost){ toast("Not enough coins."); return; }
+    S.coins -= cost; S.bike.condition = 100;
+    toast("🔧 Bike serviced — back to 100%!");
+    log("🔧 <b>Bike serviced</b> — " + fmt(cost) + " coins.", "good");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-bikecolor]").forEach(b=> b.onclick = ()=>{
+    const newCol = b.dataset.bikecolor;
+    if ((S.bike.color||'#e84040') === newCol) return;
+    if (S.coins < 30){ toast("Need 30 coins for a respray."); return; }
+    S.coins -= 30; S.bike.color = newCol;
+    toast("🎨 Bike resprayed!");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-bikewheels]").forEach(b=> b.onclick = ()=>{
+    const wid = b.dataset.bikewheels;
+    const costs = { sport:200, offroad:300, mountain:500 };
+    const cost = costs[wid] || 0;
+    if (S.coins < cost){ toast("Not enough coins."); return; }
+    S.coins -= cost; S.bike.wheels = wid;
+    toast("⬆️ " + BIKE_WHEEL_N[wid] + " installed!");
+    log("⬆️ Bike upgraded: <b>" + BIKE_WHEEL_N[wid] + "</b>", "good");
+    renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-bikelight]").forEach(b=> b.onclick = ()=>{
+    if (S.coins < 150){ toast("Need 150 coins."); return; }
+    S.coins -= 150; S.bike.hasLight = true;
+    toast("💡 Bike light fitted — lights up the night!");
+    log("💡 <b>Bike light</b> installed.", "good");
+    renderMain(); updateHud(); save();
+  });
   document.querySelectorAll("[data-enroll]").forEach(b=> b.onclick = ()=>{
     const _cid = b.dataset.enroll;
     const _c = COURSES.find(c=>c.id===_cid);
@@ -4725,8 +4955,7 @@ function updateHud(){
   drawCharPreview("hud-portrait");
   const charBtn = document.getElementById("btn-character");
   if (charBtn) charBtn.onclick = () => { S.tab="character"; renderNav(); renderMain(); };
-  const timeEl = document.getElementById("hud-time");
-  if (timeEl) timeEl.textContent = isNight() ? "🌙 Night" : "☀️ Day";
+  updateClock();
 }
 function updateProgressBar(){
   if (!S.action) return;
