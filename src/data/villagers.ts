@@ -226,7 +226,7 @@ export const VILLAGERS: Villager[] = [
       "Weather's turning. I can feel it in my anchor.",
       "Every ship that leaves comes back. Eventually.",
       "The harbour never truly sleeps.",
-      "Best view in Greenfield? That sea at dawn.",
+      "Best view in Featherstone? That sea at dawn.",
       "Cargo manifests give me more trouble than the tides.",
       "I've seen weather that'd make the gulls think twice.",
       "Shipping lanes are my arteries. The coast is my heart.",

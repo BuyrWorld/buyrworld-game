@@ -204,12 +204,14 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 @keyframes boxIn{ from{ transform:translateY(70px) scale(.72); opacity:0; } }
 @keyframes bobY{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-6px); } }
 @keyframes pulseBtn{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
+@keyframes shake{ 0%,100%{transform:translateX(0)} 20%{transform:translateX(-7px)} 40%{transform:translateX(7px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)} }
+.input-shake{ animation:shake .42s ease-in-out; }
 #title .box{ position:relative; animation:boxIn .7s cubic-bezier(.34,1.56,.64,1); }
 .logo-wrap{ animation:bobY 3s ease-in-out infinite; }
 #title .btn.big{ animation:pulseBtn 1.8s ease-in-out infinite; }
 #title .box{
   background:var(--panel); border:3px solid var(--edge); box-shadow:6px 6px 0 var(--shadow);
-  padding:22px; max-width:420px; width:100%; text-align:center;
+  padding:22px; max-width:640px; width:100%; text-align:center;
 }
 #title h1{
   font-size:20px; color:var(--orange);
@@ -218,13 +220,24 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
   -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
   animation:logoShine 2.8s ease-in-out infinite;
 }
-#title .sub{ font-size:10px; color:var(--dim); margin:10px 0 16px; letter-spacing:1px; }
+#title .sub{ font-size:10px; color:var(--dim); margin:8px 0 14px; letter-spacing:1px; min-height:14px; }
+.title-cols{ display:flex; gap:14px; align-items:flex-start; text-align:left; }
+.title-left{ flex:0 0 130px; display:flex; flex-direction:column; align-items:center; }
+.title-right{ flex:1; min-width:0; }
+#title-preview{ image-rendering:pixelated; display:block; border:2px solid var(--edge); border-radius:4px; background:#9fd6a8; }
 #title input{
-  width:100%; padding:10px; font-family:inherit; font-size:14px; text-align:center;
-  background:#fff; border:2px solid var(--edge); color:var(--text); margin-bottom:12px;
+  width:100%; padding:8px 10px; font-family:inherit; font-size:14px; text-align:center;
+  background:#fff; border:2px solid var(--edge); color:var(--text); margin-bottom:6px;
 }
-#title .frostwrap{ display:flex; gap:12px; align-items:center; text-align:left; background:var(--panel2); border:2px solid var(--edge); padding:10px; margin-bottom:14px; }
-#title .frostwrap p{ font-size:12px; }
+#name-err{ display:none; color:var(--red); font-size:11px; margin-bottom:8px; }
+#title-cust .cust-row{ margin-bottom:8px; }
+#title-cust .cust-lbl{ font-size:9px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
+#title-cust .cust-swatches{ display:flex; flex-wrap:wrap; gap:4px; }
+#title-cust .swatch{ width:22px; height:22px; border:2px solid var(--edge); cursor:pointer; padding:0; transition:transform .1s,border-color .1s; }
+#title-cust .swatch:hover{ transform:scale(1.18); border-color:var(--amber); }
+#title-cust .swatch.sel{ border-color:var(--amber); box-shadow:0 0 0 2px var(--amber); }
+#title-cust .swatch-txt{ background:var(--panel2); border:2px solid var(--edge); color:var(--text); font-size:8px; padding:2px 5px; cursor:pointer; width:auto; height:auto; white-space:nowrap; }
+#title-cust .swatch-txt.sel{ border-color:var(--amber); background:rgba(232,150,30,.15); }
 .btn.big{ font-size:14px; padding:12px 22px; }
 
 /* ---------- M1 Identity Pack ---------- */
@@ -509,33 +522,42 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 <div id="title" style="display:none;">
   <canvas id="titlefx"></canvas>
   <div class="box">
-    <div class="logo-wrap">
-      <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true" style="image-rendering:pixelated;">
-        <rect x="4" y="8" width="24" height="20" rx="2" fill="#d9a86a"/><rect x="14" y="8" width="4" height="20" fill="#f6ecd2"/>
-        <circle cx="16" cy="19" r="6" fill="#5db3d8"/><rect x="12" y="16" width="4" height="3" fill="#3aa66a"/><rect x="17" y="19" width="4" height="3" fill="#3aa66a"/>
-        <rect x="3" y="4" width="11" height="5" fill="#c9955a"/><rect x="18" y="4" width="11" height="5" fill="#c9955a"/>
-      </svg>
-      <span class="orbit-arrow" aria-hidden="true">🚛</span>
+    <div style="text-align:center;margin-bottom:12px;">
+      <div class="logo-wrap" style="display:inline-flex;">
+        <svg width="64" height="64" viewBox="0 0 32 32" aria-hidden="true" style="image-rendering:pixelated;">
+          <rect x="4" y="8" width="24" height="20" rx="2" fill="#d9a86a"/><rect x="14" y="8" width="4" height="20" fill="#f6ecd2"/>
+          <circle cx="16" cy="19" r="6" fill="#5db3d8"/><rect x="12" y="16" width="4" height="3" fill="#3aa66a"/><rect x="17" y="19" width="4" height="3" fill="#3aa66a"/>
+          <rect x="3" y="4" width="11" height="5" fill="#c9955a"/><rect x="18" y="4" width="11" height="5" fill="#c9955a"/>
+        </svg>
+        <span class="orbit-arrow" aria-hidden="true">🚛</span>
+      </div>
+      <h1>BUYRWORLD</h1>
+      <div class="sub" id="title-typewriter"></div>
     </div>
-    <h1>BUYRWORLD</h1>
-    <div class="sub">BUILD A LEGENDARY SUPPLY CHAIN</div>
-    <div class="frostwrap">
-      <span id="frost-avatar-title"></span>
-      <p><b>Frost:</b> "Hey! Welcome to the valley. What should everyone call you, boss?"</p>
+    <div class="title-cols">
+      <div class="title-left">
+        <canvas id="title-preview" width="130" height="170"></canvas>
+        <p style="font-size:10px;color:var(--dim);text-align:center;margin-top:5px;font-family:'Press Start 2P',monospace;line-height:1.5">Featherstone<br>Valley</p>
+      </div>
+      <div class="title-right">
+        <p style="font-size:11px;color:var(--dim);margin-bottom:8px">Who are you, boss?</p>
+        <input id="name-input" maxlength="16" placeholder="Your name…" autocomplete="off">
+        <div id="name-err">You'll need a name around here.</div>
+        <div id="title-cust"></div>
+      </div>
     </div>
-    <input id="name-input" maxlength="16" placeholder="Your founder name" autocomplete="off">
-    <div id="name-badge" aria-hidden="true">
+    <div id="name-badge" aria-hidden="true" style="margin-top:10px;">
       <div class="bhi">HI, MY NAME IS</div>
       <div class="bnm" id="badge-name-val">FOUNDER</div>
     </div>
-    <div class="row" style="justify-content:center;">
-      <button class="btn big" id="btn-start">START SHIFT ▶</button>
+    <div class="row" style="justify-content:center;margin-top:10px;">
+      <button class="btn big" id="btn-start" style="display:none;">START SHIFT ▶</button>
       <button class="btn alt" id="btn-preview">♪ Theme</button>
     </div>
   </div>
 </div>
 
-<footer class="credit">BuyrWorld v0.10 — a game about supply chains, by someone who actually runs them.</footer>
+<footer class="credit">BuyrWorld v0.10 — Featherstone Valley · a cosy supply-chain life sim.</footer>
 
 <script type="module" src="/src/main.ts"></script>
 <!-- inline script removed in M3; game now runs via Vite bundle (npm run dev / npm run build) -->

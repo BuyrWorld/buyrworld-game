@@ -373,7 +373,7 @@ const ACH = [
   { id:"master_artisan", ic:"🏺", n:"Master Artisan",    ds:"Craft 200 items in the Artisan's Shed.",       r:500, c:()=>prodSum(CRAFTED)>=200 },
   { id:"village_patron",    ic:"🌸", n:"Village Patron",     ds:"Fund your first beautification project.",      r:50,  c:()=>(S.beautification?.length||0)>=1 },
   { id:"village_benefactor",ic:"🌺", n:"Village Benefactor", ds:"Fund 10 beautification projects.",            r:200, c:()=>(S.beautification?.length||0)>=10 },
-  { id:"greenfield_champion",ic:"🏡",n:"Greenfield Champion",ds:"Complete all 50 beautification projects.",    r:2000,c:()=>(S.beautification?.length||0)>=50 },
+  { id:"greenfield_champion",ic:"🏡",n:"Featherstone Champion",ds:"Complete all 50 beautification projects.",    r:2000,c:()=>(S.beautification?.length||0)>=50 },
   { id:"first_best_friend", ic:"💖", n:"Best Friends",            ds:"Reach Best Friends with any villager.",                  r:200, c:()=>VILLAGERS.some(v=>friendLvl(v.id)>=5) },
   { id:"social_butterfly",  ic:"🦋", n:"Social Butterfly",        ds:"Reach Friends level with all 17 villagers.",             r:500, c:()=>VILLAGERS.every(v=>friendLvl(v.id)>=2) },
   { id:"request_1",         ic:"💌", n:"Good Samaritan",          ds:"Fulfil your first personal villager request.",           r:40,  c:()=>(S.counters?.requestsFulfilled||0)>=1 },
@@ -391,7 +391,7 @@ const ACH = [
   { id:"daily_30",    ic:"🏆", n:"Dedicated Supplier",   ds:"Complete 30 daily village challenges.",           r:500, c:()=>(S.counters?.challengesClaimed||0)>=30 },
   { id:"first_harvest",ic:"🌱", n:"First Harvest",       ds:"Harvest your first crop from the cottage garden.", r:40,   c:()=>(S.counters?.gardenHarvests||0)>=1 },
   { id:"green_thumb",  ic:"🌻", n:"Green Thumb",         ds:"Harvest 20 crops from the cottage garden.",        r:150,  c:()=>(S.counters?.gardenHarvests||0)>=20 },
-  { id:"beloved_greenfield", ic:"💝", n:"Beloved of Greenfield", ds:"Reach Best Friends with all 17 villagers and collect every keepsake.", r:2000, c:()=>(S.keepsakes?.length||0)>=17 },
+  { id:"beloved_greenfield", ic:"💝", n:"Beloved of Featherstone", ds:"Reach Best Friends with all 17 villagers and collect every keepsake.", r:2000, c:()=>(S.keepsakes?.length||0)>=17 },
   { id:"home_decorated",    ic:"🛋️", n:"Home Sweet Home",    ds:"Place your first piece of furniture.",         r:50,   c:()=>(S.placedFurniture?.length||0)>=1 },
   { id:"interior_designer", ic:"🏠", n:"Interior Designer",  ds:"Have 5 pieces of furniture placed at once.",   r:200,  c:()=>(S.placedFurniture?.length||0)>=5 },
   { id:"festival_goer",   ic:"🎪", n:"Festival Goer",    ds:"Attend your first seasonal festival.",        r:100,  c:()=>(S.festival?.attended?.length||0)>=1 },
@@ -635,7 +635,7 @@ const SEASON_DEFS = {
   summer: { n:"Summer", ic:"☀️", grass:"#7cbf86", skyOverlay:"rgba(255,240,160,.04)", col:"#ffe870", col2:"#ffb830",
     items:['lemonade','sun_hat','honey_cake'], blurb:"Long days and warm nights. The stalls are busy.",
     priceShift:{ sardine:0.85, mackerel:0.85, bass:0.82, iron_ore:0.92, coal:0.80 },
-    obs:["☀️ A long bright evening over Greenfield. Peak summer.","🌿 The valley is thick with green — everything's growing.","🍦 The days are long and warm. Even the furnace feels bearable.","🌞 Barely a cloud. The mountains are sharp on the horizon.","🦋 Butterflies over the park. The kids are loving this weather."] },
+    obs:["☀️ A long bright evening over Featherstone. Peak summer.","🌿 The valley is thick with green — everything's growing.","🍦 The days are long and warm. Even the furnace feels bearable.","🌞 Barely a cloud. The mountains are sharp on the horizon.","🦋 Butterflies over the park. The kids are loving this weather."] },
   autumn: { n:"Autumn", ic:"🍂", grass:"#a8a858", skyOverlay:"rgba(200,140,60,.06)", col:"#e8b060", col2:"#c85010",
     items:['spiced_cider','pickled_mushrooms','harvest_wreath'], blurb:"The harvest is in. Preserve and pickle before the frost.",
     priceShift:{ wood:1.18, plank:1.18, bracket:1.14, gearbox:1.14, iron_ore:1.08 },
@@ -699,7 +699,7 @@ const HEARTBEAT_POOL = [
   { id:"weather", w:2, fn:()=>{
     if (_weather.type==="rain") return "🌧️ The rain patters steadily across the valley.";
     const _h=S.clock?S.clock.h:9;
-    if (_h>=22||_h<6) return "🌙 Stars are bright over Greenfield tonight.";
+    if (_h>=22||_h<6) return "🌙 Stars are bright over Featherstone tonight.";
     if (_h>=6&&_h<9) return "🌅 A fine morning. The valley is waking up.";
     if (_h>=17&&_h<20) return "🌇 The sun is getting low over the ridge.";
     return null;
@@ -717,7 +717,7 @@ const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting",
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
-  { id:"manor_c",   n:"Greenfield Manor", desc:"The grand estate on the hill. Premium rental income.",  cost:35000, rent:25 },
+  { id:"manor_c",   n:"Featherstone Manor", desc:"The grand estate on the hill. Premium rental income.",  cost:35000, rent:25 },
 ];
 // Village beautification — 50 projects across 5 categories. Total prestige: 209. Total cost: ~500k.
 const BEAUTIFICATION = [
@@ -742,7 +742,7 @@ const BEAUTIFICATION = [
   { id:"picket_fences",     cat:"Paths",      ic:"🏡", n:"Picket Fences",           cost:4000,  prestige:4,  ds:"White-painted picket fences around the cottages." },
   { id:"stone_gateposts",   cat:"Paths",      ic:"🏛️", n:"Stone Gateposts",        cost:7000,  prestige:5,  ds:"Carved stone posts mark the village entrance." },
   { id:"cobbled_high_st",   cat:"Paths",      ic:"🏗️", n:"Cobbled High Street",    cost:14000, prestige:7,  ds:"Full hand-laid cobbling of the entire high street." },
-  { id:"village_arch",      cat:"Paths",      ic:"🏛️", n:"Village Arch",           cost:32000, prestige:9,  ds:"A grand stone arch over the main road into Greenfield." },
+  { id:"village_arch",      cat:"Paths",      ic:"🏛️", n:"Village Arch",           cost:32000, prestige:9,  ds:"A grand stone arch over the main road into Featherstone." },
   // 💡 Lighting & Atmosphere
   { id:"candle_lanterns",   cat:"Lighting",   ic:"🕯️", n:"Candle Lanterns",        cost:280,   prestige:1,  ds:"Lanterns hung from market stall awnings." },
   { id:"window_lights",     cat:"Lighting",   ic:"🪟", n:"Window Lights",           cost:420,   prestige:2,  ds:"Warm amber glow from cottage windows at dusk." },
@@ -752,7 +752,7 @@ const BEAUTIFICATION = [
   { id:"forest_path_lights",cat:"Lighting",   ic:"🌲", n:"Forest Path Lights",      cost:3800,  prestige:4,  ds:"Softlit posts mark the north forest path at night." },
   { id:"market_sq_lamps",   cat:"Lighting",   ic:"💡", n:"Market Square Lamps",     cost:6500,  prestige:5,  ds:"A ring of lamps illuminates the market square." },
   { id:"fountain_lights",   cat:"Lighting",   ic:"💧", n:"Illuminated Fountain",    cost:9000,  prestige:6,  ds:"The stone fountain glows amber after dark." },
-  { id:"gas_street_lights", cat:"Lighting",   ic:"🔆", n:"Gas Street Lighting",     cost:18000, prestige:7,  ds:"Full gas lighting across every Greenfield street." },
+  { id:"gas_street_lights", cat:"Lighting",   ic:"🔆", n:"Gas Street Lighting",     cost:18000, prestige:7,  ds:"Full gas lighting across every Featherstone street." },
   { id:"beacon_tower",      cat:"Lighting",   ic:"🗼", n:"Beacon Tower",            cost:45000, prestige:10, ds:"A lit tower visible for miles at sea. Sailors call it home." },
   // 🐦 Wildlife & Nature
   { id:"bird_boxes",        cat:"Wildlife",   ic:"🐦", n:"Bird Boxes",              cost:180,   prestige:1,  ds:"Mounted on every cottage gable end." },
@@ -773,8 +773,8 @@ const BEAUTIFICATION = [
   { id:"bandstand",         cat:"Landmarks",  ic:"🎶", n:"Bandstand",               cost:4500,  prestige:5,  ds:"Summer concerts on the village green." },
   { id:"water_fountain",    cat:"Landmarks",  ic:"⛲", n:"Stone Fountain",           cost:8000,  prestige:6,  ds:"A stone drinking fountain in the market square." },
   { id:"community_orchard", cat:"Landmarks",  ic:"🍎", n:"Community Orchard",       cost:15000, prestige:7,  ds:"Apple, pear and plum — free for all villagers." },
-  { id:"clock_tower",       cat:"Landmarks",  ic:"🕰️", n:"Clock Tower",             cost:38000, prestige:9,  ds:"Greenfield's landmark. The whole valley tells the time by it." },
-  { id:"village_hall",      cat:"Landmarks",  ic:"🏛️", n:"Village Hall Restoration",cost:65000, prestige:10, ds:"The old hall, fully restored. Greenfield's pride." },
+  { id:"clock_tower",       cat:"Landmarks",  ic:"🕰️", n:"Clock Tower",             cost:38000, prestige:9,  ds:"Featherstone's landmark. The whole valley tells the time by it." },
+  { id:"village_hall",      cat:"Landmarks",  ic:"🏛️", n:"Village Hall Restoration",cost:65000, prestige:10, ds:"The old hall, fully restored. Featherstone's pride." },
   { id:"valley_monument",   cat:"Landmarks",  ic:"🗿", n:"Valley Monument",         cost:110000,prestige:10, ds:"A grand stone monument to the heritage of the valley." },
 ];
 const PRESTIGE_THRESHOLDS = [
@@ -986,13 +986,13 @@ const ZONE_TIPS = {
   bike_shop:     { ic:"🚲", n:"Cycle Shop",          tip:"Rent, repair and upgrade your bike." },
   notice_board:  { ic:"📋", n:"Village Notice Board", tip:"Community tasks from your neighbours." },
   harbour_office:{ ic:"⚓", n:"Harbourmaster's Office", tip:"Fast travel and harbour services." },
-  boat_hire:     { ic:"⛵", n:"Greenfield Boat Hire",   tip:"Hire a boat to cross the bay quickly." },
+  boat_hire:     { ic:"⛵", n:"Featherstone Boat Hire",   tip:"Hire a boat to cross the bay quickly." },
   fishmonger_wh: { ic:"🐟", n:"Fish Warehouse",         tip:"Sell your catch in bulk at a premium." },
   contracts:     { ic:"📦", n:"The Depot",           tip:"Fulfil orders to earn Logistics XP." },
   trade:         { ic:"⚖️", n:"The Market Hall",     tip:"Buy and sell goods with traders." },
   upgrades:      { ic:"🛒", n:"The Town Hall",        tip:"Invest profits in permanent upgrades." },
   pets:          { ic:"🐾", n:"The Companion Barn",  tip:"Your crew lives here." },
-  village_fund:     { ic:"🌸", n:"The Village Fund",    tip:"Invest in Greenfield's beauty and earn prestige bonuses." },
+  village_fund:     { ic:"🌸", n:"The Village Fund",    tip:"Invest in Featherstone's beauty and earn prestige bonuses." },
   seasonal_market:  { ic:"🎪", n:"Seasonal Market",     tip:"Exclusive seasonal crafts and festival trades." },
 };
 let _zoneCardData = null;
@@ -1313,7 +1313,7 @@ const KEEPSAKE_MSG: Record<string, string> = {
   bertie: "I've watched you grow from a stranger into a real friend. Use my old stamp to mark your finest work.",
   clara:  "These seeds came all the way from my grandmother's garden. I know they'll flourish in your care.",
   derek:  "A builder is only as good as their plans. Take these — they hold the best ideas I never got around to.",
-  edna:   "Every painting tells a story. This one's of Greenfield on the day we first met. For you, always.",
+  edna:   "Every painting tells a story. This one's of Featherstone on the day we first met. For you, always.",
   frank:  "My father carved this plane from driftwood. Now it belongs to hands that know how to use it.",
   gracie: "I've walked every trail on this map a hundred times. Now you can find your own favourites.",
   hector: "These notes are everything I've learned about supply chains. Messy, but they work. Just like us.",
@@ -2841,14 +2841,14 @@ function drawVillage(t){
   // check for season change and announce it
   if (_lastSeason && _lastSeason !== _seasonNow){
     const _ns = SEASON_DEFS[_seasonNow];
-    toast(_ns.ic + " " + _ns.n + " has arrived over Greenfield!");
+    toast(_ns.ic + " " + _ns.n + " has arrived over Featherstone!");
     log(_ns.ic + " <b>" + _ns.n + " begins.</b> " + _ns.obs[0], "good");
   }
   _lastSeason = _seasonNow;
   // scrolling news ticker at bottom of village canvas
   const _tickerMsg = S.worldEvent
     ? (()=>{ const _tev=WORLD_EVENTS.find(e=>e.id===S.worldEvent.id); return _tev ? "  📰 " + _tev.n.toUpperCase() + ": " + _tev.msg + "       " : null; })()
-    : "  " + _sDef.ic + " " + _sDef.n.toUpperCase() + " — Greenfield Valley  ·  " + new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long"}) + "       ";
+    : "  " + _sDef.ic + " " + _sDef.n.toUpperCase() + " — Featherstone Valley  ·  " + new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long"}) + "       ";
   if (_tickerMsg){
     _tickerX -= 0.9;
     ctx.save();
@@ -4372,6 +4372,18 @@ function drawTitleFX(t){
     drawEmojiC(ctx,"📦", W*0.1+i*W*0.19+Math.sin(t+i)*12, H*(1-p), 16+8*Math.sin(i));
   }
   if (Math.floor(t*4)%3===0) drawEmojiC(ctx,"✨", (t*137)%W, (t*89)%(H*0.5), 12);
+  // floating feature words
+  const _TW=["Supply Chain","Village Life","Real Ale","Fish the Pier","Craft & Trade","Featherstone Valley","Ore & Steel","Friends & Pets","Seasonal Harvest","Notice Board","Evening at the Pub","Your Own Cottage"];
+  ctx.font="bold 9px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+  for(let _wi=0;_wi<_TW.length;_wi++){
+    const _wt=((t*0.042+_wi/_TW.length)%1);
+    const _wx=((_wi*137.508)%1)*(W-120)+60;
+    const _wy=H*(1-_wt)-8;
+    const _a=_wt<0.12?_wt/0.12:_wt>0.78?(1-_wt)/0.22:1;
+    ctx.globalAlpha=Math.min(1,_a*0.75);
+    ctx.fillStyle="#453423"; ctx.fillText(_TW[_wi],_wx,_wy);
+  }
+  ctx.globalAlpha=1; ctx.textAlign="left";
 }
 function villageFrame(ts){
   pollGamepad();
@@ -4512,40 +4524,100 @@ function setupInterior(){
   if (cv) cv.onclick = interiorClick;
 }
 
+let _titlePreviewRaf = 0;
+function _drawTitlePreview(){
+  const cv = document.getElementById("title-preview") as HTMLCanvasElement;
+  if (!cv || document.getElementById("title")?.style.display === "none") return;
+  const ctx2 = cv.getContext("2d");
+  const W2 = cv.width, H2 = cv.height, t2 = performance.now()/1000;
+  // sky-grass background
+  ctx2.fillStyle="#9fd6a8"; ctx2.fillRect(0,0,W2,H2);
+  ctx2.fillStyle="#7cbf86"; ctx2.fillRect(0,H2*0.68,W2,H2*0.32);
+  // sun
+  ctx2.fillStyle="#ffd666"; ctx2.beginPath(); ctx2.arc(W2*0.82,H2*0.18,14,0,7); ctx2.fill();
+  ctx2.fillStyle="rgba(255,214,102,.3)"; ctx2.beginPath(); ctx2.arc(W2*0.82,H2*0.18,22,0,7); ctx2.fill();
+  // small flowers
+  for(let _fi=0;_fi<4;_fi++){ ctx2.fillStyle=["#e84060","#ffd666","#f86040","#6fb7ff"][_fi]; ctx2.beginPath(); ctx2.arc(16+_fi*28,H2*0.74,4,0,7); ctx2.fill(); }
+  // player character — large scale, centre
+  const _scale = 3.2;
+  const _cx = W2/2, _cy = H2*0.72;
+  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, false, 1, null, "down", plSkin(), plTrousers(), null, false, _scale, plHat(), plHatColor());
+  // wave arm animation — overlay a raised arm gesture
+  const _waveAng = Math.sin(t2*3)*0.6;
+  ctx2.save(); ctx2.translate(_cx+7*_scale, _cy-8*_scale); ctx2.rotate(-0.8+_waveAng);
+  ctx2.fillStyle=plSkin()||"#f2c49a"; ctx2.fillRect(-2,-10,4,10); ctx2.restore();
+  _titlePreviewRaf = requestAnimationFrame(_drawTitlePreview);
+}
 function showTitle(){
-  const t = document.getElementById("title");
-  t.style.display = "flex";
-  document.getElementById("frost-avatar-title").innerHTML = frostSvg(72);
-  const input = document.getElementById("name-input");
+  const tEl = document.getElementById("title");
+  tEl.style.display = "flex";
+  // typewriter subtitle
+  const _tagline = "A cosy supply-chain life sim · Featherstone Valley";
+  const _twEl = document.getElementById("title-typewriter") as HTMLElement;
+  const _btnStart = document.getElementById("btn-start") as HTMLButtonElement;
+  _btnStart.style.display = "none";
+  let _twIdx = 0;
+  const _twIv = setInterval(()=>{
+    _twIdx++;
+    if (_twEl) _twEl.textContent = _tagline.slice(0, _twIdx);
+    if (_twIdx >= _tagline.length){ clearInterval(_twIv); _btnStart.style.display = ""; }
+  }, 38);
+  // character preview canvas
+  cancelAnimationFrame(_titlePreviewRaf);
+  _drawTitlePreview();
+  // customisation pickers
+  const _custEl = document.getElementById("title-cust");
+  function _renderCust(){
+    if (!_custEl) return;
+    const sw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches">${arr.map(c=>`<button class="swatch${S.appearance[field]===c.v?' sel':''}" style="background:${c.v}" data-cf="${field}" data-cv="${c.v}" title="${c.label}"></button>`).join('')}</div></div>`;
+    const txtsw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches">${arr.map(c=>`<button class="swatch-txt${S.appearance[field]===(typeof c.v==='number'?c.v:c.v)?' sel':''}" data-cf="${field}" data-cv="${c.v}">${c.label}</button>`).join('')}</div></div>`;
+    _custEl.innerHTML = sw(SKIN_TONES,'skin','Skin') + sw(HAIR_COLOURS,'hair','Hair colour') + txtsw([{label:'Straight',v:0},{label:'Wavy',v:1},{label:'Curly',v:2}],'hairStyle','Hair style') + sw(SHIRT_COLOURS,'shirt','Shirt') + sw(TROUSER_COLOURS,'trousers','Trousers') + txtsw(HAT_STYLES,'hat','Hat') + sw(HAT_COLOURS,'hatColor','Hat colour');
+    _custEl.querySelectorAll("[data-cf]").forEach(b=>{
+      (b as HTMLElement).onclick = ()=>{
+        const _f=(b as HTMLElement).dataset.cf, _v=(b as HTMLElement).dataset.cv;
+        S.appearance[_f] = _f==='hairStyle' ? parseInt(_v) : _v;
+        _renderCust();
+      };
+    });
+  }
+  _renderCust();
+  // name input + start
+  const _input = document.getElementById("name-input") as HTMLInputElement;
+  const _errEl = document.getElementById("name-err") as HTMLElement;
   document.getElementById("btn-preview").onclick = () => { MUSIC.unlocked = true; MUSIC.play("valley"); };
-  document.getElementById("btn-start").onclick = () => {
-    let n = input.value.trim().replace(/[<>"'&]/g, "").slice(0, 16);
-    S.playerName = n || "Founder";
+  _btnStart.onclick = () => {
+    const _n = _input.value.trim().replace(/[<>"'&]/g,"").slice(0,16);
+    if (!_n){
+      _errEl.style.display = "block";
+      _input.classList.remove("input-shake");
+      void _input.offsetWidth; // reflow to restart animation
+      _input.classList.add("input-shake");
+      setTimeout(()=>_input.classList.remove("input-shake"), 450);
+      return;
+    }
+    _errEl.style.display = "none";
+    S.playerName = _n;
+    cancelAnimationFrame(_titlePreviewRaf);
     const badge = document.getElementById("name-badge");
     const badgeVal = document.getElementById("badge-name-val");
-    if (badge && badgeVal){
-      badgeVal.textContent = S.playerName.toUpperCase();
-      badge.classList.add("show");
-    }
+    if (badge && badgeVal){ badgeVal.textContent = _n.toUpperCase(); badge.classList.add("show"); }
     setTimeout(()=>{
-      t.style.display = "none";
-      MUSIC.unlocked = true;
-      updateMusicZone();
+      tEl.style.display = "none";
+      MUSIC.unlocked = true; updateMusicZone();
       const stat = document.getElementById("hud-name-stat");
       if (stat){ stat.classList.add("named","named-anim"); setTimeout(()=>stat.classList.remove("named-anim"),500); }
-      log(`❄️ Frost: "Welcome aboard, <b>${pName()}</b>! Follow my lead and you'll run this valley by teatime."`, "good");
+      log(`❄️ Frost: "Welcome to Featherstone Valley, <b>${pName()}</b>! Follow my lead and you'll be running this valley by teatime."`, "good");
       updateHud(); renderMain(); save();
     }, 1100);
   };
-  input.onkeydown = e => { if (e.key === "Enter") document.getElementById("btn-start").click(); };
-  const box = t.querySelector(".box");
-  t.onmousemove = (e) => {
-    const r = t.getBoundingClientRect();
-    const dx = (e.clientX-(r.left+r.width/2))/r.width;
-    const dy = (e.clientY-(r.top+r.height/2))/r.height;
-    box.style.transform = `translate(${(dx*10).toFixed(1)}px,${(dy*6).toFixed(1)}px)`;
+  _input.onkeydown = e => { if (e.key==="Enter") _btnStart.click(); };
+  const box = tEl.querySelector(".box") as HTMLElement;
+  tEl.onmousemove = (e) => {
+    const r = tEl.getBoundingClientRect();
+    const dx=(e.clientX-(r.left+r.width/2))/r.width, dy=(e.clientY-(r.top+r.height/2))/r.height;
+    box.style.transform = `translate(${(dx*8).toFixed(1)}px,${(dy*5).toFixed(1)}px)`;
   };
-  t.onmouseleave = () => { box.style.transform = ""; };
+  tEl.onmouseleave = () => { box.style.transform = ""; };
 }
 if (typeof document !== 'undefined'){
   const _st = document.createElement('style');
@@ -4810,7 +4882,7 @@ function updateFestivalNotification(){
       S.festival.notified = _fKey;
       if (!S.festival.attended.includes(_fst.season)) S.festival.attended.push(_fst.season);
       toast(`🎪 The ${_fst.n} has begun! ${daysLeftInFestival()} days of double friendship XP!`);
-      log(`🎪 <b>${_fst.n}</b> is on in Greenfield! Visit the Seasonal Market for festival activities.`, "good");
+      log(`🎪 <b>${_fst.n}</b> is on in Featherstone! Visit the Seasonal Market for festival activities.`, "good");
       achCheck(); save();
     }
   }
@@ -6016,7 +6088,7 @@ function renderHarbourOffice(){
   const _trips = S.harbour?.boatTrips||0;
   return `<div class="panel" style="padding:10px">
     <h3 style="margin:0 0 6px;font-size:13px">⚓ Harbourmaster's Office</h3>
-    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">"Welcome to Port Salvo — or as the locals call it, Greenfield Harbour. Good seas today." — Reg</p>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">"Welcome to Port Salvo — or as the locals call it, Featherstone Harbour. Good seas today." — Reg</p>
     <div class="card" style="margin-bottom:8px">
       <span class="ic">⚓</span>
       <div class="body">
@@ -6041,7 +6113,7 @@ function renderBoatHire(){
   </div>`;
   const _atPier = Math.hypot(VP.x - 22.5*TILE, VP.y - 38*TILE) < 200;
   return `<div class="panel" style="padding:10px">
-    <h3 style="margin:0 0 6px;font-size:13px">⛵ Greenfield Boat Hire</h3>
+    <h3 style="margin:0 0 6px;font-size:13px">⛵ Featherstone Boat Hire</h3>
     <p style="color:var(--dim);font-size:11px;margin:0 0 10px">10 coins per crossing. Cross the bay to the Pier and back instantly.</p>
     <div class="card" style="margin-bottom:8px">
       <span class="ic">🎣</span>
@@ -6300,7 +6372,7 @@ function renderBeautification(){
   const _next = PRESTIGE_THRESHOLDS.find(r=>_pv<r.at);
   let html = `<div class="panel" style="padding:10px">
     <h3 style="margin:0 0 4px;font-size:13px">🌸 Village Beautification Fund</h3>
-    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Invest in Greenfield's beauty. Each project raises Village Prestige and unlocks passive bonuses.</p>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Invest in Featherstone's beauty. Each project raises Village Prestige and unlocks passive bonuses.</p>
     <div style="background:rgba(255,255,255,.06);border-radius:4px;padding:6px 10px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <span style="font-size:12px;font-weight:700">✨ Village Prestige</span>
@@ -6470,12 +6542,12 @@ function renderMain(){
     else if (S.tab==="crafting") m.innerHTML = _withRoom("🧺 The Artisan's Shed", renderSkillPanel(S.tab));
     else if (S.tab==="village_fund") m.innerHTML = _withRoom("🌸 The Village Fund", renderBeautification());
     else if (S.tab==="seasonal_market"){ m.innerHTML = _withRoom("🎪 Seasonal Market", renderSeasonalMarket()); }
-    else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Greenfield Cycle Shop", renderBikeShop());
+    else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Featherstone Cycle Shop", renderBikeShop());
     else if (S.tab==="furniture_shop") m.innerHTML = _withRoom("🛋️ Nell's Home Store", renderFurnitureShop());
     else if (S.tab==="pub") m.innerHTML = _withRoom("🍺 The Rose & Pallet", renderPub());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
-    else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Greenfield Boat Hire", renderBoatHire());
+    else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Featherstone Boat Hire", renderBoatHire());
     else if (S.tab==="fishmonger_wh") m.innerHTML = _withRoom("🐟 Pearl's Fish Warehouse", renderFishmongerWH());
     else if (S.tab==="home"){
       const _homeVillager = VILLAGERS.find(v => v.homeId === S.roomObjId);
@@ -6506,8 +6578,8 @@ function renderMain(){
         ${c.female?"👧":"👦"} ${c.n} <span style="color:var(--dim)">age ${c.age}</span></span>`;
       m.innerHTML = _withRoom("🏫 Inside the Village School",
         `<div class="panel" style="padding:10px">
-          <h3 style="margin:0 0 6px;font-size:13px">🏫 Greenfield Village School</h3>
-          <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Two classrooms, one dining hall. Teaching Greenfield since 1952.</p>
+          <h3 style="margin:0 0 6px;font-size:13px">🏫 Featherstone Village School</h3>
+          <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Two classrooms, one dining hall. Teaching Featherstone since 1952.</p>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
             <span style="font-size:18px">${_isOpen ? "🟢" : "🔴"}</span>
             <span style="font-size:12px;font-weight:700">${_isOpen ? "School open" : "School closed"}</span>
@@ -6770,7 +6842,7 @@ function renderMain(){
     }
     else if (S.tab==="lore_stone") m.innerHTML = _withRoom("🪨 The Old Stone — North Forest",
       `<div class="panel" style="padding:10px">
-        <h3 style="margin:0 0 8px;font-size:13px">🪨 Greenfield Boundary Stone</h3>
+        <h3 style="margin:0 0 8px;font-size:13px">🪨 Featherstone Boundary Stone</h3>
         <p style="color:var(--dim);font-size:12px;margin:0 0 10px;font-style:italic">"Here the valley ends and the old forest begins. Travellers, keep to the path."</p>
         <div class="card" style="margin-bottom:6px"><span class="ic">📜</span><div class="body"><div class="nm">Origin Unknown</div><div class="ds">The stone predates the village by centuries. No one carved it — or so the elders say.</div></div></div>
         <div class="card" style="margin-bottom:6px"><span class="ic">🌲</span><div class="body"><div class="nm">Ancient Hardwood</div><div class="ds">The great trees here are older than the quarry. A skilled woodcutter might find them worth the effort.</div></div></div>

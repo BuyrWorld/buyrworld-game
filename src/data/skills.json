@@ -1,7 +1,7 @@
 {
   "mining": {
     "n": "Mining", "ic": "⛏️",
-    "desc": "Extract raw materials from the Greenfield Valley seams.",
+    "desc": "Extract raw materials from the Featherstone Valley seams.",
     "actions": [
       { "id": "iron_ore",   "n": "Mine Iron Ore",       "lvl": 1,  "ms": 3000, "xp": 10, "out": { "iron_ore": 1 } },
       { "id": "copper_ore", "n": "Mine Copper Ore",     "lvl": 5,  "ms": 3500, "xp": 14, "out": { "copper_ore": 1 } },
