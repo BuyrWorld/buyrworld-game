@@ -2006,6 +2006,35 @@ function drawObjects(ctx, t){
     }
   }
 }
+function drawSeasonalBillboard(ctx, t){
+  const _curSeason = getSeason();
+  const _billX = 40*TILE, _billY = 2*TILE;
+  if (_curSeason === "summer"){
+    ctx.fillStyle="#5a3a1a"; ctx.fillRect(_billX, _billY+12, 3, 22);
+    ctx.fillStyle="#e8d090"; ctx.fillRect(_billX-22, _billY, 48, 18);
+    ctx.fillStyle="#c04030"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.fillText("☀️ SUMMER FETE", _billX+2, _billY+2);
+    ctx.fillStyle="#5a3010"; ctx.font="5px 'IBM Plex Mono',monospace";
+    ctx.fillText("Jun 1 – Aug 31", _billX+2, _billY+11);
+    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  } else if (_curSeason === "autumn"){
+    ctx.fillStyle="#5a3a1a"; ctx.fillRect(_billX, _billY+12, 3, 22);
+    ctx.fillStyle="#e0a050"; ctx.fillRect(_billX-22, _billY, 48, 18);
+    ctx.fillStyle="#3a2010"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.fillText("🍂 HARVEST FEST", _billX+2, _billY+2);
+    ctx.fillStyle="#5a3010"; ctx.font="5px 'IBM Plex Mono',monospace";
+    ctx.fillText("Sep – Nov", _billX+2, _billY+11);
+    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  } else if (_curSeason === "winter"){
+    ctx.fillStyle="#3a3a5a"; ctx.fillRect(_billX, _billY+12, 3, 22);
+    ctx.fillStyle="#c8d8f0"; ctx.fillRect(_billX-22, _billY, 48, 18);
+    ctx.fillStyle="#2a3a6a"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.fillText("❄️ XMAS MARKET", _billX+2, _billY+2);
+    ctx.fillStyle="#3a3a5a"; ctx.font="5px 'IBM Plex Mono',monospace";
+    ctx.fillText("Dec – Jan", _billX+2, _billY+11);
+    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  }
+}
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
   // helper: draw picket fence strip at given x-offset, rows 2-16, with gate rows skipped
@@ -2078,17 +2107,8 @@ function drawExtras(ctx, t){
       }
       for(let px=_rx0+20; px<_rx1-10; px+=52) drawEmojiC(ctx,"🎃", px, _ryBase-2, 9);
     }
-    // Summer Fete billboard and NPC activities
+    // Summer Fete NPC activities (billboard drawn before buildings in drawSeasonalBillboard)
     if (_curSeason === "summer"){
-      // Billboard post at tx≈40, top of the retail backing area
-      const _billX = 40*TILE, _billY = 2*TILE;
-      ctx.fillStyle="#5a3a1a"; ctx.fillRect(_billX, _billY+12, 3, 22);
-      ctx.fillStyle="#e8d090"; ctx.fillRect(_billX-22, _billY, 48, 18);
-      ctx.fillStyle="#c04030"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
-      ctx.fillText("☀️ SUMMER FETE", _billX+2, _billY+2);
-      ctx.fillStyle="#5a3010"; ctx.font="5px 'IBM Plex Mono',monospace";
-      ctx.fillText("Jun 1 – Aug 31", _billX+2, _billY+11);
-      ctx.textAlign="left"; ctx.textBaseline="alphabetic";
       // Fete NPC activities along the high street (picnic, ice cream, bunting helpers)
       drawEmojiC(ctx,"🍦", 44*TILE+8,  _ryBase-6, 10);
       drawEmojiC(ctx,"🎪", 46*TILE+4,  _ryBase-6, 10);
@@ -2166,6 +2186,12 @@ function drawExtras(ctx, t){
     ctx.beginPath(); ctx.moveTo(slX+8,slY+5); ctx.lineTo(slX+24,pkY+pkH-22); ctx.lineTo(slX+24,pkY+pkH-20); ctx.lineTo(slX+9,slY+5); ctx.closePath(); ctx.fill();
     ctx.fillStyle="#a02040"; ctx.fillRect(slX+4,slY,26,7);
     ctx.fillStyle="#c83060"; ctx.fillRect(slX+6,slY+1,22,4);
+    // ornamental tree (NE corner) — drawn BEFORE swing so swing renders in front
+    const _otX=pkX+pkW-22, _otY=pkY+10;
+    ctx.fillStyle="#6a4020"; ctx.fillRect(_otX,_otY,4,pkH-22);
+    ctx.fillStyle="#2d7a3c"; ctx.beginPath(); ctx.arc(_otX+2,_otY+2,13,0,7); ctx.fill();
+    ctx.fillStyle="#3a8a48"; ctx.beginPath(); ctx.arc(_otX-6,_otY+7,8,0,7); ctx.fill();
+    ctx.fillStyle="#48aa52"; ctx.beginPath(); ctx.arc(_otX+9,_otY-3,7,0,7); ctx.fill();
     // swings (far east, animated arc)
     const swX=pkX+194, swY=pkY+8;
     ctx.fillStyle="#4a3010"; ctx.fillRect(swX,swY,4,pkH-26); ctx.fillRect(swX+28,swY,4,pkH-26);
@@ -2176,12 +2202,6 @@ function drawExtras(ctx, t){
     ctx.beginPath(); ctx.moveTo(swX+30,swY+5); ctx.lineTo(swX+24+sa,swY+36); ctx.stroke();
     ctx.fillStyle="#1a4fc0"; ctx.fillRect(swX+4+sa,swY+36,20,5);
     ctx.fillStyle="#2860d8"; ctx.fillRect(swX+5+sa,swY+36,18,3);
-    // ornamental tree (NE corner)
-    const _otX=pkX+pkW-22, _otY=pkY+10;
-    ctx.fillStyle="#6a4020"; ctx.fillRect(_otX,_otY,4,pkH-22);
-    ctx.fillStyle="#2d7a3c"; ctx.beginPath(); ctx.arc(_otX+2,_otY+2,13,0,7); ctx.fill();
-    ctx.fillStyle="#3a8a48"; ctx.beginPath(); ctx.arc(_otX-6,_otY+7,8,0,7); ctx.fill();
-    ctx.fillStyle="#48aa52"; ctx.beginPath(); ctx.arc(_otX+9,_otY-3,7,0,7); ctx.fill();
   }
   // residential flower strip (along path rows 5 and 10)
   for (let col = 50; col < 86; col += 5){
@@ -2478,6 +2498,7 @@ function drawVillage(t){
   ctx.save();
   ctx.translate(-Math.round(CAM.x), -Math.round(CAM.y));
   drawTiles(ctx, t);
+  drawSeasonalBillboard(ctx, t); // billboard must be behind buildings
   drawObjects(ctx, t);
   drawExtras(ctx, t);
   const nowD = Date.now();
@@ -3536,69 +3557,150 @@ function drawInterior(t){
     });
   }
   if (S.tab==="home"){
-    // variant 0-4 based on which home was entered
-    const _hNum = parseInt((S.roomObjId||"home_01").replace(/\D/g,""))||1;
-    const _hv = (_hNum-1) % 5;
-    const _wallPals = [
-      ["#5a7a4a","#6a8a5a","#d4c4a0","#c8b890"],  // sage green walls
-      ["#6a5a7a","#7a6a8a","#d0c8e0","#c4b8d8"],  // lavender
-      ["#7a5a4a","#8a6a5a","#e0d0b8","#d4c4a8"],  // warm terracotta
-      ["#4a6a7a","#5a7a8a","#c8d8e0","#b8c8d0"],  // slate blue
-      ["#7a6a4a","#8a7a5a","#e0d4b0","#d4c8a0"],  // harvest gold
-    ];
-    const _rugPals = ["rgba(180,80,60,.35)","rgba(100,60,160,.3)","rgba(180,100,40,.35)","rgba(40,100,160,.3)","rgba(140,120,40,.3)"];
-    const _rugBorder = ["rgba(200,160,60,.5)","rgba(160,120,200,.5)","rgba(200,140,60,.5)","rgba(60,140,200,.5)","rgba(200,180,60,.5)"];
-    const [wt,wc,fa,fb] = _wallPals[_hv];
-    room(wt,wc,fa,fb,"#4a3020");
-    winP(W*0.12, 38); winP(W*0.62, 38);
-    // shared: bed (position varies)
-    const _bx = _hv < 3 ? W-58 : 10;
-    ctx.fillStyle="#8c6040"; ctx.fillRect(_bx,60,50,60);
-    ctx.fillStyle="#c09060"; ctx.fillRect(_bx+2,62,46,18);
-    ctx.fillStyle=["#e8c8a0","#d8b8e8","#e8c8a0","#b8d8e8","#e0d8a0"][_hv]; ctx.fillRect(_bx+6,66,38,10);
-    ctx.fillStyle=["#f0dfc0","#e8d8f8","#f0dfc0","#d8eef8","#f0e8c0"][_hv]; ctx.fillRect(_bx+4,82,42,34);
-    // rug
-    ctx.fillStyle=_rugPals[_hv]; ctx.fillRect(W/2-44,H-64,88,52);
-    ctx.strokeStyle=_rugBorder[_hv]; ctx.lineWidth=2; ctx.strokeRect(W/2-40,H-60,80,44);
-    // variant-specific furniture
-    if (_hv===0){
-      // fireplace left, table centre
-      ctx.fillStyle="#4a3020"; ctx.fillRect(8,46,28,H-60); ctx.fillStyle="#c94a1a"; ctx.fillRect(14,H-40,8,10); ctx.fillStyle="#ffd666"; ctx.fillRect(17,H-44,4,6);
-      ctx.fillStyle="#8c6040"; ctx.fillRect(W/2-18,H-50,36,24); ctx.fillRect(W/2-18,H-26,4,22); ctx.fillRect(W/2+14,H-26,4,22);
-      ctx.fillStyle="#f0e8d8"; ctx.fillRect(W/2-5,H-52,10,6); // tea
-    } else if (_hv===1){
-      // bookshelf left + armchair + pot plant right
-      ctx.fillStyle="#5a3a20"; ctx.fillRect(10,50,22,H-65);
-      for(let bi=0;bi<6;bi++){ ctx.fillStyle=["#c94a3a","#4a6ec9","#4ac96a","#c9c94a","#9a4ac9","#c9804a"][bi]; ctx.fillRect(12,52+bi*14,18,12); }
-      // armchair
-      ctx.fillStyle="#7a5a80"; ctx.fillRect(W-55,H-55,40,30); ctx.fillRect(W-58,H-60,8,34); ctx.fillRect(W-18,H-60,8,34);
-      // pot plant
-      ctx.fillStyle="#6a4a20"; ctx.fillRect(W/2+30,H-44,12,18);
-      ctx.fillStyle="#3a8a3a"; ctx.beginPath(); ctx.arc(W/2+36,H-48,10,0,7); ctx.fill();
-    } else if (_hv===2){
-      // TV set + sofa
-      ctx.fillStyle="#2a2a2a"; ctx.fillRect(W/2-28,52,56,36); ctx.fillStyle="#1a1aff"; ctx.fillRect(W/2-24,55,48,28);
-      ctx.fillStyle="#3a2a14"; ctx.fillRect(W/2-4,88,8,12);
-      // sofa (dark orange)
-      ctx.fillStyle="#c97040"; ctx.fillRect(W/2-40,H-52,80,28); ctx.fillRect(W/2-44,H-60,12,34); ctx.fillRect(W/2+32,H-60,12,34);
-    } else if (_hv===3){
-      // desk left + bookshelf right
-      ctx.fillStyle="#6a4a30"; ctx.fillRect(10,55,32,18); ctx.fillRect(14,73,4,H-80); ctx.fillRect(34,73,4,H-80);
-      ctx.fillStyle="#5a8090"; ctx.fillRect(10,57,30,12); // writing pad
-      // bookshelf right
-      ctx.fillStyle="#5a3a20"; ctx.fillRect(W-32,50,22,H-65);
-      for(let bi=0;bi<5;bi++){ ctx.fillStyle=["#4a8ec9","#c94a4a","#4ac96a","#c9904a","#6a4ac9"][bi]; ctx.fillRect(W-30,52+bi*16,18,13); }
+    const _v = VILLAGERS.find(v => v.homeId === S.roomObjId);
+    const _bld = (V_OBJECTS as any[]).find(o => o.id === S.roomObjId);
+    const _wc = _bld?.wall || '#d0c0a8';
+    const _rc = _bld?.roof || '#7a5a40';
+    room(_rc, _wc, "#c4a460", "#bc9c58", "#4a3020");
+    winP(W*0.12, 34); winP(W*0.62, 34);
+    // Bed config: d=double (couple), k=children's beds
+    const _bConf = ({
+      home_01:{d:1,k:0},home_02:{d:1,k:0},home_03:{d:1,k:2},home_04:{d:1,k:0},
+      home_05:{d:0,k:0},home_06:{d:1,k:1},home_07:{d:1,k:0},home_08:{d:0,k:0},
+      home_09:{d:1,k:0},home_10:{d:1,k:0},home_11:{d:0,k:0},home_12:{d:1,k:2},
+      home_13:{d:1,k:1},home_14:{d:1,k:1},home_15:{d:1,k:0},home_16:{d:0,k:0},
+      home_17:{d:0,k:0},
+    } as Record<string,{d:number,k:number}>)[S.roomObjId] || {d:0,k:0};
+    // Duvet accent color per home
+    const _cov = ({
+      home_01:"#c8a0c0",home_02:"#8a9ab0",home_03:"#e0c870",home_04:"#7aaa70",
+      home_05:"#c0a8c8",home_06:"#8a7050",home_07:"#7aaa78",home_08:"#6a7898",
+      home_09:"#9ab8c8",home_10:"#b06a60",home_11:"#8ab0c8",home_12:"#c0c080",
+      home_13:"#e0b8c0",home_14:"#7aaa68",home_15:"#7ab8c8",home_16:"#8898a8",
+      home_17:"#88b0a0",
+    } as Record<string,string>)[S.roomObjId] || "#c0b090";
+    // Main bed — top-right corner
+    const _bW = _bConf.d ? 72 : 50;
+    const _bX = W - _bW - 10, _bY = 50;
+    ctx.fillStyle="#6a4020"; ctx.fillRect(_bX,_bY,_bW,46);
+    ctx.fillStyle="#8c5a30"; ctx.fillRect(_bX,_bY,_bW,14);       // headboard
+    ctx.fillStyle="#7a4820"; ctx.fillRect(_bX+2,_bY+2,_bW-4,10);
+    ctx.fillStyle="#6a4020"; ctx.fillRect(_bX,_bY+42,_bW,4);     // footboard
+    ctx.fillStyle=_cov; ctx.fillRect(_bX+2,_bY+14,_bW-4,28);    // duvet
+    ctx.fillStyle="#f4f0e8";
+    if (_bConf.d){ ctx.fillRect(_bX+4,_bY+15,28,9); ctx.fillRect(_bX+_bW/2+2,_bY+15,28,9); }
+    else { ctx.fillRect(_bX+4,_bY+15,_bW-8,9); }
+    ctx.fillStyle="rgba(0,0,0,.08)"; ctx.fillRect(_bX+2,_bY+27,_bW-4,2);
+    // Children's beds — below main bed, stacked left
+    for(let ci=0;ci<_bConf.k;ci++){
+      const _cbX = W - (ci+1)*46 - 10, _cbY = _bY + 52;
+      if (_cbX < 0) break;
+      ctx.fillStyle="#8a6a40"; ctx.fillRect(_cbX,_cbY,40,28);
+      ctx.fillStyle="#9a7a50"; ctx.fillRect(_cbX,_cbY,40,9);
+      ctx.fillStyle="#6a4a28"; ctx.fillRect(_cbX,_cbY+24,40,4);
+      ctx.fillStyle=(["#c0d8e0","#e0c8d8","#d8e8c0"] as string[])[ci%3];
+      ctx.fillRect(_cbX+2,_cbY+9,36,15);
+      ctx.fillStyle="#f4f0e8"; ctx.fillRect(_cbX+4,_cbY+9,32,6);
+    }
+    // Rug
+    ctx.fillStyle="rgba(90,60,30,.22)"; ctx.fillRect(W/2-44,H-60,88,46);
+    ctx.strokeStyle="rgba(150,110,40,.35)"; ctx.lineWidth=1.5; ctx.strokeRect(W/2-40,H-56,80,38);
+    // Personality furniture per villager
+    const _vid = _v?.id||"";
+    if (_vid==="agnes"||_vid==="hector"){
+      // Admin: tall bookshelf + writing desk
+      ctx.fillStyle="#5a3820"; ctx.fillRect(10,50,22,H-65);
+      for(let bi=0;bi<5;bi++){ctx.fillStyle=(["#c94a3a","#4a6ec9","#c99a4a","#4ac96a","#9a4ac9"] as string[])[bi];ctx.fillRect(12,53+bi*18,18,15);}
+      ctx.fillStyle="#7a5030"; ctx.fillRect(W/2-36,H-52,40,18);
+      ctx.fillStyle="#4a7888"; ctx.fillRect(W/2-34,H-52,36,12);
+      drawEmojiC(ctx,"📋",W/2-16,H-58,9);
+    } else if (_vid==="bertie"||_vid==="jack"){
+      // Forge worker: dark wardrobe + tool hooks
+      ctx.fillStyle="#3a2a1a"; ctx.fillRect(10,50,20,H-65);
+      ctx.fillStyle="#5a4030"; ctx.fillRect(11,52,18,H-70);
+      ctx.fillStyle="#7a5a30"; ctx.fillRect(17,66,5,3);
+      drawEmojiC(ctx,"🔨",W/2-50,H-54,9);
+      drawEmojiC(ctx,"⛏️",W/2-30,H-54,9);
+      drawEmojiC(ctx,"🔩",W/2-10,H-54,8);
+      ctx.fillStyle="#4a3020"; ctx.fillRect(W/2-56,H-46,60,6);
+    } else if (_vid==="clara"||_vid==="mabel"){
+      // Baker: kitchen shelf + preserves + warm table
+      ctx.fillStyle="#7a5a30"; ctx.fillRect(10,50,W*0.3,18);
+      ctx.fillStyle="#c0a880"; ctx.fillRect(10,50,W*0.3,4);
+      drawEmojiC(ctx,"🫙",18,62,9); drawEmojiC(ctx,"🍵",38,62,9); drawEmojiC(ctx,"🧺",58,62,9);
+      ctx.fillStyle="#9a7048"; ctx.fillRect(W/2-22,H-52,44,30);
+      ctx.fillStyle="#b08060"; ctx.fillRect(W/2-20,H-54,40,4);
+      drawEmojiC(ctx,"🍰",W/2-8,H-56,9);
+    } else if (_vid==="derek"||_vid==="lenny"){
+      // Logistics: route-map corkboard + desk
+      ctx.fillStyle="#6a5030"; ctx.fillRect(10,50,32,28);
+      ctx.fillStyle="#c0a870"; ctx.fillRect(12,52,28,24);
+      ctx.fillStyle="rgba(60,80,160,.35)"; ctx.fillRect(14,54,24,18);
+      for(let ri=0;ri<3;ri++){ctx.fillStyle="rgba(200,60,60,.5)";ctx.fillRect(18+ri*6,55+ri*4,12,2);}
+      drawEmojiC(ctx,"📍",17,62,7);
+      ctx.fillStyle="#7a5a30"; ctx.fillRect(W/2-20,H-50,40,18);
+      drawEmojiC(ctx,"📄",W/2-8,H-55,9);
+    } else if (_vid==="edna"){
+      // Archivist: display cabinet + framed photos on back wall
+      ctx.fillStyle="#5a4028"; ctx.fillRect(10,50,28,H-65);
+      ctx.fillStyle="rgba(200,180,140,.18)"; ctx.fillRect(12,52,24,H-70);
+      drawEmojiC(ctx,"🏆",14,62,9); drawEmojiC(ctx,"📖",14,83,9); drawEmojiC(ctx,"🖼️",14,104,9);
+      ctx.fillStyle="#5a3a18"; ctx.fillRect(W/2-32,12,24,18); ctx.fillStyle="#a0c0d8"; ctx.fillRect(W/2-30,14,20,14);
+      ctx.fillStyle="#5a3a18"; ctx.fillRect(W/2+6,12,24,18); ctx.fillStyle="#d0c0a0"; ctx.fillRect(W/2+8,14,20,14);
+    } else if (_vid==="frank"||_vid==="ned"){
+      // Woodsman: workbench + trestle legs + bookshelf
+      ctx.fillStyle="#7a5a30"; ctx.fillRect(10,50,W*0.27,18);
+      ctx.fillStyle="#6a4a20"; ctx.fillRect(10,68,6,H-82); ctx.fillRect(10+W*0.27-6|0,68,6,H-82);
+      drawEmojiC(ctx,"🪚",18,60,9); drawEmojiC(ctx,"🪵",42,60,9);
+      ctx.fillStyle="#7a5a30"; ctx.fillRect(W-30,50,20,H-65);
+      for(let bi=0;bi<4;bi++){ctx.fillStyle=(["#8a7050","#7a8a6a","#9a8a60","#6a8870"] as string[])[bi];ctx.fillRect(W-28,54+bi*22,16,18);}
+    } else if (_vid==="gracie"){
+      // Farmer: flower pots + cabinet with farm goods
+      ctx.fillStyle="#6a4020"; ctx.fillRect(10,H-46,14,18); ctx.fillStyle="#2a8a2a"; ctx.beginPath(); ctx.arc(17,H-50,12,0,7); ctx.fill();
+      ctx.fillStyle="#6a4020"; ctx.fillRect(32,H-42,12,15); ctx.fillStyle="#3a9a3a"; ctx.beginPath(); ctx.arc(38,H-46,9,0,7); ctx.fill();
+      drawEmojiC(ctx,"🌻",22,H-62,11);
+      ctx.fillStyle="#5a3820"; ctx.fillRect(10,50,22,H-65);
+      drawEmojiC(ctx,"🥚",13,68,9); drawEmojiC(ctx,"🌿",13,88,9);
+    } else if (_vid==="ida"){
+      // Fisher: rod + net on wall + cabinet
+      ctx.strokeStyle="#8a7050"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(10,52); ctx.lineTo(108,63); ctx.stroke();
+      ctx.fillStyle="#c0a870"; ctx.fillRect(9,50,5,5);
+      ctx.strokeStyle="rgba(180,160,120,.4)"; ctx.lineWidth=0.8;
+      for(let ni=0;ni<5;ni++){ctx.beginPath();ctx.arc(50+ni*9,65,9+ni*2,0,Math.PI);ctx.stroke();}
+      drawEmojiC(ctx,"🎣",12,80,10);
+      ctx.fillStyle="#6a4a28"; ctx.fillRect(W-30,50,20,H-65);
+    } else if (_vid==="kitty"){
+      // Engineer: dark metal shelf + tool chest
+      ctx.fillStyle="#3a3a3a"; ctx.fillRect(10,50,W*0.26,18);
+      drawEmojiC(ctx,"⚙️",14,60,10); drawEmojiC(ctx,"🔧",36,60,9); drawEmojiC(ctx,"🔩",58,58,9);
+      ctx.fillStyle="#4a4a4a"; ctx.fillRect(10,70,W*0.26,H-85);
+      ctx.fillStyle="#5a5a5a"; ctx.fillRect(12,76,W*0.26-4,6);
+      ctx.fillStyle="#666"; ctx.fillRect(12,88,W*0.26-4,6);
+      ctx.fillStyle="#555"; ctx.fillRect(12,100,W*0.26-4,6);
+    } else if (_vid==="olive"||_vid==="pearl"){
+      // Fishmonger: blue nautical cabinet + hanging net
+      ctx.fillStyle="#3a5a7a"; ctx.fillRect(10,50,22,H-65);
+      ctx.fillStyle="#4a6a8a"; ctx.fillRect(11,52,20,H-70);
+      drawEmojiC(ctx,"🐠",12,68,9); drawEmojiC(ctx,"🌊",12,88,9);
+      ctx.strokeStyle="#8a6a40"; ctx.lineWidth=0.9;
+      for(let ni=0;ni<4;ni++){ctx.beginPath();ctx.arc(W/2-8+ni*9,58,10+ni*2,0,Math.PI);ctx.stroke();}
+      ctx.fillStyle="#5a4020"; ctx.fillRect(W/2-6,46,12,4);
+    } else if (_vid==="reg"){
+      // Harbourmaster: navigation chart + model boat + anchor
+      ctx.fillStyle="#2a4a6a"; ctx.fillRect(10,50,38,26);
+      ctx.fillStyle="#7aa0c8"; ctx.fillRect(12,52,34,22);
+      ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(12,52,34,22);
+      ctx.fillStyle="#c8e4ff"; ctx.beginPath(); ctx.arc(29,63,7,0,7); ctx.fill();
+      ctx.fillStyle="#2a4a6a"; ctx.fillRect(29,56,1,14); ctx.fillRect(22,63,14,1);
+      drawEmojiC(ctx,"⚓",20,86,10);
+      drawEmojiC(ctx,"⛵",W/2-8,H-54,12);
     } else {
-      // two armchairs facing each other + round table + wall art
-      ctx.fillStyle="#8c7040"; ctx.fillRect(W/2-52,H-55,28,30); ctx.fillRect(W/2-56,H-62,8,36); ctx.fillRect(W/2-28,H-62,8,36);
-      ctx.fillStyle="#8c7040"; ctx.fillRect(W/2+24,H-55,28,30); ctx.fillRect(W/2+20,H-62,8,36); ctx.fillRect(W/2+48,H-62,8,36);
-      // round table
-      ctx.fillStyle="#a07850"; ctx.beginPath(); ctx.arc(W/2,H-42,14,0,7); ctx.fill();
-      // wall art frame
-      ctx.fillStyle="#6a4a20"; ctx.fillRect(W/2-20,58,40,32); ctx.fillStyle="#a0c8e0"; ctx.fillRect(W/2-17,61,34,25);
-      // hanging plant
-      ctx.fillStyle="#5a3a10"; ctx.fillRect(W-30,47,4,20);
-      ctx.fillStyle="#3a8a2a"; for(let pi=0;pi<4;pi++) { ctx.beginPath(); ctx.arc(W-28+Math.sin(pi*2)*8, 68+pi*6, 5, 0, 7); ctx.fill(); }
+      // Generic fallback: bookshelf + round table
+      ctx.fillStyle="#7a5a30"; ctx.fillRect(10,50,22,H-65);
+      for(let bi=0;bi<4;bi++){ctx.fillStyle=(["#c94a3a","#4a6ec9","#c99a4a","#4ac96a"] as string[])[bi];ctx.fillRect(12,53+bi*19,18,16);}
+      ctx.fillStyle="#a07850"; ctx.beginPath(); ctx.arc(W/2,H-42,16,0,7); ctx.fill();
+      ctx.fillStyle="#b08860"; ctx.beginPath(); ctx.arc(W/2,H-42,11,0,7); ctx.fill();
     }
   }
   if (S.tab==="school"){
