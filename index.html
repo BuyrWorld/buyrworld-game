@@ -230,15 +230,27 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
   background:#fff; border:2px solid var(--edge); color:var(--text); margin-bottom:6px;
 }
 #name-err{ display:none; color:var(--red); font-size:11px; margin-bottom:8px; }
-#title-cust{ max-height:52vh; overflow-y:auto; padding-right:4px; }
-#title-cust .cust-row{ margin-bottom:8px; }
-#title-cust .cust-lbl{ font-size:9px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
-#title-cust .cust-swatches{ display:flex; flex-wrap:wrap; gap:4px; }
-#title-cust .swatch{ width:22px; height:22px; border:2px solid var(--edge); cursor:pointer; padding:0; transition:transform .1s,border-color .1s; }
+/* ---- character-creation wizard ---- */
+#wiz-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:10px; }
+#wiz-step-label{ font-family:'Press Start 2P',monospace; font-size:10px; color:var(--amber); line-height:1.4; }
+#wiz-count{ font-size:9px; color:var(--dim); white-space:nowrap; }
+#title-cust{ min-height:132px; }
+#title-cust .cust-swatches{ display:flex; flex-wrap:wrap; gap:5px; }
+#title-cust .swatch{ width:26px; height:26px; border:2px solid var(--edge); cursor:pointer; padding:0; border-radius:3px; transition:transform .1s,border-color .1s; }
 #title-cust .swatch:hover{ transform:scale(1.18); border-color:var(--amber); }
 #title-cust .swatch.sel{ border-color:var(--amber); box-shadow:0 0 0 2px var(--amber); }
-#title-cust .swatch-txt{ background:var(--panel2); border:2px solid var(--edge); color:var(--text); font-size:8px; padding:2px 5px; cursor:pointer; width:auto; height:auto; white-space:nowrap; }
-#title-cust .swatch-txt.sel{ border-color:var(--amber); background:rgba(232,150,30,.15); }
+#title-cust .swatch-txt{ background:var(--panel2); border:2px solid var(--edge); color:var(--text); font-size:10px; padding:4px 9px; cursor:pointer; width:auto; height:auto; white-space:nowrap; border-radius:3px; }
+#title-cust .swatch-txt:hover{ border-color:var(--amber); }
+#title-cust .swatch-txt.sel{ border-color:var(--amber); background:rgba(232,150,30,.18); color:var(--amber); }
+#title-cust .cust-sub{ font-size:9px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin:12px 0 5px; }
+.wiz-hint{ font-size:10px; color:var(--dim); margin-top:10px; font-style:italic; }
+#wiz-nav{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:14px; }
+#wiz-nav button{ background:var(--panel2); border:2px solid var(--edge); color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:6px 13px; cursor:pointer; border-radius:3px; }
+#wiz-nav button:hover{ border-color:var(--amber); color:var(--amber); }
+#wiz-dots{ display:flex; gap:5px; flex:1; justify-content:center; flex-wrap:wrap; }
+.wiz-dot{ width:7px; height:7px; border-radius:50%; background:var(--edge); transition:transform .12s,background .12s; }
+.wiz-dot.done{ background:#7cb46b; }
+.wiz-dot.on{ background:var(--amber); transform:scale(1.35); }
 .btn.big{ font-size:14px; padding:12px 22px; }
 
 /* ---------- M1 Identity Pack ---------- */
@@ -544,10 +556,23 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
         <p style="font-size:10px;color:var(--dim);text-align:center;margin-top:5px;font-family:'Press Start 2P',monospace;line-height:1.5">Featherstone<br>Valley</p>
       </div>
       <div class="title-right">
-        <p style="font-size:11px;color:var(--dim);margin-bottom:8px">Who are you, boss?</p>
-        <input id="name-input" maxlength="16" placeholder="Your name…" autocomplete="off">
-        <div id="name-err">You'll need a name around here.</div>
-        <div id="title-cust"></div>
+        <div id="wiz-head">
+          <span id="wiz-step-label">Choose your character</span>
+          <span id="wiz-count"></span>
+        </div>
+        <div id="title-cust">
+          <div id="wiz-options"></div>
+          <div id="wiz-name" style="display:none">
+            <p style="font-size:11px;color:var(--dim);margin-bottom:6px">Who are you, boss?</p>
+            <input id="name-input" maxlength="16" placeholder="Your name…" autocomplete="off">
+            <div id="name-err">You'll need a name around here.</div>
+          </div>
+        </div>
+        <div id="wiz-nav">
+          <button id="wiz-back" type="button">‹ Back</button>
+          <div id="wiz-dots"></div>
+          <button id="wiz-next" type="button">Next ›</button>
+        </div>
       </div>
     </div>
     <div id="name-badge" aria-hidden="true" style="margin-top:10px;">

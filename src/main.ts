@@ -1630,37 +1630,32 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   const _acc = opts.accessory || 'none';
   const _scf = opts.scarfColor|| '#c04040';
   const _fem = female || false;
-  const _wave = !!(opts.waving);
+  const _stride = +(opts.stride) || 1;   // >1 exaggerates the walk cycle (used by the big previews)
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
   if (scale !== 1.0) ctx.scale(scale, scale);
   // shadow
   ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(0, 10-bob, 8, 3, 0, 0, 7); ctx.fill();
-  const legSwing = moving ? Math.sin(t*10)*3 : 0;
-  const armSwing = moving ? Math.sin(t*10+3)*3 : 0;
+  const legSwing = moving ? Math.sin(t*10)*3*_stride : 0;
+  const armSwing = moving ? Math.sin(t*10+Math.PI)*3*_stride : 0;   // arms swing opposite to legs
+  // alternating foot lift — only kicks in when the walk is exaggerated (stride>1),
+  // so ordinary in-world sprites are unchanged (lift = 0 at stride 1).
+  const _phase = moving ? Math.sin(t*10) : 0;
+  const _lift  = (_stride - 1) * 2;
+  const _lL = _phase > 0 ?  _lift * _phase  : 0;
+  const _lR = _phase < 0 ?  _lift * -_phase : 0;
   // legs
   ctx.fillStyle=trouser;
-  ctx.fillRect(-5, 2, 4, 8+legSwing*0.4); ctx.fillRect(1, 2, 4, 8-legSwing*0.4);
+  ctx.fillRect(-5, 2-_lL, 4, 8+legSwing*0.4); ctx.fillRect(1, 2-_lR, 4, 8-legSwing*0.4);
   // shoes
-  if (_sh){ ctx.fillStyle=_sh; ctx.fillRect(-6,8+legSwing*0.4,5,2); ctx.fillRect(0,8-legSwing*0.4,5,2); }
+  if (_sh){ ctx.fillStyle=_sh; ctx.fillRect(-6,8+legSwing*0.4-_lL,5,2); ctx.fillRect(0,8-legSwing*0.4-_lR,5,2); }
   // shirt body + arms
   ctx.fillStyle=shirt; ctx.fillRect(-7,-6,14,10);
-  ctx.fillRect(-9,-5+armSwing*0.3,3,8);                   // left arm always normal
-  if (!_wave) ctx.fillRect(6,-5-armSwing*0.3,3,8);         // right arm (skipped when waving)
+  ctx.fillRect(-9,-5+armSwing*0.3,3,8); ctx.fillRect(6,-5-armSwing*0.3,3,8);
   // hands
-  ctx.fillStyle=skin; ctx.fillRect(-9,2+armSwing*0.3,3,3);
-  if (!_wave) ctx.fillRect(6,2-armSwing*0.3,3,3);
+  ctx.fillStyle=skin; ctx.fillRect(-9,2+armSwing*0.3,3,3); ctx.fillRect(6,2-armSwing*0.3,3,3);
   // jacket overlay
-  if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); ctx.fillRect(-9,-5+armSwing*0.3,3,6); if(!_wave) ctx.fillRect(6,-5-armSwing*0.3,3,6); }
-  // waving right arm — raised and animated, drawn in character-space coords
-  if (_wave){
-    const _wa = Math.sin(t*3)*0.5;
-    ctx.save(); ctx.translate(7,-6); ctx.rotate(-1.1+_wa);
-    ctx.fillStyle=shirt;  ctx.fillRect(0,0,3,8);
-    if(_jk){ ctx.fillStyle=_jk; ctx.fillRect(0,0,3,6); }
-    ctx.fillStyle=skin;   ctx.fillRect(0,8,3,3);
-    ctx.restore();
-  }
+  if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); ctx.fillRect(-9,-5+armSwing*0.3,3,6); ctx.fillRect(6,-5-armSwing*0.3,3,6); }
   // head
   ctx.fillStyle=skin; ctx.fillRect(-5,-16,10,10);
   // scarf at neck
@@ -4794,6 +4789,7 @@ function setupInterior(){
 
 let _titlePreviewRaf = 0;
 let _charPreviewRaf  = 0;
+let _wizFocus: 'face'|'body' = 'body';
 function _drawTitlePreview(){
   const cv = document.getElementById("title-preview") as HTMLCanvasElement;
   if (!cv || document.getElementById("title")?.style.display === "none") return;
@@ -4807,10 +4803,12 @@ function _drawTitlePreview(){
   ctx2.fillStyle="rgba(255,214,102,.3)"; ctx2.beginPath(); ctx2.arc(W2*0.82,H2*0.18,22,0,7); ctx2.fill();
   // small flowers
   for(let _fi=0;_fi<4;_fi++){ ctx2.fillStyle=["#e84060","#ffd666","#f86040","#6fb7ff"][_fi]; ctx2.beginPath(); ctx2.arc(16+_fi*28,H2*0.74,4,0,7); ctx2.fill(); }
-  // player character — large scale, centre
-  const _scale = 3.2;
-  const _cx = W2/2, _cy = H2*0.72;
-  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, false, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), {...plOpts(), waving:true});
+  // player character — zooms to the face for head-detail steps, walks full-body otherwise
+  const _face = _wizFocus === 'face';
+  const _scale = _face ? 6.6 : 3.2;
+  const _cx = W2/2;
+  const _cy = _face ? Math.round(H2*0.42 + 11*_scale) : H2*0.72;
+  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, !_face, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), {...plOpts(), stride:2.4});
   _titlePreviewRaf = requestAnimationFrame(_drawTitlePreview);
 }
 function showTitle(){
@@ -4825,45 +4823,84 @@ function showTitle(){
   const _twIv = setInterval(()=>{
     _twIdx++;
     if (_twEl) _twEl.textContent = _tagline.slice(0, _twIdx);
-    if (_twIdx >= _tagline.length){ clearInterval(_twIv); _btnStart.style.display = ""; }
+    if (_twIdx >= _tagline.length){ clearInterval(_twIv); }  // START is shown by the wizard's final step
   }, 38);
   // character preview canvas
   cancelAnimationFrame(_titlePreviewRaf);
   _drawTitlePreview();
-  // customisation pickers
-  const _custEl = document.getElementById("title-cust");
-  function _renderCust(){
-    if (!_custEl) return;
+  // ---- Character-creation wizard (one step at a time) ----
+  const _input   = document.getElementById("name-input") as HTMLInputElement;
+  const _errEl   = document.getElementById("name-err") as HTMLElement;
+  const _nameBlk = document.getElementById("wiz-name") as HTMLElement;
+  const _stepLbl = document.getElementById("wiz-step-label") as HTMLElement;
+  const _stepCnt = document.getElementById("wiz-count") as HTMLElement;
+  const _optsEl  = document.getElementById("wiz-options") as HTMLElement;
+  const _dotsEl  = document.getElementById("wiz-dots") as HTMLElement;
+  const _backBtn = document.getElementById("wiz-back") as HTMLButtonElement;
+  const _nextBtn = document.getElementById("wiz-next") as HTMLButtonElement;
+
+  const _swHtml  = (arr, field, ap) => `<div class="cust-swatches">${arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" style="background:${c.v||'rgba(120,90,60,.25)'}" data-cf="${field}" data-cv="${c.v}" title="${c.label}"></button>`).join('')}</div>`;
+  const _txtHtml = (arr, field, ap) => `<div class="cust-swatches" style="flex-wrap:wrap;gap:5px">${arr.map(c=>`<button class="swatch-txt${ap[field]==c.v?' sel':''}" data-cf="${field}" data-cv="${c.v}">${c.label}</button>`).join('')}</div>`;
+
+  const _steps: any[] = [
+    { label:"Choose your character", focus:'body', kind:'gender', hint:"Pick a body type — you can change everything next." },
+    { label:"Skin tone",   focus:'face', kind:'swatch', arr:SKIN_TONES,        field:'skin' },
+    { label:"Hair colour", focus:'face', kind:'swatch', arr:HAIR_COLOURS,      field:'hair' },
+    { label:"Hair style",  focus:'face', kind:'text',   arr:HAIR_STYLE_LABELS, field:'hairStyle' },
+    { label:"Eye colour",  focus:'face', kind:'swatch', arr:EYE_COLOURS,       field:'eyeColor' },
+    { label:"Facial hair", focus:'face', kind:'text',   arr:FACIAL_HAIR_STYLES,field:'facialHair', showIf:(ap)=>ap.gender!=='female' },
+    { label:"Shirt",       focus:'body', kind:'swatch', arr:SHIRT_COLOURS,     field:'shirt' },
+    { label:"Jacket",      focus:'body', kind:'swatch', arr:JACKET_COLOURS,    field:'jacket' },
+    { label:"Trousers",    focus:'body', kind:'swatch', arr:TROUSER_COLOURS,   field:'trousers' },
+    { label:"Shoes",       focus:'body', kind:'swatch', arr:SHOE_COLOURS,      field:'shoes' },
+    { label:"Accessory",   focus:'body', kind:'text',   arr:ACCESSORY_STYLES,  field:'accessory',
+      extra:(ap)=> ap.accessory==='scarf' ? `<div class="cust-sub">Scarf colour</div>`+_swHtml(SCARF_COLOURS,'scarfColor',ap) : '' },
+    { label:"Hat",         focus:'body', kind:'text',   arr:HAT_STYLES,        field:'hat',
+      extra:(ap)=> (ap.hat && ap.hat!=='none') ? `<div class="cust-sub">Hat colour</div>`+_swHtml(HAT_COLOURS,'hatColor',ap) : '' },
+    { label:"Your name",   focus:'body', kind:'name' },
+  ];
+
+  let _wizStep = 0;
+  const _visibleSteps = () => _steps.filter(s => !s.showIf || s.showIf(S.appearance));
+
+  function _renderWizard(){
+    const steps = _visibleSteps();
+    _wizStep = Math.max(0, Math.min(_wizStep, steps.length-1));
+    const step = steps[_wizStep];
     const ap = S.appearance;
-    const sw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches">${arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" style="background:${c.v||'rgba(120,90,60,.25)'}" data-cf="${field}" data-cv="${c.v}" title="${c.label}"></button>`).join('')}</div></div>`;
-    const txtsw = (arr, field, lbl) => `<div class="cust-row"><div class="cust-lbl">${lbl}</div><div class="cust-swatches" style="flex-wrap:wrap;gap:3px">${arr.map(c=>`<button class="swatch-txt${ap[field]==c.v?' sel':''}" data-cf="${field}" data-cv="${c.v}">${c.label}</button>`).join('')}</div></div>`;
-    const genderRow = `<div class="cust-row"><div class="cust-lbl">Gender</div><div class="cust-swatches"><button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cf="gender" data-cv="male">♂ Male</button><button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cf="gender" data-cv="female">♀ Female</button></div></div>`;
-    _custEl.innerHTML = genderRow
-      + sw(SKIN_TONES,'skin','Skin')
-      + sw(HAIR_COLOURS,'hair','Hair colour')
-      + txtsw(HAIR_STYLE_LABELS,'hairStyle','Hair style')
-      + (ap.gender!=='female' ? txtsw(FACIAL_HAIR_STYLES,'facialHair','Facial hair') : '')
-      + sw(EYE_COLOURS,'eyeColor','Eye colour')
-      + sw(SHIRT_COLOURS,'shirt','Shirt')
-      + sw(JACKET_COLOURS,'jacket','Jacket')
-      + sw(TROUSER_COLOURS,'trousers','Trousers')
-      + sw(SHOE_COLOURS,'shoes','Shoes')
-      + txtsw(ACCESSORY_STYLES,'accessory','Accessory')
-      + (ap.accessory==='scarf' ? sw(SCARF_COLOURS,'scarfColor','Scarf colour') : '')
-      + txtsw(HAT_STYLES,'hat','Hat')
-      + sw(HAT_COLOURS,'hatColor','Hat colour');
-    _custEl.querySelectorAll("[data-cf]").forEach(b=>{
+    _wizFocus = step.focus;
+    _stepLbl.textContent = step.label;
+    _stepCnt.textContent = `${_wizStep+1} / ${steps.length}`;
+    let html = "";
+    if (step.kind==='gender'){
+      html = `<div class="cust-swatches">`
+        + `<button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cf="gender" data-cv="male">♂ Male</button>`
+        + `<button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cf="gender" data-cv="female">♀ Female</button></div>`;
+    } else if (step.kind==='swatch'){ html = _swHtml(step.arr, step.field, ap); }
+    else if (step.kind==='text'){ html = _txtHtml(step.arr, step.field, ap); }
+    if (step.extra) html += step.extra(ap);
+    if (step.hint) html += `<div class="wiz-hint">${step.hint}</div>`;
+    _optsEl.innerHTML = html;
+    _optsEl.style.display  = step.kind==='name' ? 'none' : '';
+    _nameBlk.style.display = step.kind==='name' ? ''     : 'none';
+    _dotsEl.innerHTML = steps.map((_,i)=>`<span class="wiz-dot${i===_wizStep?' on':''}${i<_wizStep?' done':''}"></span>`).join('');
+    _backBtn.style.visibility = _wizStep===0 ? 'hidden' : 'visible';
+    const _last = _wizStep === steps.length-1;
+    _nextBtn.style.display = _last ? 'none' : '';
+    _btnStart.style.display = _last ? '' : 'none';
+    if (_last) setTimeout(()=>{ try{ _input.focus(); }catch(e){} }, 30);
+    _optsEl.querySelectorAll("[data-cf]").forEach(b=>{
       (b as HTMLElement).onclick = ()=>{
-        const _f=(b as HTMLElement).dataset.cf, _v=(b as HTMLElement).dataset.cv;
+        const _f=(b as HTMLElement).dataset.cf!, _v=(b as HTMLElement).dataset.cv!;
         S.appearance[_f] = _f==='hairStyle' ? parseInt(_v) : _v;
-        _renderCust();
+        _renderWizard();
       };
     });
   }
-  _renderCust();
-  // name input + start
-  const _input = document.getElementById("name-input") as HTMLInputElement;
-  const _errEl = document.getElementById("name-err") as HTMLElement;
+  _backBtn.onclick = ()=>{ if(_wizStep>0){ _wizStep--; _renderWizard(); } };
+  _nextBtn.onclick = ()=>{ if(_wizStep < _visibleSteps().length-1){ _wizStep++; _renderWizard(); } };
+  _renderWizard();
+
   document.getElementById("btn-preview").onclick = () => { MUSIC.unlocked = true; MUSIC.play("valley"); };
   _btnStart.onclick = () => {
     const _n = _input.value.trim().replace(/[<>"'&]/g,"").slice(0,16);
@@ -6729,7 +6766,7 @@ function _animCharPreview(){
   ctx.fillStyle="#7cbf86"; ctx.fillRect(0,Math.round(H2*0.75),W2,Math.round(H2*0.25));
   for(let _fi=0;_fi<4;_fi++){ ctx.fillStyle=(["#e84060","#ffd666","#f86040","#6fb7ff"] as string[])[_fi]; ctx.beginPath(); ctx.arc(14+_fi*24,Math.round(H2*0.79),3,0,7); ctx.fill(); }
   ctx.save(); ctx.translate(Math.round(W2/2), H2-16); ctx.scale(3,3);
-  drawPerson(ctx,0,0,plHair(),plShirt(),t2,false,1,null,"down",plSkin(),plTrousers(),null,plGender()==='female',1.0,plHat(),plHatColor(),{...plOpts(),waving:true});
+  drawPerson(ctx,0,0,plHair(),plShirt(),t2,true,1,null,"down",plSkin(),plTrousers(),null,plGender()==='female',1.0,plHat(),plHatColor(),{...plOpts(),stride:2.4});
   ctx.restore();
   _charPreviewRaf = requestAnimationFrame(_animCharPreview);
 }
