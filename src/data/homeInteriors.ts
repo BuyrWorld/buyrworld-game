@@ -40,7 +40,7 @@ export const HOME_INTERIORS: Record<string, HomeTheme> = {
   // ---- Council / admin ----
   home_01: { arch:"neat older resident", pal:P.adminWarm, rug:"#b8607a", props:[
     { k:"tile:bookshelf", fx:0.03, fy:0.24 }, { k:"tea_shelf", fx:0.30, fy:0.05 },
-    { k:"writing_desk", fx:0.13, fy:0.74 }, { k:"tea_table", fx:0.40, fy:0.82 },
+    { k:"writing_desk", fx:0.13, fy:0.74 }, { k:"tea_table", fx:0.32, fy:0.82 },
     { k:"armchair", fx:0.80, fy:0.70 }, { k:"tile:plant", fx:0.90, fy:0.56 } ] },
   home_08: { arch:"neat professional", pal:P.adminCool, rug:"#4a6a9a", props:[
     { k:"filing_cabinet", fx:0.03, fy:0.24 }, { k:"framed_certs", fx:0.32, fy:0.05 },
@@ -50,79 +50,79 @@ export const HOME_INTERIORS: Record<string, HomeTheme> = {
   // ---- Steelworkers ----
   home_02: { arch:"practical worker", pal:P.forge, rug:"#8a5a3a", props:[
     { k:"wardrobe", fx:0.03, fy:0.24 }, { k:"tool_hooks", fx:0.34, fy:0.05 },
-    { k:"tile:fireplace", fx:0.80, fy:0.60 }, { k:"armchair", fx:0.40, fy:0.80 },
+    { k:"tile:fireplace", fx:0.80, fy:0.60 }, { k:"armchair", fx:0.33, fy:0.80 },
     { k:"kettle_stove", fx:0.13, fy:0.74 } ] },
   home_10: { arch:"practical worker", pal:P.forge, rug:"#9a5a30", props:[
     { k:"wardrobe", fx:0.03, fy:0.24 }, { k:"tool_hooks", fx:0.34, fy:0.05 },
     { k:"armchair", fx:0.80, fy:0.70 }, { k:"kettle_stove", fx:0.13, fy:0.74 },
-    { k:"ember_apron", fx:0.42, fy:0.82 }, { k:"boots", fx:0.90, fy:0.82 } ] },
+    { k:"ember_apron", fx:0.30, fy:0.82 }, { k:"boots", fx:0.90, fy:0.82 } ] },
 
   // ---- Bakers (family) ----
   home_03: { arch:"family home", pal:P.bakerWarm, rug:"#d09850", props:[
     { k:"kitchen_counter", fx:0.03, fy:0.24 }, { k:"preserve_shelf", fx:0.34, fy:0.05 },
     { k:"cake_stand", fx:0.14, fy:0.74 }, { k:"kids_toys", fx:0.26, fy:0.84 },
-    { k:"tile:table", fx:0.60, fy:0.74 } ] },
+    { k:"tile:table", fx:0.60, fy:0.66 } ] },
   home_13: { arch:"family + baker", pal:P.bakerRose, rug:"#c86a86", props:[
     { k:"kitchen_counter", fx:0.03, fy:0.24 }, { k:"bunting", fx:0.16, fy:0.03 },
     { k:"rosettes", fx:0.46, fy:0.05 }, { k:"cake_stand", fx:0.14, fy:0.74 },
-    { k:"kids_toys", fx:0.26, fy:0.84 }, { k:"tile:table", fx:0.60, fy:0.74 } ] },
+    { k:"kids_toys", fx:0.26, fy:0.84 }, { k:"tile:table", fx:0.60, fy:0.66 } ] },
 
   // ---- Logistics ----
   home_04: { arch:"practical / family", pal:P.logistics, rug:"#4a6a8a", props:[
     { k:"route_board", fx:0.03, fy:0.24 }, { k:"pinned_manifests", fx:0.34, fy:0.05 },
-    { k:"writing_desk", fx:0.13, fy:0.74 }, { k:"toy_lorry", fx:0.40, fy:0.83 },
+    { k:"writing_desk", fx:0.13, fy:0.74 }, { k:"toy_lorry", fx:0.32, fy:0.83 },
     { k:"armchair", fx:0.80, fy:0.70 } ] },
   home_12: { arch:"big family home", pal:P.logistics, rug:"#6a7a5a", props:[
     { k:"route_board", fx:0.03, fy:0.24 }, { k:"bunting", fx:0.16, fy:0.03 },
     { k:"toy_lorry", fx:0.14, fy:0.80 }, { k:"kids_toys", fx:0.28, fy:0.84 },
-    { k:"tile:table", fx:0.60, fy:0.74 } ] },
+    { k:"tile:table", fx:0.60, fy:0.66 } ] },
 
   // ---- Collector ----
   home_05: { arch:"eccentric collector", pal:P.collector, rug:"#8a6a4a", props:[
     { k:"display_case", fx:0.03, fy:0.22 }, { k:"wall_photos", fx:0.32, fy:0.04 },
-    { k:"stacked_files", fx:0.14, fy:0.82 }, { k:"medal_case", fx:0.42, fy:0.80 },
+    { k:"stacked_files", fx:0.14, fy:0.82 }, { k:"medal_case", fx:0.28, fy:0.80 },
     { k:"armchair", fx:0.80, fy:0.70 } ] },
 
   // ---- Sawyers ----
   home_06: { arch:"sawmill worker (messy)", pal:P.sawyer, rug:"#a06838", props:[
     { k:"workbench", fx:0.03, fy:0.24 }, { k:"axe_wall", fx:0.34, fy:0.05 },
     { k:"timber_stack", fx:0.13, fy:0.76 }, { k:"boots", fx:0.26, fy:0.86 },
-    { k:"wood_crafts", fx:0.42, fy:0.82 }, { k:"tile:bookshelf", fx:0.86, fy:0.66 } ] },
+    { k:"wood_crafts", fx:0.28, fy:0.82 }, { k:"tile:bookshelf", fx:0.86, fy:0.66 } ] },
   home_14: { arch:"tidy sawyer", pal:P.sawyer, rug:"#96703c", props:[
     { k:"tile:bookshelf", fx:0.03, fy:0.24 }, { k:"axe_wall", fx:0.34, fy:0.05 },
-    { k:"timber_stack", fx:0.13, fy:0.78 }, { k:"wood_crafts", fx:0.42, fy:0.82 },
+    { k:"timber_stack", fx:0.13, fy:0.78 }, { k:"wood_crafts", fx:0.28, fy:0.82 },
     { k:"reading_chair", fx:0.80, fy:0.72 } ] },
 
   // ---- Farmer ----
   home_07: { arch:"farmer / rural", pal:P.farmer, rug:"#8aa858", props:[
     { k:"egg_dresser", fx:0.03, fy:0.24 }, { k:"herb_bunches", fx:0.34, fy:0.04 },
-    { k:"flower_pots", fx:0.13, fy:0.80 }, { k:"animal_basket", fx:0.42, fy:0.82 },
+    { k:"flower_pots", fx:0.13, fy:0.80 }, { k:"animal_basket", fx:0.30, fy:0.82 },
     { k:"rocking_chair", fx:0.80, fy:0.70 }, { k:"feed_sacks", fx:0.90, fy:0.80 } ] },
 
   // ---- Tinkerer ----
   home_11: { arch:"messy tinkerer", pal:P.tinkerer, rug:"#6a7a8a", props:[
     { k:"metal_shelf", fx:0.03, fy:0.22 }, { k:"workbench", fx:0.32, fy:0.24 },
-    { k:"tool_chest", fx:0.14, fy:0.82 }, { k:"gears_project", fx:0.42, fy:0.82 },
+    { k:"tool_chest", fx:0.14, fy:0.82 }, { k:"gears_project", fx:0.28, fy:0.82 },
     { k:"kettle_mug", fx:0.82, fy:0.72 } ] },
 
   // ---- Fishers / seaside ----
   home_09: { arch:"fisher / seaside", pal:P.seaside, rug:"#3a7a9a", props:[
     { k:"sea_cabinet", fx:0.03, fy:0.24 }, { k:"hanging_net", fx:0.34, fy:0.05 },
-    { k:"bucket", fx:0.14, fy:0.82 }, { k:"tackle_box", fx:0.42, fy:0.82 },
+    { k:"bucket", fx:0.14, fy:0.82 }, { k:"tackle_box", fx:0.32, fy:0.82 },
     { k:"crate_stack", fx:0.80, fy:0.72 }, { k:"oilskins", fx:0.90, fy:0.60 } ] },
   home_15: { arch:"seaside family", pal:P.seaside, rug:"#3a8a8a", props:[
     { k:"sea_cabinet", fx:0.03, fy:0.24 }, { k:"hanging_net", fx:0.34, fy:0.05 },
-    { k:"kids_toys", fx:0.14, fy:0.82 }, { k:"flower_jar", fx:0.42, fy:0.82 },
+    { k:"kids_toys", fx:0.14, fy:0.82 }, { k:"flower_jar", fx:0.34, fy:0.82 },
     { k:"crate_stack", fx:0.80, fy:0.72 } ] },
   home_17: { arch:"practical seaside", pal:P.seaside, rug:"#4a8a9a", props:[
     { k:"ice_box", fx:0.03, fy:0.58 }, { k:"knife_rack", fx:0.34, fy:0.05 },
-    { k:"crate_stack", fx:0.14, fy:0.76 }, { k:"scales", fx:0.42, fy:0.82 },
+    { k:"crate_stack", fx:0.14, fy:0.76 }, { k:"scales", fx:0.32, fy:0.82 },
     { k:"bucket", fx:0.82, fy:0.80 } ] },
 
   // ---- Harbourmaster ----
   home_16: { arch:"cosy older seafarer", pal:P.harbour, rug:"#3a6a8a", props:[
     { k:"sea_cabinet", fx:0.03, fy:0.24 }, { k:"nav_chart", fx:0.32, fy:0.04 },
-    { k:"sea_chest", fx:0.14, fy:0.78 }, { k:"model_boat", fx:0.42, fy:0.82 },
+    { k:"sea_chest", fx:0.14, fy:0.78 }, { k:"model_boat", fx:0.32, fy:0.82 },
     { k:"armchair", fx:0.80, fy:0.70 }, { k:"lantern", fx:0.90, fy:0.60 } ] },
 };
 
