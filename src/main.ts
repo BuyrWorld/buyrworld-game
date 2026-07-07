@@ -12,6 +12,7 @@ import { nightAlpha, lampGlow, isNight, skyTint, gameHour, DAY_DURATION_MS } fro
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_COLOURS, TROUSER_COLOURS, FACIAL_HAIR_STYLES, EYE_COLOURS, JACKET_COLOURS, SHOE_COLOURS, ACCESSORY_STYLES, SCARF_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
+import { HOME_INTERIORS, DEFAULT_THEME } from './data/homeInteriors.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -1814,6 +1815,94 @@ function drawOccy(ctx, cx, cy, t, sz){
   ctx.fillStyle = "#ffffff";
   ctx.beginPath(); ctx.arc(cx - 3.8*s, cy - 2*s, 0.9*s, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(cx + 6.2*s, cy - 2*s, 0.9*s, 0, Math.PI*2); ctx.fill();
+}
+// HX2 household prop library — draws one prop at anchor (x,y). Canvas props keep
+// full positional control; "tile:" keys use verified Roguelike Interior tiles.
+function _homeProp(ctx, k, x, y, W, H, t, _ft, pal){
+  const _R=(c,X,Y,w,h)=>{ ctx.fillStyle=c; ctx.fillRect(X|0,Y|0,w|0,h|0); };
+  const _E=(e,X,Y,s)=>drawEmojiC(ctx,e,X,Y,s);
+  const _SR=(c,X,Y,w,h,lw=1)=>{ ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.strokeRect((X|0)+.5,(Y|0)+.5,w-1,h-1); };
+  if (k.indexOf("tile:")===0){
+    const T={ bookshelf:[8,2,1,2,"#6a4228"], plant:[14,0,1,2,"#3a8a2a"], fireplace:[22,0,2,2,"#4a3020"],
+              table:[4,0,2,2,"#7a5030"], sofa:[0,4,3,1,"#7a5a60"], cabinet:[12,0,1,2,"#6a4228"] }[k.slice(5)];
+    if (T) _ft(T[0],T[1],x,y,T[2],T[3],T[4]);
+    return;
+  }
+  const tall=(body,door,items,glass)=>{ const h=Math.max(40,H-y-14), w=26;
+    _R(body,x,y,w,h); _R(door,x+2,y+2,w-4,h-4);
+    _SR("rgba(0,0,0,.2)",x,y,w,h); _R("rgba(0,0,0,.2)",x+w/2-0.5,y+4,1,h-8);
+    if(glass) _R("rgba(180,210,230,.22)",x+3,y+3,w-6,h-6);
+    if(items) items.forEach((e,i)=>_E(e,x+w/2,y+16+i*20,10));
+  };
+  const counter=(len,top,body,items)=>{ _R(body,x,y+6,len,16); _R(top,x,y+4,len,4);
+    _SR("rgba(0,0,0,.15)",x,y+6,len,16);
+    if(items) items.forEach((e,i)=>_E(e,x+12+i*22,y-2,10));
+  };
+  const chair=(col,dark,back)=>{ _R("rgba(0,0,0,.12)",x-2,y+16,24,4);
+    _R(col,x-3,y+2,4,13); _R(col,x+19,y+2,4,13); _R(col,x,y,20,16); _R(dark,x+2,y+12,16,4);
+    if(back) _R(col,x,y-6,20,7);
+  };
+  switch(k){
+    // tall units
+    case "wardrobe":       tall("#3a2a1a","#5a4030",null); _R("#7a5a30",x+18,y+18,3,3); break;
+    case "filing_cabinet": tall("#5a6478","#8a94a8",null); for(let i=0;i<3;i++){ _R("#c4ccd8",x+4,y+10+i*18,18,12); _R("#33405a",x+11,y+15+i*18,4,2);} break;
+    case "display_case":   tall("#4a3626","#6a5038",["🏆","📖","🖼️"],true); break;
+    case "metal_shelf":    tall("#3a3a42","#55555f",["⚙️","🔧","🔩"]); break;
+    case "sea_cabinet":    tall("#2a4a6a","#3f6a8a",["🐚","🌊"]); break;
+    case "egg_dresser":    tall("#6a4a28","#8a6238",["🥚","🧺","🌿"]); break;
+    case "tool_chest":     _R("#4a4a52",x,y,30,16); _R("#5a5a62",x+2,y+2,26,5); _R("#3a3a42",x+2,y+9,26,5); _E("🔧",x+15,y+7,9); break;
+    // counters
+    case "kitchen_counter": counter(W*0.30,"#c0a880","#8a5a30",["🫙","🍵","🧺"]); break;
+    case "workbench":       counter(W*0.28,"#8a6a3a","#5a3f22",["🪚","🔨","🪵"]); break;
+    // wall decor
+    case "tea_shelf":     _R("#7a5a30",x,y,56,5); _E("🫖",x+9,y-4,10); _E("☕",x+28,y-4,9); _E("🍯",x+46,y-4,9); break;
+    case "framed_certs":  _R("#33405a",x,y,20,15); _R("#c4ccd8",x+2,y+2,16,11); _R("#33405a",x+26,y,20,15); _R("#e6ecf2",x+28,y+2,16,11); break;
+    case "wall_photos":   _R("#5a3a18",x,y,22,17); _R("#a0c0d8",x+2,y+2,18,13); _R("#5a3a18",x+30,y,22,17); _R("#d0c0a0",x+32,y+2,18,13); break;
+    case "tool_hooks":    _R("#4a3020",x-4,y+11,60,4); _E("🔨",x+2,y,10); _E("🗜️",x+24,y,10); _E("🔩",x+46,y,9); break;
+    case "axe_wall":      _R("#6a4a28",x-2,y+11,58,4); _E("🪓",x+8,y,12); _E("🪚",x+34,y+1,11); break;
+    case "hanging_net":   ctx.strokeStyle="rgba(210,200,170,.5)"; ctx.lineWidth=0.9; for(let i=0;i<5;i++){ ctx.beginPath(); ctx.arc(x+i*11,y+8,10+i*2,0,Math.PI); ctx.stroke(); } _R("#5a4020",x-4,y-2,12,4); break;
+    case "nav_chart":     _R("#2a4a6a",x,y,44,28); _R("#7aa0c8",x+2,y+2,40,24); ctx.fillStyle="#c8e4ff"; ctx.beginPath(); ctx.arc(x+22,y+14,7,0,7); ctx.fill(); _R("#2a4a6a",x+22,y+6,1,16); _R("#2a4a6a",x+15,y+14,14,1); break;
+    case "route_board":   _R("#6a5030",x,y,34,28); _R("#c0a870",x+2,y+2,30,24); _R("rgba(60,80,160,.35)",x+4,y+4,26,20); for(let i=0;i<3;i++)_R("rgba(200,60,60,.6)",x+8+i*7,y+7+i*4,12,2); _E("📍",x+9,y+9,7); break;
+    case "pinned_manifests": _R("#e8e0c8",x,y,14,18); _R("#e0d8bc",x+18,y+2,14,18); _R("#ece4cc",x+36,y,14,18); _E("📄",x+7,y+9,8); break;
+    case "bunting":       for(let i=0;i<7;i++){ ctx.fillStyle=["#e05a5a","#e0b84a","#5ab46a","#5a9ae0"][i%4]; ctx.beginPath(); ctx.moveTo(x+i*16,y); ctx.lineTo(x+i*16+12,y); ctx.lineTo(x+i*16+6,y+9); ctx.closePath(); ctx.fill(); } break;
+    case "rosettes":      _E("🏵️",x,y,13); _E("🎀",x+20,y+2,12); _R("#c8a020",x-2,y+16,28,3); break;
+    case "herb_bunches":  _E("🌿",x,y,12); _E("🌾",x+18,y+1,12); _E("🧄",x+36,y,11); break;
+    case "knife_rack":    _R("#5a4028",x,y,44,6); for(let i=0;i<4;i++){ _R("#c8ccd4",x+6+i*10,y+6,2,10); _R("#3a2a1a",x+5+i*10,y+15,4,3); } break;
+    // chairs
+    case "armchair":      chair("#8a5a4a","#6a4030",true); break;
+    case "single_chair":  chair("#6a7a8a","#4a5a6a",true); break;
+    case "reading_chair": chair("#6a5a8a","#4a3a6a",true); _E("📖",x+9,y+6,8); break;
+    case "rocking_chair": chair("#7a5a30","#5a3f20",true); _R("#5a3f20",x-3,y+19,26,2); break;
+    // floor props
+    case "writing_desk":  _R("#7a5030",x,y,42,18); _R("#8a5f38",x,y-2,42,4); _R("#4a7888",x+4,y+3,20,10); _E("📋",x+31,y+2,9); break;
+    case "tea_table":     _R("#8a5f38",x,y,24,4); _R("#6a4020",x+10,y+4,4,12); _E("🫖",x+12,y-3,10); break;
+    case "cake_stand":    _R("#e8e0d0",x+6,y+10,4,8); _R("#f4ecdc",x,y+6,16,5); _E("🍰",x+8,y+1,11); break;
+    case "kids_toys":     _E("🧸",x,y,12); _E("⚽",x+18,y+3,10); _R("#e05a5a",x+30,y+4,6,6); _R("#5a9ae0",x+37,y+4,6,6); break;
+    case "toy_lorry":     _R("#c85a4a",x,y+4,22,9); _R("#8a3a2a",x+16,y,8,7); ctx.fillStyle="#2a2a2a"; ctx.beginPath(); ctx.arc(x+5,y+14,3,0,7); ctx.arc(x+18,y+14,3,0,7); ctx.fill(); break;
+    case "crate_stack":   { const cr=(X,Y)=>{ _R("#8c6947",X,Y,16,14); _SR("#5a3a20",X,Y,16,14); _R("#5a3a20",X+7,Y,2,14); }; cr(x,y+16); cr(x+18,y+16); cr(x+9,y); } break;
+    case "timber_stack":  for(let i=0;i<3;i++){ _R("#9a7442",x,y+i*7,40,6); _R("#7a5a2f",x,y+i*7,40,1);} for(let i=0;i<2;i++){ ctx.fillStyle="#b48a52"; ctx.beginPath(); ctx.arc(x+2,y+3+i*7,3,0,7); ctx.arc(x+40,y+3+i*7,3,0,7); ctx.fill(); } break;
+    case "wood_crafts":   _E("🪵",x,y,11); _E("🔖",x+16,y+2,9); _E("🪑",x+30,y,10); break;
+    case "gears_project": _E("⚙️",x,y,13); _E("🔩",x+16,y+4,9); _R("#6a6a72",x+26,y,14,12); _R("#8a8a92",x+28,y+2,10,3); break;
+    case "kettle_stove":  _R("#4a4a52",x,y,26,18); _R("#2a2a30",x+3,y+3,20,4); _E("🫖",x+13,y-3,10); break;
+    case "kettle_mug":    _E("🫖",x,y,11); _E("☕",x+16,y+2,9); break;
+    case "ember_apron":   _R("#7a4a3a",x,y,16,20); _R("#5a3020",x+2,y-3,12,4); _E("🧤",x+24,y+4,10); break;
+    case "boots":         _R("#3a2a1a",x,y+6,8,10); _R("#3a2a1a",x+10,y+6,8,10); _R("#2a1c10",x,y+13,8,4); _R("#2a1c10",x+10,y+13,8,4); break;
+    case "preserve_shelf":_R("#8a6238",x,y,50,5); _E("🫙",x+8,y-4,10); _E("🍯",x+26,y-4,10); _E("🍓",x+44,y-4,9); break;
+    case "medal_case":    _R("#4a3626",x,y,34,16); _R("rgba(200,220,240,.3)",x+2,y+2,30,12); _E("🥇",x+9,y+7,10); _E("🎖️",x+25,y+7,10); break;
+    case "stacked_files": _R("#d8ccae",x,y,18,5); _R("#cfc2a0",x+1,y+5,18,5); _R("#e0d4b6",x,y+10,18,5); _E("📚",x+9,y-4,9); break;
+    case "tackle_box":    _R("#3a6a4a",x,y+6,22,12); _R("#4a7a5a",x,y+3,22,4); _E("🎣",x+11,y-2,10); break;
+    case "bucket":        ctx.fillStyle="#7a8a94"; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+14,y); ctx.lineTo(x+11,y+14); ctx.lineTo(x+3,y+14); ctx.closePath(); ctx.fill(); _R("#9aaab4",x,y,14,3); _E("🐟",x+7,y+6,8); break;
+    case "oilskins":      _R("#c8a83a",x,y,14,22); _R("#b89830",x+2,y-3,10,4); _R("#a88820",x,y+8,14,2); break;
+    case "flower_jar":    ctx.fillStyle="#a0c0d8"; ctx.beginPath(); ctx.arc(x+7,y+12,6,0,7); ctx.fill(); _E("💐",x+7,y-2,12); break;
+    case "flower_pots":   _R("#6a4020",x,y+6,12,10); ctx.fillStyle="#2a8a2a"; ctx.beginPath(); ctx.arc(x+6,y+2,8,0,7); ctx.fill(); _E("🌻",x+6,y-8,11); _R("#6a4020",x+18,y+9,10,8); ctx.fillStyle="#3a9a3a"; ctx.beginPath(); ctx.arc(x+23,y+5,6,0,7); ctx.fill(); break;
+    case "feed_sacks":    _R("#c8b890",x,y+4,16,16); _R("#b8a880",x+2,y,12,6); _R("#c8b890",x+14,y+8,14,12); _E("🌾",x+8,y+10,9); break;
+    case "animal_basket": ctx.fillStyle="#a07840"; ctx.beginPath(); ctx.ellipse(x+12,y+8,14,7,0,0,7); ctx.fill(); ctx.fillStyle="#c8a860"; ctx.beginPath(); ctx.ellipse(x+12,y+6,12,5,0,0,7); ctx.fill(); _E("🐈",x+12,y+2,12); break;
+    case "sea_chest":     _R("#6a4a2a",x,y+4,30,16); _R("#8a6238",x,y,30,6); _R("#c8a020",x+13,y+2,4,16); ctx.fillStyle="#c8a020"; ctx.beginPath(); ctx.arc(x+15,y+11,2,0,7); ctx.fill(); break;
+    case "model_boat":    _R("#7a5030",x,y+8,20,5); ctx.fillStyle="#e8e0d0"; ctx.beginPath(); ctx.moveTo(x+10,y-6); ctx.lineTo(x+10,y+8); ctx.lineTo(x+18,y+8); ctx.closePath(); ctx.fill(); _R("#5a3f20",x+9,y-6,2,14); break;
+    case "lantern":       _R("#3a2a1a",x+3,y,8,3); _R("#c8a020",x+2,y+3,10,10); ctx.fillStyle="rgba(255,220,120,"+(0.5+Math.sin(t*3)*0.2).toFixed(2)+")"; ctx.beginPath(); ctx.arc(x+7,y+8,5,0,7); ctx.fill(); _R("#3a2a1a",x+2,y+13,10,3); break;
+    case "scales":        _R("#8a8a92",x+9,y+6,2,10); _R("#6a6a72",x,y+4,20,3); ctx.fillStyle="#aab0b8"; ctx.beginPath(); ctx.arc(x+3,y+9,4,0,Math.PI); ctx.arc(x+17,y+9,4,0,Math.PI); ctx.fill(); break;
+    case "ice_box":       _R("#8aa8b8",x,y,26,20); _R("#a8c4d0",x+2,y+2,22,7); _R("#c8dce4",x+2,y+2,22,2); _E("🧊",x+13,y+13,10); break;
+  }
 }
 function nearestInteractable(){
   let best=null, bd=56;
@@ -3721,10 +3810,9 @@ function drawInterior(t){
   }
   if (S.tab==="home"){
     const _v = VILLAGERS.find(v => v.homeId === S.roomObjId);
-    const _bld = (V_OBJECTS as any[]).find(o => o.id === S.roomObjId);
-    const _wc = _bld?.wall || '#d0c0a8';
-    const _rc = _bld?.roof || '#7a5a40';
-    room(_rc, _wc, "#c4a460", "#bc9c58", "#4a3020");
+    const _theme = HOME_INTERIORS[S.roomObjId] || DEFAULT_THEME;
+    const _pal = _theme.pal;
+    room(_pal.wallTop, _pal.wall, _pal.floorA, _pal.floorB, _pal.trim);
     winP(W*0.12, 34); winP(W*0.62, 34);
     // Bed config: d=double (couple), k=children's beds
     const _bConf = ({
@@ -3765,105 +3853,22 @@ function drawInterior(t){
       ctx.fillRect(_cbX+2,_cbY+9,36,15);
       ctx.fillStyle="#f4f0e8"; ctx.fillRect(_cbX+4,_cbY+9,32,6);
     }
-    // Rug
-    ctx.fillStyle="rgba(90,60,30,.22)"; ctx.fillRect(W/2-44,H-60,88,46);
-    ctx.strokeStyle="rgba(150,110,40,.35)"; ctx.lineWidth=1.5; ctx.strokeRect(W/2-40,H-56,80,38);
-    // Personality furniture per villager
-    const _vid = _v?.id||"";
-    if (_vid==="agnes"||_vid==="hector"){
-      // Admin: tall bookshelf + writing desk
-      ctx.fillStyle="#5a3820"; ctx.fillRect(10,50,22,H-65);
-      for(let bi=0;bi<5;bi++){ctx.fillStyle=(["#c94a3a","#4a6ec9","#c99a4a","#4ac96a","#9a4ac9"] as string[])[bi];ctx.fillRect(12,53+bi*18,18,15);}
-      ctx.fillStyle="#7a5030"; ctx.fillRect(W/2-36,H-52,40,18);
-      ctx.fillStyle="#4a7888"; ctx.fillRect(W/2-34,H-52,36,12);
-      drawEmojiC(ctx,"📋",W/2-16,H-58,9);
-    } else if (_vid==="bertie"||_vid==="jack"){
-      // Forge worker: dark wardrobe + tool hooks
-      ctx.fillStyle="#3a2a1a"; ctx.fillRect(10,50,20,H-65);
-      ctx.fillStyle="#5a4030"; ctx.fillRect(11,52,18,H-70);
-      ctx.fillStyle="#7a5a30"; ctx.fillRect(17,66,5,3);
-      drawEmojiC(ctx,"🔨",W/2-50,H-54,9);
-      drawEmojiC(ctx,"⛏️",W/2-30,H-54,9);
-      drawEmojiC(ctx,"🔩",W/2-10,H-54,8);
-      ctx.fillStyle="#4a3020"; ctx.fillRect(W/2-56,H-46,60,6);
-    } else if (_vid==="clara"||_vid==="mabel"){
-      // Baker: kitchen shelf + preserves + warm table
-      ctx.fillStyle="#7a5a30"; ctx.fillRect(10,50,W*0.3,18);
-      ctx.fillStyle="#c0a880"; ctx.fillRect(10,50,W*0.3,4);
-      drawEmojiC(ctx,"🫙",18,62,9); drawEmojiC(ctx,"🍵",38,62,9); drawEmojiC(ctx,"🧺",58,62,9);
-      ctx.fillStyle="#9a7048"; ctx.fillRect(W/2-22,H-52,44,30);
-      ctx.fillStyle="#b08060"; ctx.fillRect(W/2-20,H-54,40,4);
-      drawEmojiC(ctx,"🍰",W/2-8,H-56,9);
-    } else if (_vid==="derek"||_vid==="lenny"){
-      // Logistics: route-map corkboard + desk
-      ctx.fillStyle="#6a5030"; ctx.fillRect(10,50,32,28);
-      ctx.fillStyle="#c0a870"; ctx.fillRect(12,52,28,24);
-      ctx.fillStyle="rgba(60,80,160,.35)"; ctx.fillRect(14,54,24,18);
-      for(let ri=0;ri<3;ri++){ctx.fillStyle="rgba(200,60,60,.5)";ctx.fillRect(18+ri*6,55+ri*4,12,2);}
-      drawEmojiC(ctx,"📍",17,62,7);
-      ctx.fillStyle="#7a5a30"; ctx.fillRect(W/2-20,H-50,40,18);
-      drawEmojiC(ctx,"📄",W/2-8,H-55,9);
-    } else if (_vid==="edna"){
-      // Archivist: display cabinet + framed photos on back wall
-      ctx.fillStyle="#5a4028"; ctx.fillRect(10,50,28,H-65);
-      ctx.fillStyle="rgba(200,180,140,.18)"; ctx.fillRect(12,52,24,H-70);
-      drawEmojiC(ctx,"🏆",14,62,9); drawEmojiC(ctx,"📖",14,83,9); drawEmojiC(ctx,"🖼️",14,104,9);
-      ctx.fillStyle="#5a3a18"; ctx.fillRect(W/2-32,12,24,18); ctx.fillStyle="#a0c0d8"; ctx.fillRect(W/2-30,14,20,14);
-      ctx.fillStyle="#5a3a18"; ctx.fillRect(W/2+6,12,24,18); ctx.fillStyle="#d0c0a0"; ctx.fillRect(W/2+8,14,20,14);
-    } else if (_vid==="frank"||_vid==="ned"){
-      // Woodsman: workbench + trestle legs + bookshelf
-      ctx.fillStyle="#7a5a30"; ctx.fillRect(10,50,W*0.27,18);
-      ctx.fillStyle="#6a4a20"; ctx.fillRect(10,68,6,H-82); ctx.fillRect(10+W*0.27-6|0,68,6,H-82);
-      drawEmojiC(ctx,"🪚",18,60,9); drawEmojiC(ctx,"🪵",42,60,9);
-      ctx.fillStyle="#7a5a30"; ctx.fillRect(W-30,50,20,H-65);
-      for(let bi=0;bi<4;bi++){ctx.fillStyle=(["#8a7050","#7a8a6a","#9a8a60","#6a8870"] as string[])[bi];ctx.fillRect(W-28,54+bi*22,16,18);}
-    } else if (_vid==="gracie"){
-      // Farmer: flower pots + cabinet with farm goods
-      ctx.fillStyle="#6a4020"; ctx.fillRect(10,H-46,14,18); ctx.fillStyle="#2a8a2a"; ctx.beginPath(); ctx.arc(17,H-50,12,0,7); ctx.fill();
-      ctx.fillStyle="#6a4020"; ctx.fillRect(32,H-42,12,15); ctx.fillStyle="#3a9a3a"; ctx.beginPath(); ctx.arc(38,H-46,9,0,7); ctx.fill();
-      drawEmojiC(ctx,"🌻",22,H-62,11);
-      ctx.fillStyle="#5a3820"; ctx.fillRect(10,50,22,H-65);
-      drawEmojiC(ctx,"🥚",13,68,9); drawEmojiC(ctx,"🌿",13,88,9);
-    } else if (_vid==="ida"){
-      // Fisher: rod + net on wall + cabinet
-      ctx.strokeStyle="#8a7050"; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(10,52); ctx.lineTo(108,63); ctx.stroke();
-      ctx.fillStyle="#c0a870"; ctx.fillRect(9,50,5,5);
-      ctx.strokeStyle="rgba(180,160,120,.4)"; ctx.lineWidth=0.8;
-      for(let ni=0;ni<5;ni++){ctx.beginPath();ctx.arc(50+ni*9,65,9+ni*2,0,Math.PI);ctx.stroke();}
-      drawEmojiC(ctx,"🎣",12,80,10);
-      ctx.fillStyle="#6a4a28"; ctx.fillRect(W-30,50,20,H-65);
-    } else if (_vid==="kitty"){
-      // Engineer: dark metal shelf + tool chest
-      ctx.fillStyle="#3a3a3a"; ctx.fillRect(10,50,W*0.26,18);
-      drawEmojiC(ctx,"⚙️",14,60,10); drawEmojiC(ctx,"🔧",36,60,9); drawEmojiC(ctx,"🔩",58,58,9);
-      ctx.fillStyle="#4a4a4a"; ctx.fillRect(10,70,W*0.26,H-85);
-      ctx.fillStyle="#5a5a5a"; ctx.fillRect(12,76,W*0.26-4,6);
-      ctx.fillStyle="#666"; ctx.fillRect(12,88,W*0.26-4,6);
-      ctx.fillStyle="#555"; ctx.fillRect(12,100,W*0.26-4,6);
-    } else if (_vid==="olive"||_vid==="pearl"){
-      // Fishmonger: blue nautical cabinet + hanging net
-      ctx.fillStyle="#3a5a7a"; ctx.fillRect(10,50,22,H-65);
-      ctx.fillStyle="#4a6a8a"; ctx.fillRect(11,52,20,H-70);
-      drawEmojiC(ctx,"🐠",12,68,9); drawEmojiC(ctx,"🌊",12,88,9);
-      ctx.strokeStyle="#8a6a40"; ctx.lineWidth=0.9;
-      for(let ni=0;ni<4;ni++){ctx.beginPath();ctx.arc(W/2-8+ni*9,58,10+ni*2,0,Math.PI);ctx.stroke();}
-      ctx.fillStyle="#5a4020"; ctx.fillRect(W/2-6,46,12,4);
-    } else if (_vid==="reg"){
-      // Harbourmaster: navigation chart + model boat + anchor
-      ctx.fillStyle="#2a4a6a"; ctx.fillRect(10,50,38,26);
-      ctx.fillStyle="#7aa0c8"; ctx.fillRect(12,52,34,22);
-      ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(12,52,34,22);
-      ctx.fillStyle="#c8e4ff"; ctx.beginPath(); ctx.arc(29,63,7,0,7); ctx.fill();
-      ctx.fillStyle="#2a4a6a"; ctx.fillRect(29,56,1,14); ctx.fillRect(22,63,14,1);
-      drawEmojiC(ctx,"⚓",20,86,10);
-      drawEmojiC(ctx,"⛵",W/2-8,H-54,12);
-    } else {
-      // Generic fallback: bookshelf + round table
-      ctx.fillStyle="#7a5a30"; ctx.fillRect(10,50,22,H-65);
-      for(let bi=0;bi<4;bi++){ctx.fillStyle=(["#c94a3a","#4a6ec9","#c99a4a","#4ac96a"] as string[])[bi];ctx.fillRect(12,53+bi*19,18,16);}
-      ctx.fillStyle="#a07850"; ctx.beginPath(); ctx.arc(W/2,H-42,16,0,7); ctx.fill();
-      ctx.fillStyle="#b08860"; ctx.beginPath(); ctx.arc(W/2,H-42,11,0,7); ctx.fill();
+    // Rug — tinted to the household theme
+    const _rugC = _theme.rug || "#a07850";
+    ctx.save();
+    ctx.globalAlpha=0.20; ctx.fillStyle=_rugC; ctx.fillRect(W/2-44,H-60,88,46);
+    ctx.globalAlpha=0.48; ctx.strokeStyle=_rugC; ctx.lineWidth=1.5; ctx.strokeRect(W/2-40,H-56,80,38);
+    ctx.globalAlpha=0.30; ctx.strokeRect(W/2-34,H-50,68,26);
+    ctx.restore();
+    // Household furniture & props (data-driven — see data/homeInteriors.ts)
+    const _sc = 2, _tsz = 16*_sc;
+    const _ft = (col,row,x,y,tw=1,th=1,fbCol="#8a6a4a") => {
+      if (!drawFurnitureTile(ctx, col, row, Math.round(x), Math.round(y), _sc, tw, th)){
+        ctx.fillStyle=fbCol; ctx.fillRect(Math.round(x),Math.round(y),_tsz*tw,_tsz*th);
+      }
+    };
+    for (const _p of _theme.props){
+      _homeProp(ctx, _p.k, Math.round(_p.fx*W), Math.round(_p.fy*H), W, H, t, _ft, _pal);
     }
     // --- NPC daily routine (time-of-day activity) ---
     if (_v){
