@@ -2677,12 +2677,6 @@ function drawExtras(ctx, t){
     ctx.beginPath(); ctx.moveTo(slX+8,slY+5); ctx.lineTo(slX+24,pkY+pkH-22); ctx.lineTo(slX+24,pkY+pkH-20); ctx.lineTo(slX+9,slY+5); ctx.closePath(); ctx.fill();
     ctx.fillStyle="#a02040"; ctx.fillRect(slX+4,slY,26,7);
     ctx.fillStyle="#c83060"; ctx.fillRect(slX+6,slY+1,22,4);
-    // ornamental tree (NE corner) — drawn BEFORE swing so swing renders in front
-    const _otX=pkX+pkW-22, _otY=pkY+10;
-    ctx.fillStyle="#6a4020"; ctx.fillRect(_otX,_otY,4,pkH-22);
-    ctx.fillStyle="#2d7a3c"; ctx.beginPath(); ctx.arc(_otX+2,_otY+2,13,0,7); ctx.fill();
-    ctx.fillStyle="#3a8a48"; ctx.beginPath(); ctx.arc(_otX-6,_otY+7,8,0,7); ctx.fill();
-    ctx.fillStyle="#48aa52"; ctx.beginPath(); ctx.arc(_otX+9,_otY-3,7,0,7); ctx.fill();
     // swings (far east, animated arc)
     const swX=pkX+194, swY=pkY+8;
     ctx.fillStyle="#4a3010"; ctx.fillRect(swX,swY,4,pkH-26); ctx.fillRect(swX+28,swY,4,pkH-26);
@@ -3144,18 +3138,10 @@ function drawVillage(t){
         </div>`;
       }
     }
-    // district identity: a "you're in" chip + banners over open district hubs
+    // district identity: a single subtle "you're in" chip, top-right only
     {
       const _cd = currentDistrict();
       if (_cd) html += `<div class="dist-chip" style="border-color:${_cd.color};color:${_cd.color}">${_cd.ic} ${_cd.name}</div>`;
-      const _dtl = totalLvl();
-      for (const d of DISTRICTS){
-        if (!isDistrictOpen(d, _dtl)) continue;
-        const _hx = (d.hub[0]*TILE + TILE/2 - CAM.x) / VIEW_W * 100;
-        const _hy = (d.hub[1]*TILE - 6 - CAM.y) / VIEW_H * 100;
-        if (_hx > 2 && _hx < 98 && _hy > 4 && _hy < 96)
-          html += `<div class="dist-banner" style="left:${_hx.toFixed(1)}%;top:${_hy.toFixed(1)}%;background:${d.color}">${d.ic} ${d.name}</div>`;
-      }
     }
     overlay.innerHTML = html;
   }
@@ -7592,14 +7578,15 @@ function renderMain(){
           ].filter(Boolean).join(" · ")
         : "";
       const _isNightNow = isNight();
-      const _canSteal = _isNightNow && !S.stolen;
+      const _canSteal = !S.stolen;
       const _trespassBadge = `<div style="background:rgba(180,20,20,.9);color:#fff;font:700 9px 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:8px">⚠ TRESPASSING</div>`;
       const _fleeBar = S.fleeUntil > 0
         ? `<div style="background:rgba(180,20,20,.15);border:1px solid rgba(255,60,40,.5);border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#ff5040;font-weight:700">🚨 FLEE! ${Math.max(0,Math.ceil((S.fleeUntil-Date.now())/1000))}s to get out!</div>`
         : "";
-      const _stealBtn = _isNightNow
-        ? `<button data-steal style="background:${_canSteal?"#2a1a3a":"#3a3a3a"};color:${_canSteal?"#d080ff":"#6a6a6a"};border:none;padding:5px 12px;border-radius:3px;cursor:${_canSteal?"pointer":"default"};font-size:11px;margin-top:6px"${_canSteal?"":" disabled"}>${_canSteal?"🤫 Steal from fridge":"✓ Already taken something — leave!"}</button>`
-        : `<p style="font-size:10px;color:var(--dim);margin:6px 0 0">Return at night (22:00–06:00) to… explore further.</p>`;
+      const _stealHint = _isNightNow
+        ? `<span style="font-size:10px;color:#ff8870;margin-left:6px">😴 they're home & asleep — risky!</span>`
+        : `<span style="font-size:10px;color:var(--dim);margin-left:6px">🚪 the place is empty right now…</span>`;
+      const _stealBtn = `<button data-steal style="background:${_canSteal?"#2a1a3a":"#3a3a3a"};color:${_canSteal?"#d080ff":"#6a6a6a"};border:none;padding:5px 12px;border-radius:3px;cursor:${_canSteal?"pointer":"default"};font-size:11px;margin-top:6px"${_canSteal?"":" disabled"}>${_canSteal?"🤫 Steal from the kitchen":"✓ Already pocketed something — best leave!"}</button>${_canSteal?_stealHint:""}`;
       m.innerHTML = _withRoom(`🏠 ${_hvName}'s Cottage`,
         `<div class="panel" style="padding:10px">
           ${_trespassBadge}
@@ -8142,7 +8129,6 @@ function bindMain(){
   });
   // M10 — mischief handlers
   document.querySelectorAll("[data-steal]").forEach(b=> (b as HTMLElement).onclick = ()=>{
-    if (!isNight()){ toast("Not a good time for this."); return; }
     if (S.stolen){ toast("You've already taken something — leave!"); return; }
     const _item = _STOLEN_FOODS[Math.floor(Math.random()*_STOLEN_FOODS.length)];
     if (!S.items) S.items = {};
