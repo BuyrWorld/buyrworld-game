@@ -211,10 +211,11 @@ describe('CONTRACT_POOL', () => {
 
 /* ---- audio tracks ---- */
 describe('TRACKS', () => {
-  const EXPECTED = ['valley', 'quarry', 'forge', 'line', 'market', 'barn', 'pier', 'home'];
+  const EXPECTED = ['valley', 'quarry', 'forge', 'line', 'market', 'barn', 'pier', 'home',
+    'club_pop', 'club_rock', 'club_hiphop', 'club_trance', 'club_80s'];
 
-  it('has exactly 8 tracks', () => {
-    expect(Object.keys(TRACKS).length).toBe(8);
+  it('has exactly 13 tracks (8 location + 5 nightclub themes)', () => {
+    expect(Object.keys(TRACKS).length).toBe(13);
   });
 
   it('contains all expected track names', () => {

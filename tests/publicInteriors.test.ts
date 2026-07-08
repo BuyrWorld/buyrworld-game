@@ -46,9 +46,9 @@ const overlaps = (a: any, b: any) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 describe('HX4 public interiors — collision walkability', () => {
-  it('covers the 7 core social/shop rooms', () => {
+  it('covers the core social/shop rooms', () => {
     expect(rooms.sort()).toEqual(
-      ['bank','cafe','estateagent','furniture_shop','postoffice','pub','retail'].sort());
+      ['bank','cafe','estateagent','furniture_shop','nightclub','postoffice','pub','retail'].sort());
   });
 
   it('nothing blocks the exit lane', () => {

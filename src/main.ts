@@ -14,6 +14,7 @@ import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_
 import { VILLAGERS } from './data/villagers.ts';
 import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRects } from './data/homeInteriors.ts';
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
+import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -160,6 +161,7 @@ function zoneForTab(tab){
   if (tab==="fishing") return "pier";
   if (tab==="upgrades" || tab==="ach") return "market";
   if (tab==="home") return "home";
+  if (tab==="nightclub") return "club_" + clubTheme().track;
   return "valley";
 }
 const MUSIC = (() => {
@@ -724,7 +726,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -4469,6 +4471,56 @@ function drawInterior(t){
     ctx.fillStyle="#1a5a28"; ctx.beginPath(); ctx.arc(W-20,H-46,10,0,7); ctx.fill();
     ctx.fillStyle="#2a7a38"; ctx.beginPath(); ctx.arc(W-26,H-50,7,0,7); ctx.arc(W-14,H-50,7,0,7); ctx.fill();
   }
+  if (S.tab==="nightclub"){
+    // Club Featherstone — dark venue, themed night (M11)
+    const _th = clubTheme();
+    const _pulse = 0.5 + 0.5*Math.sin(t*6);
+    ctx.fillStyle="#0e0a16"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#160e22"; ctx.fillRect(0,0,W,46);                 // back wall
+    ctx.fillStyle=_th.neon;  ctx.fillRect(0,44,W,2);                 // neon wall strips
+    ctx.fillStyle=_th.neon2; ctx.fillRect(0,H-3,W,3);
+    // disco ball + light rays
+    const _dbx=W/2, _dby=30;
+    for(let r=0;r<8;r++){ const a=t*0.6+r*Math.PI/4; ctx.strokeStyle=(r%2?_th.neon:_th.neon2)+"44"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(_dbx,_dby); ctx.lineTo(_dbx+Math.cos(a)*190,_dby+Math.sin(a)*190); ctx.stroke(); }
+    ctx.fillStyle="#c8c8d8"; ctx.beginPath(); ctx.arc(_dbx,_dby,7,0,7); ctx.fill();
+    for(let i=0;i<6;i++){ ctx.fillStyle=i%2?"#fff":"#8a8aa0"; ctx.fillRect(_dbx-6+i*2,_dby-6,2,12); }
+    // dance-floor grid (theme palette, pulsing)
+    const _fx0=70,_fy0=72,_cols=8,_rows=5,_cs=22;
+    for(let r=0;r<_rows;r++) for(let c=0;c<_cols;c++){
+      const idx=(r+c+Math.floor(t*3))%_th.floor.length;
+      ctx.globalAlpha=(((c+r+Math.floor(t*2))%2)===0)?0.85:0.4; ctx.fillStyle=_th.floor[idx];
+      ctx.fillRect(_fx0+c*_cs,_fy0+r*_cs,_cs-2,_cs-2);
+    }
+    ctx.globalAlpha=1;
+    // DJ booth (back centre)
+    ctx.fillStyle="#1a1226"; ctx.fillRect(120,10,80,28); ctx.fillStyle=_th.neon+"aa"; ctx.fillRect(120,10,80,3);
+    for(const _tx of [138,182]){ ctx.fillStyle="#2a2a32"; ctx.beginPath(); ctx.arc(_tx,26,8,0,7); ctx.fill();
+      ctx.fillStyle="#0a0a0a"; ctx.beginPath(); ctx.arc(_tx,26,6,0,7); ctx.fill();
+      ctx.strokeStyle=_th.neon2; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(_tx,26); ctx.lineTo(_tx+Math.cos(t*8)*5,26+Math.sin(t*8)*5); ctx.stroke(); }
+    drawPerson(ctx,160,20,"#1a1a1a",_th.neon,t,false,1,null,"down",null,"#0a0a0a",null,false);
+    drawEmojiC(ctx,"🎧",160,9,10);
+    // speaker stacks
+    for(const _sx of [10,286]){ ctx.fillStyle="#14101c"; ctx.fillRect(_sx,10,24,34);
+      ctx.fillStyle="#0a0810"; for(const _sy of [17,31]){ ctx.beginPath(); ctx.arc(_sx+12,_sy,6+_pulse*2,0,7); ctx.fill(); }
+      ctx.fillStyle=_th.neon+"66"; ctx.fillRect(_sx,10,24,2); }
+    // bar (right)
+    ctx.fillStyle="#1c1428"; ctx.fillRect(250,96,60,20); ctx.fillStyle=_th.neon2+"88"; ctx.fillRect(250,96,60,3);
+    drawEmojiC(ctx,"🍹",266,104,10); drawEmojiC(ctx,"🥤",292,104,9);
+    drawPerson(ctx,280,92,"#2a1a2a","#e0e0e8",t,false,-1,null,"down",null,"#1a1a20",null,true);
+    // dancing crowd (theme outfits, bobbing)
+    const _dancers=[[100,152],[150,162],[200,152],[128,126],[184,128]];
+    _dancers.forEach((p,i)=>{ const o=_th.outfit[i%_th.outfit.length]; const bob=Math.sin(t*8+i*1.3)*3;
+      drawPerson(ctx,p[0],p[1]+bob,(["#2a1a0a","#6a4a2a","#c9a24b"] as string[])[i%3],o[0],t,true,i%2?1:-1,null,"down",null,o[1],null,i%2===0); });
+    // bouncer by the door
+    drawPerson(ctx,W/2+42,H-30,"#1a1a1a","#2a2a2a",t,false,-1,null,"down",null,"#111111",null,false);
+    drawEmojiC(ctx,"🕶️",W/2+42,H-40,8);
+    // theme banner (drawn last, on top)
+    ctx.fillStyle="rgba(0,0,0,.55)"; ctx.fillRect(W/2-72,4,144,15);
+    ctx.strokeStyle=_th.neon; ctx.lineWidth=1; ctx.strokeRect(W/2-72,4,144,15);
+    ctx.fillStyle=_th.neon; ctx.font="bold 8px monospace"; ctx.textAlign="center";
+    ctx.fillText(_th.emoji+" "+_th.name.toUpperCase(), W/2, 14); ctx.textAlign="left"; ctx.font="10px monospace";
+  }
   if (S.tab==="exchange"){
     // Exchange Floor interior — corporate, sleek, lots of screens
     room("#303848","#485060","#c0c8d0","#d0d8e0","#1a2028");
@@ -5233,6 +5285,7 @@ function speedMult(skill){
   }
   if (S.caffBuff && Date.now() < S.caffBuff) m *= 0.80;
   if (S.pintBuff && Date.now() < S.pintBuff) m *= 0.90;
+  if (S.danceBuff && Date.now() < S.danceBuff) m *= 0.85;
   const _sb = skillSpeedBonus(skill);
   if (_sb > 0) m *= (1 - _sb);
   const _kb = keepsakeSpeedBonus(skill);
@@ -6648,6 +6701,24 @@ const REX_BANTER = [
   "Aye, the stout's fresh on tonight. New barrel.",
   "You look like you've had a long day. This'll sort you out.",
 ];
+function renderNightclub(): string {
+  const _th = clubTheme();
+  const _mins = Math.max(1, Math.ceil(msToNextTheme()/60000));
+  const _danceMs = (S.danceBuff||0) - Date.now();
+  const _line = _th.lines[Math.floor(Date.now()/6000) % _th.lines.length];
+  const _buff = _danceMs > 0
+    ? `<div style="background:rgba(255,255,255,.06);border:1px solid ${_th.neon}66;border-radius:4px;padding:6px 10px;font-size:12px;color:${_th.neon};margin-bottom:8px">💃 On the floor! All action speed +15% for ${Math.ceil(_danceMs/60000)} more min.</div>`
+    : "";
+  const _rotation = CLUB_THEMES.map(x => x.id===_th.id ? `<b style="color:${_th.neon}">${x.name}</b>` : x.name).join(" · ");
+  return `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 4px;color:${_th.neon}">${_th.emoji} ${_th.name}</h3>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_th.tag} · next night in ~${_mins} min</p>
+    <p style="font-size:12px;margin:0 0 10px"><i>"${_line}"</i></p>
+    ${_buff}
+    <button data-dance style="background:${_th.neon};color:#160a12;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:700">💃 Hit the dance floor</button>
+    <p style="font-size:10px;color:var(--dim);margin:12px 0 0">Themed nights rotate every 7 game days:<br>${_rotation}</p>
+  </div>`;
+}
 function renderPub(): string {
   const _now = Date.now();
   const _today = getTodayStr();
@@ -7016,6 +7087,7 @@ function renderMain(){
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Featherstone Cycle Shop", renderBikeShop());
     else if (S.tab==="furniture_shop") m.innerHTML = _withRoom("🛋️ Nell's Home Store", renderFurnitureShop());
     else if (S.tab==="pub") m.innerHTML = _withRoom("🍺 The Rose & Pallet", renderPub());
+    else if (S.tab==="nightclub") m.innerHTML = _withRoom("🪩 Club Featherstone", renderNightclub());
     else if (S.tab==="police_station") m.innerHTML = _withRoom("🚔 Featherstone Police Station", renderPoliceStationPanel());
     else if (S.tab==="police_cell") m.innerHTML = _withRoom("🚔 Holding Cell — Featherstone Constabulary", renderPoliceCellPanel());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
@@ -7631,6 +7703,13 @@ function bindMain(){
     if (_fine > 0) log(`🙋 ${pName()} handed themselves in. ${fmt(_fine)} coin fine. Reduced sentence.`, "");
     toast(`🙋 Reduced sentence: 12 game-hours (about ${Math.round(_dur/60000)} real min).`);
     renderNav(); renderMain(); updateHud(); save();
+  });
+  // nightclub — hit the dance floor
+  document.querySelectorAll("[data-dance]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    S.danceBuff = Date.now() + 5*60000;
+    MUSIC.unlocked = true;
+    toast("💃 You hit the dance floor — buzzing! (+15% speed, 5 min)");
+    renderMain(); updateHud(); save();
   });
   // village beautification purchases
   document.querySelectorAll("[data-beautify]").forEach(b=>{

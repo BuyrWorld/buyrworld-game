@@ -24,8 +24,8 @@ Source of truth. Update only on design change. All other docs defer to this.
 
 ## Content adaptations (child-safe ruling)
 - Casino → **Exchange Floor** (stock/commodity risk-play, no gambling framing).
-- Nightclub → **Arcade & Music Hall** (social/entertainment).
-- Rationale: earlier directive "fun for children"; also broadens audience and avoids app-store/gambling friction. Revisit only with explicit decision.
+- ~~Nightclub → Arcade & Music Hall~~ → **Nightclub kept** (Club Featherstone, M11). Explicit decision 2026-07-08 to build a literal nightclub with rotating genre nights (pop/rock/hip-hop/trance/80s). Kept tasteful/cartoon and PG — neon, DJ, dance floor, mocktail bar; no alcohol emphasis, no adult content — so it stays within the child-safe pillar.
+- Rationale: earlier directive "fun for children"; also broadens audience and avoids app-store/gambling friction. Revisit further only with explicit decision.
 
 ## Long-term systems map (target)
 - Life sim layer: energy, character needs (light-touch), housing, education (University), fitness (Gym).

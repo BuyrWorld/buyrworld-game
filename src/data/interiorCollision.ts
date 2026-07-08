@@ -39,4 +39,10 @@ export const PUBLIC_COLS: Record<string, {x:number;y:number;w:number;h:number}[]
   estateagent: [
     { x:124, y:52,  w:72,  h:20 },  // agent desk
   ],
+  nightclub: [
+    { x:120, y:8,   w:80,  h:30 },  // DJ booth (back centre)
+    { x:8,   y:10,  w:26,  h:34 },  // speaker stack (left)
+    { x:286, y:10,  w:26,  h:34 },  // speaker stack (right)
+    { x:250, y:96,  w:60,  h:20 },  // bar (right)
+  ],
 };
