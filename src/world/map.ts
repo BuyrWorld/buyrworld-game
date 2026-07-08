@@ -107,6 +107,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'hall',        kind: 'bld',   tx: 23, ty: 22, w: 3, h: 3, tab: 'upgrades',      name: 'Town Hall',     ic: '🛒', wall: '#ecdfc6', roof: '#b0574f' },
   { id: 'bank',        kind: 'bld',   tx: 27, ty: 22, w: 2, h: 3, tab: 'bank',          name: 'Village Bank',  ic: '🏦', wall: '#e8e0cc', roof: '#8a7a5a' },
   { id: 'exchange',    kind: 'bld',   tx: 30, ty: 22, w: 2, h: 3, tab: 'exchange',      name: 'Exchange Floor',  ic: '📈', wall: '#d0d8e8', roof: '#2a4a6a' },
+  { id: 'town_directory', kind: 'sign', tx: 34, ty: 24, w: 1, h: 1, name: 'Town Directory', ic: '🗺️' },
   // --- Retail district (new high street, north extension) ---
   { id: 'retail',      kind: 'bld',   tx: 8,  ty: 2,  w: 2, h: 2, tab: 'retail',        name: 'Retail Stall',    ic: '🛍️', wall: '#f8d0d8', roof: '#e84060' },
   { id: 'postoffice',  kind: 'bld',   tx: 15, ty: 2,  w: 2, h: 2, tab: 'postoffice',    name: 'Post Office',     ic: '📮', wall: '#e8e0d8', roof: '#b03020' },

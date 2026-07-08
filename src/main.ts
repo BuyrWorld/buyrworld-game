@@ -17,6 +17,7 @@ import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
+import { DISTRICTS, isDistrictOpen, districtForBuilding } from './data/districts.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -1619,6 +1620,7 @@ function interactObj(o){
     toast(`${o.w.id==="frost"?"❄️":"💬"} ${o.w.n.toUpperCase()}: ` + o.w.tips[Math.floor(Math.random()*o.w.tips.length)]);
     return;
   }
+  if (o.id==="town_directory"){ openDistricts(); return; }
   S.tab = o.tab;
   S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
@@ -2038,6 +2040,57 @@ function _homeProp(ctx, k, x, y, W, H, t, _ft, pal){
     case "scales":        _R("#8a8a92",x+9,y+6,2,10); _R("#6a6a72",x,y+4,20,3); ctx.fillStyle="#aab0b8"; ctx.beginPath(); ctx.arc(x+3,y+9,4,0,Math.PI); ctx.arc(x+17,y+9,4,0,Math.PI); ctx.fill(); break;
     case "ice_box":       _R("#8aa8b8",x,y,26,20); _R("#a8c4d0",x+2,y+2,22,7); _R("#c8dce4",x+2,y+2,22,2); _E("🧊",x+13,y+13,10); break;
   }
+}
+// ---- Districts: directory modal + fast-travel ----
+function currentDistrict(){
+  const tl = totalLvl();
+  let best=null, bd=Infinity;
+  for (const d of DISTRICTS){
+    if (!isDistrictOpen(d, tl)) continue;
+    const hx=d.hub[0]*TILE+TILE/2, hy=d.hub[1]*TILE+TILE/2;
+    const dist=Math.hypot(VP.x-hx, VP.y-hy);
+    if (dist<bd){ bd=dist; best=d; }
+  }
+  return (best && bd < 14*TILE) ? best : null;
+}
+function closeDistricts(){ const e=document.getElementById("districts-modal"); if(e) e.remove(); }
+function visitDistrict(id){
+  const d=DISTRICTS.find(x=>x.id===id); if(!d || !isDistrictOpen(d, totalLvl())) return;
+  const [tx,ty]=d.hub;
+  VP.x=tx*TILE+TILE/2; VP.y=ty*TILE+TILE/2; VP.tx=null; VP.ty=null; VP.moving=false; VP.pending=null;
+  CAM.x=Math.max(0, Math.min(VP.x-VIEW_W/2, VCOLS*TILE-VIEW_W));
+  CAM.y=Math.max(0, Math.min(VP.y-VIEW_H/2, VROWS*TILE-VIEW_H));
+  if (S.tab!=="village"){ S.tab="village"; renderNav(); renderMain(); }
+  closeDistricts();
+  toast(`${d.ic} Arrived at ${d.name}.`);
+}
+function openDistricts(){
+  closeDistricts();
+  const tl=totalLvl();
+  const cards=DISTRICTS.map(d=>{
+    const planned=d.unlock.type==='planned', open=isDistrictOpen(d, tl);
+    const names=[...new Set((V_OBJECTS as any[]).filter(o=>o.name && districtForBuilding(o.id)===d.id).map(o=>o.name))];
+    const bl = names.length ? (names.slice(0,5).join(", ")+(names.length>5?` +${names.length-5} more`:"")) : "In development";
+    const badge = planned?`<span style="color:#9a9aa8">Planned</span>`:open?`<span style="color:#4aff88">● Open</span>`:`<span style="color:#ffb04a">🔒 Lvl ${d.unlock.n}</span>`;
+    const action = planned?`<span style="font-size:11px;color:var(--dim)">Coming soon</span>`
+      :open?`<button data-dvisit="${d.id}" style="background:${d.color};color:#161008;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">Visit →</button>`
+      :`<span style="font-size:11px;color:#ffb04a">Reach total level ${d.unlock.n} (you: ${tl})</span>`;
+    return `<div style="border-left:4px solid ${d.color};background:rgba(255,255,255,.03);border-radius:4px;padding:8px 10px;margin-bottom:6px;opacity:${(planned||!open)?0.72:1}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:700;font-size:13px">${d.ic} ${d.name}</div><div style="font-size:11px;white-space:nowrap">${badge}</div></div>
+      <div style="font-size:11px;color:var(--dim);margin:3px 0 5px">${d.blurb}</div>
+      <div style="font-size:10px;color:var(--dim)">${bl}</div>
+      <div style="margin-top:7px">${action}</div>
+    </div>`;
+  }).join("");
+  const el=document.createElement("div");
+  el.id="districts-modal"; el.className="dd-modal";
+  el.innerHTML=`<div class="dd-card"><button class="vp-close" onclick="document.getElementById('districts-modal').remove()">✕</button>
+    <div class="dd-title">🗺️ Town Directory</div>
+    <div class="dd-sub">Featherstone's districts — visit any open one to travel there instantly.</div>
+    <div>${cards}</div></div>`;
+  document.body.appendChild(el);
+  el.querySelectorAll("[data-dvisit]").forEach(b=>(b as HTMLElement).onclick=()=>visitDistrict((b as HTMLElement).dataset.dvisit));
+  el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
 }
 function nearestInteractable(){
   let best=null, bd=56;
@@ -3026,6 +3079,19 @@ function drawVillage(t){
             ${_giftBtns.length ? `<span style="color:rgba(0,0,0,.4);font-size:9px">gift:</span>${_giftBtns}` : ''}
           </div>
         </div>`;
+      }
+    }
+    // district identity: a "you're in" chip + banners over open district hubs
+    {
+      const _cd = currentDistrict();
+      if (_cd) html += `<div class="dist-chip" style="border-color:${_cd.color};color:${_cd.color}">${_cd.ic} ${_cd.name}</div>`;
+      const _dtl = totalLvl();
+      for (const d of DISTRICTS){
+        if (!isDistrictOpen(d, _dtl)) continue;
+        const _hx = (d.hub[0]*TILE + TILE/2 - CAM.x) / VIEW_W * 100;
+        const _hy = (d.hub[1]*TILE - 6 - CAM.y) / VIEW_H * 100;
+        if (_hx > 2 && _hx < 98 && _hy > 4 && _hy < 96)
+          html += `<div class="dist-banner" style="left:${_hx.toFixed(1)}%;top:${_hy.toFixed(1)}%;background:${d.color}">${d.ic} ${d.name}</div>`;
       }
     }
     overlay.innerHTML = html;
@@ -8196,6 +8262,7 @@ preloadAll();
 renderNav(); renderMain(); updateHud(); syncMusicButton();
 document.getElementById("btn-music").onclick = () => cycleVolume();
 document.getElementById("btn-fullscreen").onclick = () => toggleFullscreen();
+document.getElementById("btn-districts")?.addEventListener("click", () => openDistricts());
 window.addEventListener("keydown", e => {
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){

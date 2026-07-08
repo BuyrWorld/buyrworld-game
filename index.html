@@ -378,6 +378,13 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
   cursor:pointer; line-height:1; padding:0;
 }
 .vp-close:hover{ color:#ffd666; }
+/* districts — town directory modal + map identity */
+.dd-modal{ position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); padding:16px; }
+.dd-card{ position:relative; background:#221a12; border:2px solid #ffd666; border-radius:8px; padding:16px 16px 12px; width:min(460px,94vw); max-height:86vh; overflow-y:auto; box-shadow:6px 6px 0 rgba(0,0,0,.4); }
+.dd-title{ font-family:'Press Start 2P',monospace; font-size:12px; color:#ffd666; margin-bottom:5px; }
+.dd-sub{ font-size:11px; color:#8a7a60; margin-bottom:12px; }
+.dist-chip{ position:absolute; top:6px; left:6px; background:rgba(20,15,10,.82); border:1px solid; padding:2px 9px; border-radius:4px; font:700 11px 'IBM Plex Mono',monospace; white-space:nowrap; pointer-events:none; }
+.dist-banner{ position:absolute; transform:translate(-50%,-100%); color:#161008; padding:1px 8px; border-radius:4px; font:700 10px 'IBM Plex Mono',monospace; white-space:nowrap; pointer-events:none; opacity:.9; box-shadow:1px 1px 0 rgba(0,0,0,.3); }
 .vp-schedule{
   margin-top:10px; padding:6px 10px; border-radius:4px;
   background:rgba(255,214,102,.12); border:1px solid rgba(255,214,102,.3);
@@ -505,6 +512,7 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
     <div class="stat"><div class="v" id="hud-pet">—</div><div class="l">Companion</div></div>
     <div class="stat"><div class="v" id="hud-time">☀️ Day</div><div class="l">Time</div></div>
     <button id="btn-music" class="btn alt" title="Toggle music" aria-label="Toggle music" style="padding:6px 10px;">🔊</button>
+    <button id="btn-districts" class="btn alt" title="Town Directory" aria-label="Town Directory" style="padding:6px 10px;">🗺️</button>
     <button id="btn-fullscreen" class="btn alt" title="Fullscreen (F11)" aria-label="Toggle fullscreen" style="padding:6px 10px;">⛶</button>
     <div id="gp-indicator" title="Gamepad connected" style="display:none;align-items:center;gap:3px;font-size:11px;color:var(--mint)">🎮</div>
   </div>
