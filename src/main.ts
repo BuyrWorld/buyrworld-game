@@ -1570,6 +1570,30 @@ function stationPos(skill, actId){
   return null;
 }
 const SKILL_TOOL = { mining:"⛏️", steelworks:"🔨", manufacturing:"🔧", woodcutting:"🪓", fishing:"🎣", foraging:"🌿", crafting:"🫙" };
+// A characterful greeting when you step into each building type.
+const BUILDING_FLAVOUR: Record<string,string> = {
+  bank:'🏦 "Morning! Your interest is compounding nicely."',
+  exchange:'📈 "Markets are open — buy low, sell high!"',
+  cafe:'☕ "A fresh brew, coming right up."',
+  pub:'🍺 "Evening! What can I get you?"',
+  nightclub:'🪩 "Welcome to the floor — tonight\'s theme is a belter!"',
+  furniture_shop:'🛋️ "Take your time browsing, love."',
+  retail:'🛍️ "Everything\'s fresh in today!"',
+  postoffice:'📮 "Parcel, or after some stamps?"',
+  estateagent:'🏘️ "Looking to invest in bricks and mortar?"',
+  bike_shop:'🚲 "Fancy a new set of wheels?"',
+  robotics_lab:'🤖 "Mind the servos — automation at work."',
+  data_centre:'🖥️ "The grid\'s humming along nicely."',
+  university:'🎓 "Knowledge awaits, scholar."',
+  school:'🏫 "Quiet please — lessons in progress."',
+  harbour_office:'⚓ "Tide\'s fair today."',
+  boat_hire:'⛵ "Fancy a trip out on the water?"',
+  fishmonger_wh:'🐟 "Freshest catch on the coast."',
+  barn:'🐾 "The animals are pleased to see you."',
+  trophy:'🏆 "Admiring your handiwork?"',
+  village_fund:'🌸 "Every little helps the valley bloom."',
+  furniture:'🛋️ "Make yourself at home."',
+};
 const TREE_RESPAWN_MS: Record<string,number> = { pine:600000, oak:1200000, hardwood:7200000, rare_leaf:21600000 };
 function getTreeStage(o: any): number {
   const rd = S.treeRespawn?.[o.id];
@@ -1658,6 +1682,7 @@ function interactObj(o){
   if (o.id==="town_directory"){ openDistricts(); return; }
   if (o.tab==="robotics_lab" && totalLvl() < 150){ toast(`🤖 The Automation Lab opens at total level 150 (you: ${totalLvl()}).`); return; }
   if (o.tab==="data_centre" && totalLvl() < 200){ toast(`🖥️ The Data Centre opens at total level 200 (you: ${totalLvl()}).`); return; }
+  if (BUILDING_FLAVOUR[o.tab]) toast(BUILDING_FLAVOUR[o.tab]);   // characterful greeting on entry
   S.tab = o.tab;
   S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
@@ -2402,6 +2427,17 @@ function drawObjects(ctx, t){
           ctx.fillStyle="#bfe8f7"; ctx.fillRect(r.x+8, r.y+20, 10, 8); ctx.fillRect(r.x+r.w-18, r.y+20, 10, 8);
           ctx.strokeStyle="#8c6947"; ctx.lineWidth=1; ctx.strokeRect(r.x+8, r.y+20, 10, 8); ctx.strokeRect(r.x+r.w-18, r.y+20, 10, 8);
           ctx.fillStyle="rgba(255,255,255,0.65)"; ctx.fillRect(r.x+9, r.y+21, 3, 2); ctx.fillRect(r.x+r.w-17, r.y+21, 3, 2);
+        }
+        // shops get a striped awning + hanging sign so they read distinctly from houses
+        if (BUILDING_FLAVOUR[o.tab]){
+          const _awY = r.y + r.h - 24, _n = Math.max(3, Math.floor(r.w/8));
+          for (let s=0; s<_n; s++){ ctx.fillStyle = s%2 ? "#f4ece0" : (o.roof||"#c04060"); ctx.fillRect(r.x + s*(r.w/_n), _awY, r.w/_n + 0.5, 6); }
+          ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x, _awY+6, r.w, 2);
+          for (let s=0; s<_n; s++){ ctx.fillStyle=(o.roof||"#c04060"); ctx.beginPath(); ctx.moveTo(r.x+s*(r.w/_n),_awY+6); ctx.lineTo(r.x+(s+0.5)*(r.w/_n),_awY+10); ctx.lineTo(r.x+(s+1)*(r.w/_n),_awY+6); ctx.closePath(); ctx.fill(); }
+          // hanging signboard on the left
+          ctx.fillStyle="#4a3320"; ctx.fillRect(r.x-1, r.y+9, 2, 7);
+          ctx.fillStyle="#e8d8b0"; ctx.fillRect(r.x-8, r.y+15, 14, 10);
+          ctx.strokeStyle="#4a3320"; ctx.lineWidth=1; ctx.strokeRect(r.x-8, r.y+15, 14, 10);
         }
       }
       // Always draw emoji label and dynamic effects on top of sprite or canvas building
@@ -3448,6 +3484,16 @@ function drawInterior(t){
       ctx.fillStyle="rgba(255,200,80,0.18)"; ctx.beginPath(); ctx.arc(W*fx,H*.12,W*.055,0,7); ctx.fill();
       drawEmojiC(ctx,"🏮",W*fx,H*.14,10);
     }
+    // ore glints in the veins + pickaxe strike scuffs on the rock
+    for(const [gx,gy] of [[15,10],[106,8],[194,12],[278,7]] as [number,number][]){
+      if (Math.floor(t*3+gx)%3===0){ ctx.fillStyle="rgba(255,255,255,.8)"; ctx.fillRect(gx+1,gy+((Math.floor(t*2)+gx)%18),2,2); }
+    }
+    ctx.strokeStyle="rgba(0,0,0,.25)"; ctx.lineWidth=1;
+    for(const [mx,my] of [[60,30],[140,42],[230,26],[95,54]] as [number,number][]){ ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(mx+6,my+4); ctx.moveTo(mx+3,my-2); ctx.lineTo(mx+8,my+2); ctx.stroke(); }
+    // deep-underground vignette
+    const _mv = ctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,W*0.7);
+    _mv.addColorStop(0,"rgba(0,0,0,0)"); _mv.addColorStop(1,"rgba(0,0,0,0.45)");
+    ctx.fillStyle=_mv; ctx.fillRect(0,0,W,H);
   } else if (S.tab==="steelworks"){
     // brick wall — 320×200 canvas
     ctx.fillStyle="#4a3f3a"; ctx.fillRect(0,0,W,H);
