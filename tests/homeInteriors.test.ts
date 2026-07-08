@@ -1,122 +1,114 @@
 import { describe, it, expect } from 'vitest';
-import { HOME_INTERIORS } from '../src/data/homeInteriors.ts';
+import { HOME_INTERIORS, BED_CONFIG, buildLayout, homeCollisionRects } from '../src/data/homeInteriors.ts';
 
 // Interior canvas is 320x200 (INT_W/INT_H in main.ts).
 const W = 320, H = 200;
+const homes = Object.keys(HOME_INTERIORS);
 
-// Bed config per home (d = double, k = children's beds) — mirrors _bConf in main.ts.
-const BEDS: Record<string, [number, number]> = {
-  home_01: [1, 0], home_02: [1, 0], home_03: [1, 2], home_04: [1, 0], home_05: [0, 0],
-  home_06: [1, 1], home_07: [1, 0], home_08: [0, 0], home_09: [1, 0], home_10: [1, 0],
-  home_11: [0, 0], home_12: [1, 2], home_13: [1, 1], home_14: [1, 1], home_15: [1, 0],
-  home_16: [0, 0], home_17: [0, 0],
-};
+// Player half-width used by the interior collision push-out in main.ts.
+const HALF = 6;
 
-// Left-wall tall units grow from their anchor down to the floor (H-14).
-const TALL = new Set(['wardrobe', 'filing_cabinet', 'display_case', 'metal_shelf', 'sea_cabinet', 'egg_dresser']);
-
-// Drawn footprint per prop key, relative to its anchor: [ox, oy, w, h].
-// Values trace the rects/emoji extents in _homeProp() (generous where emoji overhang).
-const FP: Record<string, [number, number, number, number]> = {
-  'tile:bookshelf': [0, 0, 32, 64], 'tile:plant': [0, 0, 32, 64], 'tile:fireplace': [0, 0, 64, 64],
-  'tile:table': [0, 0, 64, 64], 'tile:cabinet': [0, 0, 32, 64], 'tile:sofa': [0, 0, 96, 32],
-  tool_chest: [0, 0, 30, 16], kitchen_counter: [0, -8, 96, 24], workbench: [0, -8, 90, 24],
-  tea_shelf: [0, -9, 56, 14], framed_certs: [0, 0, 46, 15], wall_photos: [0, 0, 52, 17],
-  tool_hooks: [-4, -6, 64, 21], axe_wall: [-2, -6, 58, 21], hanging_net: [-10, -10, 72, 22],
-  nav_chart: [0, 0, 44, 28], route_board: [0, 0, 34, 28], pinned_manifests: [0, 0, 50, 20],
-  bunting: [0, 0, 112, 9], rosettes: [-2, -6, 30, 25], herb_bunches: [0, -6, 48, 12], knife_rack: [0, 0, 44, 18],
-  armchair: [-3, -6, 26, 26], single_chair: [-3, -6, 26, 26], reading_chair: [-3, -6, 26, 26], rocking_chair: [-3, -6, 26, 28],
-  writing_desk: [0, -2, 42, 20], tea_table: [0, -8, 24, 16], cake_stand: [0, -4, 16, 18],
-  kids_toys: [0, -6, 43, 12], toy_lorry: [0, 0, 24, 17], crate_stack: [0, 0, 34, 30],
-  timber_stack: [-1, 0, 44, 18], wood_crafts: [0, -6, 40, 12], gears_project: [0, -6, 40, 16],
-  kettle_stove: [0, -8, 26, 18], kettle_mug: [0, -6, 26, 12], ember_apron: [0, -3, 36, 23], boots: [0, 6, 18, 10],
-  preserve_shelf: [0, -9, 50, 14], medal_case: [0, 0, 34, 16], stacked_files: [0, -6, 18, 15],
-  tackle_box: [0, -4, 22, 18], bucket: [0, 0, 14, 14], oilskins: [0, -3, 14, 25], flower_jar: [0, -6, 14, 18],
-  flower_pots: [0, -10, 28, 20], feed_sacks: [0, 0, 28, 20], animal_basket: [-2, 0, 28, 15],
-  sea_chest: [0, 0, 30, 20], model_boat: [0, -6, 20, 19], lantern: [0, 0, 14, 16], scales: [0, 0, 20, 13], ice_box: [0, 0, 26, 20],
-};
-
-type Box = { x0: number; y0: number; x1: number; y1: number };
-const propBox = (k: string, fx: number, fy: number): Box => {
-  const ax = Math.round(fx * W), ay = Math.round(fy * H);
-  if (TALL.has(k)) return { x0: ax, y0: ay, x1: ax + 26, y1: H - 14 };
-  const fp = FP[k];
-  if (!fp) throw new Error(`no footprint for prop "${k}"`);
-  return { x0: ax + fp[0], y0: ay + fp[1], x1: ax + fp[0] + fp[2], y1: ay + fp[1] + fp[3] };
-};
-
-// Overlap area with a small tolerance (props may visually touch by a pixel or two).
-const overlapArea = (a: Box, b: Box, tol = 2): number => {
-  const ix = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
-  const iy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
-  return (ix > tol && iy > tol) ? (ix - tol) * (iy - tol) : 0;
-};
-
-const bedBoxes = (home: string): Box[] => {
-  const [d, k] = BEDS[home] || [0, 0];
-  const bW = d ? 72 : 50, bX = W - bW - 10;
-  const boxes: Box[] = [{ x0: bX, y0: 50, x1: bX + bW, y1: 96 }];
-  for (let ci = 0; ci < k; ci++) {
-    const cbX = W - (ci + 1) * 46 - 10;
-    boxes.push({ x0: cbX, y0: 102, x1: cbX + 40, y1: 130 });
+// Flood-fill walkability: a cell is walkable only if a HALF-inflated box around
+// its centre clears every solid — this models the real player footprint, so a gap
+// narrower than the player reads as blocked.
+function reachable(solids: {x:number;y:number;w:number;h:number}[]) {
+  const CELL = 4;
+  const X0 = 10, Y0 = 49, X1 = W - 10, Y1 = H - 6; // interior walkable bounds
+  const cols = Math.ceil((X1 - X0) / CELL), rows = Math.ceil((Y1 - Y0) / CELL);
+  const solid = (px: number, py: number) =>
+    solids.some(s => px > s.x - HALF && px < s.x + s.w + HALF && py > s.y - HALF && py < s.y + s.h + HALF);
+  const idx = (c: number, r: number) => r * cols + c;
+  const blocked = new Uint8Array(cols * rows);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const px = X0 + c * CELL + CELL / 2, py = Y0 + r * CELL + CELL / 2;
+    blocked[idx(c, r)] = solid(px, py) ? 1 : 0;
   }
-  return boxes;
-};
-// Door/exit lane: keep the vertical walk path from the bottom-centre door clear.
-const DOOR_LANE: Box = { x0: 140, y0: 120, x1: 180, y1: 200 };
+  // start at the door (bottom centre)
+  const sc = Math.floor((W / 2 - X0) / CELL), sr = Math.floor((H - 12 - Y0) / CELL);
+  const seen = new Uint8Array(cols * rows);
+  const stack = [[sc, sr]];
+  seen[idx(sc, sr)] = 1;
+  while (stack.length) {
+    const [c, r] = stack.pop()!;
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nc = c + dc, nr = r + dr;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+      const ni = idx(nc, nr);
+      if (seen[ni] || blocked[ni]) continue;
+      seen[ni] = 1; stack.push([nc, nr]);
+    }
+  }
+  // does any reachable free cell fall inside region [rx0,ry0]-[rx1,ry1]?
+  return (rx0: number, ry0: number, rx1: number, ry1: number) => {
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (!seen[idx(c, r)]) continue;
+      const px = X0 + c * CELL + CELL / 2, py = Y0 + r * CELL + CELL / 2;
+      if (px >= rx0 && px <= rx1 && py >= ry0 && py <= ry1) return true;
+    }
+    return false;
+  };
+}
 
-describe('HX2 home interiors — walkability & no furniture overlaps', () => {
-  const homes = Object.keys(HOME_INTERIORS);
+const overlaps = (a: any, b: any) =>
+  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
+describe('HX3 home interiors — zones, walls & circulation', () => {
   it('covers all 17 villager homes', () => {
     expect(homes.length).toBe(17);
   });
 
-  it('every prop key has a known footprint', () => {
-    for (const [home, t] of Object.entries(HOME_INTERIORS)) {
-      for (const p of t.props) {
-        expect(() => propBox(p.k, p.fx, p.fy), `${home}/${p.k}`).not.toThrow();
+  it('every home has the core zones (kitchen, dining, living, sleeping, entrance)', () => {
+    const bad: string[] = [];
+    for (const id of homes) {
+      const L = buildLayout(HOME_INTERIORS[id], id, W, H);
+      const keys = new Set(L.placements.map((p: any) => p.k));
+      for (const need of ['kitchen_run', 'living_set', 'bedside', 'entry_mat']) {
+        if (!keys.has(need)) bad.push(`${id}: missing ${need}`);
       }
+      if (!keys.has('dining_set') && !keys.has('dining_big')) bad.push(`${id}: missing dining`);
+      // a rug + a kitchen floor patch = at least 3 zone floors
+      if (L.floors.length < 3) bad.push(`${id}: too few zone floors`);
     }
+    expect(bad, bad.join('\n')).toEqual([]);
   });
 
-  it('no prop overlaps a bed, a child bed, or the door lane', () => {
+  it('nothing blocks the door / exit mat lane', () => {
+    const lane = { x: 144, y: 176, w: 34, h: 22 };
     const bad: string[] = [];
-    for (const home of homes) {
-      const beds = bedBoxes(home);
-      for (const p of HOME_INTERIORS[home].props) {
-        const box = propBox(p.k, p.fx, p.fy);
-        beds.forEach((bed, i) => {
-          if (overlapArea(box, bed) > 0) bad.push(`${home}: ${p.k} overlaps ${i === 0 ? 'bed' : 'child-bed'}`);
-        });
-        if (overlapArea(box, DOOR_LANE) > 0) bad.push(`${home}: ${p.k} blocks door lane`);
+    for (const id of homes) {
+      for (const s of homeCollisionRects(id, W, H)) {
+        if (overlaps(s, lane)) bad.push(`${id}: a solid blocks the exit lane`);
       }
     }
     expect(bad, bad.join('\n')).toEqual([]);
   });
 
-  it('no two props significantly overlap each other', () => {
+  it('the kitchen and living zones are reachable from the door in every home', () => {
     const bad: string[] = [];
-    for (const home of homes) {
-      const props = HOME_INTERIORS[home].props;
-      for (let i = 0; i < props.length; i++) {
-        for (let j = i + 1; j < props.length; j++) {
-          const area = overlapArea(propBox(props[i].k, props[i].fx, props[i].fy),
-                                   propBox(props[j].k, props[j].fx, props[j].fy));
-          if (area > 120) bad.push(`${home}: ${props[i].k} × ${props[j].k} overlap ~${Math.round(area)}px²`);
-        }
-      }
+    for (const id of homes) {
+      const can = reachable(homeCollisionRects(id, W, H));
+      if (!can(46, 82, 116, 100)) bad.push(`${id}: kitchen zone not reachable`);
+      if (!can(150, 152, 210, 180)) bad.push(`${id}: living zone not reachable`);
     }
     expect(bad, bad.join('\n')).toEqual([]);
   });
 
-  it('every prop stays within the room bounds', () => {
+  it('the bed is reachable in homes without children (crowded family bedrooms exempt)', () => {
     const bad: string[] = [];
-    for (const home of homes) {
-      for (const p of HOME_INTERIORS[home].props) {
-        const b = propBox(p.k, p.fx, p.fy);
-        // wall décor legitimately sits high on the wall band (y >= 0); only flag off-canvas.
-        if (b.x0 < 0 || b.x1 > W || b.y0 < -1 || b.y1 > H + 2) bad.push(`${home}: ${p.k} out of bounds`);
+    for (const id of homes) {
+      if ((BED_CONFIG[id]?.k ?? 0) > 0) continue;
+      const bW = BED_CONFIG[id]?.d ? 72 : 50, bX = W - bW - 10;
+      const can = reachable(homeCollisionRects(id, W, H));
+      if (!can(bX - 2, 100, bX + bW, 130)) bad.push(`${id}: bed not reachable`);
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+  });
+
+  it('all collision solids stay within the room bounds', () => {
+    const bad: string[] = [];
+    for (const id of homes) {
+      for (const s of homeCollisionRects(id, W, H)) {
+        if (s.x < 0 || s.y < 44 || s.x + s.w > W || s.y + s.h > H) bad.push(`${id}: solid out of bounds`);
       }
     }
     expect(bad, bad.join('\n')).toEqual([]);

@@ -12,7 +12,7 @@ import { nightAlpha, lampGlow, isNight, skyTint, gameHour, DAY_DURATION_MS } fro
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_COLOURS, TROUSER_COLOURS, FACIAL_HAIR_STYLES, EYE_COLOURS, JACKET_COLOURS, SHOE_COLOURS, ACCESSORY_STYLES, SCARF_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
-import { HOME_INTERIORS, DEFAULT_THEME } from './data/homeInteriors.ts';
+import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRects } from './data/homeInteriors.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -1084,11 +1084,17 @@ const INTERIOR_COLS = {
     {x:244, y:132,w:50, h:26},  // log pile
     {x:14,  y:142,w:50, h:14},  // plank stack
   ],
-  home: [
-    {x:14,  y:56, w:64, h:76},  // bed
-    {x:230, y:50, w:38, h:44},  // fireplace surround
-  ],
+  // NPC homes: collision is generated per-home from the layout (homeColsCached),
+  // not from this static list — the "home" tab is shared by 17 different floorplans.
+  home: [],
 };
+// Per-home collision, derived from the same buildLayout() that draws the room,
+// memoised by roomObjId so it isn't recomputed every frame.
+const _homeColsCache: Record<string, any[]> = {};
+function homeColsCached(id: string){
+  if (!_homeColsCache[id]) _homeColsCache[id] = homeCollisionRects(id, icanvasW(), icanvasH());
+  return _homeColsCache[id];
+}
 const VKEYS = {};
 const GPKEYS: Record<string,boolean> = {}; // gamepad movement, kept separate so keyboard keys never get cleared
 const VFX = [];
@@ -1843,6 +1849,58 @@ function _homeProp(ctx, k, x, y, W, H, t, _ft, pal){
     if(back) _R(col,x,y-6,20,7);
   };
   switch(k){
+    // ---- HX3 zone clusters ----
+    case "kitchen_run": {
+      _R("#6a4a30",x,y+6,118,16); _R("#8a6a44",x,y+4,118,4); _SR("rgba(0,0,0,.18)",x,y+6,118,16);
+      _R("#3a3a40",x+6,y+8,22,12); _R("#1e1e22",x+9,y+11,6,5); _R("#1e1e22",x+18,y+11,6,5);   // stove
+      _R("#b8c0c4",x+40,y+8,20,12); _R("#8a9498",x+43,y+10,14,7);                              // sink
+      _E("🍞",x+74,y+1,10); _E("🫖",x+94,y+1,10);                                              // worktop
+      _R("#7a5a38",x+2,y-14,58,4); _E("🫙",x+9,y-18,9); _E("🍯",x+27,y-18,9); _E("🧂",x+45,y-18,8); // shelf
+      break; }
+    case "dining_set": {
+      _R("#7a5230",x+9,y-6,20,7); _R("#7a5230",x+9,y+26,20,7);
+      _R("#8a6238",x+4,y+2,30,20); _R("#9a7248",x+4,y,30,4); _SR("rgba(0,0,0,.2)",x+4,y+2,30,20);
+      _E("🍽️",x+19,y+11,11); break; }
+    case "dining_big": {
+      _R("#7a5230",x+8,y-6,18,7); _R("#7a5230",x+32,y-6,18,7); _R("#7a5230",x+18,y+26,22,7);
+      _R("#8a6238",x+4,y+2,52,20); _R("#9a7248",x+4,y,52,4); _SR("rgba(0,0,0,.2)",x+4,y+2,52,20);
+      _E("🍲",x+18,y+11,11); _E("🍞",x+40,y+11,9); break; }
+    case "living_set": {
+      _R("#7a5a4a",x+2,y+2,18,4); _R("#7a5a4a",x+2,y+46,18,5);                    // sofa arms
+      _R("#7a5a4a",x+2,y+4,18,44); _R("#6a4a3a",x+2,y+4,6,44); _R("#8a6a58",x+9,y+9,9,34);
+      _SR("rgba(0,0,0,.2)",x+2,y+4,18,44);
+      _R("#8a5f38",x+44,y+12,26,14); _R("#9a6f44",x+44,y+10,26,3); _SR("rgba(0,0,0,.18)",x+44,y+12,26,14);
+      _E("🍵",x+57,y+8,9);                                                       // coffee table
+      _R("#4a3a2a",x+95,y+30,3,18); _E("💡",x+96,y+21,12);                        // floor lamp
+      break; }
+    case "bedside": {
+      _R("#7a5230",x,y+2,16,22); _R("#8a6238",x,y,16,4); _SR("rgba(0,0,0,.2)",x,y+2,16,22);
+      _R("#6a4228",x+2,y+9,12,5); _E("🕯️",x+8,y-4,11); break; }
+    case "div_screen": {
+      for(let i=0;i<4;i++){ _R(i%2?"#9a8468":"#b4a488",x,y+i*18,6,17); _SR("rgba(0,0,0,.22)",x,y+i*18,6,17); }
+      break; }
+    case "entry_mat": {
+      _R("#9a7850",x,y,32,10); _SR("#6a4a30",x,y,32,10,1.5);
+      for(let i=0;i<5;i++) _R("rgba(0,0,0,.12)",x+3+i*6,y+2,2,6); break; }
+    case "entry_plant": {
+      _R("#8a5a34",x,y+10,12,10); _R("#7a4a28",x,y+18,12,2);
+      ctx.fillStyle="#3a8a3a"; ctx.beginPath(); ctx.arc(x+6,y+6,8,0,7); ctx.fill();
+      ctx.fillStyle="#4aa048"; ctx.beginPath(); ctx.arc(x+2,y+2,5,0,7); ctx.arc(x+10,y+3,5,0,7); ctx.fill();
+      break; }
+    case "toy_corner": {
+      ctx.fillStyle="#b08850"; ctx.beginPath(); ctx.ellipse(x+10,y+10,13,7,0,0,7); ctx.fill();
+      ctx.fillStyle="#c89a60"; ctx.beginPath(); ctx.ellipse(x+10,y+8,11,5,0,0,7); ctx.fill();
+      _E("🧸",x+8,y+1,12); _R("#e05a5a",x+22,y+8,7,7); _R("#5a9ae0",x+29,y+9,7,7); _R("#e0b84a",x+26,y+1,7,7);
+      break; }
+    case "bookshelf_tall": {
+      const bh=Math.max(40,H-y-14);
+      _R("#5a3a22",x,y,26,bh); _SR("rgba(0,0,0,.25)",x,y,26,bh);
+      for(let r=0;r*22<bh-8;r++){ const sy=y+6+r*22;
+        _R("#4a2e1a",x+2,sy+16,22,3);
+        const cols=["#c94a3a","#4a6ec9","#c99a4a","#4ac96a","#9a4ac9","#c96a2a"];
+        for(let b=0;b<5;b++) _R(cols[(r*5+b)%6],x+3+b*4,sy,3,15);
+      }
+      break; }
     // tall units
     case "wardrobe":       tall("#3a2a1a","#5a4030",null); _R("#7a5a30",x+18,y+18,3,3); break;
     case "filing_cabinet": tall("#5a6478","#8a94a8",null); for(let i=0;i<3;i++){ _R("#c4ccd8",x+4,y+10+i*18,18,12); _R("#33405a",x+11,y+15+i*18,4,2);} break;
@@ -3812,16 +3870,10 @@ function drawInterior(t){
     const _v = VILLAGERS.find(v => v.homeId === S.roomObjId);
     const _theme = HOME_INTERIORS[S.roomObjId] || DEFAULT_THEME;
     const _pal = _theme.pal;
+    const _L = buildLayout(_theme, S.roomObjId, W, H);
     room(_pal.wallTop, _pal.wall, _pal.floorA, _pal.floorB, _pal.trim);
-    winP(W*0.12, 34); winP(W*0.62, 34);
-    // Bed config: d=double (couple), k=children's beds
-    const _bConf = ({
-      home_01:{d:1,k:0},home_02:{d:1,k:0},home_03:{d:1,k:2},home_04:{d:1,k:0},
-      home_05:{d:0,k:0},home_06:{d:1,k:1},home_07:{d:1,k:0},home_08:{d:0,k:0},
-      home_09:{d:1,k:0},home_10:{d:1,k:0},home_11:{d:0,k:0},home_12:{d:1,k:2},
-      home_13:{d:1,k:1},home_14:{d:1,k:1},home_15:{d:1,k:0},home_16:{d:0,k:0},
-      home_17:{d:0,k:0},
-    } as Record<string,{d:number,k:number}>)[S.roomObjId] || {d:0,k:0};
+    winP(_L.windows[0], 30); winP(_L.windows[1], 30);
+    const _bConf = BED_CONFIG[S.roomObjId] || {d:0,k:0};
     // Duvet accent color per home
     const _cov = ({
       home_01:"#c8a0c0",home_02:"#8a9ab0",home_03:"#e0c870",home_04:"#7aaa70",
@@ -3830,6 +3882,13 @@ function drawInterior(t){
       home_13:"#e0b8c0",home_14:"#7aaa68",home_15:"#7ab8c8",home_16:"#8898a8",
       home_17:"#88b0a0",
     } as Record<string,string>)[S.roomObjId] || "#c0b090";
+    // Zone floor patches — kitchen tiles, living rug, bedroom rug (drawn under furniture)
+    for (const _f of _L.floors){
+      ctx.save(); ctx.globalAlpha=_f.a; ctx.fillStyle=_f.c;
+      ctx.fillRect(_f.x,_f.y,_f.w,_f.h); ctx.restore();
+      if (_f.border){ ctx.save(); ctx.globalAlpha=Math.min(1,_f.a+0.22); ctx.strokeStyle=_f.c;
+        ctx.lineWidth=1.5; ctx.strokeRect(_f.x+3,_f.y+3,_f.w-6,_f.h-6); ctx.restore(); }
+    }
     // Main bed — top-right corner
     const _bW = _bConf.d ? 72 : 50;
     const _bX = W - _bW - 10, _bY = 50;
@@ -3853,22 +3912,15 @@ function drawInterior(t){
       ctx.fillRect(_cbX+2,_cbY+9,36,15);
       ctx.fillStyle="#f4f0e8"; ctx.fillRect(_cbX+4,_cbY+9,32,6);
     }
-    // Rug — tinted to the household theme
-    const _rugC = _theme.rug || "#a07850";
-    ctx.save();
-    ctx.globalAlpha=0.20; ctx.fillStyle=_rugC; ctx.fillRect(W/2-44,H-60,88,46);
-    ctx.globalAlpha=0.48; ctx.strokeStyle=_rugC; ctx.lineWidth=1.5; ctx.strokeRect(W/2-40,H-56,80,38);
-    ctx.globalAlpha=0.30; ctx.strokeRect(W/2-34,H-50,68,26);
-    ctx.restore();
-    // Household furniture & props (data-driven — see data/homeInteriors.ts)
+    // Household furniture & props (zone-based floorplan — see data/homeInteriors.ts)
     const _sc = 2, _tsz = 16*_sc;
     const _ft = (col,row,x,y,tw=1,th=1,fbCol="#8a6a4a") => {
       if (!drawFurnitureTile(ctx, col, row, Math.round(x), Math.round(y), _sc, tw, th)){
         ctx.fillStyle=fbCol; ctx.fillRect(Math.round(x),Math.round(y),_tsz*tw,_tsz*th);
       }
     };
-    for (const _p of _theme.props){
-      _homeProp(ctx, _p.k, Math.round(_p.fx*W), Math.round(_p.fy*H), W, H, t, _ft, _pal);
+    for (const _p of _L.placements){
+      _homeProp(ctx, _p.k, _p.x, _p.y, W, H, t, _ft, _pal);
     }
     // --- NPC daily routine (time-of-day activity) ---
     if (_v){
@@ -3896,22 +3948,22 @@ function drawInterior(t){
         ctx.fillText("Zzz",_bX+(_bConf.d?Math.round(_bW*0.6):18)+6,_bY-4);
         ctx.globalAlpha=1;
       } else if (_nHr>=7&&_nHr<9.5){
-        // morning routine — kitchen area left
-        drawPerson(ctx,W*0.2,H-34,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
-        drawEmojiC(ctx,"☕",W*0.34,H-50,13);
+        // morning routine — in the kitchen zone
+        drawPerson(ctx,66,96,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
+        drawEmojiC(ctx,"☕",92,82,12);
         const _q=["Morning already...","Tea's on.","Right, a new day.","Early bird."][Math.floor(Date.now()/8000)%4];
-        _bubble(_q,W*0.2,H-78);
+        _bubble(_q,66,72);
       } else if (_nHr>=12&&_nHr<13.5){
-        // lunch — seated at rug/table area
-        drawPerson(ctx,W/2-16,H-30,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
-        drawEmojiC(ctx,"🥗",W/2+12,H-46,12);
+        // lunch — seated at the dining table
+        drawPerson(ctx,54,132,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
+        drawEmojiC(ctx,"🥗",54,118,11);
         const _q=["Lunch break!","Quick bite.","Lovely grub.","Back soon."][Math.floor(Date.now()/8000)%4];
-        _bubble(_q,W/2-16,H-78);
+        _bubble(_q,54,104);
       } else if (_nHr>=18.5&&_nHr<22){
-        // evening — relaxing lower area
-        drawPerson(ctx,W*0.28,H-34,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
+        // evening — relaxing in the living zone
+        drawPerson(ctx,158,168,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
         const _q=["Feet up!","Long day.","Quiet evening.","Bliss."][Math.floor(Date.now()/8000)%4];
-        _bubble(_q,W*0.28,H-78);
+        _bubble(_q,158,142);
       } else {
         // at work — sticky note on the table
         ctx.fillStyle="#f4e8c8"; ctx.fillRect(W/2-24,H-52,48,28);
@@ -4691,7 +4743,7 @@ function villageFrame(ts){
   } else if (INTERIOR_TABS.has(S.tab)){
     moveActor(IP, dt, 80, true);
     // push IP out of interior prop collision rects
-    const iCols = INTERIOR_COLS[S.tab];
+    const iCols = S.tab==="home" ? homeColsCached(S.roomObjId) : INTERIOR_COLS[S.tab];
     if (iCols){
       const half=6, feet=6;
       for (const c of iCols){
