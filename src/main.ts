@@ -16,6 +16,7 @@ import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRe
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
+import { ECON, applySalePressure, recoverPressure, driftToward, nudgeDrift } from './data/economy.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -33,15 +34,33 @@ function ensureMarket(){
     });
   });
 }
+function ensureEcon(){
+  if (!S.econ) S.econ = { pressure:{} };
+  if (!S.econ.pressure) S.econ.pressure = {};
+}
+// LE1: apply a sale's supply pressure + an immediate visible market reaction.
+function _econSale(it, qty){
+  ensureEcon();
+  const v = ITEMS[it]?.v || 10;
+  const p = applySalePressure(S.econ.pressure[it] ?? ECON.P_START, qty, v);
+  S.econ.pressure[it] = p;
+  NPCS.forEach(n => {
+    if (n.stock.includes(it) && typeof S.market.drift[n.id]?.[it] === "number")
+      S.market.drift[n.id][it] = nudgeDrift(S.market.drift[n.id][it], p);
+  });
+}
 function rollMarket(force){
-  ensureMarket();
+  ensureMarket(); ensureEcon();
   const steps = force ? 1 : Math.floor((Date.now() - S.market.last) / MARKET_ROLL_MS);
   if (steps <= 0) return false;
-  for (let s = 0; s < Math.min(steps, 24); s++){
+  const nsteps = Math.min(steps, 24);
+  // supply/demand pressure heals toward 1.0 over the elapsed steps
+  for (const it in S.econ.pressure) S.econ.pressure[it] = recoverPressure(S.econ.pressure[it], nsteps);
+  // per-NPC drift mean-reverts toward each item's equilibrium (LE1: eq = pressure)
+  for (let s = 0; s < nsteps; s++){
     NPCS.forEach(n => n.stock.forEach(it => {
-      let d = S.market.drift[n.id][it];
-      d = d * (0.93 + Math.random()*0.14);
-      S.market.drift[n.id][it] = Math.min(1.45, Math.max(0.65, d));
+      const eq = S.econ.pressure[it] ?? ECON.P_START;
+      S.market.drift[n.id][it] = driftToward(S.market.drift[n.id][it], eq);
     }));
   }
   S.market.last = Date.now();
@@ -87,6 +106,7 @@ function doTrade(npcId, it, qty, mode){
     const q = qty === "max" ? itemCount(it) : Math.min(qty, itemCount(it));
     if (q <= 0){ toast("Nothing to sell."); return; }
     S.items[it] -= q; S.coins += unit * q;
+    _econSale(it, q);   // LE1: selling saturates the market → your price softens
     S.counters.coinsEarned = (S.counters.coinsEarned||0) + unit * q;
     grantXp("trading", Math.max(2, Math.round(unit * q * 0.22)));
     rollPet("trading");
@@ -5113,7 +5133,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null,
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{} },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -5258,6 +5278,7 @@ function load(){
       if (!("fleeUntil" in parsed)) S.fleeUntil = 0;
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
+      if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       return true;
     }
   } catch(e){}
