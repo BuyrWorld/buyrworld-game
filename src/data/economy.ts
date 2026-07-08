@@ -63,6 +63,11 @@ export function trendArrow(d: number): '↑' | '↓' | '→' {
 
 export const clampF = (f: number) => Math.max(ECON.F_MIN, Math.min(ECON.F_MAX, f));
 
+// LE4 — mark inventory to the live market: qty × base value × current drift.
+export function markToMarket(qty: number, value: number, drift: number): number {
+  return Math.max(0, qty) * (value || 0) * (drift || 1);
+}
+
 // LE3 — supply-chain cost-push. An item's equilibrium factor is its own pressure
 // times the (recursively-computed) cost ratio of its recipe inputs, so a shift in
 // raw-material prices propagates up the production chain to processed goods.

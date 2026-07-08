@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ECON, baseDemand, saleDrop, applySalePressure, applyBuyPressure, recoverPressure,
-  driftToward, nudgeDrift, trendArrow, clampD, clampP, clampF, baseFactor,
+  driftToward, nudgeDrift, trendArrow, clampD, clampP, clampF, baseFactor, markToMarket,
   MACRO_EPOCH, MACRO_PHASE_DAYS, MACRO_SEQUENCE, MACRO_PHASES,
   macroPhaseId, macroPhase, macroDemand, msToNextPhase,
 } from '../src/data/economy.ts';
@@ -183,5 +183,21 @@ describe('LE3 supply-chain cost-push propagation', () => {
     let p = 1.0;
     for (let i = 0; i < 100; i++) p = applyBuyPressure(p, 500, 2);
     expect(p).toBe(ECON.P_MAX);
+  });
+});
+
+describe('LE4 net-worth valuation', () => {
+  it('marks inventory to the live market and moves with drift', () => {
+    expect(markToMarket(10, 5, 1.0)).toBe(50);
+    expect(markToMarket(10, 5, 1.2)).toBeCloseTo(60, 6);   // a boom lifts holdings
+    expect(markToMarket(10, 5, 0.8)).toBeCloseTo(40, 6);   // a glut trims them
+  });
+  it('never values a holding negatively', () => {
+    expect(markToMarket(0, 5, 1.2)).toBe(0);
+    expect(markToMarket(-3, 5, 1.2)).toBe(0);
+    expect(markToMarket(4, 0, 1.2)).toBe(0);
+  });
+  it('defaults drift to 1 when unknown', () => {
+    expect(markToMarket(7, 5, undefined as any)).toBe(35);
   });
 });

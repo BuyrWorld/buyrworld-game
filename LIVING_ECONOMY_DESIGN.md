@@ -154,8 +154,18 @@ S.econ = {
   *(Deferred refinement: automated consumption pressure — processing actions
   raising raw demand on their own — kept out for now to avoid offline-catch-up
   balance risk; scarcity is player/macro-driven.)*
-- **LE4 — Net-worth dashboard (optional).** Assets + cash + market value over
-  time; feeds the acquisition-readiness retention/telemetry story.
+- **LE4 — Net-worth dashboard.** ✅ **Shipped.** A financial dashboard in the
+  Village Bank: **net worth = cash + inventory (marked to the live market via
+  `avgDrift`) + property value**, a sparkline of net worth over time
+  (`S.netWorth.history`, sampled every 5 min, capped), a cash/inventory/property
+  breakdown, and a "biggest holdings at market" list. Because inventory is
+  mark-to-market, **your net worth moves with the economy** — closing the loop
+  with LE1–LE3. `markToMarket` is pure and tested; sampling is throttled,
+  offline-safe, migration-guarded. Feeds the acquisition-readiness telemetry story.
+
+**Status: the living economy (LE1–LE4) is complete.** Optional future work:
+automated consumption pressure (processing raising raw demand), commodity/sector
+report tab, and macro random shocks on top of the deterministic cycle.
 
 ---
 

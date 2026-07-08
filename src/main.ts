@@ -16,7 +16,7 @@ import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRe
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
-import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
+import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -5184,7 +5184,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -5330,6 +5330,7 @@ function load(){
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
+      if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       return true;
     }
   } catch(e){}
@@ -5560,6 +5561,68 @@ function avgDrift(itemId){
     }
   }
   return cnt ? sum/cnt : 1;
+}
+// ---- LE4: net-worth dashboard ----
+function inventoryValue(){
+  let v = 0;
+  for (const it in (S.items||{})){
+    const q = S.items[it]||0;
+    if (q > 0 && ITEMS[it]) v += markToMarket(q, ITEMS[it].v, avgDrift(it));
+  }
+  return Math.round(v);
+}
+function propertyValue(){
+  return (S.properties||[]).reduce((s,pid)=>{ const p=PROPERTIES.find(x=>x.id===pid); return s+(p?p.cost:0); }, 0);
+}
+function netWorth(){ return Math.round((S.coins||0) + inventoryValue() + propertyValue()); }
+const NETWORTH_SAMPLE_MS = 5*60*1000;
+function sampleNetWorth(force){
+  if (!S.netWorth) S.netWorth = { history:[], last:0 };
+  const now = Date.now();
+  if (!force && now - (S.netWorth.last||0) < NETWORTH_SAMPLE_MS) return;
+  S.netWorth.last = now;
+  S.netWorth.history.push({ t:now, v:netWorth() });
+  if (S.netWorth.history.length > 60) S.netWorth.history.shift();
+}
+function _sparkline(hist, w=240, h=40){
+  const pts = (hist||[]).filter(p=>typeof p?.v==="number");
+  if (pts.length < 2) return `<div style="font-size:11px;color:var(--dim);padding:8px 0">📈 Building your net-worth history — check back as you play.</div>`;
+  const vs = pts.map(p=>p.v), mn=Math.min(...vs), mx=Math.max(...vs), rng=(mx-mn)||1;
+  const step = w/(pts.length-1);
+  const xy = (p,i)=>[i*step, h - ((p.v-mn)/rng)*(h-6) - 3];
+  const path = pts.map((p,i)=>{ const [x,y]=xy(p,i); return `${x.toFixed(1)},${y.toFixed(1)}`; }).join(" ");
+  const up = vs[vs.length-1] >= vs[0], col = up ? "#4aff88" : "#e8907a";
+  const [lx,ly] = xy(pts[pts.length-1], pts.length-1);
+  return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;margin:4px 0">
+    <polyline fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" points="${path}"/>
+    <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.6" fill="${col}"/>
+  </svg>`;
+}
+function _netWorthPanel(){
+  sampleNetWorth();
+  const cash=Math.round(S.coins||0), inv=inventoryValue(), prop=propertyValue(), nw=cash+inv+prop;
+  const hist=(S.netWorth?.history)||[];
+  const first = hist.length ? hist[0].v : nw;
+  const delta = nw - first, dCol = delta>=0 ? "#4aff88" : "#e8907a";
+  const holdings = Object.keys(S.items||{})
+    .map(it=>({ it, val: Math.round(markToMarket(S.items[it]||0, ITEMS[it]?.v||0, avgDrift(it))) }))
+    .filter(h=> h.val>0 && ITEMS[h.it]).sort((a,b)=>b.val-a.val).slice(0,4);
+  return `<div class="panel" style="padding:12px">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)">Net worth</div>
+    <div style="font-size:26px;font-weight:800;color:#ffd666;line-height:1.1;margin:2px 0">${fmt(nw)} <span style="font-size:13px;color:var(--dim)">coins</span></div>
+    <div style="font-size:11px;color:${dCol};margin-bottom:4px">${delta>=0?'▲':'▼'} ${fmt(Math.abs(delta))} since tracking began</div>
+    ${_sparkline(hist)}
+    <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:78px"><div style="font-size:10px;color:var(--dim)">💰 Cash</div><div style="font-weight:700">${fmt(cash)}</div></div>
+      <div style="flex:1;min-width:78px"><div style="font-size:10px;color:var(--dim)">📦 Inventory</div><div style="font-weight:700">${fmt(inv)}</div></div>
+      <div style="flex:1;min-width:78px"><div style="font-size:10px;color:var(--dim)">🏘️ Property</div><div style="font-weight:700">${fmt(prop)}</div></div>
+    </div>
+    ${holdings.length ? `<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:6px">
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:3px">Biggest holdings (at market)</div>
+      ${holdings.map(h=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span>${ITEMS[h.it].ic} ${ITEMS[h.it].n} ×${fmt(S.items[h.it])}</span><span style="color:#ffd666">${fmt(h.val)}</span></div>`).join('')}
+    </div>` : ''}
+    <p style="color:var(--dim);font-size:10px;margin:10px 0 0">Inventory is valued at the live market — your net worth moves with the economy.</p>
+  </div>`;
 }
 function positionValue(pos){
   const curDrift = avgDrift(pos.commodity) * eventMult(pos.commodity);
@@ -7315,14 +7378,14 @@ function renderMain(){
                    + (HOME_TIERS[S.homeTier]?.cost||0) - (HOME_TIERS[0]?.cost||0);
       const _totalEarned = S.counters.coinsEarned||0;
       m.innerHTML = _withRoom("🏦 Inside the Village Bank",
-        `<div class="panel" style="padding:10px">
-          <h3 style="margin:0 0 10px;font-size:14px">💰 Financial Summary</h3>
+        `${_netWorthPanel()}
+        <div class="panel" style="padding:10px;margin-top:8px">
+          <h3 style="margin:0 0 10px;font-size:14px">💰 Cash & Interest</h3>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <tr><td style="padding:3px 0;color:var(--dim)">Current balance</td><td style="text-align:right;color:#ffd666;font-weight:700">${fmt(S.coins)} coins</td></tr>
             <tr><td style="padding:3px 0;color:var(--dim)">Total earned</td><td style="text-align:right">${fmt(_totalEarned)} coins</td></tr>
             <tr><td style="padding:3px 0;color:var(--dim)">Invested in upgrades</td><td style="text-align:right">${fmt(_spent)} coins</td></tr>
-            <tr style="border-top:1px solid rgba(255,255,255,.1)"><td style="padding:5px 0 3px;font-weight:700">Net worth</td><td style="text-align:right;font-weight:700;color:#ffd666">${fmt(S.coins + _spent)} coins</td></tr>
-          <tr><td style="padding:3px 0;color:var(--dim)">Savings rate</td><td style="text-align:right;color:#4aff88">0.05% / 30 min</td></tr>
+          <tr style="border-top:1px solid rgba(255,255,255,.1)"><td style="padding:5px 0 3px;color:var(--dim)">Savings rate</td><td style="text-align:right;color:#4aff88">0.05% / 30 min</td></tr>
           <tr><td style="padding:3px 0;color:var(--dim)">Next interest</td><td style="text-align:right">${fmt(Math.max(0, (S.interestAt - Date.now()) / 60000))} min</td></tr>
           </table>
         <p style="color:var(--dim);font-size:11px;margin:12px 0 0">Interest accrues automatically while you play. Keep a healthy balance!</p>
@@ -8274,6 +8337,7 @@ setInterval(()=>{
     } else { _heartbeatAt = now + 5000; }
   }
   updateProgressBar();
+  sampleNetWorth();   // LE4: throttled net-worth history sampling
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
     renderMain(); updateHud();
