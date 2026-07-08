@@ -2108,6 +2108,18 @@ function openDistricts(){
 }
 // ---- Founder's Ledger: a "where am I / what's next" progression overview ----
 function closeLedger(){ const e=document.getElementById("ledger-modal"); if(e) e.remove(); }
+// Announce a gated district the moment the player crosses its level threshold.
+function checkDistrictUnlocks(){
+  if (!S.announcedDistricts) S.announcedDistricts = [];
+  const tl = totalLvl();
+  for (const d of DISTRICTS){
+    if (d.unlock.type==='level' && tl >= (d.unlock as any).n && !S.announcedDistricts.includes(d.id)){
+      S.announcedDistricts.push(d.id);
+      toast(`${d.ic} ${d.name} unlocked!`);
+      log(`${d.ic} <b>${d.name}</b> is now open — find it via the 🗺️ Town Directory! (Total level ${(d.unlock as any).n})`, "good");
+    }
+  }
+}
 function openLedger(){
   closeLedger();
   const tl = totalLvl();
@@ -5364,7 +5376,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[],
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -5513,6 +5525,9 @@ function load(){
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
       if (!("grid" in parsed) || !S.grid || typeof S.grid.tier !== "number") S.grid = { tier:0 };
+      // pre-mark already-unlocked gated districts so returning players aren't re-notified
+      if (!("announcedDistricts" in parsed) || !Array.isArray(S.announcedDistricts))
+        S.announcedDistricts = DISTRICTS.filter(d => d.unlock.type==='level' && isDistrictOpen(d, totalLvl())).map(d => d.id);
       return true;
     }
   } catch(e){}
@@ -8627,6 +8642,7 @@ setInterval(()=>{
   }
   updateProgressBar();
   sampleNetWorth();   // LE4: throttled net-worth history sampling
+  checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
     renderMain(); updateHud();
