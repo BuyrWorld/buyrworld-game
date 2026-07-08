@@ -1598,6 +1598,63 @@ const BUILDING_FLAVOUR: Record<string,string> = {
   village_fund:'🌸 "Every little helps the valley bloom."',
   furniture:'🛋️ "Make yourself at home."',
 };
+// One-time tutorials — the first time you enter a system a short "how it works"
+// explainer is logged (persistently) and toasted, so every feature teaches itself.
+// Tracked in S.seenTips keyed by tab/skill id. Later visits fall back to the
+// characterful BUILDING_FLAVOUR greeting instead. Keep each line couch-legible.
+const SYSTEM_TUTORIAL: Record<string,string> = {
+  // Money & trade
+  bank:'Bank — your coins quietly earn interest here over time, and you can borrow against your net worth. Pop back to let your savings compound.',
+  exchange:'Exchange — commodity prices rise and fall with the living economy. Buy a good while it\'s cheap, sell when it spikes for a profit.',
+  trade:'Market Hall — sell what you gather and buy what you need. Dumping loads of one good drops its price, so sell in sensible batches.',
+  contracts:'The Depot — accept an order, deliver the listed goods, and earn coins plus Logistics XP. Bigger orders pay more.',
+  upgrades:'Town Hall — spend profits on permanent upgrades: better tools, faster actions and passive boosts. They pay for themselves fast.',
+  village_fund:'Village Fund — donate coins to beautify Featherstone and earn lasting prestige bonuses for the whole valley.',
+  // Services & leisure
+  cafe:'Café — order a coffee for a short town-wide speed boost to every activity. Grab one before a big session.',
+  pub:'Pub — a pint grants a handy buff for a while, but pace yourself through the evening.',
+  nightclub:'Nightclub — the theme rotates every few days. Hit the dance floor for an energy buff and a bit of nightlife.',
+  university:'University — enrol in a degree for a lasting XP boost in that subject. Your studies complete over real time.',
+  school:'School — brush up on the basics for small early-game bonuses.',
+  estateagent:'Estate Agent — buy properties for passive rental income that pays out whether you\'re playing or not.',
+  retail:'Retail — stock the shelves with your goods and they sell themselves over time, completely hands-free.',
+  postoffice:'Post Office — collect your daily reward here, and send parcels for bonus coins.',
+  furniture_shop:'Furniture Shop — buy furnishings to personalise your home; some cosy pieces grant comfort bonuses.',
+  bike_shop:'Cycle Shop — rent or buy a bike to move around Featherstone far faster.',
+  pets:'Companion Barn — your crew of helpers live here. Look after them and they\'ll lend a hand with your work.',
+  // Advanced districts
+  robotics_lab:'Automation Lab — build mechanical bots from crafted parts, then assign one per skill to work it passively while you\'re away.',
+  data_centre:'Data Centre — upgrade the Power Grid for a town-wide efficiency bonus that lifts every skill at once.',
+  // Harbour
+  harbour_office:'Harbourmaster — fast-travel across the bay and manage your harbour trade from this office.',
+  boat_hire:'Boat Hire — hire a boat to cross the water quickly and reach the far coast.',
+  fishmonger_wh:'Fish Warehouse — sell your catch in bulk here for a premium over the market stalls.',
+  seasonal_market:'Seasonal Market — limited festival stalls with exclusive crafts, only around for the season.',
+  notice_board:'Notice Board — neighbours post tasks here. Complete them for coins, XP and a bit of goodwill.',
+  // Production skills
+  mining:'Mining — walk up to a vein and strike it to collect ore. Higher-level veins need a better pickaxe from the Town Hall.',
+  woodcutting:'Woodcutting — chop trees for timber; they regrow over time. Tougher woods need a higher Woodcutting level.',
+  steelworks:'The Furnace — smelt raw ore into bars, the backbone of the whole supply chain.',
+  manufacturing:'The Workshop — craft raw materials into components that feed into higher-value goods.',
+  fishing:'Fishing — cast your rod and wait for a bite. When the bobber dips, you\'ve hooked one!',
+  foraging:'Foraging — gather herbs, berries and mushrooms the forest gives freely.',
+  crafting:'Artisan Shed — turn gathered goods into finished artisan products worth far more.',
+  // Meta / UI systems
+  _districts:'Districts — Featherstone is split into themed districts. Tap one to fast-travel to its hub; advanced districts unlock as your total level climbs.',
+  _inventory:'Inventory — everything you own, sorted by value. Sell goods at the Market Hall or use them in crafting.',
+};
+// Shows a tutorial exactly once. Returns true if it fired (so callers can suppress
+// a duplicate greeting on that first visit).
+function tipOnce(id, msg){
+  if (!msg) return false;
+  if (!S.seenTips) S.seenTips = {};
+  if (S.seenTips[id]) return false;
+  S.seenTips[id] = true;
+  log("💡 Tip — " + msg, "good");
+  toast("💡 " + msg);
+  save();
+  return true;
+}
 const TREE_RESPAWN_MS: Record<string,number> = { pine:600000, oak:1200000, hardwood:7200000, rare_leaf:21600000 };
 function getTreeStage(o: any): number {
   const rd = S.treeRespawn?.[o.id];
@@ -1662,6 +1719,7 @@ function interactObj(o){
     if (S.action && S.action.skill==="woodcutting" && S.action.objId===o.id){
       swing(); return;   // M12: click the tree you're chopping to swing (idle continues if you stop)
     }
+    tipOnce("woodcutting", SYSTEM_TUTORIAL.woodcutting);
     const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
     S.action = { skill:"woodcutting", id:o.ore, objId:o.id, progress:0 };
     toast(`🪓 ${act ? act.n : "Chopping"}...`);
@@ -1673,6 +1731,7 @@ function interactObj(o){
     if (S.action && S.action.skill==="mining" && S.action.id===o.ore){
       swing(); return;   // M12: click the rock you're mining to swing (idle continues if you stop)
     }
+    tipOnce("mining", SYSTEM_TUTORIAL.mining);
     S.action = { skill:"mining", id:o.ore, progress:0 };
     toast(`⛏️ Mining ${ITEMS[o.ore].n}...`);
     log(`▶ Started: Mine ${ITEMS[o.ore].n}`);
@@ -1686,7 +1745,8 @@ function interactObj(o){
   if (o.id==="town_directory"){ openDistricts(); return; }
   if (o.tab==="robotics_lab" && totalLvl() < 150){ toast(`🤖 The Automation Lab opens at total level 150 (you: ${totalLvl()}).`); return; }
   if (o.tab==="data_centre" && totalLvl() < 200){ toast(`🖥️ The Data Centre opens at total level 200 (you: ${totalLvl()}).`); return; }
-  if (BUILDING_FLAVOUR[o.tab]) toast(BUILDING_FLAVOUR[o.tab]);   // characterful greeting on entry
+  // First visit teaches the system; later visits get the characterful greeting.
+  if (!tipOnce(o.tab, SYSTEM_TUTORIAL[o.tab]) && BUILDING_FLAVOUR[o.tab]) toast(BUILDING_FLAVOUR[o.tab]);
   S.tab = o.tab;
   S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
@@ -2136,6 +2196,7 @@ function visitDistrict(id){
 }
 function openDistricts(){
   closeDistricts();
+  tipOnce("_districts", SYSTEM_TUTORIAL._districts);
   const tl=totalLvl();
   const cards=DISTRICTS.map(d=>{
     const planned=d.unlock.type==='planned', open=isDistrictOpen(d, tl);
@@ -2215,6 +2276,7 @@ function openLedger(){
 function toggleInventory(){
   const ex = document.getElementById("inv-modal");
   if (ex){ ex.remove(); return; }
+  tipOnce("_inventory", SYSTEM_TUTORIAL._inventory);
   const entries = Object.entries(S.items).filter(([,q]:any)=>q>0)
     .sort((a:any,b:any)=> (ITEMS[b[0]]?.v||0)*b[1] - (ITEMS[a[0]]?.v||0)*a[1]);
   const cells = entries.length
@@ -5503,7 +5565,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[],
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{},
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -5589,6 +5651,7 @@ function load(){
       if (!S.prestigeIncomeAt) S.prestigeIncomeAt = 0;
       if (!S.villagerRequests) S.villagerRequests = {};
       if (!S.perks) S.perks = {};
+      if (!S.seenTips) S.seenTips = {};
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
