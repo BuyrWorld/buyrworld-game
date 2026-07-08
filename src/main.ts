@@ -16,7 +16,7 @@ import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRe
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
-import { ECON, applySalePressure, recoverPressure, driftToward, nudgeDrift } from './data/economy.ts';
+import { ECON, applySalePressure, recoverPressure, driftToward, nudgeDrift, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -35,31 +35,50 @@ function ensureMarket(){
   });
 }
 function ensureEcon(){
-  if (!S.econ) S.econ = { pressure:{} };
+  if (!S.econ) S.econ = { pressure:{}, news:[], phaseId:null };
   if (!S.econ.pressure) S.econ.pressure = {};
+  if (!S.econ.news) S.econ.news = [];
+  if (!("phaseId" in S.econ)) S.econ.phaseId = null;
+}
+// LE2: prepend a headline to the economic news feed (capped).
+function pushNews(icon, text, tone){
+  ensureEcon();
+  S.econ.news.unshift({ t: Date.now(), icon, text, tone: tone||"" });
+  if (S.econ.news.length > 20) S.econ.news.length = 20;
 }
 // LE1: apply a sale's supply pressure + an immediate visible market reaction.
 function _econSale(it, qty){
   ensureEcon();
   const v = ITEMS[it]?.v || 10;
-  const p = applySalePressure(S.econ.pressure[it] ?? ECON.P_START, qty, v);
+  const prev = S.econ.pressure[it] ?? ECON.P_START;
+  const p = applySalePressure(prev, qty, v);
   S.econ.pressure[it] = p;
   NPCS.forEach(n => {
     if (n.stock.includes(it) && typeof S.market.drift[n.id]?.[it] === "number")
       S.market.drift[n.id][it] = nudgeDrift(S.market.drift[n.id][it], p);
   });
+  // LE2: a big dump makes the news as a glut
+  if (p <= 0.66 && prev > 0.66) pushNews("📦", `Glut of ${ITEMS[it]?.n||it} — the market's flooded, prices soft.`, "bad");
 }
 function rollMarket(force){
   ensureMarket(); ensureEcon();
+  // LE2: announce a macro phase change whenever the town's cycle turns.
+  const _ph = macroPhaseId();
+  if (S.econ.phaseId !== _ph){
+    if (S.econ.phaseId !== null) pushNews("", macroPhase().head, macroPhase().tone);
+    S.econ.phaseId = _ph;
+  }
   const steps = force ? 1 : Math.floor((Date.now() - S.market.last) / MARKET_ROLL_MS);
   if (steps <= 0) return false;
   const nsteps = Math.min(steps, 24);
   // supply/demand pressure heals toward 1.0 over the elapsed steps
   for (const it in S.econ.pressure) S.econ.pressure[it] = recoverPressure(S.econ.pressure[it], nsteps);
-  // per-NPC drift mean-reverts toward each item's equilibrium (LE1: eq = pressure)
+  // per-NPC drift mean-reverts toward each item's equilibrium
+  // LE2: eq = macro demand × supply/demand pressure
+  const _md = macroDemand();
   for (let s = 0; s < nsteps; s++){
     NPCS.forEach(n => n.stock.forEach(it => {
-      const eq = S.econ.pressure[it] ?? ECON.P_START;
+      const eq = _md * (S.econ.pressure[it] ?? ECON.P_START);
       S.market.drift[n.id][it] = driftToward(S.market.drift[n.id][it], eq);
     }));
   }
@@ -5133,7 +5152,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{} },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -6436,10 +6455,31 @@ function trendArrow(d){
   if (d <= 0.88) return `<span style="color:var(--red)">▼ low</span>`;
   return `<span style="color:var(--dim)">▬ fair</span>`;
 }
+// LE2 — shared "Market Report" block: macro phase chip + live flavour + headlines.
+function _econNewsHtml(limit){
+  ensureEcon();
+  const ph = macroPhase();
+  const mins = Math.max(1, Math.ceil(msToNextPhase()/60000));
+  const flav = ph.flavour[Math.floor(Date.now()/9000) % ph.flavour.length];
+  const toneCol = ph.tone==='good' ? 'var(--mint)' : ph.tone==='bad' ? 'var(--red)' : 'var(--amber)';
+  const news = (S.econ.news||[]).slice(0, limit||5);
+  const newsHtml = news.length
+    ? news.map(nw=>`<div style="font-size:11px;color:${nw.tone==='good'?'var(--mint)':nw.tone==='bad'?'#e8907a':'var(--dim)'};padding:3px 0;border-top:1px solid rgba(255,255,255,.06)">${nw.icon?nw.icon+' ':''}${nw.text}</div>`).join('')
+    : `<div style="font-size:11px;color:var(--dim);padding:3px 0">Quiet on the wires — trade to make headlines.</div>`;
+  return `<div class="panel" style="padding:10px">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:7px">📰 Market Report</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="background:color-mix(in srgb,${toneCol} 16%,transparent);border:1px solid ${toneCol};color:${toneCol};border-radius:4px;padding:3px 9px;font-weight:700;font-size:12px">${ph.ic} ${ph.name}</span>
+      <span style="font-size:11px;color:var(--dim)">${flav} · turns in ~${mins} min</span>
+    </div>
+    <div style="margin-top:8px">${newsHtml}</div>
+  </div>`;
+}
 function renderTrade(){
   ensureMarket();
   const tLvl = skillLvl("trading");
-  let html = `<div class="panel"><h2>⚖️ Traders<small>Prices drift every few minutes — buy low, sell high. Better prices as Trading levels up (current bonus: ${(tradeBonus()*100).toFixed(1)}%).</small></h2>${xpBarHtml("trading")}</div>`;
+  let html = `<div class="panel"><h2>⚖️ Traders<small>Prices move with supply, demand and the town's business cycle — buy low, sell high. Trading level bonus: ${(tradeBonus()*100).toFixed(1)}%.</small></h2>${xpBarHtml("trading")}</div>`;
+  html += _econNewsHtml(3);
   NPCS.forEach(npc=>{
     const locked = tLvl < npc.lvl;
     html += `<div class="panel" ${locked?'style="opacity:.55"':''}>
@@ -6540,6 +6580,7 @@ function renderNoticeBoard(){
   let html = `<div class="panel" style="padding:10px">
     <h3 style="margin:0 0 6px;font-size:13px">📋 Village Notice Board</h3>
     <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Community tasks from your neighbours. Complete them for coins and friendship XP.</p>
+    ${_econNewsHtml(6)}
     <div style="background:linear-gradient(135deg,#1e3a1e,#0f2a1a);border-radius:8px;padding:10px;margin-bottom:12px;border:1px solid #2e6a2e">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
         <span style="font-size:11px;font-weight:bold;color:#90d870">🎯 Today's Village Challenge</span>

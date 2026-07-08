@@ -129,9 +129,16 @@ S.econ = {
   `tests/economy.test.ts` (bounds, mean-reversion, no runaway, self-healing). The
   existing trader trend labels (▲ high / ▼ low / ▬ fair) are now economically driven.
   *Visible:* dumping a stack drops its price; prices recover over the following minutes.
-- **LE2 — Macro cycle + news network.** Boom/Downturn phases + `macroDemand`, an
-  economy-phase HUD chip, and the news ticker on the Notice Board. *Visible:* the
-  town cycles through booms and downturns with explained headlines.
+- **LE2 — Macro cycle + news network.** ✅ **Shipped.** A deterministic town-wide
+  business cycle (steady→boom→steady→downturn→recovery, 4 game days each) whose
+  `macroDemand` scales every item's equilibrium in `rollMarket` — so booms lift
+  the whole market and downturns soften it (this restores lively ambient price
+  movement on top of LE1). A **news network** (`S.econ.news`, `pushNews`) posts
+  headlines on phase turns and gluts; a shared **📰 Market Report** block (phase
+  chip + live flavour + headlines) shows on the Traders panel and the Notice
+  Board. Deterministic/offline-safe (same epoch approach as club themes), guarded
+  by `tests/economy.test.ts`. *Visible:* the town cycles through booms and
+  downturns with explained headlines, and prices move with the cycle.
 - **LE3 — Supply-chain propagation + market report.** Cost-push from the recipe
   graph; a "Market Report" view (per-item trend + driver + your price impact),
   reusing the Exchange styling. *Visible:* a raw shortage raises processed-good

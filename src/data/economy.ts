@@ -1,5 +1,6 @@
 // @ts-nocheck
-// LE1 — Living economy foundation: supply/demand pressure + mean-reverting drift.
+// LE1/LE2 — Living economy: supply/demand pressure + mean-reverting drift, plus a
+// macro business cycle + news network.
 // Pure & deterministic (except opt-in rng) so it can be unit-tested. See
 // LIVING_ECONOMY_DESIGN.md. Everything is centred on 1.0 and hard-clamped, which
 // is what keeps prices responsive yet free of inflation/deflation runaway.
@@ -52,4 +53,47 @@ export function nudgeDrift(d: number, target: number): number {
 // Trend glyph for the trader UI: high price (good to sell) vs soft (saturated).
 export function trendArrow(d: number): '↑' | '↓' | '→' {
   return d > 1.06 ? '↑' : d < 0.94 ? '↓' : '→';
+}
+
+// ---------------------------------------------------------------------------
+// LE2 — macro business cycle. A deterministic, offline-safe town-wide demand
+// cycle (like the club themes): the whole market's equilibrium is scaled by the
+// current phase's demand, so booms lift prices and downturns soften them.
+import { DAY_DURATION_MS } from '../world/daynight.ts';
+
+export const MACRO_EPOCH = Date.UTC(2026, 0, 5);   // shared fixed anchor
+export const MACRO_PHASE_DAYS = 4;                 // each phase lasts 4 game days (~96 real min)
+export const MACRO_SEQUENCE = ['steady', 'boom', 'steady', 'downturn', 'recovery'];
+
+export const MACRO_PHASES: Record<string, any> = {
+  boom:     { id:'boom',     name:'Boom',     demand:1.15, ic:'📈', tone:'good',
+    head:'📈 Boom — demand surges across the valley; sell prices are strong.',
+    flavour:["Warehouses can't keep up with orders.", "The whole valley is hiring.", "Margins are fat — sell into the rush."] },
+  steady:   { id:'steady',   name:'Steady',   demand:1.00, ic:'📊', tone:'',
+    head:'📊 Markets settle into a steady rhythm.',
+    flavour:["Trade ticks along at a comfortable pace.", "No surprises at market today.", "Steady hands, steady margins."] },
+  downturn: { id:'downturn', name:'Downturn', demand:0.85, ic:'📉', tone:'bad',
+    head:'📉 Downturn — demand cools; hold your best stock if you can.',
+    flavour:["Buyers are cautious; deals move slowly.", "Bargains for anyone with coin to spare.", "Belts are tightening across the valley."] },
+  recovery: { id:'recovery', name:'Recovery', demand:0.95, ic:'🔄', tone:'',
+    head:'🔄 Recovery — the valley economy is climbing back.',
+    flavour:["Confidence is creeping back.", "Order books are filling again.", "The worst is behind us, they reckon."] },
+};
+
+const _macroPeriod = () => MACRO_PHASE_DAYS * DAY_DURATION_MS;
+
+export function macroPhaseId(now = Date.now(), periodMs = _macroPeriod()): string {
+  const n = MACRO_SEQUENCE.length;
+  const i = Math.floor((now - MACRO_EPOCH) / periodMs) % n;
+  return MACRO_SEQUENCE[((i % n) + n) % n];
+}
+export function macroPhase(now = Date.now(), periodMs = _macroPeriod()) {
+  return MACRO_PHASES[macroPhaseId(now, periodMs)];
+}
+export function macroDemand(now = Date.now(), periodMs = _macroPeriod()): number {
+  return macroPhase(now, periodMs).demand;
+}
+export function msToNextPhase(now = Date.now(), periodMs = _macroPeriod()): number {
+  const off = ((now - MACRO_EPOCH) % periodMs + periodMs) % periodMs;
+  return periodMs - off;
 }
