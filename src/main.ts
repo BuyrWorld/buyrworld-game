@@ -555,6 +555,8 @@ const WANDERERS = [
     profile:{ job:"Harbour Warden", home:"Dockside Hut" } },
 ];
 const VP = { x: 75*TILE, y: 28*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
+let _lastIActionId = null;   // tracks the last interior action so the player re-walks to a new station
+let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-up animation
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
   { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
@@ -1844,6 +1846,10 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   }
   if (tool){
     const swing = Math.sin(t*11);
+    // pumping arm on the tool side so the whole body reads as "doing the work"
+    ctx.save(); ctx.translate(facing*5,-5); ctx.rotate(facing*(swing*0.8-0.35));
+    ctx.fillStyle=shirt; ctx.fillRect(-1.5,0,3,6); ctx.fillStyle=skin; ctx.fillRect(-1.5,5,3,4);
+    ctx.restore();
     ctx.save(); ctx.translate(facing*9,-4); ctx.rotate(facing*(swing*0.9-0.4));
     if (toolColor){ ctx.fillStyle=toolColor+"99"; ctx.beginPath(); ctx.arc(facing*7,-6,7,0,7); ctx.fill(); }
     ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
@@ -3528,14 +3534,24 @@ function drawInterior(t){
     ctx.fillStyle="#5a3a20"; ctx.fillRect(0,H*.44,W,5);
     for(let rx=0;rx<W;rx+=32){ ctx.fillStyle="#6a4a28"; ctx.fillRect(rx,H*.44-2,5,18); }
     // rod + bobber for each station
+    const _fcAge = (typeof performance!=="undefined"?performance.now():Date.now()) - _fishCatchT;
     STATION_DEFS.fishing.forEach(st=>{
       const sx=st.fx*W;
-      const bx=sx+Math.sin(t*1.8+st.fx*5)*9, by=H*.20+Math.sin(t*1.3+st.fx*4)*8;
+      const _isAct = S.action?.skill==="fishing" && S.action.id===st.id;
+      const _biting = _isAct && _fcAge < 1200;      // a fish is on the line
+      const bx=sx+Math.sin(t*1.8+st.fx*5)*9, by=H*.20+Math.sin(t*1.3+st.fx*4)*8 + (_biting?Math.sin(t*22)*3:0);
       ctx.strokeStyle="#5a3a1e"; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(sx, H*.44); ctx.lineTo(bx, by); ctx.stroke();
       ctx.fillStyle="#dd4444"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, 7); ctx.fill();
       ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.arc(bx, by, 4, Math.PI, 0); ctx.fill();
       if(Math.sin(t*4.1+st.fx*11)>0.90){ ctx.fillStyle="rgba(255,255,255,.7)"; ctx.fillRect(bx-6,by+4,12,2); }
+      // catch! reel a fish up the line toward the rod tip, with a splash at the bite
+      if (_isAct && _fcAge < 900){
+        const _p = _fcAge/900;
+        if (_p < 0.35){ ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(bx, by, 5+_p*16, 0, 7); ctx.stroke(); }
+        const _fx = bx+(sx-bx)*_p, _fy = by+(H*.44-by)*_p;
+        ctx.font="13px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("🐟", _fx, _fy); ctx.textAlign="left";
+      }
     });
   } else if (S.tab==="contracts"){
     room("#6a5a44","#8a7a62","#c9beac","#bfb2a0","#5a4a34");
@@ -5052,6 +5068,14 @@ function villageFrame(ts){
     }
     drawVillage(t);
   } else if (INTERIOR_TABS.has(S.tab)){
+    // auto-walk to the active workstation when the action changes, so the player
+    // visibly moves to the NEW activity instead of working the old spot
+    if (S.action && STATION_DEFS[S.tab]){
+      const _ast = STATION_DEFS[S.tab].find(s=>s.skill===S.action.skill && s.id===S.action.id);
+      if (_ast && S.action.id !== _lastIActionId){
+        IP.tx = _ast.fx*icanvasW(); IP.ty = _ast.fy*icanvasH() + 18; IP.moving = true; _lastIActionId = S.action.id;
+      }
+    } else if (!S.action) _lastIActionId = null;
     moveActor(IP, dt, 80, true);
     // push IP out of interior prop collision rects
     const iCols = S.tab==="home" ? homeColsCached(S.roomObjId) : INTERIOR_COLS[S.tab];
@@ -6342,6 +6366,7 @@ function completeAction(act, skill, silent){
       if (!silent) toast(`🤖 Automaton bonus — +${_bq} ${ITEMS[_bid].n}!`);
     }
   }
+  if (!silent && skill==="fishing") _fishCatchT = (typeof performance!=="undefined"?performance.now():Date.now());
   grantXp(skill, act.xp);
   S.counters.actions++;
   rollPet(skill);
