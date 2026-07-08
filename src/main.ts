@@ -578,6 +578,8 @@ const WANDERERS = [
 const VP = { x: 75*TILE, y: 28*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 let _lastIActionId = null;   // tracks the last interior action so the player re-walks to a new station
 let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-up animation
+let _homeVil = null;         // wandering home-villager state (per home)
+let _homeVilLbl = null;      // {x,y,name} for the crisp home-villager label this frame
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
   { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
@@ -4219,14 +4221,9 @@ function drawInterior(t){
       _homeProp(ctx, _p.k, _p.x, _p.y, W, H, t, _ft, _pal);
     }
     // --- NPC daily routine (time-of-day activity) ---
+    _homeVilLbl = null;
     if (_v){
       const _nHr=gameHour();
-      const _bubble=(txt:string,bx:number=W/2,by:number=H-80)=>{
-        const _bw=txt.length*5+14;
-        ctx.fillStyle="rgba(255,248,220,.93)"; ctx.strokeStyle="#8c6947"; ctx.lineWidth=1;
-        ctx.fillRect(bx-_bw/2,by,_bw,14); ctx.strokeRect(bx-_bw/2,by,_bw,14);
-        ctx.fillStyle="#453423"; ctx.font="bold 6px monospace"; ctx.textAlign="center"; ctx.fillText(txt,bx,by+10); ctx.textAlign="left";
-      };
       if (_nHr>=22||_nHr<7){
         // sleeping — head(s) peek above the duvet line
         const _drawHead=(hx:number,hy:number,hc:string,fem2:boolean)=>{
@@ -4243,31 +4240,33 @@ function drawInterior(t){
         ctx.fillStyle="#5a4a8a"; ctx.font="bold 8px monospace";
         ctx.fillText("Zzz",_bX+(_bConf.d?Math.round(_bW*0.6):18)+6,_bY-4);
         ctx.globalAlpha=1;
-      } else if (_nHr>=7&&_nHr<9.5){
-        // morning routine — in the kitchen zone
-        drawPerson(ctx,66,96,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
-        drawEmojiC(ctx,"☕",92,82,12);
-        const _q=["Morning already...","Tea's on.","Right, a new day.","Early bird."][Math.floor(Date.now()/8000)%4];
-        _bubble(_q,66,72);
-      } else if (_nHr>=12&&_nHr<13.5){
-        // lunch — seated at the dining table
-        drawPerson(ctx,54,132,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
-        drawEmojiC(ctx,"🥗",54,118,11);
-        const _q=["Lunch break!","Quick bite.","Lovely grub.","Back soon."][Math.floor(Date.now()/8000)%4];
-        _bubble(_q,54,104);
-      } else if (_nHr>=18.5&&_nHr<22){
-        // evening — relaxing in the living zone
-        drawPerson(ctx,158,168,_v.hair,_v.shirt,t,false,1,null,"down",null,_v.trouser,null,_v.female||false);
-        const _q=["Feet up!","Long day.","Quiet evening.","Bliss."][Math.floor(Date.now()/8000)%4];
-        _bubble(_q,158,142);
-      } else {
+      } else if ((_nHr>=9.5&&_nHr<12)||(_nHr>=13.5&&_nHr<18.5)){
         // at work — sticky note on the table
         ctx.fillStyle="#f4e8c8"; ctx.fillRect(W/2-24,H-52,48,28);
         ctx.strokeStyle="#8a6a40"; ctx.lineWidth=0.8; ctx.strokeRect(W/2-24,H-52,48,28);
-        ctx.fillStyle="#6a4a20"; ctx.font="bold 5px monospace"; ctx.textAlign="center";
+        ctx.fillStyle="#6a4a20"; ctx.font="bold 6px monospace"; ctx.textAlign="center";
         ctx.fillText("Gone to",W/2,H-40); ctx.fillText("work!",W/2,H-30);
         ctx.fillText("— "+_v.n,W/2,H-22); ctx.textAlign="left";
         drawEmojiC(ctx,"📌",W/2+22,H-54,8);
+      } else {
+        // awake at home → wander between rooms doing chores
+        const _wp = [[66,96],[54,128],[158,165],[112,150],[Math.max(22,_bX-16),112]];
+        if (!_homeVil || _homeVil.roomId !== S.roomObjId)
+          _homeVil = { roomId:S.roomObjId, x:112, y:150, tx:112, ty:150, moving:false, facing:1, pauseT:0 };
+        const _dx=_homeVil.tx-_homeVil.x, _dy=_homeVil.ty-_homeVil.y, _dd=Math.hypot(_dx,_dy)||1;
+        if (_dd < 3){
+          if (!_homeVil.pauseT) _homeVil.pauseT = Date.now() + 1500 + Math.random()*2800;
+          if (Date.now() > _homeVil.pauseT){ const _n=_wp[Math.floor(Math.random()*_wp.length)]; _homeVil.tx=_n[0]; _homeVil.ty=_n[1]; _homeVil.pauseT=0; }
+          _homeVil.moving=false;
+        } else {
+          _homeVil.x+=_dx/_dd*1.1; _homeVil.y+=_dy/_dd*1.1; _homeVil.moving=true; _homeVil.facing=_dx>=0?1:-1;
+        }
+        drawPerson(ctx,Math.round(_homeVil.x),Math.round(_homeVil.y),_v.hair,_v.shirt,t,_homeVil.moving,_homeVil.facing,null,"down",null,_v.trouser,null,_v.female||false);
+        if (!_homeVil.moving){
+          const _em = Math.hypot(_homeVil.x-66,_homeVil.y-96)<20?"☕":Math.hypot(_homeVil.x-54,_homeVil.y-128)<20?"🍽️":Math.hypot(_homeVil.x-158,_homeVil.y-165)<26?"📺":"✨";
+          drawEmojiC(ctx,_em,_homeVil.x+11,_homeVil.y-14,11);
+        }
+        _homeVilLbl = { x:_homeVil.x, y:_homeVil.y, name:_v.n };
       }
     }
   }
@@ -4994,6 +4993,11 @@ function drawInterior(t){
     if (CHAT_NPC){
       const q = CHAT_NPC.quips[CHAT_NPC.quipIdx % CHAT_NPC.quips.length];
       _iHtml += `<div class="int-chat"><span class="int-chat-name">${CHAT_NPC.n}:</span><span class="int-chat-txt"> ${q}</span><span class="int-chat-dim"> · tap to dismiss</span></div>`;
+    }
+    // home villager crisp name label (legible, follows them as they wander)
+    if (S.tab==="home" && _homeVilLbl){
+      const _hx = _homeVilLbl.x/W*100, _hy = (_homeVilLbl.y-30)/H*100;
+      _iHtml += `<div class="int-vlbl" style="left:${_hx.toFixed(1)}%;top:${_hy.toFixed(1)}%">${_homeVilLbl.name}</div>`;
     }
     // trespass badge
     if (S.tab==="home" && S.trespass?.active){
