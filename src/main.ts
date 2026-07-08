@@ -578,6 +578,8 @@ const WANDERERS = [
 const VP = { x: 75*TILE, y: 28*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 let _lastIActionId = null;   // tracks the last interior action so the player re-walks to a new station
 let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-up animation
+let _cat = { x:29*TILE, y:28*TILE, tx:29*TILE, ty:28*TILE, pauseT:0, facing:1, moving:false };
+let _bflies = [];            // ambient butterflies (warm seasons)
 let _homeVil = null;         // wandering home-villager state (per home)
 let _homeVilLbl = null;      // {x,y,name} for the crisp home-villager label this frame
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
@@ -2764,6 +2766,32 @@ function drawExtras(ctx, t){
         ctx.beginPath(); ctx.moveTo(_fx-4,_bY); ctx.lineTo(_fx+4,_bY); ctx.lineTo(_fx,_bY+9); ctx.closePath(); ctx.fill();
       }
     }
+  }
+  // ambient life — a wandering village cat + seasonal butterflies
+  {
+    // cat pads around the town square (tx 24-34, ty 26-30)
+    const _cd = Math.hypot(_cat.tx-_cat.x, _cat.ty-_cat.y) || 1;
+    if (_cd < 4){
+      if (!_cat.pauseT) _cat.pauseT = Date.now() + 2000 + Math.random()*4000;
+      if (Date.now() > _cat.pauseT){ _cat.tx=(24+Math.random()*10)*TILE; _cat.ty=(26+Math.random()*4)*TILE; _cat.pauseT=0; }
+      _cat.moving=false;
+    } else { _cat.x+=(_cat.tx-_cat.x)/_cd*0.7; _cat.y+=(_cat.ty-_cat.y)/_cd*0.7; _cat.moving=true; _cat.facing=(_cat.tx-_cat.x)>=0?1:-1; }
+    const cx=Math.round(_cat.x), cy=Math.round(_cat.y), bob=_cat.moving?Math.sin(t*10)*1:0;
+    ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(cx,cy+3,7,2,0,0,7); ctx.fill();
+    ctx.fillStyle="#6a5a4a"; ctx.fillRect(cx-6,cy-4+bob,10,6);                 // body
+    ctx.fillRect(cx-8*_cat.facing,cy-2+bob,3,4);                              // head bump
+    ctx.fillRect(cx+4*_cat.facing,cy-7+bob,1,3); ctx.fillRect(cx+6*_cat.facing,cy-7+bob,1,3); // ears
+    ctx.strokeStyle="#6a5a4a"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx-6,cy-2+bob); ctx.lineTo(cx-9,cy-4-Math.sin(t*4)*2+bob); ctx.stroke(); // tail
+    // butterflies flit over the residential/park area in spring & summer
+    const _wsn=getSeason();
+    if (_wsn==="spring"||_wsn==="summer"){
+      while(_bflies.length<4) _bflies.push({ x:(74+Math.random()*12)*TILE, y:(26+Math.random()*4)*TILE, ph:Math.random()*7, col:["#ff90c0","#ffd050","#a0d0ff","#ff8060"][Math.floor(Math.random()*4)] });
+      for(const b of _bflies){
+        b.x+=Math.sin(t*1.3+b.ph)*0.6; b.y+=Math.cos(t*1.7+b.ph)*0.5;
+        const flap=Math.sin(t*14+b.ph)>0?1:-1;
+        ctx.fillStyle=b.col; ctx.fillRect(b.x-3*flap|0,b.y-2|0,3,4); ctx.fillRect(b.x|0,b.y-2|0,3,4);
+      }
+    } else _bflies.length=0;
   }
   // residential flower strip (along path rows 5 and 10)
   for (let col = 50; col < 86; col += 5){
