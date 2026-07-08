@@ -15,6 +15,7 @@ import { VILLAGERS } from './data/villagers.ts';
 import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRects } from './data/homeInteriors.ts';
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
+import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -1524,7 +1525,7 @@ function interactObj(o){
     }
     if (skillLvl("woodcutting") < o.lvl){ toast(`Requires Woodcutting level ${o.lvl}.`); return; }
     if (S.action && S.action.skill==="woodcutting" && S.action.objId===o.id){
-      S.action = null; renderNav(); toast("Stopped woodcutting."); save(); return;
+      swing(); return;   // M12: click the tree you're chopping to swing (idle continues if you stop)
     }
     const act = SKILLS.woodcutting?.actions?.find(a=>a.id===o.ore);
     S.action = { skill:"woodcutting", id:o.ore, objId:o.id, progress:0 };
@@ -1535,7 +1536,7 @@ function interactObj(o){
   if (o.kind==="rock"){
     if (skillLvl("mining") < o.lvl){ toast(`Requires Mining level ${o.lvl}.`); return; }
     if (S.action && S.action.skill==="mining" && S.action.id===o.ore){
-      S.action = null; renderNav(); toast("Stopped mining."); save(); return;
+      swing(); return;   // M12: click the rock you're mining to swing (idle continues if you stop)
     }
     S.action = { skill:"mining", id:o.ore, progress:0 };
     toast(`⛏️ Mining ${ITEMS[o.ore].n}...`);
@@ -6047,6 +6048,32 @@ function tick(dt){
   }
 }
 
+// M12 — Active Swing Mode. Adds a tool-tier-scaled chunk of progress to the
+// CURRENT gathering action. Additive only: same yield/XP as idle (routes through
+// completeAction), never touches offline catch-up, cooldown-capped so it can't be
+// autoclicked past active-play speed. If you stop clicking, tick() carries on.
+let _lastSwingMs = 0;
+function swing(){
+  if (!S.action || !SWING_SKILLS.has(S.action.skill)) return false;
+  const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+  if (now - _lastSwingMs < SWING_COOLDOWN_MS) return false;
+  const act = findAction(S.action.skill, S.action.id);
+  if (!act) return false;
+  _lastSwingMs = now;
+  const dur = act.ms * speedMult(S.action.skill);
+  S.action.progress += dur * (SWING_FRAC[toolTier()] || SWING_FRAC[0]); // frac < 1: never a one-click resource
+  if (typeof SFX !== "undefined") SFX.play(S.action.skill);
+  let completed = 0;
+  while (S.action && S.action.progress >= dur){
+    S.action.progress -= dur;
+    if (!completeAction(act, S.action.skill, false)){ S.action = null; break; }
+    completed++;
+  }
+  updateProgressBar();
+  if (completed > 0) updateHud();
+  return true;
+}
+
 function applyOffline(){
   const now = Date.now();
   const elapsed = Math.min(now - (S.lastSeen || now), OFFLINE_CAP_MS);
@@ -6350,7 +6377,7 @@ function renderSkillPanel(skill){
       <div class="nm"><span class="ic">${ITEMS[Object.keys(act.out)[0]].ic}</span>${act.n}${seasonBadge}</div>
       <div class="meta">${metaText}</div>
       <div class="io">${ioHtml(act)}</div>
-      ${running ? `<div class="prog"><div class="fill" id="prog-${act.id}"></div></div><span class="stopbtn" data-stop="1">STOP</span>` : ""}
+      ${running ? `<div class="prog"><div class="fill" id="prog-${act.id}"></div></div>${SWING_SKILLS.has(skill)?`<span class="stopbtn" data-swing="1" style="background:#3a5a1a;border-color:#6aaa2a;color:#cfeeb0" title="Swing! ~${swingClicks(toolTier())} clicks per resource at your tool tier">🪓 SWING</span> `:""}<span class="stopbtn" data-stop="1">STOP</span>` : ""}
     </button>`;
   });
   html += `</div></div>`;
@@ -7418,6 +7445,7 @@ function renderMain(){
 function bindMain(){
   document.querySelectorAll(".action").forEach(el=>{
     el.onclick = (e)=>{
+      if (e.target.dataset.swing){ swing(); return; }   // M12 active swing (no re-render; bar updates live)
       if (e.target.dataset.stop){ S.action = null; renderMain(); renderNav(); save(); return; }
       const skill = el.dataset.skill, id = el.dataset.act;
       if (S.action && S.action.skill===skill && S.action.id===id) return;
