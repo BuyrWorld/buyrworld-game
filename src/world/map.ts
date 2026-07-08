@@ -119,6 +119,10 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'police_station', kind: 'bld',  tx: 57, ty: 2,  w: 3, h: 2, tab: 'police_station', name: 'Featherstone Police Station', ic: '🚔', wall: '#c0c8d8', roof: '#2a3a5a' },
   { id: 'nightclub',      kind: 'bld',  tx: 62, ty: 2,  w: 3, h: 2, tab: 'nightclub',      name: 'Club Featherstone', ic: '🪩', wall: '#2a1a3a', roof: '#c02090' },
   { id: 'lamp_retail_8',  kind: 'lamp', tx: 61, ty: 4,  w: 1, h: 1 },
+  // --- Robotics & Automation Campus (east end of the high street) ---
+  { id: 'robotics_lab',   kind: 'bld',  tx: 74, ty: 2,  w: 3, h: 2, tab: 'robotics_lab',   name: 'Automation Lab', ic: '🤖', wall: '#c8ccd8', roof: '#3a5a7a' },
+  { id: 'lamp_robotics_1', kind: 'lamp', tx: 72, ty: 4, w: 1, h: 1 },
+  { id: 'lamp_robotics_2', kind: 'lamp', tx: 78, ty: 4, w: 1, h: 1 },
   { id: 'lamp_retail_5',  kind: 'lamp', tx: 34, ty: 4,  w: 1, h: 1 },
   { id: 'lamp_retail_6',  kind: 'lamp', tx: 50, ty: 4,  w: 1, h: 1 },
   { id: 'lamp_retail_7',  kind: 'lamp', tx: 55, ty: 4,  w: 1, h: 1 },

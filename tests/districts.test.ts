@@ -44,14 +44,17 @@ describe('Districts registry', () => {
     const fin = DISTRICTS.find(d => d.id === 'financial')!;
     const harbour = DISTRICTS.find(d => d.id === 'harbour')!;
     const robotics = DISTRICTS.find(d => d.id === 'robotics')!;
+    const energy = DISTRICTS.find(d => d.id === 'energy')!;
     expect(isDistrictOpen(fin, 0)).toBe(true);              // open always
     expect(isDistrictOpen(harbour, 99)).toBe(false);        // gated
     expect(isDistrictOpen(harbour, 100)).toBe(true);
-    expect(isDistrictOpen(robotics, 9999)).toBe(false);     // planned never opens
+    expect(isDistrictOpen(robotics, 149)).toBe(false);      // robotics gated at 150
+    expect(isDistrictOpen(robotics, 150)).toBe(true);
+    expect(isDistrictOpen(energy, 9999)).toBe(false);       // planned never opens
   });
 
-  it('includes the two planned campuses (breadth on the registry)', () => {
+  it('still seeds a planned campus for future breadth', () => {
     const planned = DISTRICTS.filter(d => d.unlock.type === 'planned').map(d => d.id);
-    expect(planned).toEqual(expect.arrayContaining(['robotics', 'energy']));
+    expect(planned).toContain('energy');
   });
 });

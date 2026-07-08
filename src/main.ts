@@ -18,6 +18,7 @@ import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/cl
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding } from './data/districts.ts';
+import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -799,7 +800,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub","robotics_lab"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -1621,6 +1622,7 @@ function interactObj(o){
     return;
   }
   if (o.id==="town_directory"){ openDistricts(); return; }
+  if (o.tab==="robotics_lab" && totalLvl() < 150){ toast(`🤖 The Automation Lab opens at total level 150 (you: ${totalLvl()}).`); return; }
   S.tab = o.tab;
   S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
@@ -4659,6 +4661,32 @@ function drawInterior(t){
     ctx.fillStyle=_th.neon; ctx.font="bold 8px monospace"; ctx.textAlign="center";
     ctx.fillText(_th.emoji+" "+_th.name.toUpperCase(), W/2, 14); ctx.textAlign="left"; ctx.font="10px monospace";
   }
+  if (S.tab==="robotics_lab"){
+    // Automation Lab — server racks, robot arm, charging bots
+    room("#3a4a5a","#7a8a9a","#c0c8d0","#b4bcc6","#2a3440");
+    winP(W*0.12,34); winP(W*0.62,34);
+    for(let i=0;i<4;i++){ const sx=14+i*20;
+      ctx.fillStyle="#1a222c"; ctx.fillRect(sx,50,16,H-72);
+      ctx.fillStyle="#2a3440"; ctx.fillRect(sx+2,52,12,H-76);
+      for(let r=0;r*12<H-90;r++){ ctx.fillStyle=(Math.floor(t*2)+i+r)%3===0?"#4affaa":"#2a6a4a"; ctx.fillRect(sx+3,56+r*12,3,3); ctx.fillStyle="#3a8ad0"; ctx.fillRect(sx+9,56+r*12,3,3); } }
+    // animated robot arm (centre)
+    const _ax=Math.round(W*0.5), _ay=Math.round(H*0.5), _aa=Math.sin(t*1.5)*0.5;
+    ctx.strokeStyle="#8a94a0"; ctx.lineWidth=4;
+    ctx.beginPath(); ctx.moveTo(_ax,_ay+18); ctx.lineTo(_ax,_ay); ctx.lineTo(_ax+Math.cos(-0.6+_aa)*30,_ay+Math.sin(-0.6+_aa)*30); ctx.stroke();
+    ctx.fillStyle="#c8ccd8"; ctx.fillRect(_ax-9,_ay+16,18,8);
+    ctx.fillStyle="#e8a020"; ctx.beginPath(); ctx.arc(_ax+Math.cos(-0.6+_aa)*30,_ay+Math.sin(-0.6+_aa)*30,4,0,7); ctx.fill();
+    // holo screen
+    ctx.fillStyle="rgba(60,150,220,.22)"; ctx.fillRect(W-70,54,54,34); ctx.strokeStyle="#3a8ad0"; ctx.lineWidth=1; ctx.strokeRect(W-70,54,54,34);
+    drawEmojiC(ctx,"📊",W-43,71,14);
+    // charging bots (dormant, lower corners)
+    for(const [bx,by,i] of [[Math.round(W*0.2),H-38,0],[Math.round(W*0.82),H-42,1]] as [number,number,number][]){
+      ctx.fillStyle="#8a94a0"; ctx.fillRect(bx-8,by-10,16,16); ctx.fillStyle="#2a3440"; ctx.fillRect(bx-5,by-7,10,6);
+      ctx.fillStyle=(Math.floor(t*3)+i)%2?"#4affaa":"#2a6a4a"; ctx.fillRect(bx-3,by-5,2,2); ctx.fillStyle="#3a8ad0"; ctx.fillRect(bx+1,by-5,2,2);
+      drawEmojiC(ctx,"🔌",bx,by+11,9);
+    }
+    // engineer
+    drawPerson(ctx,Math.round(W*0.5),H-28,"#3a3a3a","#4a8ad0",t,false,1,null,"down",null,"#2a2a2a",null,false);
+  }
   if (S.tab==="exchange"){
     // Exchange Floor interior — corporate, sleek, lots of screens
     room("#303848","#485060","#c0c8d0","#d0d8e0","#1a2028");
@@ -5250,7 +5278,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{},
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -5397,6 +5425,7 @@ function load(){
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
+      if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
       return true;
     }
   } catch(e){}
@@ -5426,6 +5455,7 @@ function speedMult(skill){
   if (S.caffBuff && Date.now() < S.caffBuff) m *= 0.80;
   if (S.pintBuff && Date.now() < S.pintBuff) m *= 0.90;
   if (S.danceBuff && Date.now() < S.danceBuff) m *= 0.85;
+  m *= autoSpeedMult(skill, S.automatons?.[skill]);   // robotics: assigned speed automaton
   const _sb = skillSpeedBonus(skill);
   if (_sb > 0) m *= (1 - _sb);
   const _kb = keepsakeSpeedBonus(skill);
@@ -6211,6 +6241,16 @@ function completeAction(act, skill, silent){
       }
     }
   }
+  // robotics: assigned yield automaton rolls for a bonus of the primary output
+  {
+    const _ay = autoYieldChance(skill, S.automatons?.[skill]);
+    if (_ay > 0 && Math.random() < _ay){
+      const _bid = Object.keys(act.out)[0];
+      const _bq = act.out[_bid];
+      addItem(_bid, _bq); S.prod[_bid] = (S.prod[_bid]||0) + _bq;
+      if (!silent) toast(`🤖 Automaton bonus — +${_bq} ${ITEMS[_bid].n}!`);
+    }
+  }
   grantXp(skill, act.xp);
   S.counters.actions++;
   rollPet(skill);
@@ -6985,6 +7025,37 @@ const REX_BANTER = [
   "Aye, the stout's fresh on tonight. New barrel.",
   "You look like you've had a long day. This'll sort you out.",
 ];
+function renderRoboticsLab(): string {
+  const skills = Object.keys(SKILL_GROUP);
+  const _active = skills.filter(s => S.automatons?.[s]).length;
+  let html = `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 4px">🤖 Automation Lab</h3>
+    <p style="font-size:11px;color:var(--dim);margin:0">Build helper automatons from crafted parts and assign one per skill. They work passively — even while you're away. <b>${_active}/${skills.length}</b> skills automated.</p>
+  </div>`;
+  for (const sk of skills){
+    const cur = S.automatons?.[sk];
+    const curDef = automatonById(cur);
+    html += `<div class="panel" style="padding:8px 10px;margin-top:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-weight:700;font-size:12px">${SKILLS[sk].ic} ${SKILLS[sk].n}</div>
+        ${curDef ? `<span style="font-size:11px;color:#4aff88;white-space:nowrap">${curDef.ic} ${curDef.name} · ${curDef.ds}</span>` : `<span style="font-size:11px;color:var(--dim)">no automaton</span>`}
+      </div>`;
+    if (curDef){
+      html += `<div style="margin-top:6px"><button data-autoscrap="${sk}" style="background:#5a3a2a;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:11px">Dismantle</button></div>`;
+    } else {
+      html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">`;
+      for (const a of automatonsForSkill(sk)){
+        const canAfford = S.coins>=a.cost.coins && Object.entries(a.cost.items).every(([id,q])=>itemCount(id)>=(q as number));
+        const costStr = `${fmt(a.cost.coins)}c` + Object.entries(a.cost.items).map(([id,q])=>` · ${q}× ${ITEMS[id]?.ic||id}`).join('');
+        html += `<button data-autobuild="${sk}|${a.id}" ${canAfford?'':'disabled'} style="flex:1;min-width:140px;background:${canAfford?'#233a52':'#2a2a2a'};color:${canAfford?'#cfe6ff':'#777'};border:1px solid ${canAfford?'#3a6a9a':'#3a3a3a'};padding:6px 8px;border-radius:4px;cursor:${canAfford?'pointer':'default'};font-size:11px;text-align:left">
+          <b>${a.ic} ${a.name}</b><br>${a.ds}<br><span style="font-size:10px;opacity:.85">${costStr}</span></button>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  return html;
+}
 function renderNightclub(): string {
   const _th = clubTheme();
   const _mins = Math.max(1, Math.ceil(msToNextTheme()/60000));
@@ -7372,6 +7443,7 @@ function renderMain(){
     else if (S.tab==="furniture_shop") m.innerHTML = _withRoom("🛋️ Nell's Home Store", renderFurnitureShop());
     else if (S.tab==="pub") m.innerHTML = _withRoom("🍺 The Rose & Pallet", renderPub());
     else if (S.tab==="nightclub") m.innerHTML = _withRoom("🪩 Club Featherstone", renderNightclub());
+    else if (S.tab==="robotics_lab") m.innerHTML = _withRoom("🤖 Automation Lab", renderRoboticsLab());
     else if (S.tab==="police_station") m.innerHTML = _withRoom("🚔 Featherstone Police Station", renderPoliceStationPanel());
     else if (S.tab==="police_cell") m.innerHTML = _withRoom("🚔 Holding Cell — Featherstone Constabulary", renderPoliceCellPanel());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
@@ -7988,6 +8060,24 @@ function bindMain(){
     if (_fine > 0) log(`🙋 ${pName()} handed themselves in. ${fmt(_fine)} coin fine. Reduced sentence.`, "");
     toast(`🙋 Reduced sentence: 12 game-hours (about ${Math.round(_dur/60000)} real min).`);
     renderNav(); renderMain(); updateHud(); save();
+  });
+  // robotics — build / dismantle automatons
+  document.querySelectorAll("[data-autobuild]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    const [sk, aid] = (b as HTMLElement).dataset.autobuild.split("|");
+    const a = automatonById(aid); if (!a) return;
+    if (S.automatons?.[sk]){ toast("That skill already has an automaton."); return; }
+    if (S.coins < a.cost.coins || !Object.entries(a.cost.items).every(([id,q])=>itemCount(id)>=(q as number))){ toast("Not enough parts or coins."); return; }
+    S.coins -= a.cost.coins;
+    for (const [id,q] of Object.entries(a.cost.items)) S.items[id] -= (q as number);
+    if (!S.automatons) S.automatons = {};
+    S.automatons[sk] = aid;
+    toast(`${a.ic} ${a.name} built — now working your ${SKILLS[sk].n}!`);
+    log(`🤖 Automaton deployed: <b>${a.name}</b> on ${SKILLS[sk].n}.`, "good");
+    achCheck(); renderMain(); updateHud(); save();
+  });
+  document.querySelectorAll("[data-autoscrap]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    const sk = (b as HTMLElement).dataset.autoscrap;
+    if (S.automatons?.[sk]){ delete S.automatons[sk]; toast("Automaton dismantled."); renderMain(); updateHud(); save(); }
   });
   // nightclub — hit the dance floor
   document.querySelectorAll("[data-dance]").forEach(b=> (b as HTMLElement).onclick = ()=>{

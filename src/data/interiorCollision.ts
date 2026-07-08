@@ -45,4 +45,8 @@ export const PUBLIC_COLS: Record<string, {x:number;y:number;w:number;h:number}[]
     { x:286, y:10,  w:26,  h:34 },  // speaker stack (right)
     { x:250, y:96,  w:60,  h:20 },  // bar (right)
   ],
+  robotics_lab: [
+    { x:12,  y:50,  w:80,  h:82 },  // server racks (back-left)
+    { x:150, y:92,  w:20,  h:22 },  // robot arm base (centre)
+  ],
 };
