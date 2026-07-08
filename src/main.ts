@@ -20,6 +20,7 @@ import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward
 import { DISTRICTS, isDistrictOpen, districtForBuilding } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
+import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -793,6 +794,8 @@ const HEARTBEAT_POOL = [
   }},
   { id:"weather", w:2, fn:()=>{
     if (_weather.type==="rain") return "🌧️ The rain patters steadily across the valley.";
+    if (_weather.type==="fog")  return "🌫️ Fog hangs low over the rooftops today.";
+    if (_weather.type==="overcast") return "☁️ Grey skies over the valley — but dry, at least.";
     const _h=S.clock?S.clock.h:9;
     if (_h>=22||_h<6) return "🌙 Stars are bright over Featherstone tonight.";
     if (_h>=6&&_h<9) return "🌅 A fine morning. The valley is waking up.";
@@ -3155,6 +3158,21 @@ function drawVillage(t){
       const _rx = (((_ri*73 + Math.floor(t*140)) % (VIEW_W+40)) + VIEW_W+40) % (VIEW_W+40) - 20;
       const _ry = (((_ri*47 + Math.floor(t*180)) % (VIEW_H+20)) + VIEW_H+20) % (VIEW_H+20) - 10;
       ctx.beginPath(); ctx.moveTo(_rx, _ry); ctx.lineTo(_rx-2, _ry+6); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // overcast — a soft grey dimming
+  if (_weather.type === "overcast"){
+    ctx.save(); ctx.fillStyle = "rgba(96,102,116,0.12)"; ctx.fillRect(0,0,VIEW_W,VIEW_H); ctx.restore();
+  }
+  // fog — a drifting translucent haze
+  if (_weather.type === "fog"){
+    ctx.save();
+    ctx.fillStyle = "rgba(212,216,224,0.20)"; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    ctx.fillStyle = "rgba(228,231,238,0.15)";
+    for (let _fi=0; _fi<5; _fi++){
+      const _fx = (((_fi*150 + t*9) % (VIEW_W+260)) + VIEW_W+260) % (VIEW_W+260) - 130;
+      ctx.beginPath(); ctx.ellipse(_fx, VIEW_H*(0.28+_fi*0.14), 130, 34, 0, 0, 7); ctx.fill();
     }
     ctx.restore();
   }
@@ -5588,10 +5606,12 @@ function updateWeather(){
   if (_weather.until === 0){
     _weather.until = _now + (8+Math.random()*15)*60*1000;
   } else if (_now > _weather.until){
-    _weather.type = _weather.type === "rain" ? "clear" : "rain";
-    _weather.until = _now + (_weather.type==="rain" ? (4+Math.random()*8) : (12+Math.random()*18))*60*1000;
-    if (_weather.type==="rain") toast("🌧️ Rain has arrived over the valley.");
-    else toast("☀️ Skies are clearing over the valley.");
+    const _prev = _weather.type;
+    _weather.type = pickWeather(getSeason());
+    _weather.until = _now + weatherDuration(_weather.type);
+    const _wi = WEATHER_INFO[_weather.type];
+    if (_weather.type !== _prev && _wi?.toast) toast(`${_wi.ic} ${_wi.toast}`);
+    else if (_weather.type !== _prev && (_prev==="rain"||_prev==="fog")) toast("☀️ The weather clears over the valley.");
   }
 }
 function updateDeliveries(){
