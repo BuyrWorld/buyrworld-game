@@ -91,6 +91,22 @@ All 17 share the zone grammar; these are the identity/mood/nook differences.
 | 16 Reg | cosy | navy + brass | nav chart | sea chest + model boat | medium |
 | 17 Pearl | fisher | cool tile + ice | knife rack | ice box + scales + crates | medium |
 
+## Public interiors (HX4)
+
+The shops and social rooms (pub, café, bank, furniture shop, retail, post office,
+estate agent, …) are drawn in their own `drawInterior()` blocks. Two shared rules
+now apply to them:
+
+- **Shell depth** — the wainscot/skirting/corner-post depth lives in the shared
+  `room()` painter, so every `room()`-based interior matches the homes. Don't
+  re-add it per room.
+- **Collision** — counter/bar solids for the core rooms live in
+  `src/data/interiorCollision.ts` (`PUBLIC_COLS`), merged into `INTERIOR_COLS`.
+  `tests/publicInteriors.test.ts` asserts the exit lane is clear, the player
+  doesn't spawn inside furniture, and the counter is reachable. To make a new
+  public room's furniture solid, add a `PUBLIC_COLS[tab]` entry (keep the
+  bottom-centre exit lane clear).
+
 ## Adding a new furnished home (without making a box)
 
 1. Add a `BED_CONFIG[home_id]` entry (`d` double, `k` children's beds).

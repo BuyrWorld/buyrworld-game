@@ -13,6 +13,7 @@ import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_COLOURS, TROUSER_COLOURS, FACIAL_HAIR_STYLES, EYE_COLOURS, JACKET_COLOURS, SHOE_COLOURS, ACCESSORY_STYLES, SCARF_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
 import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRects } from './data/homeInteriors.ts';
+import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -1084,6 +1085,8 @@ const INTERIOR_COLS = {
     {x:244, y:132,w:50, h:26},  // log pile
     {x:14,  y:142,w:50, h:14},  // plank stack
   ],
+  // HX4: core public rooms (pub, café, bank, shops) get matching counter/bar collision.
+  ...PUBLIC_COLS,
   // NPC homes: collision is generated per-home from the layout (homeColsCached),
   // not from this static list — the "home" tab is shared by 17 different floorplans.
   home: [],
@@ -3156,6 +3159,12 @@ function drawInterior(t){
     for(let y=47;y<H;y+=16) for(let x=0;x<W;x+=16){ ctx.fillStyle=((x+y)>>4)%2? floorA:floorB; ctx.fillRect(x,y,16,16); }
     ctx.fillStyle="rgba(0,0,0,.10)"; ctx.fillRect(0,47,8,H-47); ctx.fillRect(W-8,47,8,H-47);
     ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(0,47,W,5);
+    // wall depth — top highlight, base skirting, side skirting + corner posts
+    ctx.fillStyle="rgba(255,255,255,.06)"; ctx.fillRect(0,0,W,2);
+    ctx.fillStyle="rgba(0,0,0,.16)"; ctx.fillRect(0,43,W,4);
+    ctx.fillStyle="rgba(0,0,0,.13)"; ctx.fillRect(6,47,4,H-51); ctx.fillRect(W-10,47,4,H-51);
+    ctx.fillStyle="rgba(255,255,255,.05)"; ctx.fillRect(10,47,2,H-51); ctx.fillRect(W-12,47,2,H-51);
+    ctx.fillStyle="rgba(0,0,0,.10)"; ctx.fillRect(6,43,6,7); ctx.fillRect(W-12,43,6,7);
     ctx.fillStyle="#a04a42"; ctx.fillRect(W/2-18,H-15,36,13);
     ctx.fillStyle="#c96a5a"; ctx.fillRect(W/2-15,H-13,30,9);
     ctx.fillStyle="#fff8e6"; ctx.fillRect(W/2-2,H-12,4,5);
@@ -3873,16 +3882,6 @@ function drawInterior(t){
     const _L = buildLayout(_theme, S.roomObjId, W, H);
     room(_pal.wallTop, _pal.wall, _pal.floorA, _pal.floorB, _pal.trim);
     winP(_L.windows[0], 30); winP(_L.windows[1], 30);
-    // Side-wall depth — a top highlight, a back-wall base skirting, and skirting
-    // down both sides with corner posts, so the shell reads like a room with
-    // walls rather than one flat band. Kept below the windows (y<38) to stay clear.
-    ctx.save();
-    ctx.fillStyle="rgba(255,255,255,.06)"; ctx.fillRect(0,0,W,2);                 // top wall highlight
-    ctx.fillStyle="rgba(0,0,0,.16)";   ctx.fillRect(0,43,W,4);                    // back-wall base skirting
-    ctx.fillStyle="rgba(0,0,0,.13)";   ctx.fillRect(6,47,4,H-51); ctx.fillRect(W-10,47,4,H-51);   // side skirting
-    ctx.fillStyle="rgba(255,255,255,.05)"; ctx.fillRect(10,47,2,H-51); ctx.fillRect(W-12,47,2,H-51); // side highlight
-    ctx.fillStyle="rgba(0,0,0,.10)";   ctx.fillRect(6,43,6,7); ctx.fillRect(W-12,43,6,7);           // corner posts
-    ctx.restore();
     const _bConf = BED_CONFIG[S.roomObjId] || {d:0,k:0};
     // Duvet accent color per home
     const _cov = ({
