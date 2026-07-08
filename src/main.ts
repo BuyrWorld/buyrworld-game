@@ -77,7 +77,7 @@ function _econSale(it, qty){
   const prev = S.econ.pressure[it] ?? ECON.P_START;
   const p = applySalePressure(prev, qty, v);
   S.econ.pressure[it] = p; _econNudge(it, p);
-  if (p <= 0.66 && prev > 0.66) pushNews("📦", `Glut of ${ITEMS[it]?.n||it} — the market's flooded, prices soft.`, "bad");
+  if (p <= 0.66 && prev > 0.66){ pushNews("📦", `Glut of ${ITEMS[it]?.n||it} — the market's flooded, prices soft.`, "bad"); S.counters.econShocks = (S.counters.econShocks||0)+1; }
 }
 function _econBuy(it, qty){
   ensureEcon();
@@ -85,7 +85,7 @@ function _econBuy(it, qty){
   const prev = S.econ.pressure[it] ?? ECON.P_START;
   const p = applyBuyPressure(prev, qty, v);
   S.econ.pressure[it] = p; _econNudge(it, p);
-  if (p >= 1.34 && prev < 1.34) pushNews("🔥", `Run on ${ITEMS[it]?.n||it} — demand's tight, prices firming.`, "good");
+  if (p >= 1.34 && prev < 1.34){ pushNews("🔥", `Run on ${ITEMS[it]?.n||it} — demand's tight, prices firming.`, "good"); S.counters.econShocks = (S.counters.econShocks||0)+1; }
 }
 function rollMarket(force){
   ensureMarket(); ensureEcon();
@@ -485,6 +485,13 @@ const ACH = [
   { id:"festival_goer",   ic:"🎪", n:"Festival Goer",    ds:"Attend your first seasonal festival.",        r:100,  c:()=>(S.festival?.attended?.length||0)>=1 },
   { id:"festival_regular",ic:"🎡", n:"Festival Regular",  ds:"Attend all four seasonal festivals.",          r:500,  c:()=>(S.festival?.attended?.length||0)>=4 },
   { id:"raffle_winner",   ic:"🎟️", n:"Raffle Winner",    ds:"Win 10 raffle prizes at village festivals.",   r:200,  c:()=>(S.counters?.raffleWins||0)>=10 },
+  { id:"automation_age",  ic:"🤖", n:"Automation Age",   ds:"Build your first automaton at the Automation Lab.",   r:300,  c:()=>Object.keys(S.automatons||{}).length>=1 },
+  { id:"fully_automated", ic:"🦾", n:"Fully Automated",  ds:"Have an automaton working every automatable skill.",  r:1500, c:()=>Object.keys(SKILL_GROUP).every(sk=>S.automatons?.[sk]) },
+  { id:"powering_up",     ic:"⚡", n:"Powering Up",      ds:"Bring the Power Grid online (Tier 1).",               r:500,  c:()=>(S.grid?.tier||0)>=1 },
+  { id:"smart_grid",      ic:"🛰️", n:"Smart Grid",       ds:"Upgrade the Power Grid to maximum.",                  r:2500, c:()=>(S.grid?.tier||0)>=GRID_MAX_TIER },
+  { id:"town_planner",    ic:"🗺️", n:"Town Planner",     ds:"Reach total level 200 — every district unlocked.",    r:1500, c:()=>totalLvl()>=200 },
+  { id:"self_made",       ic:"💎", n:"Self-Made",        ds:"Reach a net worth of 100,000 coins.",                 r:2000, c:()=>netWorth()>=100000 },
+  { id:"market_mover",    ic:"📊", n:"Market Mover",     ds:"Move prices — cause 5 market gluts or shortages by trading in bulk.", r:400, c:()=>(S.counters?.econShocks||0)>=5 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
