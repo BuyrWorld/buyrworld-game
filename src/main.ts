@@ -3873,6 +3873,16 @@ function drawInterior(t){
     const _L = buildLayout(_theme, S.roomObjId, W, H);
     room(_pal.wallTop, _pal.wall, _pal.floorA, _pal.floorB, _pal.trim);
     winP(_L.windows[0], 30); winP(_L.windows[1], 30);
+    // Side-wall depth — a top highlight, a back-wall base skirting, and skirting
+    // down both sides with corner posts, so the shell reads like a room with
+    // walls rather than one flat band. Kept below the windows (y<38) to stay clear.
+    ctx.save();
+    ctx.fillStyle="rgba(255,255,255,.06)"; ctx.fillRect(0,0,W,2);                 // top wall highlight
+    ctx.fillStyle="rgba(0,0,0,.16)";   ctx.fillRect(0,43,W,4);                    // back-wall base skirting
+    ctx.fillStyle="rgba(0,0,0,.13)";   ctx.fillRect(6,47,4,H-51); ctx.fillRect(W-10,47,4,H-51);   // side skirting
+    ctx.fillStyle="rgba(255,255,255,.05)"; ctx.fillRect(10,47,2,H-51); ctx.fillRect(W-12,47,2,H-51); // side highlight
+    ctx.fillStyle="rgba(0,0,0,.10)";   ctx.fillRect(6,43,6,7); ctx.fillRect(W-12,43,6,7);           // corner posts
+    ctx.restore();
     const _bConf = BED_CONFIG[S.roomObjId] || {d:0,k:0};
     // Duvet accent color per home
     const _cov = ({

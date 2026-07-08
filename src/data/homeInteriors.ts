@@ -111,10 +111,13 @@ export function buildLayout(theme: HomeTheme, id: string, W: number, H: number){
     }
   });
 
-  // ---- FAMILY toy corner ----
-  if (fam) push("toy_corner", 74, H-30);
+  // ---- FAMILY toy corner (mid-left, clear of the storage nook) ----
+  if (fam) push("toy_corner", 70, 136);
 
-  return { floors, placements:P, solids:S, windows:[30,198], bed:{ bX, bY, bW } };
+  // Windows sit in the two clear back-wall gaps: over the kitchen (past the wall
+  // shelf) and on the sleeping/living side (left of the bed) — so they never
+  // clash with the shelf or the wall hanging.
+  return { floors, placements:P, solids:S, windows:[90, 208], bed:{ bX, bY, bW } };
 }
 
 export function homeCollisionRects(id: string, W: number, H: number){

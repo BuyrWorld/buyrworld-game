@@ -104,6 +104,20 @@ describe('HX3 home interiors — zones, walls & circulation', () => {
     expect(bad, bad.join('\n')).toEqual([]);
   });
 
+  it('no two collision solids overlap (structural furniture never collides)', () => {
+    const bad: string[] = [];
+    for (const id of homes) {
+      const s = homeCollisionRects(id, W, H);
+      for (let i = 0; i < s.length; i++) for (let j = i + 1; j < s.length; j++) {
+        const a = s[i], b = s[j];
+        const ix = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        const iy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        if (ix > 2 && iy > 2) bad.push(`${id}: solids overlap @(${a.x},${a.y})×(${b.x},${b.y})`);
+      }
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+  });
+
   it('all collision solids stay within the room bounds', () => {
     const bad: string[] = [];
     for (const id of homes) {
