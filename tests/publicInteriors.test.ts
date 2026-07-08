@@ -48,7 +48,7 @@ const overlaps = (a: any, b: any) =>
 describe('HX4 public interiors — collision walkability', () => {
   it('covers the core social/shop rooms', () => {
     expect(rooms.sort()).toEqual(
-      ['bank','cafe','estateagent','furniture_shop','nightclub','postoffice','pub','retail','robotics_lab'].sort());
+      ['bank','cafe','data_centre','estateagent','furniture_shop','nightclub','postoffice','pub','retail','robotics_lab'].sort());
   });
 
   it('nothing blocks the exit lane', () => {

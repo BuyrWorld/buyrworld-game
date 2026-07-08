@@ -49,4 +49,8 @@ export const PUBLIC_COLS: Record<string, {x:number;y:number;w:number;h:number}[]
     { x:12,  y:50,  w:80,  h:82 },  // server racks (back-left)
     { x:150, y:92,  w:20,  h:22 },  // robot arm base (centre)
   ],
+  data_centre: [
+    { x:12,  y:52,  w:82,  h:78 },  // server cabinet rows (back-left)
+    { x:242, y:52,  w:64,  h:44 },  // grid status wall (right)
+  ],
 };

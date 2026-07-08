@@ -19,6 +19,7 @@ import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
+import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -800,7 +801,7 @@ const HEARTBEAT_POOL = [
     return _tips[Math.floor(Math.random()*_tips.length)];
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub","robotics_lab"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub","robotics_lab","data_centre"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -1623,6 +1624,7 @@ function interactObj(o){
   }
   if (o.id==="town_directory"){ openDistricts(); return; }
   if (o.tab==="robotics_lab" && totalLvl() < 150){ toast(`🤖 The Automation Lab opens at total level 150 (you: ${totalLvl()}).`); return; }
+  if (o.tab==="data_centre" && totalLvl() < 200){ toast(`🖥️ The Data Centre opens at total level 200 (you: ${totalLvl()}).`); return; }
   S.tab = o.tab;
   S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
@@ -4687,6 +4689,28 @@ function drawInterior(t){
     // engineer
     drawPerson(ctx,Math.round(W*0.5),H-28,"#3a3a3a","#4a8ad0",t,false,1,null,"down",null,"#2a2a2a",null,false);
   }
+  if (S.tab==="data_centre"){
+    // Data Centre — cool server hall, big grid status wall
+    room("#2a3a4a","#5a6a7a","#aab4c0","#9ea8b4","#1a2430");
+    const _gt = gridTier(S.grid?.tier||0), _lit = (S.grid?.tier||0) > 0;
+    // rows of server cabinets
+    for(let i=0;i<5;i++){ const sx=12+i*18;
+      ctx.fillStyle="#141c26"; ctx.fillRect(sx,52,14,H-74);
+      ctx.fillStyle="#1e2a38"; ctx.fillRect(sx+2,54,10,H-78);
+      for(let r=0;r*10<H-92;r++){ const on=_lit && ((Math.floor(t*3)+i*2+r)%4!==0); ctx.fillStyle=on?"#2affd0":"#204040"; ctx.fillRect(sx+3,58+r*10,8,2); }
+    }
+    // grid status wall (right)
+    ctx.fillStyle="rgba(20,40,60,.6)"; ctx.fillRect(W-78,52,64,44); ctx.strokeStyle=_lit?"#2affd0":"#3a5a6a"; ctx.lineWidth=1; ctx.strokeRect(W-78,52,64,44);
+    drawEmojiC(ctx, _gt.ic, W-46, 66, 15);
+    ctx.fillStyle=_lit?"#2affd0":"#7a8a96"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
+    ctx.fillText(_gt.name.toUpperCase(), W-46, 84);
+    ctx.fillText(_lit?`+${Math.round(_gt.speedBonus*100)}% EFFICIENCY`:"OFFLINE", W-46, 92); ctx.textAlign="left"; ctx.font="10px monospace";
+    // power conduits on the floor (glow when powered)
+    ctx.strokeStyle=_lit?`rgba(42,255,208,${(0.4+Math.sin(t*3)*0.2).toFixed(2)})`:"rgba(90,110,120,.3)"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(20,H-24); ctx.lineTo(W-20,H-24); ctx.stroke();
+    // technician
+    drawPerson(ctx,Math.round(W*0.5),H-30,"#2a2a2a","#3a7a8a",t,false,1,null,"down",null,"#1a2a30",null,true);
+  }
   if (S.tab==="exchange"){
     // Exchange Floor interior — corporate, sleek, lots of screens
     room("#303848","#485060","#c0c8d0","#d0d8e0","#1a2028");
@@ -5278,7 +5302,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{},
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -5426,6 +5450,7 @@ function load(){
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
+      if (!("grid" in parsed) || !S.grid || typeof S.grid.tier !== "number") S.grid = { tier:0 };
       return true;
     }
   } catch(e){}
@@ -5456,6 +5481,7 @@ function speedMult(skill){
   if (S.pintBuff && Date.now() < S.pintBuff) m *= 0.90;
   if (S.danceBuff && Date.now() < S.danceBuff) m *= 0.85;
   m *= autoSpeedMult(skill, S.automatons?.[skill]);   // robotics: assigned speed automaton
+  m *= (1 - gridBonus(S.grid?.tier || 0));            // energy: town-wide power-grid efficiency
   const _sb = skillSpeedBonus(skill);
   if (_sb > 0) m *= (1 - _sb);
   const _kb = keepsakeSpeedBonus(skill);
@@ -7025,6 +7051,32 @@ const REX_BANTER = [
   "Aye, the stout's fresh on tonight. New barrel.",
   "You look like you've had a long day. This'll sort you out.",
 ];
+function renderDataCentre(): string {
+  const tier = S.grid?.tier || 0;
+  const cur = gridTier(tier), next = gridNext(tier);
+  let html = `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 4px">🖥️ Data Centre — Power Grid</h3>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Upgrade the grid for a town-wide efficiency boost — faster actions on <b>every</b> skill, working passively even while you're away.</p>
+    <div style="display:flex;align-items:center;gap:10px;background:rgba(42,255,208,.08);border:1px solid rgba(42,255,208,.3);border-radius:6px;padding:8px 10px">
+      <div style="font-size:22px">${cur.ic}</div>
+      <div><div style="font-weight:700">${cur.name}</div>
+        <div style="font-size:11px;color:${tier>0?'#2affd0':'var(--dim)'}">${tier>0?`−${Math.round(cur.speedBonus*100)}% action time, all skills`:'No grid power yet'}</div></div>
+    </div>
+  </div>`;
+  if (next && next.cost){
+    const canAfford = S.coins>=next.cost.coins && Object.entries(next.cost.items).every(([id,q])=>itemCount(id)>=(q as number));
+    const costStr = `${fmt(next.cost.coins)} coins` + Object.entries(next.cost.items).map(([id,q])=>` · ${q}× ${ITEMS[id]?.ic||id} ${ITEMS[id]?.n||id}`).join('');
+    html += `<div class="panel" style="padding:10px;margin-top:6px">
+      <div style="font-weight:700;font-size:12px;margin-bottom:2px">${next.ic} Upgrade to ${next.name}</div>
+      <div style="font-size:11px;color:#2affd0;margin-bottom:6px">${next.ds}</div>
+      <div style="font-size:11px;color:var(--dim);margin-bottom:8px">Cost: ${costStr}</div>
+      <button data-gridup ${canAfford?'':'disabled'} style="background:${canAfford?'#1a6a5a':'#2a2a2a'};color:${canAfford?'#eafff8':'#777'};border:none;padding:6px 16px;border-radius:4px;cursor:${canAfford?'pointer':'default'};font-size:13px;font-weight:700">${next.ic} Build ${next.name}</button>
+    </div>`;
+  } else {
+    html += `<div class="panel" style="padding:10px;margin-top:6px"><p style="margin:0;font-size:12px;color:#2affd0">⚡ Smart Grid online — the town runs at peak efficiency. Fully upgraded!</p></div>`;
+  }
+  return html;
+}
 function renderRoboticsLab(): string {
   const skills = Object.keys(SKILL_GROUP);
   const _active = skills.filter(s => S.automatons?.[s]).length;
@@ -7444,6 +7496,7 @@ function renderMain(){
     else if (S.tab==="pub") m.innerHTML = _withRoom("🍺 The Rose & Pallet", renderPub());
     else if (S.tab==="nightclub") m.innerHTML = _withRoom("🪩 Club Featherstone", renderNightclub());
     else if (S.tab==="robotics_lab") m.innerHTML = _withRoom("🤖 Automation Lab", renderRoboticsLab());
+    else if (S.tab==="data_centre") m.innerHTML = _withRoom("🖥️ Data Centre", renderDataCentre());
     else if (S.tab==="police_station") m.innerHTML = _withRoom("🚔 Featherstone Police Station", renderPoliceStationPanel());
     else if (S.tab==="police_cell") m.innerHTML = _withRoom("🚔 Holding Cell — Featherstone Constabulary", renderPoliceCellPanel());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
@@ -8061,6 +8114,20 @@ function bindMain(){
     toast(`🙋 Reduced sentence: 12 game-hours (about ${Math.round(_dur/60000)} real min).`);
     renderNav(); renderMain(); updateHud(); save();
   });
+  // energy — upgrade the power grid
+  const _gridBtn = document.querySelector("[data-gridup]");
+  if (_gridBtn) (_gridBtn as HTMLElement).onclick = ()=>{
+    const tier = S.grid?.tier || 0; const next = gridNext(tier);
+    if (!next || !next.cost) return;
+    if (S.coins < next.cost.coins || !Object.entries(next.cost.items).every(([id,q])=>itemCount(id)>=(q as number))){ toast("Not enough parts or coins."); return; }
+    S.coins -= next.cost.coins;
+    for (const [id,q] of Object.entries(next.cost.items)) S.items[id] -= (q as number);
+    if (!S.grid) S.grid = { tier:0 };
+    S.grid.tier = next.tier;
+    toast(`${next.ic} ${next.name} online — all actions −${Math.round(next.speedBonus*100)}%!`);
+    log(`⚡ Power grid upgraded to <b>${next.name}</b> — town-wide efficiency boost.`, "good");
+    achCheck(); renderMain(); updateHud(); save();
+  };
   // robotics — build / dismantle automatons
   document.querySelectorAll("[data-autobuild]").forEach(b=> (b as HTMLElement).onclick = ()=>{
     const [sk, aid] = (b as HTMLElement).dataset.autobuild.split("|");

@@ -38,8 +38,8 @@ export const DISTRICTS: District[] = [
     blurb:'The Automation Lab — build helper bots to work your skills.',
     hub:[75,3], buildings:['robotics_lab'], unlock:{type:'level', n:150} },
   { id:'energy', name:'Energy & Data Centre', ic:'⚡', color:'#c0a020',
-    blurb:'Power generation and the data centre. In development.',
-    hub:[88,52], buildings:[], unlock:{type:'planned'} },
+    blurb:'The Data Centre — upgrade the power grid for a town-wide efficiency boost.',
+    hub:[83,3], buildings:['data_centre'], unlock:{type:'level', n:200} },
 ];
 
 export function isDistrictOpen(d: District, totalLevel: number): boolean {

@@ -123,6 +123,9 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'robotics_lab',   kind: 'bld',  tx: 74, ty: 2,  w: 3, h: 2, tab: 'robotics_lab',   name: 'Automation Lab', ic: '🤖', wall: '#c8ccd8', roof: '#3a5a7a' },
   { id: 'lamp_robotics_1', kind: 'lamp', tx: 72, ty: 4, w: 1, h: 1 },
   { id: 'lamp_robotics_2', kind: 'lamp', tx: 78, ty: 4, w: 1, h: 1 },
+  // --- Energy & Data Centre (far east end of the high street) ---
+  { id: 'data_centre',    kind: 'bld',  tx: 82, ty: 2,  w: 3, h: 2, tab: 'data_centre',    name: 'Data Centre', ic: '🖥️', wall: '#b8c0cc', roof: '#2a3a4a' },
+  { id: 'lamp_energy_1',  kind: 'lamp', tx: 86, ty: 4, w: 1, h: 1 },
   { id: 'lamp_retail_5',  kind: 'lamp', tx: 34, ty: 4,  w: 1, h: 1 },
   { id: 'lamp_retail_6',  kind: 'lamp', tx: 50, ty: 4,  w: 1, h: 1 },
   { id: 'lamp_retail_7',  kind: 'lamp', tx: 55, ty: 4,  w: 1, h: 1 },

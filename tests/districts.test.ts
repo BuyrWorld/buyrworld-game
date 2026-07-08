@@ -46,15 +46,16 @@ describe('Districts registry', () => {
     const robotics = DISTRICTS.find(d => d.id === 'robotics')!;
     const energy = DISTRICTS.find(d => d.id === 'energy')!;
     expect(isDistrictOpen(fin, 0)).toBe(true);              // open always
-    expect(isDistrictOpen(harbour, 99)).toBe(false);        // gated
+    expect(isDistrictOpen(harbour, 99)).toBe(false);        // harbour gated at 100
     expect(isDistrictOpen(harbour, 100)).toBe(true);
     expect(isDistrictOpen(robotics, 149)).toBe(false);      // robotics gated at 150
     expect(isDistrictOpen(robotics, 150)).toBe(true);
-    expect(isDistrictOpen(energy, 9999)).toBe(false);       // planned never opens
+    expect(isDistrictOpen(energy, 199)).toBe(false);        // energy gated at 200
+    expect(isDistrictOpen(energy, 200)).toBe(true);
   });
 
-  it('still seeds a planned campus for future breadth', () => {
-    const planned = DISTRICTS.filter(d => d.unlock.type === 'planned').map(d => d.id);
-    expect(planned).toContain('energy');
+  it('has a progression of level-gated advanced districts', () => {
+    const gates = DISTRICTS.filter(d => d.unlock.type === 'level').map(d => (d.unlock as any).n).sort((a, b) => a - b);
+    expect(gates).toEqual([100, 150, 200]);
   });
 });
