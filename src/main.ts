@@ -17,7 +17,7 @@ import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
-import { DISTRICTS, isDistrictOpen, districtForBuilding } from './data/districts.ts';
+import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -2104,6 +2104,43 @@ function openDistricts(){
     <div>${cards}</div></div>`;
   document.body.appendChild(el);
   el.querySelectorAll("[data-dvisit]").forEach(b=>(b as HTMLElement).onclick=()=>visitDistrict((b as HTMLElement).dataset.dvisit));
+  el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
+}
+// ---- Founder's Ledger: a "where am I / what's next" progression overview ----
+function closeLedger(){ const e=document.getElementById("ledger-modal"); if(e) e.remove(); }
+function openLedger(){
+  closeLedger();
+  const tl = totalLvl();
+  const openCount = DISTRICTS.filter(d=>isDistrictOpen(d,tl)).length;
+  const nextD = nextGatedDistrict(tl);
+  const autoCount = Object.keys(S.automatons||{}).length;
+  const gt = gridTier(S.grid?.tier||0);
+  const achDone = ACH.filter(a=>S.ach && S.ach[a.id]).length;
+  const bff = VILLAGERS.filter(v=>friendLvl(v.id)>=5).length;
+  const ph = macroPhase();
+  const _bar = (cur,max,col)=>`<div style="background:rgba(255,255,255,.1);border-radius:3px;height:7px;overflow:hidden;margin-top:3px"><div style="width:${Math.min(100,Math.round(cur/max*100))}%;height:100%;background:${col}"></div></div>`;
+  const nextHtml = nextD
+    ? `<div style="margin-top:2px"><div style="display:flex;justify-content:space-between;font-size:11px"><span>Next: ${nextD.ic} ${nextD.name}</span><span style="color:var(--dim)">lvl ${tl}/${(nextD.unlock as any).n}</span></div>${_bar(tl,(nextD.unlock as any).n,nextD.color)}</div>`
+    : `<div style="margin-top:4px;font-size:11px;color:#4aff88">🏆 Every district unlocked — the whole valley is yours.</div>`;
+  const row = (label,val,extra)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px"><span style="color:var(--dim)">${label}</span><span style="font-weight:700">${val}${extra?` <span style="color:var(--dim);font-weight:400">${extra}</span>`:''}</span></div>`;
+  const el=document.createElement("div");
+  el.id="ledger-modal"; el.className="dd-modal";
+  el.innerHTML=`<div class="dd-card"><button class="vp-close" onclick="document.getElementById('ledger-modal').remove()">✕</button>
+    <div class="dd-title">📖 Founder's Ledger</div>
+    <div class="dd-sub">${S.playerName?esc(S.playerName):'Founder'}'s journey across Featherstone Valley.</div>
+    <div style="background:rgba(255,214,102,.08);border:1px solid rgba(255,214,102,.25);border-radius:6px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:700">📈 Total level</span><span style="font-size:20px;font-weight:800;color:#ffd666">${tl}</span></div>
+      ${nextHtml}
+    </div>
+    ${row('🗺️ Districts unlocked', `${openCount}/${DISTRICTS.length}`)}
+    ${row('🤖 Skills automated', `${autoCount}/7`)}
+    ${row('⚡ Power grid', gt.tier>0?`${gt.ic} ${gt.name}`:'off-grid')}
+    ${row('💎 Net worth', `${fmt(netWorth())}`, 'coins')}
+    ${row('🏅 Achievements', `${achDone}/${ACH.length}`)}
+    ${row('💖 Best friends', `${bff}/${VILLAGERS.length}`)}
+    ${row('📊 Market', `${ph.ic} ${ph.name}`)}
+  </div>`;
+  document.body.appendChild(el);
   el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
 }
 function nearestInteractable(){
@@ -8447,6 +8484,7 @@ renderNav(); renderMain(); updateHud(); syncMusicButton();
 document.getElementById("btn-music").onclick = () => cycleVolume();
 document.getElementById("btn-fullscreen").onclick = () => toggleFullscreen();
 document.getElementById("btn-districts")?.addEventListener("click", () => openDistricts());
+document.getElementById("btn-ledger")?.addEventListener("click", () => openLedger());
 window.addEventListener("keydown", e => {
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){

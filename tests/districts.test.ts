@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DISTRICTS, isDistrictOpen, districtForBuilding } from '../src/data/districts.ts';
+import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from '../src/data/districts.ts';
 import { V_OBJECTS, VCOLS, VROWS } from '../src/world/map.ts';
 
 const byId = (id: string) => V_OBJECTS.find((o: any) => o.id === id);
@@ -57,5 +57,12 @@ describe('Districts registry', () => {
   it('has a progression of level-gated advanced districts', () => {
     const gates = DISTRICTS.filter(d => d.unlock.type === 'level').map(d => (d.unlock as any).n).sort((a, b) => a - b);
     expect(gates).toEqual([100, 150, 200]);
+  });
+
+  it('nextGatedDistrict points at the next unlock, then null once all are reached', () => {
+    expect(nextGatedDistrict(0)?.id).toBe('harbour');       // 100 is next
+    expect(nextGatedDistrict(100)?.id).toBe('robotics');    // 150 is next
+    expect(nextGatedDistrict(150)?.id).toBe('energy');      // 200 is next
+    expect(nextGatedDistrict(200)).toBeNull();              // all unlocked
   });
 });

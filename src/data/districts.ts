@@ -48,6 +48,13 @@ export function isDistrictOpen(d: District, totalLevel: number): boolean {
   return false; // planned
 }
 
+// The next level-gated district the player hasn't reached yet (for goal display).
+export function nextGatedDistrict(totalLevel: number): District | null {
+  const gated = DISTRICTS.filter(d => d.unlock.type === 'level')
+    .sort((a, b) => (a.unlock as any).n - (b.unlock as any).n);
+  return gated.find(d => totalLevel < (d.unlock as any).n) || null;
+}
+
 // Which district a building id belongs to (by id or prefix); null if none.
 export function districtForBuilding(objId: string): string | null {
   for (const d of DISTRICTS) {
