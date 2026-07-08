@@ -2211,6 +2211,24 @@ function openLedger(){
   document.body.appendChild(el);
   el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
 }
+// ---- Inventory: a large, couch-legible view of everything you own ----
+function toggleInventory(){
+  const ex = document.getElementById("inv-modal");
+  if (ex){ ex.remove(); return; }
+  const entries = Object.entries(S.items).filter(([,q]:any)=>q>0)
+    .sort((a:any,b:any)=> (ITEMS[b[0]]?.v||0)*b[1] - (ITEMS[a[0]]?.v||0)*a[1]);
+  const cells = entries.length
+    ? entries.map(([id,q]:any)=>`<div class="inv-cell"><div class="inv-ic">${ITEMS[id]?.ic||"📦"}</div><div class="inv-nm">${ITEMS[id]?.n||id}</div><div class="inv-q">×${fmt(q)}</div></div>`).join("")
+    : `<div style="grid-column:1/-1;text-align:center;color:var(--dim);padding:24px">Empty — go gather or craft something!</div>`;
+  const el=document.createElement("div");
+  el.id="inv-modal"; el.className="dd-modal";
+  el.innerHTML=`<div class="dd-card"><button class="vp-close" onclick="document.getElementById('inv-modal').remove()">✕</button>
+    <div class="dd-title">🎒 Inventory</div>
+    <div class="dd-sub">💰 ${fmt(S.coins)} coins · 📦 ${fmt(inventoryValue())} in goods at market value</div>
+    <div class="inv-grid">${cells}</div></div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
+}
 function nearestInteractable(){
   let best=null, bd=56;
   for (const w of WANDERERS){
@@ -8611,7 +8629,9 @@ document.getElementById("btn-music").onclick = () => cycleVolume();
 document.getElementById("btn-fullscreen").onclick = () => toggleFullscreen();
 document.getElementById("btn-districts")?.addEventListener("click", () => openDistricts());
 document.getElementById("btn-ledger")?.addEventListener("click", () => openLedger());
+document.getElementById("btn-inv")?.addEventListener("click", () => toggleInventory());
 window.addEventListener("keydown", e => {
+  if ((e.key==="i"||e.key==="I") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ toggleInventory(); return; }
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){
     VKEYS[e.key] = true;
@@ -8683,6 +8703,7 @@ function pollGamepad(){
   const prev = _gpLastBtns;
   if (pad.buttons[0]?.pressed  && !prev[0])  gpInteract();
   if (pad.buttons[1]?.pressed  && !prev[1])  gpBack();
+  if (pad.buttons[3]?.pressed  && !prev[3])  toggleInventory();   // Y — inventory
   if (pad.buttons[9]?.pressed  && !prev[9])  toggleFullscreen();
   for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
 }

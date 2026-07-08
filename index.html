@@ -383,6 +383,15 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .dd-card{ position:relative; background:#221a12; border:2px solid #ffd666; border-radius:8px; padding:16px 16px 12px; width:min(460px,94vw); max-height:86vh; overflow-y:auto; box-shadow:6px 6px 0 rgba(0,0,0,.4); }
 .dd-title{ font-family:'Press Start 2P',monospace; font-size:12px; color:#ffd666; margin-bottom:5px; }
 .dd-sub{ font-size:11px; color:#8a7a60; margin-bottom:12px; }
+.inv-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:8px; }
+.inv-cell{ background:var(--panel2); border:2px solid var(--edge); border-radius:6px; padding:8px 4px; text-align:center; }
+.inv-ic{ font-size:26px; line-height:1.1; }
+.inv-nm{ font-size:11px; color:var(--text); margin-top:2px; line-height:1.2; }
+.inv-q{ font-size:13px; font-weight:700; color:#ffd666; margin-top:2px; }
+/* couch/fullscreen legibility bump for the modals + inventory */
+.fullscreen-mode .dd-title{ font-size:15px; } .fullscreen-mode .dd-sub{ font-size:13px; }
+.fullscreen-mode .inv-ic{ font-size:32px; } .fullscreen-mode .inv-nm{ font-size:13px; } .fullscreen-mode .inv-q{ font-size:15px; }
+.fullscreen-mode .dist-chip{ font-size:13px; padding:3px 11px; }
 .dist-chip{ position:absolute; top:6px; right:6px; background:rgba(20,15,10,.82); border:1px solid; padding:2px 9px; border-radius:4px; font:700 11px 'IBM Plex Mono',monospace; white-space:nowrap; pointer-events:none; }
 /* level-up celebratory burst */
 .level-burst{ position:fixed; top:24%; left:50%; transform:translateX(-50%); z-index:250; pointer-events:none; text-align:center; animation:lbPop 1.5s ease-out forwards; }
@@ -518,6 +527,7 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
     <div class="stat"><div class="v" id="hud-pet">—</div><div class="l">Companion</div></div>
     <div class="stat"><div class="v" id="hud-time">☀️ Day</div><div class="l">Time</div></div>
     <button id="btn-music" class="btn alt" title="Toggle music" aria-label="Toggle music" style="padding:6px 10px;">🔊</button>
+    <button id="btn-inv" class="btn alt" title="Inventory (I)" aria-label="Inventory" style="padding:6px 10px;">🎒</button>
     <button id="btn-ledger" class="btn alt" title="Founder's Ledger" aria-label="Founder's Ledger" style="padding:6px 10px;">📖</button>
     <button id="btn-districts" class="btn alt" title="Town Directory" aria-label="Town Directory" style="padding:6px 10px;">🗺️</button>
     <button id="btn-fullscreen" class="btn alt" title="Fullscreen (F11)" aria-label="Toggle fullscreen" style="padding:6px 10px;">⛶</button>
