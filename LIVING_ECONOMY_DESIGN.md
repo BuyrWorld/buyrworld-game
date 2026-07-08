@@ -139,10 +139,21 @@ S.econ = {
   Board. Deterministic/offline-safe (same epoch approach as club themes), guarded
   by `tests/economy.test.ts`. *Visible:* the town cycles through booms and
   downturns with explained headlines, and prices move with the cycle.
-- **LE3 — Supply-chain propagation + market report.** Cost-push from the recipe
-  graph; a "Market Report" view (per-item trend + driver + your price impact),
-  reusing the Exchange styling. *Visible:* a raw shortage raises processed-good
-  prices.
+- **LE3 — Supply-chain propagation + market report.** ✅ **Shipped.** Cost-push
+  from the actual recipe graph: `baseFactor(item)` = the item's own pressure ×
+  the recursive cost ratio of its recipe inputs (built once from `SKILLS`
+  actions), so `eq = macroDemand × baseFactor`. A raw-ore shortage now propagates
+  up to bar → tool → part prices (and a glut propagates cheapness down). Scarcity
+  is driven by **buying** (`_econBuy` raises pressure, mirrors selling) plus the
+  macro phase; "🔥 run"/"📦 glut" headlines fire on extremes. The **Market Report**
+  gained a **Top movers** list showing the biggest price moves with an inferred
+  driver ("input costs up", "glut", "tight demand", phase). Cost-push is
+  hard-clamped and cycle-guarded; guarded by `tests/economy.test.ts`. *Visible:*
+  buy up a raw material and watch the goods made from it climb, with the driver
+  named in the report.
+  *(Deferred refinement: automated consumption pressure — processing actions
+  raising raw demand on their own — kept out for now to avoid offline-catch-up
+  balance risk; scarcity is player/macro-driven.)*
 - **LE4 — Net-worth dashboard (optional).** Assets + cash + market value over
   time; feeds the acquisition-readiness retention/telemetry story.
 

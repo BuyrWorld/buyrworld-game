@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ECON, baseDemand, saleDrop, applySalePressure, recoverPressure,
-  driftToward, nudgeDrift, trendArrow, clampD, clampP,
+  ECON, baseDemand, saleDrop, applySalePressure, applyBuyPressure, recoverPressure,
+  driftToward, nudgeDrift, trendArrow, clampD, clampP, clampF, baseFactor,
   MACRO_EPOCH, MACRO_PHASE_DAYS, MACRO_SEQUENCE, MACRO_PHASES,
   macroPhaseId, macroPhase, macroDemand, msToNextPhase,
 } from '../src/data/economy.ts';
@@ -126,5 +126,62 @@ describe('LE2 macro business cycle', () => {
     const now = MACRO_EPOCH + PERIOD + 10; // second phase = boom
     expect(macroPhase(now).id).toBe('boom');
     expect(macroDemand(now)).toBe(MACRO_PHASES.boom.demand);
+  });
+});
+
+describe('LE3 supply-chain cost-push propagation', () => {
+  // ore (raw) → bar (2 ore) → tool (2 bar)
+  const value: Record<string, number> = { ore: 5, bar: 20, tool: 60 };
+  const recipes: Record<string, any> = { bar: { in: { ore: 2 } }, tool: { in: { bar: 2 } } };
+  const recipeOf = (id: string) => recipes[id] || null;
+  const valueOf = (id: string) => value[id] || 0;
+  const bf = (item: string, press: Record<string, number>) =>
+    baseFactor(item, recipeOf, valueOf, (id) => press[id] ?? 1);
+
+  it('a raw item is just its own pressure', () => {
+    expect(bf('ore', { ore: 1.4 })).toBeCloseTo(1.4, 6);
+    expect(bf('ore', {})).toBeCloseTo(1.0, 6);
+  });
+
+  it('a raw shortage propagates up the chain to processed goods', () => {
+    const scarce = { ore: 1.4 };
+    expect(bf('bar', scarce)).toBeGreaterThan(1);   // bar cost rises from pricey ore
+    expect(bf('tool', scarce)).toBeGreaterThan(1);  // and further up to tools
+    expect(bf('tool', scarce)).toBeCloseTo(1.4, 6); // full pass-through in this linear chain
+  });
+
+  it('a raw glut makes processed goods cheaper (cost-push down)', () => {
+    const glut = { ore: 0.6 };
+    expect(bf('bar', glut)).toBeLessThan(1);
+    expect(bf('tool', glut)).toBeLessThan(1);
+  });
+
+  it("an item's own pressure combines with its input costs", () => {
+    expect(bf('bar', { bar: 1.2, ore: 1.0 })).toBeCloseTo(1.2, 6);
+    expect(bf('bar', { bar: 1.2, ore: 1.5 })).toBeCloseTo(clampP(1.2) * 1.5, 6);
+  });
+
+  it('cyclic recipes terminate and stay clamped', () => {
+    const cyc: Record<string, any> = { a: { in: { b: 1 } }, b: { in: { a: 1 } } };
+    const f = baseFactor('a', (id) => cyc[id] || null, () => 10, () => 1.3);
+    expect(Number.isFinite(f)).toBe(true);
+    expect(f).toBeGreaterThanOrEqual(ECON.F_MIN);
+    expect(f).toBeLessThanOrEqual(ECON.F_MAX);
+  });
+
+  it('the propagated factor is always hard-clamped', () => {
+    const extreme = { ore: ECON.P_MAX, bar: ECON.P_MAX, tool: ECON.P_MAX };
+    const f = bf('tool', extreme);
+    expect(f).toBeGreaterThanOrEqual(ECON.F_MIN);
+    expect(f).toBeLessThanOrEqual(ECON.F_MAX);
+    expect(clampF(99)).toBe(ECON.F_MAX);
+  });
+
+  it('buying tightens the market (pressure up), clamped at the ceiling', () => {
+    expect(applyBuyPressure(1.0, 30, 5)).toBeGreaterThan(1.0);
+    expect(applyBuyPressure(1.0, 60, 5)).toBeGreaterThan(applyBuyPressure(1.0, 30, 5));
+    let p = 1.0;
+    for (let i = 0; i < 100; i++) p = applyBuyPressure(p, 500, 2);
+    expect(p).toBe(ECON.P_MAX);
   });
 });

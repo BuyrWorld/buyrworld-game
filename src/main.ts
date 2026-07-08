@@ -16,7 +16,7 @@ import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRe
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
-import { ECON, applySalePressure, recoverPressure, driftToward, nudgeDrift, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
+import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
 
 /* =====================================================
@@ -46,19 +46,43 @@ function pushNews(icon, text, tone){
   S.econ.news.unshift({ t: Date.now(), icon, text, tone: tone||"" });
   if (S.econ.news.length > 20) S.econ.news.length = 20;
 }
-// LE1: apply a sale's supply pressure + an immediate visible market reaction.
+// LE3: recipe graph (produced item → its input recipe), built once from the
+// actions data. Raw/gathered items have no entry, so they act as chain leaves.
+let _recipeMap = null;
+function recipeMap(){
+  if (_recipeMap) return _recipeMap;
+  _recipeMap = {};
+  for (const sk in SKILLS){
+    for (const act of (SKILLS[sk].actions || [])){
+      if (act.in && Object.keys(act.in).length){
+        for (const outId in (act.out||{})) if (!_recipeMap[outId]) _recipeMap[outId] = { in: act.in };
+      }
+    }
+  }
+  return _recipeMap;
+}
+function _econNudge(it, p){
+  NPCS.forEach(n => {
+    if (n.stock.includes(it) && typeof S.market.drift[n.id]?.[it] === "number")
+      S.market.drift[n.id][it] = nudgeDrift(S.market.drift[n.id][it], p);
+  });
+}
+// LE1/LE3: selling saturates the market (pressure down); LE3: buying tightens it (pressure up).
 function _econSale(it, qty){
   ensureEcon();
   const v = ITEMS[it]?.v || 10;
   const prev = S.econ.pressure[it] ?? ECON.P_START;
   const p = applySalePressure(prev, qty, v);
-  S.econ.pressure[it] = p;
-  NPCS.forEach(n => {
-    if (n.stock.includes(it) && typeof S.market.drift[n.id]?.[it] === "number")
-      S.market.drift[n.id][it] = nudgeDrift(S.market.drift[n.id][it], p);
-  });
-  // LE2: a big dump makes the news as a glut
+  S.econ.pressure[it] = p; _econNudge(it, p);
   if (p <= 0.66 && prev > 0.66) pushNews("📦", `Glut of ${ITEMS[it]?.n||it} — the market's flooded, prices soft.`, "bad");
+}
+function _econBuy(it, qty){
+  ensureEcon();
+  const v = ITEMS[it]?.v || 10;
+  const prev = S.econ.pressure[it] ?? ECON.P_START;
+  const p = applyBuyPressure(prev, qty, v);
+  S.econ.pressure[it] = p; _econNudge(it, p);
+  if (p >= 1.34 && prev < 1.34) pushNews("🔥", `Run on ${ITEMS[it]?.n||it} — demand's tight, prices firming.`, "good");
 }
 function rollMarket(force){
   ensureMarket(); ensureEcon();
@@ -73,13 +97,20 @@ function rollMarket(force){
   const nsteps = Math.min(steps, 24);
   // supply/demand pressure heals toward 1.0 over the elapsed steps
   for (const it in S.econ.pressure) S.econ.pressure[it] = recoverPressure(S.econ.pressure[it], nsteps);
-  // per-NPC drift mean-reverts toward each item's equilibrium
-  // LE2: eq = macro demand × supply/demand pressure
+  // per-NPC drift mean-reverts toward each item's equilibrium.
+  // LE3: eq = macro demand × baseFactor(item) where baseFactor = own pressure ×
+  // recursive input cost-push. Computed once per item per roll (not per step).
   const _md = macroDemand();
+  const _rm = recipeMap();
+  const _recipeOf = (id) => _rm[id] || null;
+  const _valueOf  = (id) => ITEMS[id]?.v || 0;
+  const _pressureOf = (id) => S.econ.pressure[id] ?? ECON.P_START;
+  const _eqCache = {};
+  const eqOf = (it) => (it in _eqCache) ? _eqCache[it]
+    : (_eqCache[it] = _md * baseFactor(it, _recipeOf, _valueOf, _pressureOf));
   for (let s = 0; s < nsteps; s++){
     NPCS.forEach(n => n.stock.forEach(it => {
-      const eq = _md * (S.econ.pressure[it] ?? ECON.P_START);
-      S.market.drift[n.id][it] = driftToward(S.market.drift[n.id][it], eq);
+      S.market.drift[n.id][it] = driftToward(S.market.drift[n.id][it], eqOf(it));
     }));
   }
   S.market.last = Date.now();
@@ -118,6 +149,7 @@ function doTrade(npcId, it, qty, mode){
     const q = qty === "max" ? Math.floor(S.coins / unit) : Math.min(qty, Math.floor(S.coins / unit));
     if (q <= 0){ toast("Not enough coins."); return; }
     S.coins -= unit * q; addItem(it, q);
+    _econBuy(it, q);   // LE3: buying tightens the market → cost-push up the chain
     grantXp("trading", Math.max(1, Math.round(unit * q * 0.06)));
     log(`⚖️ Bought ${q}× ${ITEMS[it].n} from ${npc.n} (−${fmt(unit*q)} coins)`);
   } else {
@@ -6455,6 +6487,39 @@ function trendArrow(d){
   if (d <= 0.88) return `<span style="color:var(--red)">▼ low</span>`;
   return `<span style="color:var(--dim)">▬ fair</span>`;
 }
+// LE3 — infer why an item's price is moving (for the movers list).
+function _priceDriver(it){
+  const p = S.econ.pressure[it] ?? 1;
+  if (p <= 0.85) return "glut";
+  if (p >= 1.16) return "tight demand";
+  const rm = recipeMap();
+  if (rm[it]){
+    for (const inId in rm[it].in){
+      const ip = S.econ.pressure[inId] ?? 1;
+      if (ip >= 1.12) return "input costs up";
+      if (ip <= 0.88) return "cheaper inputs";
+    }
+  }
+  return macroPhase().name.toLowerCase();
+}
+// LE3 — biggest price movers across all traders, with their driver.
+function _econMoversHtml(){
+  const seen = new Set(), rows = [];
+  NPCS.forEach(n => n.stock.forEach(it => {
+    if (seen.has(it)) return; seen.add(it);
+    const d = S.market.drift[n.id]?.[it];
+    if (typeof d === "number") rows.push([it, d]);
+  }));
+  rows.sort((a,b) => Math.abs(b[1]-1) - Math.abs(a[1]-1));
+  const top = rows.filter(r => Math.abs(r[1]-1) > 0.05).slice(0, 4);
+  if (!top.length) return "";
+  return `<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:6px">
+    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:3px">Top movers</div>
+    ${top.map(([it,d]) => { const up = d>1, col = up ? 'var(--mint)' : '#e8907a';
+      return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span>${ITEMS[it].ic} ${ITEMS[it].n}</span><span style="color:${col}">${up?'▲':'▼'} ${_priceDriver(it)}</span></div>`;
+    }).join('')}
+  </div>`;
+}
 // LE2 — shared "Market Report" block: macro phase chip + live flavour + headlines.
 function _econNewsHtml(limit){
   ensureEcon();
@@ -6473,6 +6538,7 @@ function _econNewsHtml(limit){
       <span style="font-size:11px;color:var(--dim)">${flav} · turns in ~${mins} min</span>
     </div>
     <div style="margin-top:8px">${newsHtml}</div>
+    ${_econMoversHtml()}
   </div>`;
 }
 function renderTrade(){

@@ -8,10 +8,12 @@
 export const ECON = {
   P_MIN: 0.55, P_MAX: 1.70, P_START: 1.0,   // per-item supply/demand pressure
   SELL_IMPACT: 0.15,                          // pressure drop for selling one "reference volume"
+  BUY_IMPACT: 0.12,                           // pressure rise for buying one "reference volume"
   RECOVER: 0.06,                              // pressure heal toward 1.0 per market step (3 min)
   D_REVERT: 0.16, D_NOISE: 0.05,              // drift pull toward equilibrium + jitter per step
   D_MIN: 0.55, D_MAX: 1.55,                   // drift clamp (widened from the old [0.65,1.45])
   SALE_NUDGE: 0.5,                            // immediate market reaction to a sale (for visibility)
+  F_MIN: 0.45, F_MAX: 2.2,                    // clamp on the propagated cost-push factor
 };
 
 export const clampP = (p: number) => Math.max(ECON.P_MIN, Math.min(ECON.P_MAX, p));
@@ -29,6 +31,10 @@ export function saleDrop(qty: number, value: number): number {
 }
 export function applySalePressure(p: number, qty: number, value: number): number {
   return clampP(p - saleDrop(qty, value));
+}
+// Buying raises pressure (demand/scarcity) — the driver of cost-push shortages.
+export function applyBuyPressure(p: number, qty: number, value: number): number {
+  return clampP(p + ECON.BUY_IMPACT * Math.max(0, qty) / baseDemand(value));
 }
 
 // Analytic recovery of pressure toward 1.0 across N market steps (offline-safe:
@@ -53,6 +59,37 @@ export function nudgeDrift(d: number, target: number): number {
 // Trend glyph for the trader UI: high price (good to sell) vs soft (saturated).
 export function trendArrow(d: number): '↑' | '↓' | '→' {
   return d > 1.06 ? '↑' : d < 0.94 ? '↓' : '→';
+}
+
+export const clampF = (f: number) => Math.max(ECON.F_MIN, Math.min(ECON.F_MAX, f));
+
+// LE3 — supply-chain cost-push. An item's equilibrium factor is its own pressure
+// times the (recursively-computed) cost ratio of its recipe inputs, so a shift in
+// raw-material prices propagates up the production chain to processed goods.
+//   recipeOf(id)  → { in: { [inputId]: qty } } | null   (null = raw / gathered)
+//   valueOf(id)   → base value
+//   pressureOf(id)→ current supply/demand pressure (default 1.0)
+// `seen` guards against cyclic recipes.
+export function baseFactor(
+  item: string,
+  recipeOf: (id: string) => any,
+  valueOf: (id: string) => number,
+  pressureOf: (id: string) => number,
+  seen: Set<string> = new Set(),
+): number {
+  const p = clampP(pressureOf(item) ?? ECON.P_START);
+  const rec = recipeOf(item);
+  if (!rec || !rec.in || seen.has(item)) return p;   // raw material / gathered / cycle guard
+  seen.add(item);
+  let baseSum = 0, curSum = 0;
+  for (const inId in rec.in) {
+    const qty = rec.in[inId], v = valueOf(inId) || 0;
+    baseSum += v * qty;
+    curSum  += v * qty * baseFactor(inId, recipeOf, valueOf, pressureOf, seen);
+  }
+  seen.delete(item);
+  const ratio = baseSum > 0 ? curSum / baseSum : 1;
+  return clampF(p * ratio);
 }
 
 // ---------------------------------------------------------------------------
