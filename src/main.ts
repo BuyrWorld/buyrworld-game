@@ -365,8 +365,29 @@ const SFX = (() => {
       else if (skill==="woodcutting"){ hit(0.12*mv, 0.09); osc("triangle", 190, 90, 0.10, 0.07*mv); }
       else if (skill==="fishing"){ hit(0.06*mv, 0.12); osc("sine", 320, 110, 0.18, 0.05*mv); }
     }catch(e){}
+  },
+  levelUp(){
+    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    try{
+      ensure(); const mv = volLevel() / 0.75;
+      // rising major arpeggio C-E-G-C
+      osc("square", 523, 523, 0.12, 0.055*mv, 0);
+      osc("square", 659, 659, 0.12, 0.055*mv, 0.10);
+      osc("square", 784, 784, 0.14, 0.06*mv, 0.20);
+      osc("triangle", 1047, 1047, 0.28, 0.07*mv, 0.30);
+    }catch(e){}
   }};
 })();
+// celebratory "LEVEL N!" burst over the screen when a skill levels up
+function showLevelBurst(skill, lvl){
+  try{
+    const el = document.createElement("div");
+    el.className = "level-burst";
+    el.innerHTML = `<div class="lb-ic">${SKILLS[skill].ic}</div><div class="lb-sk">${SKILLS[skill].n}</div><div class="lb-lv">LEVEL ${lvl}</div>`;
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 1500);
+  }catch(e){}
+}
 function syncMusicButton(){
   const b = document.getElementById("btn-music");
   if (!b) return;
@@ -6297,7 +6318,8 @@ function grantXp(skill, xp){
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
   if (after > before){
-    toast(`${SKILLS[skill].ic} ${SKILLS[skill].n} LEVEL ${after}!`);
+    showLevelBurst(skill, after);
+    if (typeof SFX !== "undefined") SFX.levelUp();
     log(`${SKILLS[skill].n} reached level <b>${after}</b>.`, "good");
     if (SKILL_PERKS[skill]){
       for (const t of [10,25,40]){

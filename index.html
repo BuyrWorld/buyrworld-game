@@ -384,6 +384,13 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .dd-title{ font-family:'Press Start 2P',monospace; font-size:12px; color:#ffd666; margin-bottom:5px; }
 .dd-sub{ font-size:11px; color:#8a7a60; margin-bottom:12px; }
 .dist-chip{ position:absolute; top:6px; right:6px; background:rgba(20,15,10,.82); border:1px solid; padding:2px 9px; border-radius:4px; font:700 11px 'IBM Plex Mono',monospace; white-space:nowrap; pointer-events:none; }
+/* level-up celebratory burst */
+.level-burst{ position:fixed; top:24%; left:50%; transform:translateX(-50%); z-index:250; pointer-events:none; text-align:center; animation:lbPop 1.5s ease-out forwards; }
+.level-burst .lb-ic{ font-size:40px; line-height:1; }
+.level-burst .lb-sk{ font-family:'IBM Plex Mono',monospace; font-size:13px; color:#fff8e6; text-shadow:0 2px 4px rgba(0,0,0,.7); letter-spacing:1px; }
+.level-burst .lb-lv{ font-family:'Press Start 2P',monospace; font-size:20px; color:#ffd666; text-shadow:0 2px 0 #a06010,0 0 14px rgba(255,214,102,.7); margin-top:4px; }
+@keyframes lbPop{ 0%{ transform:translateX(-50%) scale(.4); opacity:0; } 14%{ transform:translateX(-50%) scale(1.18); opacity:1; } 28%{ transform:translateX(-50%) scale(1); } 78%{ opacity:1; } 100%{ opacity:0; transform:translateX(-50%) translateY(-34px) scale(1); } }
+@media (prefers-reduced-motion: reduce){ .level-burst{ animation:lbFade 1.5s ease-out forwards; } @keyframes lbFade{ 0%{opacity:0} 12%{opacity:1} 80%{opacity:1} 100%{opacity:0} } }
 .vp-schedule{
   margin-top:10px; padding:6px 10px; border-radius:4px;
   background:rgba(255,214,102,.12); border:1px solid rgba(255,214,102,.3);
