@@ -656,9 +656,10 @@ function achCheck(){
   }
 }
 const WANDERERS = [
-  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:75*TILE, y:27*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
-    area:[49,24,79,30], home:[72,25,77,28], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
-    route:[[49,25.5],[62,25.5],[75,25.5],[75,29.5],[62,29.5],[49,29.5]],
+  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:11*TILE, y:26*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
+    area:[10,25,25,29], home:[10,29,20,29], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
+    // patrols the path by the furnace/quarry (avoids the pond at tx14–17,ty27–28)
+    route:[[11,26],[18,26],[24,26],[24,29],[18,29],[11,29]],
     profile:{ job:"Supply Chain Professional", home:"The Valley Lodge", children:["Harison (6)"] } },
   { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:(14+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
     area:[2,12+NORTH_EXT,8,16+NORTH_EXT], home:[2,12+NORTH_EXT,5,13+NORTH_EXT], tips:[
