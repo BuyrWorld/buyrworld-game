@@ -196,13 +196,13 @@ function frostSvg(size){
 }
 const TUT = [
   { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path west into the quarry canyon and tap the Iron Rock and mine <b>5 Iron Ore</b>.`,
-    obj:"Mine 5 Iron Ore", cond:()=> (S.prod.iron_ore||0) >= 5, reward:25 },
+    obj:"Mine 5 Iron Ore", cond:()=> (S.prod.iron_ore||0) >= 5, reward:60 },
   { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk up to the <b>Furnace</b> (the building with the chimney) and smelt <b>2 Iron Bars</b>.`,
-    obj:"Smelt 2 Iron Bars", cond:()=> (S.prod.iron_bar||0) >= 2, reward:25 },
+    obj:"Smelt 2 Iron Bars", cond:()=> (S.prod.iron_bar||0) >= 2, reward:90 },
   { say:()=>`Toasty! Now make something someone will pay for — pop into the <b>Workshop</b> next door and press <b>1 Bracket</b>.`,
-    obj:"Press 1 Bracket", cond:()=> (S.prod.bracket||0) >= 1, reward:30 },
+    obj:"Press 1 Bracket", cond:()=> (S.prod.bracket||0) >= 1, reward:120 },
   { say:()=>`Last step: head to the <b>Depot</b> and deliver an order. Clients round here love punctuality almost as much as I love this t-shirt.`,
-    obj:"Deliver 1 contract", cond:()=> S.counters.contracts >= 1, reward:60 },
+    obj:"Deliver 1 contract", cond:()=> S.counters.contracts >= 1, reward:200 },
 ];
 function tutCheck(){
   if (!S.tut || S.tut.done) return;
@@ -235,6 +235,25 @@ function firstRunHintHtml(){
   if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step > 0) return "";
   if ((S.prod.iron_ore||0) >= 5) return "";
   return `<div class="firstrun-hint">🎮 Move with <b>WASD</b> / arrow keys — or <b>tap</b> where to go. Head <b>west ◀</b> to the quarry ⛏️ and tap the Iron Rock.</div>`;
+}
+// Task 4: a quest marker guiding the player to the first Iron Rock — a floating
+// label when it's on screen, or an edge arrow pointing toward the quarry when not.
+function questMarkerHtml(){
+  if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step !== 0) return "";
+  if ((S.prod.iron_ore||0) >= 5) return "";
+  const rock = V_OBJECTS.find(o => o.id === "rock_iron");
+  if (!rock) return "";
+  const rx = (rock.tx + 0.5) * TILE, ry = (rock.ty + 0.5) * TILE;
+  const sx = (rx - CAM.x) / VIEW_W * 100, sy = (ry - CAM.y) / VIEW_H * 100;
+  if (sx > 3 && sx < 97 && sy > 8 && sy < 94){
+    return `<div class="quest-rock" style="left:${sx.toFixed(1)}%;top:${sy.toFixed(1)}%">⛏️ Iron Rock — tap to mine!</div>`;
+  }
+  // off screen: an arrow at the screen edge pointing toward the quarry
+  const ang = Math.atan2(ry - (CAM.y + VIEW_H/2), rx - (CAM.x + VIEW_W/2));
+  const ex = Math.max(9, Math.min(91, 50 + Math.cos(ang) * 44));
+  const ey = Math.max(14, Math.min(86, 50 + Math.sin(ang) * 38));
+  return `<div class="quest-arrow" style="left:${ex.toFixed(1)}%;top:${ey.toFixed(1)}%;transform:translate(-50%,-50%) rotate(${ang.toFixed(3)}rad)">➤</div>`
+       + `<div class="quest-arrow-lbl" style="left:${ex.toFixed(1)}%;top:${(ey+8).toFixed(1)}%">⛏️ Quarry</div>`;
 }
 /* ---------- original soundtrack (Web Audio chiptune, per-location) ---------- */
 function zoneForTab(tab){
@@ -3692,6 +3711,7 @@ function drawVillage(t){
       if (_cd) html += `<div class="dist-chip" style="border-color:${_cd.color};color:${_cd.color}">${_cd.ic} ${_cd.name}</div>`;
     }
     html += firstRunHintHtml();   // Task 3/4: opening movement + direction guidance
+    html += questMarkerHtml();    // Task 4: marker/arrow to the first Iron Rock
     overlay.innerHTML = html;
   }
   // night/sunrise/sunset sky tint
@@ -5961,7 +5981,13 @@ if (typeof document !== 'undefined'){
   .firstrun-hint b{color:#ffd666}
   @keyframes frPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,150,30,.5)}50%{box-shadow:0 0 0 6px rgba(232,150,30,0)}}
   .fullscreen-mode .firstrun-hint{font-size:15px;padding:9px 18px}
-  @media (prefers-reduced-motion: reduce){.firstrun-hint,.int-canvas-wrap .ilbl-exit{animation:none}}
+  .quest-rock{position:absolute;transform:translate(-50%,-140%);background:rgba(42,90,30,.96);color:#fff8e6;border:2px solid #ffd666;border-radius:8px;padding:3px 9px;font:700 11px 'IBM Plex Mono',monospace;white-space:nowrap;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.45);animation:qrBob 1.2s ease-in-out infinite}
+  @keyframes qrBob{0%,100%{transform:translate(-50%,-140%)}50%{transform:translate(-50%,-172%)}}
+  .quest-arrow{position:absolute;color:#ffd666;font-size:26px;pointer-events:none;text-shadow:0 2px 5px rgba(0,0,0,.7);animation:qaPulse 1s ease-in-out infinite}
+  @keyframes qaPulse{0%,100%{opacity:.65}50%{opacity:1}}
+  .quest-arrow-lbl{position:absolute;transform:translate(-50%,0);color:#ffd666;font:700 10px 'IBM Plex Mono',monospace;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;white-space:nowrap}
+  .fullscreen-mode .quest-rock{font-size:14px}.fullscreen-mode .quest-arrow{font-size:32px}
+  @media (prefers-reduced-motion: reduce){.firstrun-hint,.int-canvas-wrap .ilbl-exit,.quest-rock,.quest-arrow{animation:none}}
   .vhint{text-align:center}
   .btn.quickstart{background:#2a6a3a;color:#fff8e6;border:2px solid #1a4a28;font-size:13px;padding:9px 18px}
   .btn.quickstart:hover{background:#348046}
