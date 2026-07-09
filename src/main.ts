@@ -1901,6 +1901,7 @@ function interactObj(o){
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
 function showWandererProfile(w){
+  if (!S.npcMet){ S.npcMet = true; }   // Task 9: "First Hello" journal milestone
   const existing = document.getElementById("villager-profile-modal");
   if (existing) existing.remove();
   const p = w.profile || {};
@@ -1925,6 +1926,7 @@ function _scheduleStr(phase, workKind){
   return `🌿 Leisure until ${hh(22)}`;
 }
 function showVillagerProfile(v){
+  if (!S.npcMet){ S.npcMet = true; }   // Task 9: "First Hello" journal milestone
   const existing = document.getElementById("villager-profile-modal");
   if (existing) existing.remove();
   const homeObj = V_OBJECTS.find(o => o.id === v.homeId);
@@ -2547,6 +2549,74 @@ function wireJourneyButtons(root){
   if (b) b.onclick = () => claimJourneyStage();
 }
 function openJourney(){ closeJourney(); renderJourney(); }
+// ---- Valley Journal (Task 9): a gentle first-session checklist of "firsts" ----
+const VALLEY_JOURNAL = [
+  { id:'first_ore',     ic:'⛏️', title:'First Ore',      hint:'Mine ore at the quarry',           reward:20, cond:()=> prodSum(ORES) >= 1 },
+  { id:'first_bar',     ic:'🔥', title:'First Smelt',    hint:'Smelt a bar at the furnace',        reward:25, cond:()=> prodSum(BARS) >= 1 },
+  { id:'first_craft',   ic:'🏭', title:'First Build',    hint:'Craft a part at the workshop',      reward:30, cond:()=> (prodSum(GOODS)+prodSum(CRAFTED)) >= 1 },
+  { id:'first_sale',    ic:'🤝', title:'First Sale',     hint:'Deliver a contract or make a trade',reward:35, cond:()=> (S.counters?.contracts||0) >= 1 || (S.counters?.trades||0) >= 1 },
+  { id:'first_upgrade', ic:'🛒', title:'First Upgrade',  hint:'Buy an upgrade at the Town Hall',   reward:40, cond:()=> Object.keys(S.upgrades||{}).length >= 1 },
+  { id:'first_npc',     ic:'💬', title:'First Hello',    hint:'Tap a villager to meet them',       reward:20, cond:()=> !!S.npcMet },
+];
+// Auto-grants a small reward the first time each milestone is reached.
+function checkJournal(){
+  if (!S.firsts) S.firsts = {};
+  let changed = false;
+  for (const j of VALLEY_JOURNAL){
+    if (!S.firsts[j.id] && j.cond()){
+      S.firsts[j.id] = true;
+      S.coins += j.reward;
+      S.counters.coinsEarned = (S.counters.coinsEarned||0) + j.reward;
+      toast(`📔 Journal: ${j.ic} ${j.title}! +${fmt(j.reward)} coins`);
+      log(`📔 <b>Valley Journal</b> — ${j.title} ✓ (+${fmt(j.reward)} coins)`, "good");
+      changed = true;
+    }
+  }
+  if (changed){
+    updateHud(); save();
+    const m = document.getElementById("journal-modal"); if (m) renderJournal();
+    syncJournalBtn();
+  }
+}
+function syncJournalBtn(){
+  const b = document.getElementById("btn-journal");
+  if (!b) return;
+  const done = VALLEY_JOURNAL.filter(j => S.firsts && S.firsts[j.id]).length;
+  b.setAttribute("title", `Valley Journal — ${done}/${VALLEY_JOURNAL.length} firsts`);
+}
+function closeJournalModal(){ const e = document.getElementById("journal-modal"); if (e) e.remove(); }
+function renderJournal(){
+  const done = VALLEY_JOURNAL.filter(j => S.firsts && S.firsts[j.id]).length;
+  const all = done >= VALLEY_JOURNAL.length;
+  const rows = VALLEY_JOURNAL.map(j => {
+    const ok = !!(S.firsts && S.firsts[j.id]);
+    return `<div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-top:1px solid rgba(0,0,0,.08);opacity:${ok?1:.85}">
+      <div style="font-size:24px;width:30px;text-align:center">${ok ? '✅' : j.ic}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:14px;color:${ok?'#4aa86a':'var(--text)'}">${j.title}</div>
+        <div style="font-size:12px;color:var(--dim)">${ok ? 'Done!' : j.hint}</div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:${ok?'#4aa86a':'#8a6a2a'};white-space:nowrap">${ok?'✓ ':'+'}${fmt(j.reward)}c</div>
+    </div>`;
+  }).join("");
+  const inner = `<div class="dd-card" style="max-width:480px">
+    <button class="vp-close" onclick="document.getElementById('journal-modal').remove()">✕</button>
+    <div class="dd-title">📔 Valley Journal</div>
+    <div class="dd-sub">${all ? "Every 'first' complete — you know the valley now!" : `Your first steps in Featherstone · ${done}/${VALLEY_JOURNAL.length}`}</div>
+    <div style="background:rgba(90,150,60,.1);border:1px solid rgba(90,150,60,.3);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:12px">
+      Rewards are added automatically the moment you complete each first.
+    </div>
+    <div>${rows}</div>
+  </div>`;
+  const open = document.getElementById("journal-modal");
+  if (open){ open.innerHTML = inner; open.addEventListener("click", e=>{ if(e.target===open) open.remove(); }); return; }
+  const el = document.createElement("div");
+  el.id = "journal-modal"; el.className = "dd-modal";
+  el.innerHTML = inner;
+  document.body.appendChild(el);
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+}
+function openJournalPanel(){ closeJournalModal(); renderJournal(); }
 // ---- The Village Kitchen — cook what you grow, catch and forage into meals ----
 function mealBuffRemainingMs(){ return S.mealBuff ? Math.max(0, S.mealBuff.until - Date.now()) : 0; }
 function cookRecipe(id){
@@ -6049,7 +6119,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{},
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false,
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -6138,6 +6208,8 @@ function load(){
       if (!S.seenTips) S.seenTips = {};
       if (!S.journey || !Array.isArray(S.journey.claimed)) S.journey = { claimed:[], notified:"" };
       if (!S.unlockedTabs) S.unlockedTabs = {};
+      if (!S.firsts) S.firsts = {};
+      if (typeof S.npcMet !== "boolean") S.npcMet = false;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
@@ -9260,7 +9332,8 @@ document.getElementById("btn-districts")?.addEventListener("click", () => openDi
 document.getElementById("btn-ledger")?.addEventListener("click", () => openLedger());
 document.getElementById("btn-inv")?.addEventListener("click", () => toggleInventory());
 document.getElementById("btn-journey")?.addEventListener("click", () => openJourney());
-syncJourneyBtn();
+document.getElementById("btn-journal")?.addEventListener("click", () => openJournalPanel());
+syncJourneyBtn(); syncJournalBtn();
 window.addEventListener("keydown", e => {
   if ((e.key==="j"||e.key==="J") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ openJourney(); return; }
   if ((e.key==="i"||e.key==="I") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ toggleInventory(); return; }
@@ -9410,6 +9483,7 @@ setInterval(()=>{
   checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
   checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
   syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
+  checkJournal();           // auto-grant Valley Journal "firsts" rewards
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
     renderMain(); updateHud();
