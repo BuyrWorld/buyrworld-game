@@ -7746,7 +7746,7 @@ function completeAction(act, skill, silent){
   grantXp(skill, _fishCaught ? (fishById(_fishCaught)?.xp || act.xp) : act.xp);
   S.counters.actions++;
   rollPet(skill);
-  if (!silent && typeof pushVfx === "function" && skill!=="fishing") pushVfx(skill, act);
+  if (!silent && typeof pushVfx === "function" && skill!=="fishing" && !INTERIOR_TABS.has(S.tab)) pushVfx(skill, act);
   if (!silent && typeof SFX !== "undefined") SFX.play(skill);
   tutCheck();
   achCheck();
@@ -7968,8 +7968,8 @@ const TAB_ALWAYS = new Set(["village", "mining", "character", "settings"]);
 const TAB_COND = {
   steelworks:    () => prodSum(ORES) >= 1,
   manufacturing: () => prodSum(BARS) >= 1,
-  woodcutting:   () => !!(S.tut && S.tut.done) || prodSum(BARS) >= 1,
-  fishing:       () => !!(S.tut && S.tut.done) || prodSum(BARS) >= 1,
+  woodcutting:   () => !!(S.tut && S.tut.done),
+  fishing:       () => !!(S.tut && S.tut.done),
   contracts:     () => prodSum(GOODS) >= 1,
   trade:         () => (S.counters?.contracts || 0) >= 1,
   upgrades:      () => (S.counters?.coinsEarned || 0) >= 100,
