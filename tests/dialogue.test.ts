@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   TIME_LINES, WEATHER_LINES, SEASON_LINES, timeOfDay, contextLines, pickLine,
   GREETINGS, RESPONSES, SMALLTALK, convoLine,
+  INTRO_NPCS, introLine,
 } from '../src/data/dialogue.ts';
 
 const CTX = { timeOfDay: 'morning', weather: 'rain', season: 'spring' };
@@ -94,5 +95,31 @@ describe('Dialogue — conversations', () => {
     expect(RESPONSES.length).toBeGreaterThan(0);
     expect(SMALLTALK.length).toBeGreaterThan(0);
     expect(GREETINGS.every(g => g.includes('{name}'))).toBe(true);
+  });
+});
+
+describe('Dialogue — intro NPC hooks', () => {
+  it('has three intro NPCs, each with before and after lines', () => {
+    expect(Object.keys(INTRO_NPCS).length).toBe(3);
+    for (const [id, e] of Object.entries(INTRO_NPCS)) {
+      expect(e.before.length, id).toBeGreaterThan(0);
+      expect(e.after.length, id).toBeGreaterThan(0);
+    }
+  });
+
+  it('introLine picks before/after by tutDone and fills {name}', () => {
+    const before = introLine('bertie', false, 'Demo', () => 0);
+    const after = introLine('bertie', true, 'Demo', () => 0);
+    expect(before).toBe(INTRO_NPCS.bertie.before[0].replace('{name}', 'Demo'));
+    expect(after).toBe(INTRO_NPCS.bertie.after[0].replace('{name}', 'Demo'));
+    expect(before).toContain('Demo');
+    expect(before).not.toContain('{name}');
+  });
+
+  it('returns null for a non-intro NPC and defaults a missing name', () => {
+    expect(introLine('nobody', false, 'X', () => 0)).toBeNull();
+    const line = introLine('agnes', false, '', () => 0);
+    expect(line).not.toContain('{name}');
+    expect(line).toContain('friend');
   });
 });

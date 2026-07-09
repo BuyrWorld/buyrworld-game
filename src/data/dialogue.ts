@@ -145,6 +145,52 @@ function pickFrom(arr: string[], rng: () => number): string {
   return arr[Math.floor(rng() * arr.length)] || arr[0];
 }
 
+// ---- Early emotional hooks: a few key NPCs greet the player by name, say
+// something about the village/economy, and react after the first quest is done.
+// {name} is replaced with the player's name. Data-driven so lines are easy to edit.
+export const INTRO_NPCS: Record<string, { before: string[]; after: string[] }> = {
+  bertie: {
+    before: [
+      "Now then, {name}. Furnace is always hungry — we need all the ore we can get.",
+      "The bakery's been short on brackets since the mill broke down. We're all waiting on parts.",
+    ],
+    after: [
+      "That's the spirit, {name}! Bars don't smelt themselves.",
+      "Keep the ore coming and I'll keep the furnace roaring, {name}.",
+    ],
+  },
+  derek: {
+    before: [
+      "Alright, {name}? Depot's backed up — orders piling faster than I can shift 'em.",
+      "If you can make parts, I can find you buyers. That's how the valley ticks.",
+    ],
+    after: [
+      "First delivery already, {name}? Supply and demand — you've got the knack.",
+      "Clients are starting to ask for you by name. Good work.",
+    ],
+  },
+  agnes: {
+    before: [
+      "Morning, {name}! New face in the valley, aren't you? Welcome to Featherstone.",
+      "The council's been short-handed since the mill slowed. Glad of a hard worker.",
+    ],
+    after: [
+      "Word travels fast, {name} — the whole valley's talking about the new supplier.",
+      "The ledgers look healthier since you arrived. Keep it up!",
+    ],
+  },
+};
+
+// A greeting/reaction line for an intro NPC, or null. `tutDone` picks the reactive
+// pool; playerName fills {name}. rng() in [0,1) for a deterministic pick.
+export function introLine(id: string, tutDone: boolean, playerName: string, rng: () => number): string | null {
+  const e = INTRO_NPCS[id];
+  if (!e) return null;
+  const pool = tutDone ? e.after : e.before;
+  if (!pool || !pool.length) return null;
+  return pickFrom(pool, rng).replace(/\{name\}/g, playerName || "friend");
+}
+
 // The line spoken on a given conversation turn. Turn 0 is an opener addressed to
 // the partner; turn 1 is a reply; later turns alternate small talk and replies.
 export function convoLine(turn: number, partnerName: string, rng: () => number): string {

@@ -21,7 +21,7 @@ import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } fro
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
-import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine } from './data/dialogue.ts';
+import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
@@ -691,6 +691,16 @@ function speechLine(v){
   const quip = quips[Math.abs(win) % quips.length];
   let s = (_idHash(v.id) ^ (win * 2654435761)) >>> 0;
   const rng = () => { s = (s*1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  // early emotional hooks: key NPCs greet the player by name / react to the first
+  // quest (often before it's done, occasionally after). Only intro NPCs consume the
+  // extra roll, so everyone else's chatter is unchanged.
+  if (INTRO_NPCS[v.id]){
+    const tutDone = !!(S.tut && S.tut.done);
+    if (rng() < (tutDone ? 0.3 : 0.7)){
+      const _il = _introLine(v.id, tutDone, S.playerName || "friend", rng);
+      if (_il) return _il;
+    }
+  }
   return _pickLine(quip, _dlgCtx(), rng, 0.4);
 }
 // A crisp, legible speech bubble anchored at screen-percentage (x%,y%) above a head.
