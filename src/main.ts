@@ -728,6 +728,7 @@ const INTERIOR_RESIDENTS = {
   harbour_office: { name:"Reg",          x:136, y:80,  lines:["Tide's fair today.","I can fast-travel you across the bay any time.","Reg's the name; the sea's my game."] },
   fishmonger_wh:  { name:"Pearl",        x:150, y:100, lines:["Freshest catch on the coast.","Sell in bulk and I'll pay a premium.","Pearl by name, pearls of the sea by trade."] },
   village_fund:   { name:"The Committee",x:90,  y:76,  lines:["Every donation makes the valley bloom.","We've grand plans for the village green.","Thank you kindly for your generosity."] },
+  contracts:      { name:"Depot Clerk",  x:43,  y:120, lines:["Orders keep piling up — grand for business!","Deliver the goods, collect your coin.","Bigger orders pay the most, mind.","The lorry's due in any minute now."] },
 };
 let _intChat = null; // {name, lines, idx} — the resident NPC you're currently chatting with
 // ---- Dialogue system v2: ambient, situational, legible speech bubbles ----
