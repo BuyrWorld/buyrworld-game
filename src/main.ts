@@ -4541,6 +4541,20 @@ function drawInterior(t){
       ctx.fillStyle="#5a8a9a"; ctx.fillRect(x+3,y+4,w-6,6);
       if(Math.floor(t*2)%2){ ctx.fillStyle="#ffd666"; ctx.fillRect(x+3,y+4,Math.floor((w-6)/2),3); }
     });
+    // a working bench at each station with the component taking shape (+ assembly sparks)
+    const _partIc = { bracket:"🧱", gearbox:"⚙️", wiring_loom:"🔌", chassis:"🛠️", sensor:"📡", servo_unit:"🤖", pallet_jack:"🛺", diamond_drill:"🛠️" };
+    const _making = S.action?.skill === "manufacturing";
+    STATION_DEFS.manufacturing.forEach(st=>{
+      const sx = st.fx*W, sy = st.fy*H;
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(sx-20, sy+22, 40, 3);
+      ctx.fillStyle="#5a4a36"; ctx.fillRect(sx-20, sy+4, 40, 6); ctx.fillRect(sx-18, sy+10, 5, 13); ctx.fillRect(sx+13, sy+10, 5, 13);
+      ctx.fillStyle="#8a7a62"; ctx.fillRect(sx-20, sy-2, 40, 6);
+      ctx.fillStyle="#3a4a58"; ctx.fillRect(sx-4, sy-6, 8, 5);            // vice
+      drawEmojiC(ctx, _partIc[st.id]||"⚙️", sx, sy-5, 11);
+      if (_making && S.action.id === st.id){
+        for (let k=0;k<5;k++){ const a=-0.25-k*0.4, d=5+((k*37+Math.floor(t*90))%9); ctx.fillStyle = k%2 ? "#ffe070" : "#9ad8ff"; ctx.fillRect(Math.round(sx+Math.cos(a)*d), Math.round(sy-6-Math.sin(a)*d*0.7), 2, 2); }
+      }
+    });
   } else if (S.tab==="fishing"){
     // pier over sea — 320×200 canvas
     ctx.fillStyle="#4da8cc"; ctx.fillRect(0,0,W,H);
@@ -5056,6 +5070,14 @@ function drawInterior(t){
     }
     // gift basket on floor (right corner)
     drawEmojiC(ctx,"🧺", 296, 130, 16);
+    // crafting feedback: steam wisps + a sparkle rise from the workbench while you make things
+    const _crafting = S.action?.skill === "crafting";
+    if (_crafting){
+      for (let i=0;i<7;i++){ const ph=(t*22 + i*13) % 24; const _wx = 88+(i%3)*52 + Math.sin(t*2+i)*3, _wy = 60 - ph; ctx.fillStyle=`rgba(242,240,230,${(0.42*(1-ph/24)).toFixed(2)})`; ctx.beginPath(); ctx.arc(_wx, _wy, 2, 0, 7); ctx.fill(); }
+      if (Math.floor(t*4)%2===0){ for (const ix of [88,140,192]){ ctx.fillStyle="rgba(255,240,150,.8)"; ctx.fillRect(Math.round(ix+Math.sin(t*5+ix)*6), 54, 2, 2); } }
+    }
+    // warm dust motes drifting in the light (ambient)
+    for (let i=0;i<4;i++){ const _dx=(i*71 + t*6) % W, _dy = 30 + ((i*47 + t*8) % (H-70)); ctx.fillStyle="rgba(255,220,150,.18)"; ctx.fillRect(_dx, _dy, 1.5, 1.5); }
     // artisan NPC (moves slowly left/right near workbench)
     const _ax = 160 + Math.sin(t*0.4)*30;
     drawPerson(ctx, _ax, 60, "#7a5040", "#c9804a", t, false, Math.sin(t*0.4)>0 ? 1:-1, null, "down");
