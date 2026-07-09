@@ -3215,6 +3215,19 @@ function drawObjects(ctx, t){
       }
       // Always draw emoji label and dynamic effects on top of sprite or canvas building
       drawEmojiC(ctx, o.ic, r.x+r.w/2, r.y+16, 13);
+      // YOUR cottage stands out from the neighbours: a pennant, window flowers, a mat
+      if (o.id === "player_home"){
+        const _cx = r.x + r.w/2;
+        ctx.fillStyle="#6a4a2f"; ctx.fillRect(_cx-1, r.y-17, 2, 17);                          // flag pole
+        ctx.fillStyle="#e05a80"; ctx.beginPath(); ctx.moveTo(_cx+1, r.y-17); ctx.lineTo(_cx+15, r.y-13); ctx.lineTo(_cx+1, r.y-9); ctx.closePath(); ctx.fill();  // pennant
+        ctx.fillStyle="#fff8e6"; ctx.font="6px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("♥", _cx+5, r.y-13); ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+        // flower boxes under the windows
+        for (const _bx of [r.x+7, r.x+r.w-19]){
+          ctx.fillStyle="#6a4a2f"; ctx.fillRect(_bx, r.y+28, 12, 3);
+          for (let f=0; f<3; f++){ ctx.fillStyle=["#e05a80","#ffd666","#f86040"][f]; ctx.fillRect(_bx+2+f*4, r.y+25, 2, 3); }
+        }
+        ctx.fillStyle="#c0603a"; ctx.fillRect(_cx-9, r.y+r.h-3, 18, 3);                        // welcome mat
+      }
       if (o.chimney){
         const _swLvl = skillLvl("steelworks");
         const _chimW = 8 + Math.min(6, Math.floor(_swLvl/10)*2); // chimney grows with level
@@ -4020,6 +4033,13 @@ function drawVillage(t){
     }
     html += firstRunHintHtml();   // Task 3/4: opening movement + direction guidance
     html += questMarkerHtml();    // Task 4: marker/arrow to the first Iron Rock
+    // a gentle marker so YOUR cottage is easy to pick out from the neighbours
+    {
+      const _ph = V_OBJECTS.find(o => o.id === "player_home");
+      if (_ph){ const _r = objRect(_ph); const _px = (_r.x + _r.w/2 - CAM.x)/VIEW_W*100, _py = (_r.y - 10 - CAM.y)/VIEW_H*100;
+        if (_px > 0 && _px < 100 && _py > 0 && _py < 100) html += `<div class="home-marker" style="left:${_px.toFixed(1)}%;top:${_py.toFixed(1)}%">🏡 Your Cottage</div>`;
+      }
+    }
     overlay.innerHTML = html;
   }
   // night/sunrise/sunset sky tint

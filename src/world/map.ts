@@ -263,7 +263,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'home_08', kind: 'bld', tx: 61, ty: 26, w: 2, h: 2, tab: 'home', name: "Hector's Cottage",  ic: '🏠', wall: '#b0b8d0', roof: '#3a4a7a' },
   { id: 'home_09', kind: 'bld', tx: 66, ty: 26, w: 2, h: 2, tab: 'home', name: "Ida's Cottage",     ic: '🏠', wall: '#b0c8d8', roof: '#3a5a7a' },
   { id: 'home_10', kind: 'bld',    tx: 71, ty: 26, w: 2, h: 2, tab: 'home',   name: "Jack's Cottage",  ic: '🏠', wall: '#d0b0b0', roof: '#6a3a3a' },
-  { id: 'player_home', kind: 'bld', tx: 74, ty: 26, w: 2, h: 2, tab: 'myhome', name: 'Your Cottage',    ic: '🏡', wall: '#d4c8a8', roof: '#7a5a40' },
+  { id: 'player_home', kind: 'bld', tx: 74, ty: 26, w: 2, h: 2, tab: 'myhome', name: 'Your Cottage',    ic: '🏡', wall: '#f0e4c4', roof: '#4a9ac0' },
   // Row C: south section (ty=31, approach at row 33 grass)
   { id: 'home_11', kind: 'bld', tx: 51, ty: 31, w: 2, h: 2, tab: 'home', name: "Kitty's Cottage",  ic: '🏠', wall: '#b8c0d0', roof: '#4a5a7a' },
   { id: 'home_12', kind: 'bld', tx: 56, ty: 31, w: 2, h: 2, tab: 'home', name: "Lenny's Cottage",  ic: '🏠', wall: '#d0d0b8', roof: '#5a5a3a' },
