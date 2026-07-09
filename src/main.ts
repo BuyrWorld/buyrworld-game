@@ -432,6 +432,14 @@ const SFX = (() => {
       osc("triangle", 1047, 1047, 0.28, 0.07*mv, 0.30);
     }catch(e){}
   },
+  snap(){
+    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    try{
+      ensure(); const mv = volLevel() / 0.75;
+      hit(0.10*mv, 0.05);                          // the crack
+      osc("square", 950, 150, 0.09, 0.06*mv, 0);   // twang whipping back
+    }catch(e){}
+  },
   cook(){
     if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
     try{
@@ -673,10 +681,13 @@ let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-
 let _fishCastT = 0;          // timestamp of the last cast (new fishing station), for the cast animation
 let _fishActiveId = null;    // which fishing station is currently being fished
 let _fishRodTip = { x:0, y:0 };  // world position of the player's rod tip (so the line connects to the character)
+let _fishSpot = null;            // where the bobber has been cast (interior coords) — click the water to set it
+let _fishAnchor = { x:0, y:0 };  // where the angler stood when they cast (for the retract/snap distance)
 let _cat = { x:29*TILE, y:28*TILE, tx:29*TILE, ty:28*TILE, pauseT:0, facing:1, moving:false };
 let _bflies = [];            // ambient butterflies (warm seasons)
 let _homeVil = null;         // wandering home-villager state (per home)
 let _homeVilLbl = null;      // {x,y,name} for the crisp home-villager label this frame
+let _homeAwayName = null;    // name of the home's occupant when they're away at work (crisp HTML note)
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
   { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
@@ -1258,7 +1269,7 @@ const STATION_DEFS = {
     { fx:0.86, fy:0.65, sk:'prop_machine', skill:'crafting', id:'gift_basket', ic:'🧺', lbl:'Gift Basket' },
   ],
   fishing: [
-    { fx:0.50, fy:0.32, sk:'prop_hopper', skill:'fishing', id:'fish', ic:'🎣', lbl:'Fishing Spot' },
+    { fx:0.50, fy:0.60, sk:'prop_hopper', skill:'fishing', id:'fish', ic:'🎣', lbl:'Fishing Spot' },
   ],
 };
 // Skill interior canvas size (mining/steelworks/manufacturing/woodcutting)
@@ -1301,6 +1312,10 @@ function showZoneCard(tab){
 
 // Solid collision rects for interior rooms (pixel coords on 320×200 canvas)
 const INTERIOR_COLS = {
+  // pier: the water (top of the canvas) is solid so the angler stays on the deck
+  fishing: [
+    {x:0, y:0, w:320, h:86},
+  ],
   mining: [
     // Open cave — support beams only clip the ceiling now, so you can walk freely
     // to every ore vein. Just a couple of low props remain as obstacles.
@@ -4376,10 +4391,22 @@ function drawInterior(t){
         const shx = W*0.5 + Math.sin(t*0.5)*W*0.16;
         const shy = -32 + syp*(H*.44 + 40);
         const wig = Math.sin(t*3)*3;
-        ctx.save(); ctx.globalAlpha = 0.20; ctx.fillStyle = "#08222f";
-        ctx.beginPath(); ctx.ellipse(shx, shy, 9, 27, 0, 0, 7); ctx.fill();                       // body
-        ctx.beginPath(); ctx.moveTo(shx-8, shy-24); ctx.lineTo(shx+wig, shy-36); ctx.lineTo(shx+8, shy-24); ctx.closePath(); ctx.fill();  // tail
-        ctx.beginPath(); ctx.moveTo(shx, shy-6); ctx.lineTo(shx+14, shy+2); ctx.lineTo(shx, shy+7); ctx.closePath(); ctx.fill();          // dorsal fin
+        ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = "#08222f";
+        // tapered body (nose down since it swims top→down), narrowing to the tail
+        ctx.beginPath();
+        ctx.moveTo(shx, shy+27);
+        ctx.quadraticCurveTo(shx-10, shy+6, shx-4, shy-18);
+        ctx.lineTo(shx, shy-21);
+        ctx.lineTo(shx+4, shy-18);
+        ctx.quadraticCurveTo(shx+10, shy+6, shx, shy+27);
+        ctx.closePath(); ctx.fill();
+        // forked caudal (tail) fin
+        ctx.beginPath(); ctx.moveTo(shx-1, shy-19); ctx.lineTo(shx-9+wig, shy-34); ctx.lineTo(shx, shy-25); ctx.lineTo(shx+9+wig, shy-34); ctx.lineTo(shx+1, shy-19); ctx.closePath(); ctx.fill();
+        // dorsal fin (to the side, top-down view)
+        ctx.beginPath(); ctx.moveTo(shx+6, shy-3); ctx.lineTo(shx+17, shy+3); ctx.lineTo(shx+6, shy+9); ctx.closePath(); ctx.fill();
+        // pectoral fins
+        ctx.beginPath(); ctx.moveTo(shx-5, shy+6); ctx.lineTo(shx-16, shy+13); ctx.lineTo(shx-4, shy+13); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(shx+5, shy+6); ctx.lineTo(shx+16, shy+13); ctx.lineTo(shx+4, shy+13); ctx.closePath(); ctx.fill();
         ctx.restore();
       }
     }
@@ -4406,7 +4433,11 @@ function drawInterior(t){
     const _now = (typeof performance!=="undefined"?performance.now():Date.now());
     // detect a new cast (active station changed) so the line whips out fresh
     const _fishNow = S.action?.skill==="fishing";
-    if (_fishNow && S.action.id !== _fishActiveId){ _fishActiveId = S.action.id; _fishCastT = _now; }
+    if (_fishNow && S.action.id !== _fishActiveId){
+      _fishActiveId = S.action.id; _fishCastT = _now;
+      _fishAnchor = { x:IP.x, y:IP.y };
+      if (!_fishSpot) _fishSpot = { x: W*0.5, y: H*0.20 };   // default cast if started from the panel
+    }
     if (!_fishNow) _fishActiveId = null;
     const _fcAge = _now - _fishCatchT;
     const _castAge = _now - _fishCastT;
@@ -4414,17 +4445,18 @@ function drawInterior(t){
     // character holds (tip in _fishRodTip). Wander up to 3 blocks and it stays
     // connected; past 3 it retracts to just the rod; at 4 the line snaps.
     if (_fishNow){
-      const spotX = STATION_DEFS.fishing[0].fx * W;      // fixed fishing spot
-      const spotY = H*.18;
+      const spotX = _fishSpot ? _fishSpot.x : W*0.5;     // where the line was cast (click the water)
+      const spotY = _fishSpot ? _fishSpot.y : H*.18;
       const tipX = _fishRodTip.x || spotX;
       const tipY = _fishRodTip.y || H*.30;
-      const blocks = Math.hypot(IP.x - spotX, IP.y - H*.44) / 30;   // how far the angler wandered
+      const blocks = Math.hypot(IP.x - _fishAnchor.x, IP.y - _fishAnchor.y) / 30;   // how far the angler wandered from the cast
       if (blocks >= 4){
         // line snaps — a frayed end whips back to the rod, and the cast ends
         ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=1;
         ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(tipX+3, tipY+9); ctx.stroke();
         toast("🎣 Too far — your line snapped!");
         log("🎣 You wandered too far and your line snapped.", "");
+        try{ SFX.snap(); }catch(e){}
         S.action = null; renderNav();
       } else if (blocks > 3){
         // retracted — the angler just holds the rod, a short slack line dangling
@@ -5078,7 +5110,7 @@ function drawInterior(t){
       _homeProp(ctx, _p.k, _p.x, _p.y, W, H, t, _ft, _pal);
     }
     // --- NPC daily routine (time-of-day activity) ---
-    _homeVilLbl = null;
+    _homeVilLbl = null; _homeAwayName = null;
     if (_v){
       const _nHr=gameHour();
       if (_nHr>=22||_nHr<7){
@@ -5098,13 +5130,12 @@ function drawInterior(t){
         ctx.fillText("Zzz",_bX+(_bConf.d?Math.round(_bW*0.6):18)+6,_bY-4);
         ctx.globalAlpha=1;
       } else if ((_nHr>=9.5&&_nHr<12)||(_nHr>=13.5&&_nHr<18.5)){
-        // at work — sticky note on the table
-        ctx.fillStyle="#f4e8c8"; ctx.fillRect(W/2-24,H-52,48,28);
-        ctx.strokeStyle="#8a6a40"; ctx.lineWidth=0.8; ctx.strokeRect(W/2-24,H-52,48,28);
-        ctx.fillStyle="#6a4a20"; ctx.font="bold 6px monospace"; ctx.textAlign="center";
-        ctx.fillText("Gone to",W/2,H-40); ctx.fillText("work!",W/2,H-30);
-        ctx.fillText("— "+_v.n,W/2,H-22); ctx.textAlign="left";
-        drawEmojiC(ctx,"📌",W/2+22,H-54,8);
+        // at work — a pinned note on the table; the crisp, legible text is drawn as
+        // an HTML overlay (set _homeAwayName), not tiny canvas text.
+        ctx.fillStyle="#f4e8c8"; ctx.fillRect(W/2-26,H-54,52,30);
+        ctx.strokeStyle="#8a6a40"; ctx.lineWidth=0.8; ctx.strokeRect(W/2-26,H-54,52,30);
+        drawEmojiC(ctx,"📌",W/2+24,H-56,8);
+        _homeAwayName = _v.n;
       } else {
         // awake at home → wander between rooms doing chores
         const _wp = [[66,96],[54,128],[158,165],[112,150],[Math.max(22,_bX-16),112]];
@@ -5876,6 +5907,10 @@ function drawInterior(t){
         _iHtml += `<div class="int-vlbl" style="left:${_hx.toFixed(1)}%;top:${((_homeVilLbl.y-30)/H*100).toFixed(1)}%">${_homeVilLbl.name}</div>`;
       }
     }
+    // crisp "gone to work" note when the occupant is out (legible, not tiny canvas text)
+    if (S.tab==="home" && _homeAwayName){
+      _iHtml += `<div class="int-note" style="left:50%;top:${((H-40)/H*100).toFixed(1)}%">🏢 Gone to work!<span class="int-note-sub">— ${esc(_homeAwayName)}</span></div>`;
+    }
     // trespass badge
     if (S.tab==="home" && S.trespass?.active){
       _iHtml += `<div style="position:absolute;left:6px;bottom:24px;background:rgba(180,20,20,.9);color:#fff;font:700 9px 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:3px;pointer-events:none;letter-spacing:.5px">⚠ TRESPASSING</div>`;
@@ -6087,6 +6122,16 @@ function interiorClick(e){
   const rect = cv.getBoundingClientRect();
   const cx = (e.clientX - rect.left) * (icanvasW() / rect.width);
   const cy = (e.clientY - rect.top) * (icanvasH() / rect.height);
+  // fishing: click anywhere on the water to cast your line there
+  if (S.tab === "fishing" && cy < icanvasH()*0.44){
+    _fishSpot = { x: Math.max(16, Math.min(icanvasW()-16, cx)), y: Math.max(12, cy) };
+    _fishAnchor = { x: IP.x, y: IP.y };
+    _fishCastT = (typeof performance!=="undefined"?performance.now():Date.now());
+    if (!(S.action?.skill === "fishing")){ S.action = { skill:"fishing", id:"fish", progress:0 }; log("▶ Cast your line."); }
+    _fishActiveId = "fish";
+    renderNav(); save();
+    return;
+  }
   // check if click hits a station node
   const stations = STATION_DEFS[S.tab];
   if (stations){

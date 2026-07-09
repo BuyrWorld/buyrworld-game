@@ -478,6 +478,10 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
   padding:8px 12px; pointer-events:none;
   font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.5; color:#f0e8d0;
 }
+/* crisp interior note (e.g. "Gone to work!") — legible like the dialogue */
+.int-note{ position:absolute; transform:translate(-50%,-100%); background:#fff8e6; color:#453423; border:2px solid #8c6947; border-radius:6px; padding:4px 10px; font:700 12px/1.3 'IBM Plex Mono',monospace; white-space:nowrap; text-align:center; pointer-events:none; box-shadow:0 2px 5px rgba(0,0,0,.35); z-index:6; }
+.int-note .int-note-sub{ display:block; font-weight:600; font-size:10px; color:#8a7060; margin-top:1px; }
+.fullscreen-mode .int-note{ font-size:14px; }
 .int-chat-name{ color:#ffd666; font-weight:700; }
 .int-chat-dim{ color:#8a7060; font-size:10px; }
 .ilbl{
