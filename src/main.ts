@@ -1996,6 +1996,30 @@ function villageClick(e){
   VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
   VP.pending = null;
 }
+// Draws a proper pixel tool in the swinging arm's local frame (arm points +y, so
+// the handle runs down the arm and the tier-coloured head sits at the far end).
+function drawSwingTool(ctx, type, color){
+  color = color || "#9aa2ad";
+  ctx.fillStyle = "#8a5a2a";                 // wooden handle
+  ctx.fillRect(-1, 3, 2, 12);
+  ctx.fillStyle = "#6a431e";                 // handle shade
+  ctx.fillRect(0, 3, 1, 12);
+  ctx.fillStyle = color;
+  if (type === "pick"){
+    ctx.fillRect(-6, 13, 12, 3);             // cross bar
+    ctx.beginPath(); ctx.moveTo(-6,12); ctx.lineTo(-10,15); ctx.lineTo(-6,16); ctx.closePath(); ctx.fill();  // left point
+    ctx.beginPath(); ctx.moveTo(6,12);  ctx.lineTo(10,15);  ctx.lineTo(6,16);  ctx.closePath(); ctx.fill();  // right point
+    ctx.fillStyle = "#ffffff66"; ctx.fillRect(-5, 13, 10, 1);   // top highlight
+  } else if (type === "axe"){
+    ctx.fillRect(1, 11, 6, 8);               // blade
+    ctx.beginPath(); ctx.moveTo(7,11); ctx.lineTo(9,15); ctx.lineTo(7,19); ctx.closePath(); ctx.fill();      // curved edge
+    ctx.fillStyle = "#dfe6ef"; ctx.fillRect(6, 12, 1, 6);       // edge shine
+  } else { // hammer
+    ctx.fillRect(-4, 11, 8, 6);              // block head
+    ctx.fillStyle = "#dfe6ef"; ctx.fillRect(-4, 11, 8, 1);      // shine
+    ctx.fillStyle = "#00000033"; ctx.fillRect(-4, 16, 8, 1);    // shade
+  }
+}
 function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, trouser, toolColor, female, scale=1.0, hat='none', hatColor='#2a1a0a', opts:any={}){
   skin    = skin    || "#f2c49a";
   trouser = trouser || "#4a5a8a";
@@ -2120,18 +2144,49 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
       ctx.fillStyle = (hatColor||'#c8a020') + '88'; ctx.fillRect(-10,-16,22,2);
     }
   }
-  if (tool){
-    const swing = Math.sin(t*11);
-    // pumping arm on the tool side so the whole body reads as "doing the work"
-    ctx.save(); ctx.translate(facing*5,-5); ctx.rotate(facing*(swing*0.8-0.35));
-    ctx.fillStyle=shirt; ctx.fillRect(-1.5,0,3,6); ctx.fillStyle=skin; ctx.fillRect(-1.5,5,3,4);
+  // Strike tools (pick / axe / hammer) get a proper animation cycle: a slow
+  // wind-up raising the tool overhead, a fast downswing, an impact with sparks
+  // and dust, then an ease back to rest. Non-strike tools keep a gentle emoji.
+  const _swingType = tool==="⛏️" ? "pick" : tool==="🪓" ? "axe" : tool==="🔨" ? "hammer" : null;
+  if (_swingType){
+    const PERIOD = 0.85;                                   // seconds per full swing
+    const p = (((t % PERIOD) + PERIOD) % PERIOD) / PERIOD; // phase 0..1
+    const REST = -0.30, UP = -2.30, HIT = 0.72;            // arm angles (radians)
+    const easeOut = u => 1-(1-u)*(1-u);
+    const easeIn  = u => u*u;
+    const easeIO  = u => u<0.5 ? 2*u*u : 1-Math.pow(-2*u+2,2)/2;
+    let ang, dip = 0;
+    if (p < 0.50){ ang = REST + (UP-REST)*easeOut(p/0.50); }            // wind up (slow)
+    else if (p < 0.64){ const u=(p-0.50)/0.14; ang = UP + (HIT-UP)*easeIn(u); dip = u*1.4; }  // downswing (fast)
+    else { const u=(p-0.64)/0.36; ang = HIT + (REST-HIT)*easeIO(u); dip = 1.4*(1-u); }         // recover
+    const impact = (p>=0.60 && p<0.75) ? 1-(p-0.60)/0.15 : 0;
+    // rear arm braces the body
+    ctx.fillStyle=shirt; ctx.fillRect(facing*-8,-4,3,7);
+    ctx.fillStyle=skin;  ctx.fillRect(facing*-8,2,3,3);
+    // swinging arm + tool, pivoted at the shoulder, with a small impact dip
+    ctx.save();
+    ctx.translate(facing*5, -6 + dip);
+    ctx.rotate(facing*ang);
+    ctx.fillStyle=shirt; ctx.fillRect(-1.5,0,3,7);        // upper arm
+    ctx.fillStyle=skin;  ctx.fillRect(-1.5,6,3,4);        // hand grips handle
+    drawSwingTool(ctx, _swingType, toolColor);
     ctx.restore();
-    ctx.save(); ctx.translate(facing*9,-4); ctx.rotate(facing*(swing*0.9-0.4));
-    if (toolColor){ ctx.fillStyle=toolColor+"99"; ctx.beginPath(); ctx.arc(facing*7,-6,7,0,7); ctx.fill(); }
+    // impact flash — sparks + a puff of dust where the tool lands
+    if (impact > 0){
+      const hx = facing*15, hy = 9 + dip;
+      ctx.save(); ctx.globalAlpha = impact;
+      ctx.fillStyle = _swingType==="axe" ? "#f6e0a0" : "#fff4c0";
+      for (let i=0;i<5;i++){ const a=-0.5+i*0.5, d=4+(1-impact)*8; ctx.fillRect(Math.round(hx+Math.cos(a)*d), Math.round(hy-Math.sin(a)*d), 2, 2); }
+      ctx.fillStyle = "rgba(168,150,112,.5)"; ctx.fillRect(hx-3, hy+2, 7, 2);
+      ctx.restore();
+    }
+  } else if (tool){
+    // gentle handheld emoji for non-strike activities (fishing rod, herbs, jar, wrench)
+    const sway = Math.sin(t*4)*0.18;
+    ctx.save(); ctx.translate(facing*9,-4); ctx.rotate(facing*(sway-0.2));
     ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(tool, facing*7,-6);
     ctx.restore();
-    if (swing>0.82){ ctx.fillStyle="#fff"; ctx.fillRect(facing*14+((Math.floor(t*11)*7)%6),-2,2,2); ctx.fillRect(facing*17-((Math.floor(t*11)*5)%5),2,2,2); }
   }
   ctx.restore();
 }
