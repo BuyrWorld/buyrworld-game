@@ -3435,20 +3435,23 @@ function drawExtras(ctx, t){
       }
       for(let px=_rx0+20; px<_rx1-10; px+=52) drawEmojiC(ctx,"🎃", px, _ryBase-2, 9);
     }
-    // Summer Fete NPC activities (billboard drawn before buildings in drawSeasonalBillboard)
+    // Summer Fete — a purely decorative event ABOVE the high street so it never
+    // obstructs anyone walking. A striped marquee anchors it.
     if (_curSeason === "summer"){
-      // Fete NPC activities along the high street (picnic, ice cream, bunting helpers)
-      drawEmojiC(ctx,"🍦", 44*TILE+8,  _ryBase-6, 10);
-      drawEmojiC(ctx,"🎪", 46*TILE+4,  _ryBase-6, 10);
-      const _fns = t * 0.6;
-      // two fete visitors strolling
-      drawPerson(ctx, 5*TILE+4+Math.sin(_fns)*6, _ryBase+16, "#c09060","#ff8a5c", t, false, 1, null, "right");
-      drawPerson(ctx, 8*TILE+8+Math.cos(_fns*0.7)*8, _ryBase+16, "#6a8a40","#ffd666", t, false, -1, null, "left");
-      // picnic blanket near the post office
-      ctx.fillStyle="#d05858"; ctx.fillRect(15*TILE+4, _ryBase+14, 24, 14);
-      ctx.fillStyle="#f08080"; for(let pk=0;pk<3;pk++) ctx.fillRect(15*TILE+4+pk*8, _ryBase+14, 7, 13);
-      drawEmojiC(ctx,"🧺", 15*TILE+16, _ryBase+14, 12);
-      drawPerson(ctx, 16*TILE, _ryBase+26, "#8a5a20","#4a8ae8", t, true, 1, null, "down");
+      const _topY = 2*TILE;   // row 2, above the walkable street (row 4)
+      // striped marquee tent centred on the high street
+      const _mqX = 20*TILE;
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(_mqX, _topY+30, 40, 6, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#f6ecd8"; ctx.fillRect(_mqX-34, _topY+14, 68, 18);                 // tent body
+      for (let s=0;s<7;s++){ ctx.fillStyle = s%2 ? "#e84060" : "#fff6e6"; ctx.beginPath(); ctx.moveTo(_mqX-34+s*10, _topY+15); ctx.lineTo(_mqX-34+s*10+5, _topY+2); ctx.lineTo(_mqX-34+s*10+10, _topY+15); ctx.closePath(); ctx.fill(); }  // striped roof
+      ctx.fillStyle="#8a6a4a"; ctx.fillRect(_mqX-34, _topY+14, 2, 18); ctx.fillRect(_mqX+32, _topY+14, 2, 18);  // poles
+      ctx.fillStyle="#3aa66a"; ctx.beginPath(); ctx.moveTo(_mqX, _topY-6); ctx.lineTo(_mqX+9, _topY-3); ctx.lineTo(_mqX, _topY); ctx.closePath(); ctx.fill();  // pennant
+      ctx.fillStyle="#6a4a2f"; ctx.fillRect(_mqX-0.5, _topY-6, 1, 8);
+      drawEmojiC(ctx,"🎪", _mqX, _topY+22, 12);
+      // bunting helpers & treats, all above the street
+      drawEmojiC(ctx,"🍦", 30*TILE, _topY+20, 11);
+      drawEmojiC(ctx,"🎈", 12*TILE, _topY+18, 12);
+      drawEmojiC(ctx,"🎈", 28*TILE, _topY+18, 12);
     }
   }
   // park (tx:76-86, ty:6-10): traditional manicured park
