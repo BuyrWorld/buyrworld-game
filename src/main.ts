@@ -2617,6 +2617,52 @@ function renderJournal(){
   el.addEventListener("click", e => { if (e.target === el) el.remove(); });
 }
 function openJournalPanel(){ closeJournalModal(); renderJournal(); }
+// ---- v0.10 Roadmap / About (Task 10) — honest early-prototype framing ----
+// Set FEEDBACK_LINK to your own channel (email, form, Discord…). Leave "" to show
+// a neutral message instead of a link — no personal contact is hard-coded.
+const FEEDBACK_LINK = "";
+function openRoadmap(){
+  const ex = document.getElementById("roadmap-modal"); if (ex){ ex.remove(); return; }
+  const list = (items) => items.map(i => `<li style="margin:3px 0">${i}</li>`).join("");
+  const nowItems = [
+    "⛏️ The full supply chain — mine, smelt, craft, trade &amp; deliver",
+    "🎣 Fishing, foraging, woodcutting &amp; the artisan's shed",
+    "🏡 The village: 17 named neighbours with routines &amp; conversations",
+    "🍳 Cooking, gardening, your own cottage &amp; furniture",
+    "🏦 Districts, the exchange, the bank, automation &amp; the power grid",
+    "🍺 The pub, nightclub, festivals &amp; seasonal events",
+    "🧭 The Founder's Journey, 📔 Valley Journal &amp; achievements",
+  ];
+  const nextItems = [
+    "📖 More story, characters &amp; guided quests",
+    "💖 Deeper relationships &amp; village events",
+    "⚖️ Ongoing balancing &amp; polish — shaped by your feedback",
+    "📱 Continued mobile &amp; couch/TV improvements",
+  ];
+  const feedback = FEEDBACK_LINK
+    ? `<a href="${FEEDBACK_LINK}" target="_blank" rel="noopener" style="color:#4a9ad8;font-weight:700">Share your feedback →</a>`
+    : `Your feedback genuinely shapes what gets built next — thank you for playing this early.`;
+  const el = document.createElement("div");
+  el.id = "roadmap-modal"; el.className = "dd-modal";
+  el.innerHTML = `<div class="dd-card" style="max-width:520px">
+    <button class="vp-close" onclick="document.getElementById('roadmap-modal').remove()">✕</button>
+    <div class="dd-title">🗺️ BuyrWorld v0.10 — Roadmap</div>
+    <div class="dd-sub">A cosy supply-chain life sim · early prototype, updated often</div>
+    <div style="background:rgba(232,150,30,.1);border:1px solid rgba(232,150,30,.35);border-radius:6px;padding:9px 11px;margin-bottom:10px;font-size:12px;line-height:1.5">
+      🚧 <b>This is an early prototype.</b> It's playable end-to-end, but things will
+      change and grow. Your progress saves in this browser — export it from the
+      💾 Save tab to keep it safe.
+    </div>
+    <div style="font-weight:800;font-size:13px;color:#4aa86a;margin-bottom:2px">✅ Playable now</div>
+    <ul style="font-size:12px;color:var(--text);margin:0 0 12px;padding-left:18px">${list(nowItems)}</ul>
+    <div style="font-weight:800;font-size:13px;color:#8a6a2a;margin-bottom:2px">🔜 Coming next</div>
+    <ul style="font-size:12px;color:var(--text);margin:0 0 12px;padding-left:18px">${list(nextItems)}</ul>
+    <div style="font-weight:800;font-size:13px;margin-bottom:2px">💬 Feedback</div>
+    <p style="font-size:12px;color:var(--dim);margin:0">${feedback}</p>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+}
 // ---- The Village Kitchen — cook what you grow, catch and forage into meals ----
 function mealBuffRemainingMs(){ return S.mealBuff ? Math.max(0, S.mealBuff.until - Date.now()) : 0; }
 function cookRecipe(id){
@@ -8194,6 +8240,10 @@ function renderSettings(){
     </div>
     <textarea id="savebox" placeholder="Save string appears here / paste one here to import" style="margin-top:10px;"></textarea>
     <p style="font-size:11px;color:var(--dim);margin-top:10px;">Stats: ${fmt(S.counters.actions)} actions · ${fmt(S.counters.contracts)} contracts delivered · Total level ${totalLvl()}</p>
+  </div>
+  <div class="panel"><h2>🗺️ About &amp; Roadmap<small>What's playable now and what's coming next.</small></h2>
+    <p style="font-size:12px;color:var(--dim);">BuyrWorld is an early prototype, updated often.</p>
+    <div class="row"><button class="btn" id="btn-roadmap">Open v0.10 Roadmap</button></div>
   </div>`;
 }
 function _animCharPreview(){
@@ -9281,6 +9331,8 @@ function bindMain(){
       }
     };
   }
+  const _rm = document.getElementById("btn-roadmap");
+  if (_rm) _rm.onclick = () => openRoadmap();
 }
 
 function updateHud(){
@@ -9333,6 +9385,8 @@ document.getElementById("btn-ledger")?.addEventListener("click", () => openLedge
 document.getElementById("btn-inv")?.addEventListener("click", () => toggleInventory());
 document.getElementById("btn-journey")?.addEventListener("click", () => openJourney());
 document.getElementById("btn-journal")?.addEventListener("click", () => openJournalPanel());
+document.getElementById("version-label")?.addEventListener("click", () => openRoadmap());
+document.getElementById("version-label")?.addEventListener("keydown", (e:any) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openRoadmap(); } });
 syncJourneyBtn(); syncJournalBtn();
 window.addEventListener("keydown", e => {
   if ((e.key==="j"||e.key==="J") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ openJourney(); return; }
