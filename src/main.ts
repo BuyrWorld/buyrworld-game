@@ -2043,7 +2043,8 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   const _swingType = (!moving && tool==="⛏️") ? "pick" : (!moving && tool==="🪓") ? "axe" : (!moving && tool==="🔨") ? "hammer" : null;
   const _fishing = !moving && tool === "🎣";
   const _forage = tool === "🌿" && !moving;
-  const _activity = _swingType ? "swing" : _fishing ? "fish" : _forage ? "forage" : null;
+  const _manu = !moving && (tool === "🔧" || tool === "🫙");   // workbench / artisan work
+  const _activity = _swingType ? "swing" : _fishing ? "fish" : _forage ? "forage" : _manu ? "manu" : null;
   let _fPhase = 0, _fBend = 0;
   if (_forage){ const FP = 1.3; _fPhase = (((t % FP) + FP) % FP) / FP; _fBend = _fPhase < 0.65 ? Math.sin(_fPhase/0.65*Math.PI) : 0; }
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
@@ -2233,8 +2234,21 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     ctx.fillStyle="#e8d84a"; ctx.fillRect(Math.round(tipX)-1, Math.round(tipY)-1, 2, 2);   // rod-tip guide
     // publish the rod tip in world space (scale assumed 1 for in-world sprites)
     _fishRodTip = { x: Math.round(x) + tipX, y: Math.round(y+bob) + tipY };
+  } else if (_manu){
+    // manufacturing / crafting: both hands work at the bench in front, moving in an
+    // alternating rhythm, with the odd spark or glint on the work beat.
+    const wp = Math.sin(t*7), wp2 = Math.sin(t*7 + 1.4);
+    ctx.fillStyle=shirt;
+    ctx.fillRect(facing*2-1, -6 + wp*1.3, 3, 7);       // near arm
+    ctx.fillRect(facing*6-1, -6 + wp2*1.3, 3, 7);      // far arm
+    ctx.fillStyle=skin;
+    ctx.fillRect(facing*2-1, wp*1.3, 3, 3);            // near hand
+    ctx.fillRect(facing*6-1, 1 + wp2*1.3, 3, 3);       // far hand
+    // the part being worked, sitting on the bench in front
+    ctx.fillStyle = tool==="🫙" ? "#b8925a" : "#8a94a2"; ctx.fillRect(facing*3, 4, 6, 3);
+    if (wp > 0.85){ for (let i=0;i<3;i++){ ctx.fillStyle = i%2 ? "#ffe070" : (tool==="🫙"?"#ffd0a0":"#9ad8ff"); ctx.fillRect(facing*5 + i*2 - 1, 1 - i, 2, 2); } }
   } else if (tool){
-    // gentle handheld emoji for other activities (jar, wrench, etc.)
+    // gentle handheld emoji for anything else
     const sway = Math.sin(t*4)*0.18;
     ctx.save(); ctx.translate(facing*9,-4); ctx.rotate(facing*(sway-0.2));
     ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
