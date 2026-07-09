@@ -4153,6 +4153,7 @@ function drawVillage(t){
     }
     html += firstRunHintHtml();   // Task 3/4: opening movement + direction guidance
     html += questMarkerHtml();    // Task 4: marker/arrow to the first Iron Rock
+    if (_comboCount >= 3 && (Date.now()-_comboAt) < 3200){ html += `<div class="combo-badge">🔥 ${_comboCount} in a row!</div>`; }
     // a gentle marker so YOUR cottage is easy to pick out from the neighbours
     {
       const _ph = V_OBJECTS.find(o => o.id === "player_home");
@@ -7740,6 +7741,9 @@ function completeAction(act, skill, silent){
       _intVfx.push({ x: _st ? _st.fx*icanvasW() : icanvasW()/2, y: _st ? _st.fy*icanvasH() : icanvasH()*0.5, born: Date.now(), ic: ITEMS[_oid].ic, n: _out[_oid] });
       if (_intVfx.length > 20) _intVfx.shift();
     }
+  }
+  // consecutive-action combo streak — for any activity, village or interior
+  if (!silent){
     const _n = Date.now();
     const _win = (act.ms * speedMult(skill)) * 2.2 + 1500;
     _comboCount = (_comboSkill === skill && (_n - _comboAt) < _win) ? _comboCount + 1 : 1;
