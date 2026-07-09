@@ -20,6 +20,7 @@ import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
+import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
@@ -143,7 +144,7 @@ function buyPrice(npc, it){
 function sellPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()));
+  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell'));
   return Math.max(1, Math.min(p, buyPrice(npc, it) - 1));
 }
 function doTrade(npcId, it, qty, mode){
@@ -378,6 +379,16 @@ const SFX = (() => {
       osc("triangle", 1047, 1047, 0.28, 0.07*mv, 0.30);
     }catch(e){}
   },
+  cook(){
+    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    try{
+      ensure(); const mv = volLevel() / 0.75;
+      hit(0.07*mv, 0.22);                         // sizzle
+      hit(0.05*mv, 0.18, 0.10);
+      osc("sine", 440, 660, 0.18, 0.045*mv, 0.14); // a cheerful "ready!" chime
+      osc("sine", 660, 880, 0.20, 0.05*mv, 0.30);
+    }catch(e){}
+  },
   fanfare(){
     if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
     try{
@@ -526,6 +537,9 @@ const ACH = [
   { id:"daily_30",    ic:"🏆", n:"Dedicated Supplier",   ds:"Complete 30 daily village challenges.",           r:500, c:()=>(S.counters?.challengesClaimed||0)>=30 },
   { id:"first_harvest",ic:"🌱", n:"First Harvest",       ds:"Harvest your first crop from the cottage garden.", r:40,   c:()=>(S.counters?.gardenHarvests||0)>=1 },
   { id:"green_thumb",  ic:"🌻", n:"Green Thumb",         ds:"Harvest 20 crops from the cottage garden.",        r:150,  c:()=>(S.counters?.gardenHarvests||0)>=20 },
+  { id:"home_cook",    ic:"🍳", n:"Home Cook",           ds:"Cook your first meal in the kitchen.",             r:40,   c:()=>(S.counters?.mealsCooked||0)>=1 },
+  { id:"village_chef", ic:"🧑‍🍳", n:"Village Chef",        ds:"Cook 25 meals in the kitchen.",                    r:250,  c:()=>(S.counters?.mealsCooked||0)>=25 },
+  { id:"full_menu",    ic:"🍱", n:"Full Menu",            ds:"Cook every recipe in the kitchen at least once.",  r:600,  c:()=>RECIPES.every(r=>(S.prod?.[r.out]||0)>=1) },
   { id:"beloved_greenfield", ic:"💝", n:"Beloved of Featherstone", ds:"Reach Best Friends with all 17 villagers and collect every keepsake.", r:2000, c:()=>(S.keepsakes?.length||0)>=17 },
   { id:"home_decorated",    ic:"🛋️", n:"Home Sweet Home",    ds:"Place your first piece of furniture.",         r:50,   c:()=>(S.placedFurniture?.length||0)>=1 },
   { id:"interior_designer", ic:"🏠", n:"Interior Designer",  ds:"Have 5 pieces of furniture placed at once.",   r:200,  c:()=>(S.placedFurniture?.length||0)>=5 },
@@ -1636,7 +1650,7 @@ const SYSTEM_TUTORIAL: Record<string,string> = {
   upgrades:'Town Hall — spend profits on permanent upgrades: better tools, faster actions and passive boosts. They pay for themselves fast.',
   village_fund:'Village Fund — donate coins to beautify Featherstone and earn lasting prestige bonuses for the whole valley.',
   // Services & leisure
-  cafe:'Café — order a coffee for a short town-wide speed boost to every activity. Grab one before a big session.',
+  cafe:'Café — order a coffee for a short speed boost, or head to the Kitchen to cook what you grow and catch into meals: eat one for a buff, or serve it for a premium.',
   pub:'Pub — a pint grants a handy buff for a while, but pace yourself through the evening.',
   nightclub:'Nightclub — the theme rotates every few days. Hit the dance floor for an energy buff and a bit of nightlife.',
   university:'University — enrol in a degree for a lasting XP boost in that subject. Your studies complete over real time.',
@@ -2413,6 +2427,113 @@ function wireJourneyButtons(root){
   if (b) b.onclick = () => claimJourneyStage();
 }
 function openJourney(){ closeJourney(); renderJourney(); }
+// ---- The Village Kitchen — cook what you grow, catch and forage into meals ----
+function mealBuffRemainingMs(){ return S.mealBuff ? Math.max(0, S.mealBuff.until - Date.now()) : 0; }
+function cookRecipe(id){
+  const r = recipeById(id); if (!r) return;
+  if (!recipeUnlocked(r, totalLvl())){ toast(`🔒 Unlocks at total level ${r.unlock}.`); return; }
+  if (!canCook(r, S.items)){
+    const miss = Object.entries(r.in).find(([k,q]) => (S.items[k]||0) < q);
+    toast(miss ? `Need more ${ITEMS[miss[0]]?.n||miss[0]}.` : "Missing ingredients."); return;
+  }
+  for (const [k,q] of Object.entries(r.in)) S.items[k] = (S.items[k]||0) - q;
+  addItem(r.out, 1);
+  S.prod[r.out] = (S.prod[r.out]||0) + 1;
+  S.counters.mealsCooked = (S.counters.mealsCooked||0) + 1;
+  try{ SFX.cook(); }catch(e){}
+  toast(`${r.ic} Cooked ${r.name}! Eat it for a buff, or serve it for coins.`);
+  log(`${r.ic} Cooked <b>${r.name}</b>.`, "good");
+  achCheck(); renderMain(); updateHud(); save();
+}
+function eatMeal(id){
+  const r = recipeById(id); if (!r) return;
+  if ((S.items[id]||0) < 1){ toast("You don't have that meal."); return; }
+  S.items[id] -= 1;
+  const now = Date.now();
+  // eating the same kind of buff extends it; a different kind replaces it fresh
+  const base = (S.mealBuff && S.mealBuff.kind === r.buff.kind && S.mealBuff.until > now) ? S.mealBuff.until : now;
+  S.mealBuff = { kind:r.buff.kind, mult:r.buff.mult, until: base + buffDurationMs(r), label:r.buff.label, ic:r.buff.ic, name:r.name };
+  S.counters.mealsEaten = (S.counters.mealsEaten||0) + 1;
+  const eff = r.buff.kind==='speed' ? `${Math.round((1-r.buff.mult)*100)}% faster actions`
+            : r.buff.kind==='xp'    ? `+${Math.round((r.buff.mult-1)*100)}% skill XP`
+            : `+${Math.round((r.buff.mult-1)*100)}% sale prices`;
+  toast(`${r.buff.ic} ${r.buff.label}! ${eff} for ${r.buff.mins} min.`);
+  log(`${r.buff.ic} Ate <b>${r.name}</b> — ${eff} for ${r.buff.mins} min.`, "good");
+  renderMain(); updateHud(); save();
+}
+function serveMeal(id){
+  const r = recipeById(id); if (!r) return;
+  if ((S.items[id]||0) < 1){ toast("You don't have that meal."); return; }
+  S.items[id] -= 1;
+  const val = ITEMS[id].v;
+  S.coins += val; S.counters.coinsEarned = (S.counters.coinsEarned||0) + val;
+  toast(`${r.ic} Served ${r.name} to the café — +${fmt(val)} coins.`);
+  log(`${r.ic} Served <b>${r.name}</b> for ${fmt(val)}c.`, "good");
+  renderMain(); updateHud(); save();
+}
+// Renders the kitchen; `where` tags the heading ("café" or "cottage").
+function renderKitchen(where){
+  const tl = totalLvl();
+  const buffMs = mealBuffRemainingMs();
+  const buffBanner = buffMs > 0 && S.mealBuff
+    ? `<div class="panel" style="background:rgba(90,150,60,.16);border:1px solid #5a9a3c;padding:8px;margin-bottom:8px">
+        <b style="color:#5a9a3c">${S.mealBuff.ic} ${S.mealBuff.label} active</b>
+        <span style="color:var(--dim);font-size:11px"> · ${Math.ceil(buffMs/1000)}s left</span></div>`
+    : "";
+  const cards = RECIPES.map(r => {
+    const unlocked = recipeUnlocked(r, tl);
+    if (!unlocked){
+      return `<div class="card" style="padding:8px;opacity:.6;display:flex;align-items:center;gap:8px">
+        <span style="font-size:22px;filter:grayscale(1)">${r.ic}</span>
+        <div style="flex:1"><div style="font-weight:700;font-size:12px">🔒 ${r.name}</div>
+        <div style="font-size:11px;color:var(--dim)">Unlocks at total level ${r.unlock}</div></div></div>`;
+    }
+    const ok = canCook(r, S.items);
+    const ingr = Object.entries(r.in).map(([k,q]) => {
+      const have = S.items[k]||0;
+      const col = have >= q ? "var(--dim)" : "#d05a5a";
+      return `<span style="color:${col};font-size:11px;white-space:nowrap">${ITEMS[k]?.ic||"📦"} ${have}/${q}</span>`;
+    }).join(' · ');
+    const eff = r.buff.kind==='speed' ? `${Math.round((1-r.buff.mult)*100)}% faster`
+              : r.buff.kind==='xp'    ? `+${Math.round((r.buff.mult-1)*100)}% XP`
+              : `+${Math.round((r.buff.mult-1)*100)}% sales`;
+    const owned = S.items[r.out]||0;
+    const cookBtn = `<button data-cook="${r.id}" style="background:${ok?'#8a5a1a':'#555'};color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:${ok?'pointer':'default'};font-size:12px;font-weight:700"${ok?'':' disabled'}>${r.ic} Cook</button>`;
+    const ownedRow = owned > 0
+      ? `<div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap">
+          <span style="font-size:11px;color:#5a9a3c;font-weight:700">You have ${owned}</span>
+          <button data-eat="${r.id}" style="background:#4a8a3a;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">🍽️ Eat</button>
+          <button data-serve="${r.id}" style="background:#3a6a8a;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Serve +${fmt(ITEMS[r.out].v)}c</button>
+        </div>`
+      : "";
+    return `<div class="card" style="padding:8px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:24px">${r.ic}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px">${r.name}</div>
+          <div style="font-size:11px;color:var(--dim)">${r.desc}</div>
+        </div>
+        ${cookBtn}
+      </div>
+      <div style="margin-top:5px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <span>${ingr}</span>
+        <span style="font-size:11px;color:#8a6a2a;font-weight:700">${r.buff.ic} ${eff} · ${r.buff.mins}m</span>
+      </div>
+      ${ownedRow}
+    </div>`;
+  }).join('');
+  const nextLocked = RECIPES.find(r => !recipeUnlocked(r, tl));
+  const hint = nextLocked
+    ? `<p style="font-size:11px;color:var(--dim);margin:6px 0 0">Level up any skills to unlock more recipes — next at total level ${nextLocked.unlock}.</p>`
+    : `<p style="font-size:11px;color:#ffd666;margin:6px 0 0">✨ Every recipe unlocked — you're a master cook!</p>`;
+  return `<div class="panel" style="padding:10px">
+    <h3 style="margin:0 0 6px;font-size:14px">👩‍🍳 The Kitchen</h3>
+    <p style="color:var(--dim);font-size:12px;margin:0 0 8px">Cook what you grow, catch and forage into meals. <b>Eat</b> one for a timed buff, or <b>Serve</b> it for a premium.</p>
+    ${buffBanner}
+    ${cards}
+    ${hint}
+  </div>`;
+}
 // ---- Inventory: a large, couch-legible view of everything you own ----
 function toggleInventory(){
   const ex = document.getElementById("inv-modal");
@@ -5718,6 +5839,7 @@ function freshState(){
     appearance: Object.assign({}, DEFAULT_APPEARANCE),
     worldEvent: null, nextEventAt: Date.now() + 3*60*1000,
     caffBuff: 0,
+    mealBuff: null,
     homeTier: 0,
     deliveryReq: null, nextDeliveryAt: Date.now() + 5*60*1000,
     exchange: { positions:[] },
@@ -5826,6 +5948,7 @@ function load(){
       if (!parsed.appearance) S.appearance = Object.assign({}, DEFAULT_APPEARANCE);
       if (!("worldEvent" in parsed)) { S.worldEvent = null; S.nextEventAt = Date.now() + 5*60*1000; }
       if (!("caffBuff" in parsed)) S.caffBuff = 0;
+      if (!("mealBuff" in parsed)) S.mealBuff = null;
       if (!("homeTier" in parsed)) S.homeTier = 0;
       if (!("deliveryReq" in parsed)) { S.deliveryReq = null; S.nextDeliveryAt = Date.now() + 5*60*1000; }
       if (!("exchange" in parsed)) S.exchange = { positions:[] };
@@ -5874,6 +5997,12 @@ function itemCount(id){ return S.items[id] || 0; }
 function addItem(id, q){ S.items[id] = (S.items[id]||0) + q; }
 function findAction(skill, id){ return SKILLS[skill].actions.find(a=>a.id===id); }
 
+// Active meal-buff multiplier for a given kind (1 when no matching buff is active).
+// speed buffs are <1 (faster); xp/sell buffs are >1 (bonus).
+function mealBuffMult(kind){
+  const b = S.mealBuff;
+  return (b && b.kind === kind && Date.now() < b.until) ? b.mult : 1;
+}
 function speedMult(skill){
   let m = 1;
   UPGRADES.forEach(u => { if (u.skill===skill && u.mult && S.upgrades[u.id]) m = Math.min(m, u.mult); });
@@ -5889,6 +6018,7 @@ function speedMult(skill){
   if (S.caffBuff && Date.now() < S.caffBuff) m *= 0.80;
   if (S.pintBuff && Date.now() < S.pintBuff) m *= 0.90;
   if (S.danceBuff && Date.now() < S.danceBuff) m *= 0.85;
+  m *= mealBuffMult('speed');   // cooking: a "well fed" speed buff from an eaten meal
   m *= autoSpeedMult(skill, S.automatons?.[skill]);   // robotics: assigned speed automaton
   m *= (1 - gridBonus(S.grid?.tier || 0));            // energy: town-wide power-grid efficiency
   const _sb = skillSpeedBonus(skill);
@@ -6612,6 +6742,7 @@ function grantXp(skill, xp){
   const _degCourse = COURSES.find(c => c.skill===skill && c.perk==="xp" && S.degrees && S.degrees.includes(c.id));
   if (_degCourse) xp = Math.round(xp * (1 + _degCourse.val));
   if ((S.schoolBuff||0) > Date.now()) xp = Math.round(xp * 1.15);
+  { const _mb = mealBuffMult('xp'); if (_mb !== 1) xp = Math.round(xp * _mb); }   // cooking: a meal that sharpens the mind
   const _pxm = prestigeXpMult(); if (_pxm > 1) xp = Math.round(xp * _pxm);
   const _xpBonus = skillXpBonus(skill); if (_xpBonus > 0) xp = Math.round(xp * (1 + _xpBonus));
   const _kxp = keepsakeXpBonus(skill); if (_kxp > 0) xp = Math.round(xp * (1 + _kxp));
@@ -8033,6 +8164,7 @@ function renderMain(){
         </div>
         ${renderFurniturePlacement()}
         ${renderGarden()}
+        ${renderKitchen('cottage')}
         ${renderKeepsakes()}
         <div class="panel" style="padding:10px;margin-top:8px">
           <h3 style="margin:0 0 8px;font-size:13px">❤️ Village Friends</h3>
@@ -8074,7 +8206,8 @@ function renderMain(){
         <p style="color:var(--dim);font-size:12px;margin:0 0 10px">The barista gives you a knowing nod as she pulls the shot.</p>
         <button data-coffee="1" style="background:#c06030;color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px">☕ Buy Coffee — 15 coins</button>
         ${S.coins < 15 ? '<p style="color:var(--warn);font-size:11px;margin:6px 0 0">Not enough coins.</p>' : ''}
-        </div>`
+        </div>
+        ${renderKitchen('café')}`
       );
     }
     else if (S.tab==="exchange"){
@@ -8284,6 +8417,10 @@ function bindMain(){
     log("☕ <b>Coffee purchased</b> — 5 min speed boost active.", "good");
     renderMain(); updateHud(); save();
   });
+  // kitchen (cooking) handlers
+  document.querySelectorAll("[data-cook]").forEach(b=> b.onclick = ()=> cookRecipe((b as HTMLElement).dataset.cook));
+  document.querySelectorAll("[data-eat]").forEach(b=> b.onclick = ()=> eatMeal((b as HTMLElement).dataset.eat));
+  document.querySelectorAll("[data-serve]").forEach(b=> b.onclick = ()=> serveMeal((b as HTMLElement).dataset.serve));
   // retail stall handlers
   document.querySelectorAll("[data-retail-stock]").forEach(b=> b.onclick = ()=>{
     const _i = parseInt(b.dataset.retailStock);

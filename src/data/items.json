@@ -1,52 +1,292 @@
 {
-  "iron_ore":    { "n": "Iron Ore",          "ic": "🪨", "v": 4   },
-  "copper_ore":  { "n": "Copper Ore",        "ic": "🟤", "v": 6   },
-  "coal":        { "n": "Coal",              "ic": "⚫", "v": 7   },
-  "bauxite":     { "n": "Bauxite",           "ic": "🟠", "v": 12  },
-  "rare_earth":  { "n": "Rare Earths",       "ic": "💎", "v": 40  },
-  "iron_bar":    { "n": "Iron Bar",          "ic": "🔩", "v": 14  },
-  "copper_wire": { "n": "Copper Wire",       "ic": "🧵", "v": 12  },
-  "steel_bar":   { "n": "Steel Bar",         "ic": "⛓️", "v": 30  },
-  "alu_ingot":   { "n": "Aluminium Ingot",   "ic": "🥈", "v": 38  },
-  "tech_alloy":  { "n": "Tech Alloy",        "ic": "✨", "v": 110 },
-  "bracket":     { "n": "Bracket",           "ic": "🧱", "v": 26  },
-  "wiring_loom": { "n": "Wiring Loom",       "ic": "🔌", "v": 42  },
-  "gearbox":     { "n": "Gearbox",           "ic": "⚙️", "v": 90  },
-  "chassis":     { "n": "Chassis",           "ic": "🛠️", "v": 150 },
-  "servo_unit":  { "n": "Servo Unit",        "ic": "🤖", "v": 320 },
-  "pallet_jack": { "n": "Pallet Jack",       "ic": "🛺", "v": 185 },
-  "sensor":      { "n": "Sensor",            "ic": "📡", "v": 260 },
-  "wood":     { "n": "Wood",     "ic": "🪵", "v": 3   },
-  "plank":    { "n": "Plank",    "ic": "📏", "v": 9   },
-  "sardine":  { "n": "Sardine",  "ic": "🐟", "v": 8   },
-  "mackerel": { "n": "Mackerel", "ic": "🐠", "v": 16  },
-  "bass":     { "n": "Bass",     "ic": "🐡", "v": 30  },
-  "salmon":   { "n": "Salmon",   "ic": "🍣", "v": 60  },
-  "tuna":     { "n": "Tuna",     "ic": "🐋", "v": 120 },
-  "painting":  { "n": "Painting",   "ic": "🖼️",  "v": 80  },
-  "vase":      { "n": "Vase",       "ic": "🏺",  "v": 45  },
-  "fancy_rug": { "n": "Fancy Rug",  "ic": "🧩",  "v": 60  },
-  "lamp":      { "n": "Table Lamp", "ic": "🪔",  "v": 35  },
-  "bookcase":  { "n": "Bookcase",   "ic": "📚",  "v": 55  },
-  "mushroom":  { "n": "Wild Mushroom",  "ic": "🍄", "v": 25 },
-  "berries":   { "n": "Forest Berries", "ic": "🫐", "v": 18 },
-  "wild_herb": { "n": "Wild Herbs",     "ic": "🌿", "v": 30 },
-  "rare_wood": { "n": "Rare Wood",      "ic": "🌟", "v": 80 },
-  "berry_jam":   { "n": "Berry Jam",    "ic": "🫙", "v": 65  },
-  "herb_tea":    { "n": "Herb Tea",     "ic": "🍵", "v": 55  },
-  "carved_bowl": { "n": "Carved Bowl",  "ic": "🥣", "v": 48  },
-  "smoked_fish": { "n": "Smoked Fish",  "ic": "🐡", "v": 95  },
-  "gift_basket": { "n": "Gift Basket",  "ic": "🧺", "v": 145 },
-  "flower_crown":      { "n": "Flower Crown",        "ic": "🌸", "v": 85  },
-  "spring_tonic":      { "n": "Spring Tonic",         "ic": "🧉", "v": 70  },
-  "blossom_jam":       { "n": "Blossom Jam",          "ic": "🌺", "v": 90  },
-  "lemonade":          { "n": "Lemonade",             "ic": "🍋", "v": 60  },
-  "sun_hat":           { "n": "Sun Hat",              "ic": "👒", "v": 95  },
-  "honey_cake":        { "n": "Honey Cake",           "ic": "🍰", "v": 120 },
-  "spiced_cider":      { "n": "Spiced Cider",         "ic": "🍏", "v": 80  },
-  "pickled_mushrooms": { "n": "Pickled Mushrooms",    "ic": "🥒", "v": 72  },
-  "harvest_wreath":    { "n": "Harvest Wreath",       "ic": "🍁", "v": 140 },
-  "mulled_tea":        { "n": "Mulled Tea",           "ic": "🫖", "v": 85  },
-  "pine_garland":      { "n": "Pine Garland",         "ic": "🌲", "v": 95  },
-  "winter_hamper":     { "n": "Winter Hamper",        "ic": "🎁", "v": 200 }
+  "iron_ore": {
+    "n": "Iron Ore",
+    "ic": "🪨",
+    "v": 4
+  },
+  "copper_ore": {
+    "n": "Copper Ore",
+    "ic": "🟤",
+    "v": 6
+  },
+  "coal": {
+    "n": "Coal",
+    "ic": "⚫",
+    "v": 7
+  },
+  "bauxite": {
+    "n": "Bauxite",
+    "ic": "🟠",
+    "v": 12
+  },
+  "rare_earth": {
+    "n": "Rare Earths",
+    "ic": "💎",
+    "v": 40
+  },
+  "iron_bar": {
+    "n": "Iron Bar",
+    "ic": "🔩",
+    "v": 14
+  },
+  "copper_wire": {
+    "n": "Copper Wire",
+    "ic": "🧵",
+    "v": 12
+  },
+  "steel_bar": {
+    "n": "Steel Bar",
+    "ic": "⛓️",
+    "v": 30
+  },
+  "alu_ingot": {
+    "n": "Aluminium Ingot",
+    "ic": "🥈",
+    "v": 38
+  },
+  "tech_alloy": {
+    "n": "Tech Alloy",
+    "ic": "✨",
+    "v": 110
+  },
+  "bracket": {
+    "n": "Bracket",
+    "ic": "🧱",
+    "v": 26
+  },
+  "wiring_loom": {
+    "n": "Wiring Loom",
+    "ic": "🔌",
+    "v": 42
+  },
+  "gearbox": {
+    "n": "Gearbox",
+    "ic": "⚙️",
+    "v": 90
+  },
+  "chassis": {
+    "n": "Chassis",
+    "ic": "🛠️",
+    "v": 150
+  },
+  "servo_unit": {
+    "n": "Servo Unit",
+    "ic": "🤖",
+    "v": 320
+  },
+  "pallet_jack": {
+    "n": "Pallet Jack",
+    "ic": "🛺",
+    "v": 185
+  },
+  "sensor": {
+    "n": "Sensor",
+    "ic": "📡",
+    "v": 260
+  },
+  "wood": {
+    "n": "Wood",
+    "ic": "🪵",
+    "v": 3
+  },
+  "plank": {
+    "n": "Plank",
+    "ic": "📏",
+    "v": 9
+  },
+  "sardine": {
+    "n": "Sardine",
+    "ic": "🐟",
+    "v": 8
+  },
+  "mackerel": {
+    "n": "Mackerel",
+    "ic": "🐠",
+    "v": 16
+  },
+  "bass": {
+    "n": "Bass",
+    "ic": "🐡",
+    "v": 30
+  },
+  "salmon": {
+    "n": "Salmon",
+    "ic": "🍣",
+    "v": 60
+  },
+  "tuna": {
+    "n": "Tuna",
+    "ic": "🐋",
+    "v": 120
+  },
+  "painting": {
+    "n": "Painting",
+    "ic": "🖼️",
+    "v": 80
+  },
+  "vase": {
+    "n": "Vase",
+    "ic": "🏺",
+    "v": 45
+  },
+  "fancy_rug": {
+    "n": "Fancy Rug",
+    "ic": "🧩",
+    "v": 60
+  },
+  "lamp": {
+    "n": "Table Lamp",
+    "ic": "🪔",
+    "v": 35
+  },
+  "bookcase": {
+    "n": "Bookcase",
+    "ic": "📚",
+    "v": 55
+  },
+  "mushroom": {
+    "n": "Wild Mushroom",
+    "ic": "🍄",
+    "v": 25
+  },
+  "berries": {
+    "n": "Forest Berries",
+    "ic": "🫐",
+    "v": 18
+  },
+  "wild_herb": {
+    "n": "Wild Herbs",
+    "ic": "🌿",
+    "v": 30
+  },
+  "rare_wood": {
+    "n": "Rare Wood",
+    "ic": "🌟",
+    "v": 80
+  },
+  "berry_jam": {
+    "n": "Berry Jam",
+    "ic": "🫙",
+    "v": 65
+  },
+  "herb_tea": {
+    "n": "Herb Tea",
+    "ic": "🍵",
+    "v": 55
+  },
+  "carved_bowl": {
+    "n": "Carved Bowl",
+    "ic": "🥣",
+    "v": 48
+  },
+  "smoked_fish": {
+    "n": "Smoked Fish",
+    "ic": "🐡",
+    "v": 95
+  },
+  "gift_basket": {
+    "n": "Gift Basket",
+    "ic": "🧺",
+    "v": 145
+  },
+  "flower_crown": {
+    "n": "Flower Crown",
+    "ic": "🌸",
+    "v": 85
+  },
+  "spring_tonic": {
+    "n": "Spring Tonic",
+    "ic": "🧉",
+    "v": 70
+  },
+  "blossom_jam": {
+    "n": "Blossom Jam",
+    "ic": "🌺",
+    "v": 90
+  },
+  "lemonade": {
+    "n": "Lemonade",
+    "ic": "🍋",
+    "v": 60
+  },
+  "sun_hat": {
+    "n": "Sun Hat",
+    "ic": "👒",
+    "v": 95
+  },
+  "honey_cake": {
+    "n": "Honey Cake",
+    "ic": "🍰",
+    "v": 120
+  },
+  "spiced_cider": {
+    "n": "Spiced Cider",
+    "ic": "🍏",
+    "v": 80
+  },
+  "pickled_mushrooms": {
+    "n": "Pickled Mushrooms",
+    "ic": "🥒",
+    "v": 72
+  },
+  "harvest_wreath": {
+    "n": "Harvest Wreath",
+    "ic": "🍁",
+    "v": 140
+  },
+  "mulled_tea": {
+    "n": "Mulled Tea",
+    "ic": "🫖",
+    "v": 85
+  },
+  "pine_garland": {
+    "n": "Pine Garland",
+    "ic": "🌲",
+    "v": 95
+  },
+  "winter_hamper": {
+    "n": "Winter Hamper",
+    "ic": "🎁",
+    "v": 200
+  },
+  "berry_tart": {
+    "n": "Berry Tart",
+    "ic": "🥧",
+    "v": 170
+  },
+  "mushroom_soup": {
+    "n": "Wild Mushroom Soup",
+    "ic": "🍲",
+    "v": 220
+  },
+  "grilled_sardines": {
+    "n": "Grilled Sardines",
+    "ic": "🍢",
+    "v": 105
+  },
+  "forager_salad": {
+    "n": "Forager's Salad",
+    "ic": "🥗",
+    "v": 300
+  },
+  "fish_stew": {
+    "n": "Featherstone Fish Stew",
+    "ic": "🥘",
+    "v": 175
+  },
+  "smoked_platter": {
+    "n": "Smoked Fish Platter",
+    "ic": "🍽️",
+    "v": 330
+  },
+  "fishermans_pie": {
+    "n": "Fisherman's Pie",
+    "ic": "🥮",
+    "v": 220
+  },
+  "celebration_feast": {
+    "n": "Celebration Feast",
+    "ic": "🍱",
+    "v": 620
+  }
 }

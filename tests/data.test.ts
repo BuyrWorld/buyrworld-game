@@ -10,8 +10,8 @@ import { VMAP, V_OBJECTS, VCOLS, VROWS, TILE, VIEW_W, VIEW_H } from '../src/worl
 
 /* ---- items ---- */
 describe('ITEMS', () => {
-  it('has exactly 50 items', () => {
-    expect(Object.keys(ITEMS).length).toBe(50);
+  it('has exactly 58 items', () => {
+    expect(Object.keys(ITEMS).length).toBe(58);
   });
 
   it('every item has a non-empty name', () => {
