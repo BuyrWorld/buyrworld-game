@@ -21,7 +21,7 @@ import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } fro
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
-import { timeOfDay as _timeOfDay, pickLine as _pickLine } from './data/dialogue.ts';
+import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
@@ -670,6 +670,46 @@ function speechLine(v){
 // A crisp, legible speech bubble anchored at screen-percentage (x%,y%) above a head.
 function speechBubbleHtml(name, line, xPct, yPct){
   return `<div class="npc-bubble" style="left:${xPct.toFixed(1)}%;top:${yPct.toFixed(1)}%"><span class="nb-name">${name}</span>${esc(line)}</div>`;
+}
+// ---- Conversations: when two villagers meet, they trade lines back and forth ----
+const CONVO_RANGE = 1.8 * TILE;    // how close two villagers must be to chat
+const CONVO_TURN = 2.8;            // seconds each line stays up
+const CONVO_TURNS = 4;            // lines exchanged before a pause
+const CONVO_GAP = 6;             // quiet seconds between exchanges
+const CONVO_CYCLE = CONVO_TURNS * CONVO_TURN + CONVO_GAP;
+function _convoSeed(a, b){ return _idHash(a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id); }
+// The nearest eligible villager to v within chatting range (or null).
+function _nearestChatter(v){
+  let best = null, bd = CONVO_RANGE;
+  for (const o of VILLAGER_STATE){
+    if (o === v || o.indoor || o.phase === "sleep" || !o.quips) continue;
+    const d = Math.hypot(v.x - o.x, v.y - o.y);
+    if (d < bd){ bd = d; best = o; }
+  }
+  return best;
+}
+// A conversation only forms when each villager's nearest chatter is the other
+// (a clean mutual pair — no love-triangles when three cluster together).
+function convoPartner(v){
+  const p = _nearestChatter(v);
+  if (p && _nearestChatter(p) === v) return p;
+  return null;
+}
+// Whose turn it is right now in a pair's exchange, and what they say. Deterministic
+// from the pair seed + wall clock, so both villagers agree without shared state.
+// Returns { speaker, line } or null during the quiet gap.
+function convoTurn(v, p){
+  const a = v.id < p.id ? v : p, b = v.id < p.id ? p : v;
+  const seed = _convoSeed(a, b);
+  const phase = (((Date.now() / 1000) + (seed % 1000) / 1000 * CONVO_CYCLE) % CONVO_CYCLE);
+  if (phase >= CONVO_TURNS * CONVO_TURN) return null;   // between exchanges
+  const turn = Math.floor(phase / CONVO_TURN);
+  const speaker = (turn % 2 === 0) ? a : b;
+  const partner = speaker === a ? b : a;
+  const cycleIdx = Math.floor(((Date.now() / 1000) + (seed % 1000) / 1000 * CONVO_CYCLE) / CONVO_CYCLE);
+  let s = (seed ^ (cycleIdx * 2654435761) ^ (turn * 40503)) >>> 0;
+  const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  return { speaker, line: _convoLine(turn, partner.n, rng) };
 }
 // Children NPCs — derived from villager family data + extra school children
 const CHILDREN_DATA = [
@@ -3605,21 +3645,38 @@ function drawVillage(t){
         </div>`;
       }
     }
-    // ambient speech bubbles: villagers you can see chatter as they go about their
-    // day. Cap to the nearest few so it stays legible, and skip the one docked below.
+    // speech bubbles as you walk the village: villagers chat in pairs when they
+    // meet, and chatter to themselves otherwise. Capped/nearest-first for legibility.
     {
-      const _speakers = VILLAGER_STATE
-        .filter(v => !v.indoor && v.phase !== "sleep" && v !== dockV && v.quips && isSpeaking(v))
-        .map(v => ({ v, d: Math.hypot(VP.x - v.x, VP.y - v.y) }))
-        .filter(o => o.d < 9 * TILE)
-        .sort((a, b) => a.d - b.d)
-        .slice(0, 3);
-      for (const { v } of _speakers){
+      const _handled = new Set();
+      const _bubble = (v, line) => {
         const bx = (v.x - CAM.x) / VIEW_W * 100;
         const by = (v.y - 34 - CAM.y) / VIEW_H * 100;
-        if (bx > 2 && bx < 98 && by > 4 && by < 98){
-          html += speechBubbleHtml(v.n, speechLine(v), bx, by);
-        }
+        if (bx > 2 && bx < 98 && by > 4 && by < 98) html += speechBubbleHtml(v.n, line, bx, by);
+      };
+      const _near = VILLAGER_STATE
+        .filter(v => !v.indoor && v.phase !== "sleep" && v.quips && v !== dockV)
+        .map(v => ({ v, d: Math.hypot(VP.x - v.x, VP.y - v.y) }))
+        .filter(o => o.d < 9 * TILE)
+        .sort((a, b) => a.d - b.d);
+      // 1) two-way conversations between mutual pairs take priority
+      let _convoShown = 0;
+      for (const { v } of _near){
+        if (_handled.has(v.id)) continue;
+        const p = convoPartner(v);
+        if (!p || _handled.has(p.id)) continue;
+        _handled.add(v.id); _handled.add(p.id);
+        if (_convoShown >= 2) continue;              // cap concurrent conversations
+        _convoShown++;
+        const ct = convoTurn(v, p);
+        if (ct) _bubble(ct.speaker, ct.line);        // only the current speaker's bubble
+      }
+      // 2) ambient solo chatter for everyone else (nearest few)
+      let _ambient = 0;
+      for (const { v } of _near){
+        if (_handled.has(v.id) || !isSpeaking(v)) continue;
+        _bubble(v, speechLine(v));
+        if (++_ambient >= 3) break;
       }
     }
     // district identity: a single subtle "you're in" chip, top-right only

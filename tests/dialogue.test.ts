@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   TIME_LINES, WEATHER_LINES, SEASON_LINES, timeOfDay, contextLines, pickLine,
+  GREETINGS, RESPONSES, SMALLTALK, convoLine,
 } from '../src/data/dialogue.ts';
 
 const CTX = { timeOfDay: 'morning', weather: 'rain', season: 'spring' };
@@ -65,5 +66,33 @@ describe('Dialogue — pickLine', () => {
   it('falls back to the personal quip when there are no context lines', () => {
     const emptyCtx = { timeOfDay: 'x', weather: 'y', season: 'z' };
     expect(pickLine('MY QUIP', emptyCtx, () => 0, 1)).toBe('MY QUIP');
+  });
+});
+
+describe('Dialogue — conversations', () => {
+  it('opener addresses the partner by name', () => {
+    const line = convoLine(0, 'Bertie', () => 0);
+    expect(line).toBe(GREETINGS[0].replace('{name}', 'Bertie'));
+    expect(line).toContain('Bertie');
+    expect(line).not.toContain('{name}');
+  });
+
+  it('turn 1 is a reply, later even turns are small talk', () => {
+    expect(RESPONSES).toContain(convoLine(1, 'X', () => 0));
+    expect(SMALLTALK).toContain(convoLine(2, 'X', () => 0));
+    expect(RESPONSES).toContain(convoLine(3, 'X', () => 0));
+  });
+
+  it('handles a missing partner name gracefully', () => {
+    const line = convoLine(0, '', () => 0);
+    expect(line).not.toContain('{name}');
+    expect(line).toContain('friend');
+  });
+
+  it('conversation pools are non-empty and openers carry the name slot', () => {
+    expect(GREETINGS.length).toBeGreaterThan(0);
+    expect(RESPONSES.length).toBeGreaterThan(0);
+    expect(SMALLTALK.length).toBeGreaterThan(0);
+    expect(GREETINGS.every(g => g.includes('{name}'))).toBe(true);
   });
 });

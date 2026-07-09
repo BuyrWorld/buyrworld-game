@@ -111,3 +111,45 @@ export function pickLine(personalQuip: string, ctx: DialogueContext, rng: () => 
   }
   return personalQuip;
 }
+
+// ---- Two-way conversations: when villagers meet they trade lines back and forth ----
+// {name} is filled with the partner's name so greetings feel personal.
+export const GREETINGS: string[] = [
+  "Morning, {name}!",
+  "Afternoon, {name}.",
+  "Ah, {name} — just the person!",
+  "Hello there, {name}.",
+  "{name}! Not seen you in a while.",
+  "Now then, {name}.",
+];
+export const RESPONSES: string[] = [
+  "Lovely to see you.",
+  "Keeping busy, thanks.",
+  "Can't complain!",
+  "Grand day for it.",
+  "Mustn't grumble.",
+  "Aye, not so bad at all.",
+];
+export const SMALLTALK: string[] = [
+  "Did you see the market prices?",
+  "Harvest's looking good this year.",
+  "The village fete's coming up, you know.",
+  "I hear the harbour's been busy.",
+  "Lovely to have a proper natter.",
+  "Anyway — best be getting on!",
+  "We should do this more often.",
+  "How's the family keeping?",
+];
+
+function pickFrom(arr: string[], rng: () => number): string {
+  return arr[Math.floor(rng() * arr.length)] || arr[0];
+}
+
+// The line spoken on a given conversation turn. Turn 0 is an opener addressed to
+// the partner; turn 1 is a reply; later turns alternate small talk and replies.
+export function convoLine(turn: number, partnerName: string, rng: () => number): string {
+  const nm = partnerName || "friend";
+  if (turn <= 0) return pickFrom(GREETINGS, rng).replace("{name}", nm);
+  if (turn === 1) return pickFrom(RESPONSES, rng);
+  return pickFrom(turn % 2 === 0 ? SMALLTALK : RESPONSES, rng);
+}
