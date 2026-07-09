@@ -142,6 +142,11 @@ main{ flex:1; width:100%; max-width:1400px; margin:0 auto; padding:14px; }
 .btn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--shadow); }
 .btn.alt{ background:var(--panel2); color:var(--dim); border:2px solid var(--edge); box-shadow:none; }
 .btn.alt:hover:not(:disabled){ background:var(--panel); }
+/* Journey button glows + pulses when a milestone is ready to claim */
+#btn-journey.has-claim{ background:var(--amber); color:#1a0d05; border-color:#fff; position:relative; animation:jClaim 1.6s ease-in-out infinite; }
+#btn-journey.has-claim::after{ content:""; position:absolute; top:-2px; right:-2px; width:8px; height:8px; border-radius:50%; background:var(--red); border:1px solid #fff; }
+@keyframes jClaim{ 0%,100%{ box-shadow:0 0 0 0 rgba(232,150,30,.6); } 50%{ box-shadow:0 0 0 5px rgba(232,150,30,0); } }
+@media (prefers-reduced-motion: reduce){ #btn-journey.has-claim{ animation:none; } }
 .btn:disabled{ opacity:.4; cursor:not-allowed; }
 .btn.deliver{ background:var(--mint); }
 .btn.deliver:hover:not(:disabled){ background:#4aba7a; }
@@ -300,6 +305,8 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .badge-info{ display:flex; flex-direction:column; }
 .badge-pre{ font-size:7px; color:var(--dim); letter-spacing:0.5px; line-height:1.2; }
 .badge-name{ font-family:'Press Start 2P',monospace; font-size:10px; color:var(--orange); line-height:1.4; }
+.badge-title{ font-size:8px; color:var(--amber); font-weight:600; letter-spacing:0.3px; line-height:1.3; margin-top:2px; }
+.fullscreen-mode .badge-title{ font-size:11px; }
 .badge-edit{
   background:none; border:none; font-size:13px; padding:2px 4px; cursor:pointer;
   opacity:0.6; transition:opacity 0.12s;
@@ -529,6 +536,7 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
       <div class="badge-info">
         <div class="badge-pre">My name is</div>
         <div class="badge-name" id="hud-name">—</div>
+        <div class="badge-title" id="hud-title" style="display:none"></div>
       </div>
       <button class="badge-edit" id="btn-character" title="Customise character" aria-label="Customise character">✏️</button>
     </div>
@@ -538,6 +546,7 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
     <div class="stat"><div class="v" id="hud-time">☀️ Day</div><div class="l">Time</div></div>
     <button id="btn-music" class="btn alt" title="Toggle music" aria-label="Toggle music" style="padding:6px 10px;">🔊</button>
     <button id="btn-inv" class="btn alt" title="Inventory (I)" aria-label="Inventory" style="padding:6px 10px;">🎒</button>
+    <button id="btn-journey" class="btn alt" title="The Founder's Journey (J)" aria-label="Founder's Journey" style="padding:6px 10px;">🧭</button>
     <button id="btn-ledger" class="btn alt" title="Founder's Ledger" aria-label="Founder's Ledger" style="padding:6px 10px;">📖</button>
     <button id="btn-districts" class="btn alt" title="Town Directory" aria-label="Town Directory" style="padding:6px 10px;">🗺️</button>
     <button id="btn-fullscreen" class="btn alt" title="Fullscreen (F11)" aria-label="Toggle fullscreen" style="padding:6px 10px;">⛶</button>

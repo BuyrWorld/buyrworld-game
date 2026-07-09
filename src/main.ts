@@ -19,6 +19,7 @@ import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
+import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
@@ -376,6 +377,19 @@ const SFX = (() => {
       osc("square", 784, 784, 0.14, 0.06*mv, 0.20);
       osc("triangle", 1047, 1047, 0.28, 0.07*mv, 0.30);
     }catch(e){}
+  },
+  fanfare(){
+    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    try{
+      ensure(); const mv = volLevel() / 0.75;
+      // grand two-bar rising fanfare for a Founder's Journey milestone
+      osc("square",   523, 523, 0.14, 0.05*mv, 0.00);   // C5
+      osc("square",   784, 784, 0.14, 0.05*mv, 0.12);   // G5
+      osc("square",  1047,1047, 0.16, 0.055*mv, 0.24);  // C6
+      osc("triangle",1319,1319, 0.20, 0.06*mv, 0.36);   // E6
+      osc("triangle",1568,1568, 0.42, 0.07*mv, 0.50);   // G6 (held)
+      hit(0.05*mv, 0.20, 0.50);                         // shimmer
+    }catch(e){}
   }};
 })();
 // celebratory "LEVEL N!" burst over the screen when a skill levels up
@@ -386,6 +400,17 @@ function showLevelBurst(skill, lvl){
     el.innerHTML = `<div class="lb-ic">${SKILLS[skill].ic}</div><div class="lb-sk">${SKILLS[skill].n}</div><div class="lb-lv">LEVEL ${lvl}</div>`;
     document.body.appendChild(el);
     setTimeout(()=>el.remove(), 1500);
+  }catch(e){}
+}
+// celebratory burst when a Founder's Journey stage is claimed (reuses .level-burst)
+function showJourneyBurst(stage){
+  try{
+    const el = document.createElement("div");
+    el.className = "level-burst";
+    const title = stage.reward.title ? `<div class="lb-lv">“${stage.reward.title}”</div>` : "";
+    el.innerHTML = `<div class="lb-ic">${stage.ic}</div><div class="lb-sk">${stage.title}</div>${title}`;
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 1900);
   }catch(e){}
 }
 function syncMusicButton(){
@@ -2272,6 +2297,122 @@ function openLedger(){
   document.body.appendChild(el);
   el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
 }
+// ---- The Founder's Journey — an ordered story-quest chain across the whole game ----
+// Live metrics for the journey objectives, read from existing game state/counters.
+function journeyCtx(){
+  return {
+    actions:        S.counters?.actions || 0,
+    steelworksLvl:  skillLvl('steelworks'),
+    trades:         S.counters?.trades || 0,
+    contracts:      S.counters?.contracts || 0,
+    gardenHarvests: S.counters?.gardenHarvests || 0,
+    friends:        VILLAGERS.filter(v => friendLvl(v.id) >= 2).length,
+    totalLevel:     totalLvl(),
+    beautification: S.beautification?.length || 0,
+    automatons:     Object.keys(S.automatons || {}).length,
+    gridTier:       S.grid?.tier || 0,
+  };
+}
+// Nudge once (per stage) when a new stage becomes claimable — called from the tick.
+function checkJourney(){
+  if (!S.journey) S.journey = { claimed:[], notified:"" };
+  const stage = currentStage(S.journey.claimed);
+  if (!stage) return;
+  if (stageComplete(stage, journeyCtx()) && S.journey.notified !== stage.id){
+    S.journey.notified = stage.id;
+    toast(`🧭 Journey milestone ready: “${stage.title}” — claim it!`);
+    log(`🧭 <b>Founder's Journey</b> — “${stage.title}” is ready to claim. Open the 🧭 Journey to collect your reward.`, "good");
+    syncJourneyBtn();
+  }
+}
+// Claim the current stage (must be met); grants coins + an earned Title, then advances.
+function claimJourneyStage(){
+  if (!S.journey) S.journey = { claimed:[], notified:"" };
+  const stage = currentStage(S.journey.claimed);
+  if (!stage){ toast("🏆 The whole journey is complete!"); return; }
+  if (!stageComplete(stage, journeyCtx())){ toast("Objective not met yet."); return; }
+  S.journey.claimed.push(stage.id);
+  S.coins += stage.reward.coins;
+  S.counters.coinsEarned = (S.counters.coinsEarned || 0) + stage.reward.coins;
+  const titleMsg = stage.reward.title ? ` You are now <b>“${stage.reward.title}”</b>.` : "";
+  log(`👑 Founder's Journey: <b>${stage.title}</b> complete! +${fmt(stage.reward.coins)} coins.${titleMsg}`, "rare");
+  toast(`👑 ${stage.title} — +${fmt(stage.reward.coins)}c${stage.reward.title ? ` · “${stage.reward.title}”` : ""}`);
+  try{ SFX.fanfare(); }catch(e){}
+  showJourneyBurst(stage);
+  if (isJourneyComplete(S.journey.claimed)){
+    setTimeout(()=>{ toast("🏆 Legend of Featherstone — your Founder's Journey is complete!"); }, 1400);
+  }
+  updateHud(); save(); renderJourney(); syncJourneyBtn();
+}
+function closeJourney(){ const e = document.getElementById("journey-modal"); if (e) e.remove(); }
+// Reflect a claimable stage on the HUD button (a gentle pulse + dot).
+function syncJourneyBtn(){
+  const b = document.getElementById("btn-journey");
+  if (!b) return;
+  const ready = S.journey && canClaim(S.journey.claimed, journeyCtx());
+  b.classList.toggle("has-claim", !!ready);
+}
+function renderJourney(){
+  const open = document.getElementById("journey-modal");
+  const ctx = journeyCtx();
+  const claimed = (S.journey && S.journey.claimed) || [];
+  const curIdx = currentStageIndex(claimed);
+  const rows = JOURNEY.map((s, i) => {
+    const done = claimed.includes(s.id);
+    const isCurrent = i === curIdx;
+    const met = isCurrent && stageComplete(s, ctx);
+    const locked = i > curIdx;
+    const pr = stageProgress(s, ctx);
+    const marker = done ? "✅" : isCurrent ? s.ic : "🔒";
+    const titleCol = done ? "#8a7a63" : isCurrent ? "var(--text)" : "#9a9aa8";
+    const bar = isCurrent && !met
+      ? `<div style="background:rgba(0,0,0,.12);border-radius:4px;height:8px;overflow:hidden;margin-top:6px"><div style="width:${pr.pct}%;height:100%;background:#d8b84a"></div></div>
+         <div style="font-size:10px;color:var(--dim);margin-top:2px">${fmt(pr.cur)} / ${fmt(pr.max)}</div>`
+      : "";
+    const claimBtn = met
+      ? `<button data-claim-journey style="background:#d8b84a;color:#161008;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:800;margin-top:6px">Claim +${fmt(s.reward.coins)}c 👑</button>`
+      : "";
+    const rewardLine = done
+      ? `<span style="color:#4aa86a">Claimed · +${fmt(s.reward.coins)}c${s.reward.title ? ` · “${s.reward.title}”` : ""}</span>`
+      : `<span style="color:var(--dim)">Reward: +${fmt(s.reward.coins)}c${s.reward.title ? ` · title “${s.reward.title}”` : ""}</span>`;
+    return `<div style="display:flex;gap:12px;padding:12px 0;border-top:1px solid rgba(0,0,0,.08);opacity:${locked ? .55 : 1}">
+      <div style="font-size:26px;line-height:1;flex-shrink:0;width:30px;text-align:center">${marker}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:14px;color:${titleCol}">${i + 1}. ${s.title}</div>
+        <div style="font-size:12px;color:${done ? "#9a8a73" : "var(--dim)"};margin-top:2px">${s.desc}</div>
+        ${bar}
+        <div style="font-size:11px;margin-top:5px">${rewardLine}</div>
+        ${claimBtn}
+      </div>
+    </div>`;
+  }).join("");
+  const doneCount = claimed.length;
+  const title = earnedTitle(claimed);
+  const headline = isJourneyComplete(claimed)
+    ? `🏆 Journey complete — you are the <b>Legend of Featherstone</b>.`
+    : `Stage ${Math.min(curIdx + 1, JOURNEY.length)} of ${JOURNEY.length}${title ? ` · current title: <b>“${title}”</b>` : ""}`;
+  const inner = `<div class="dd-card" style="max-width:560px">
+    <button class="vp-close" onclick="document.getElementById('journey-modal').remove()">✕</button>
+    <div class="dd-title">🧭 The Founder's Journey</div>
+    <div class="dd-sub">${headline}</div>
+    <div style="background:rgba(216,184,74,.1);border:1px solid rgba(216,184,74,.3);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:12px">
+      ${doneCount}/${JOURNEY.length} milestones · ${S.playerName ? esc(S.playerName) : "The Founder"}'s legacy in Featherstone Valley
+    </div>
+    <div style="max-height:52vh;overflow-y:auto">${rows}</div>
+  </div>`;
+  if (open){ open.innerHTML = inner; wireJourneyButtons(open); return; }
+  const el = document.createElement("div");
+  el.id = "journey-modal"; el.className = "dd-modal";
+  el.innerHTML = inner;
+  document.body.appendChild(el);
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+  wireJourneyButtons(el);
+}
+function wireJourneyButtons(root){
+  const b = root.querySelector("[data-claim-journey]");
+  if (b) b.onclick = () => claimJourneyStage();
+}
+function openJourney(){ closeJourney(); renderJourney(); }
 // ---- Inventory: a large, couch-legible view of everything you own ----
 function toggleInventory(){
   const ex = document.getElementById("inv-modal");
@@ -5565,7 +5706,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{},
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
@@ -5652,6 +5793,7 @@ function load(){
       if (!S.villagerRequests) S.villagerRequests = {};
       if (!S.perks) S.perks = {};
       if (!S.seenTips) S.seenTips = {};
+      if (!S.journey || !Array.isArray(S.journey.claimed)) S.journey = { claimed:[], notified:"" };
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
@@ -8657,6 +8799,12 @@ function updateHud(){
   $("#hud-total").textContent = totalLvl();
   const nameEl = document.getElementById("hud-name");
   if (nameEl) nameEl.textContent = S.playerName || "—";
+  const titleEl = document.getElementById("hud-title");
+  if (titleEl){
+    const t = earnedTitle((S.journey && S.journey.claimed) || []);
+    titleEl.textContent = t ? `“${t}”` : "";
+    titleEl.style.display = t ? "block" : "none";
+  }
   const stat = document.getElementById("hud-name-stat");
   if (stat){
     if (S.playerName) stat.classList.add("named");
@@ -8693,7 +8841,10 @@ document.getElementById("btn-fullscreen").onclick = () => toggleFullscreen();
 document.getElementById("btn-districts")?.addEventListener("click", () => openDistricts());
 document.getElementById("btn-ledger")?.addEventListener("click", () => openLedger());
 document.getElementById("btn-inv")?.addEventListener("click", () => toggleInventory());
+document.getElementById("btn-journey")?.addEventListener("click", () => openJourney());
+syncJourneyBtn();
 window.addEventListener("keydown", e => {
+  if ((e.key==="j"||e.key==="J") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ openJourney(); return; }
   if ((e.key==="i"||e.key==="I") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ toggleInventory(); return; }
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){
@@ -8767,6 +8918,7 @@ function pollGamepad(){
   if (pad.buttons[0]?.pressed  && !prev[0])  gpInteract();
   if (pad.buttons[1]?.pressed  && !prev[1])  gpBack();
   if (pad.buttons[3]?.pressed  && !prev[3])  toggleInventory();   // Y — inventory
+  if (pad.buttons[2]?.pressed  && !prev[2])  openJourney();       // X — Founder's Journey
   if (pad.buttons[9]?.pressed  && !prev[9])  toggleFullscreen();
   for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
 }
@@ -8838,6 +8990,7 @@ setInterval(()=>{
   updateProgressBar();
   sampleNetWorth();   // LE4: throttled net-worth history sampling
   checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
+  checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
     renderMain(); updateHud();
