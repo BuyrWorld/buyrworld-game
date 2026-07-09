@@ -716,6 +716,18 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
            iwx:0, iwy:0, iwTimer:Math.random()*3, iwTarget:null };
 });
 let CHAT_NPC = null; // villager the player is talking to inside a building
+// Resident NPCs you can talk to inside activity interiors (tap them). Positions are
+// the centre of each hardcoded sprite (they only sway a little; the click radius covers it).
+const INTERIOR_RESIDENTS = {
+  foraging:       { name:"Wren",         x:156, y:80,  lines:["The forest gives freely, if you know where to look.","Mushrooms come up after rain; berries love the sun.","I've foraged these woods forty years, love.","Mind the nettles by the north path."] },
+  crafting:       { name:"Marlow",       x:160, y:60, r:46, lines:["Slow hands make fine things.","A good jar of jam keeps you all winter.","Everything on these shelves is made by hand.","Patience — the craft can't be rushed."] },
+  bike_shop:      { name:"Cog",          x:130, y:84,  lines:["A well-oiled chain is a happy chain.","Fancy a new set of wheels?","Mind your brakes on the harbour hill."] },
+  notice_board:   { name:"Warden Pike",  x:158, y:88,  lines:["Plenty of folk needing a hand today.","Pin your finished jobs up here, if you would.","The whole village runs on favours."] },
+  harbour_office: { name:"Reg",          x:136, y:80,  lines:["Tide's fair today.","I can fast-travel you across the bay any time.","Reg's the name; the sea's my game."] },
+  fishmonger_wh:  { name:"Pearl",        x:150, y:100, lines:["Freshest catch on the coast.","Sell in bulk and I'll pay a premium.","Pearl by name, pearls of the sea by trade."] },
+  village_fund:   { name:"The Committee",x:90,  y:76,  lines:["Every donation makes the valley bloom.","We've grand plans for the village green.","Thank you kindly for your generosity."] },
+};
+let _intChat = null; // {name, lines, idx} — the resident NPC you're currently chatting with
 // ---- Dialogue system v2: ambient, situational, legible speech bubbles ----
 // A villager "speaks" for SPEAK_ON seconds out of every SPEAK_CYCLE, staggered by a
 // hash of their id so the town chatters continuously without everyone talking at once.
@@ -6053,6 +6065,18 @@ function drawInterior(t){
       const q = speechLine(CHAT_NPC);
       _iHtml += `<div class="int-chat"><span class="int-chat-name">${CHAT_NPC.n}:</span><span class="int-chat-txt"> ${esc(q)}</span><span class="int-chat-dim"> · tap to dismiss</span></div>`;
     }
+    // resident NPC: either a chat panel, or a "talk to me" tag over their head
+    {
+      const _res = INTERIOR_RESIDENTS[S.tab];
+      if (_res){
+        if (_intChat && _intChat.name === _res.name){
+          const _l = _intChat.lines[_intChat.idx];
+          _iHtml += `<div class="int-chat"><span class="int-chat-name">${_res.name}:</span><span class="int-chat-txt"> ${esc(_l)}</span><span class="int-chat-dim"> · tap to continue</span></div>`;
+        } else {
+          _iHtml += `<div class="int-vlbl" style="left:${(_res.x/W*100).toFixed(1)}%;top:${(((_res.y-30)/H)*100).toFixed(1)}%">💬 ${_res.name}</div>`;
+        }
+      }
+    }
     // home occupant: a legible speech bubble when they're chatting, else a name tag
     if (S.tab==="home" && _homeVilLbl){
       const _hx = _homeVilLbl.x/W*100;
@@ -6278,6 +6302,18 @@ function interiorClick(e){
   const rect = cv.getBoundingClientRect();
   const cx = (e.clientX - rect.left) * (icanvasW() / rect.width);
   const cy = (e.clientY - rect.top) * (icanvasH() / rect.height);
+  // talk to the resident NPC of this interior (tap them to chat, tap again to continue)
+  {
+    const _res = INTERIOR_RESIDENTS[S.tab];
+    if (_res){
+      if (Math.hypot(cx-_res.x, cy-_res.y) < (_res.r || 34)){
+        if (_intChat && _intChat.name === _res.name) _intChat.idx = (_intChat.idx+1) % _res.lines.length;
+        else { _intChat = { name:_res.name, lines:_res.lines, idx:0 }; if (!S.npcMet) S.npcMet = true; }
+        return;
+      }
+      if (_intChat){ _intChat = null; }   // tapped away — dismiss, then allow the move below
+    }
+  }
   // fishing: click anywhere on the water to cast your line there
   if (S.tab === "fishing" && cy < icanvasH()*0.44){
     _fishSpot = { x: Math.max(16, Math.min(icanvasW()-16, cx)), y: Math.max(12, cy) };
@@ -8856,6 +8892,7 @@ function renderMain(){
   if (_entering){
     IP.x = icanvasW()/2; IP.y = icanvasH() - 34;
     IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
+    _intChat = null;   // clear any resident chat from the previous room
   }
   _lastRoomTab = INTERIOR_TABS.has(S.tab) ? S.tab : null;
   const banner = tutBannerHtml();
