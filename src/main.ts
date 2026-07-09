@@ -4823,6 +4823,20 @@ function drawInterior(t){
     _bskt(52, 104, "🍄");
     _bskt(120, 112, "🫐");
     _bskt(188, 108, "🌿");
+    // mossy forage patches at each station — walk up to what's growing here
+    const _foraging = S.action?.skill === "foraging";
+    STATION_DEFS.foraging.forEach(st=>{
+      const sx = st.fx*W, sy = st.fy*H;
+      ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(sx, sy+10, 20, 5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#3a5a2a"; ctx.beginPath(); ctx.ellipse(sx, sy+7, 19, 7, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#4a7a34"; ctx.beginPath(); ctx.ellipse(sx-4, sy+5, 12, 5, 0, 0, 7); ctx.fill();
+      for (let g=0; g<4; g++){ ctx.fillStyle="#3aa66a"; ctx.fillRect(sx-9+g*6, sy, 1, 6); }
+    });
+    // pollen/spores drifting in the air — a soft flurry while you're gathering
+    for (let i=0; i<(_foraging?9:4); i++){
+      const _px = (i*61 + t*(_foraging?18:7)) % W, _py = 42 + ((i*43 + t*10) % (H-72));
+      ctx.fillStyle = `rgba(206,232,150,${_foraging?0.5:0.24})`; ctx.beginPath(); ctx.arc(_px, _py, 1.4, 0, 7); ctx.fill();
+    }
     // mossy stone left
     ctx.fillStyle="rgba(0,0,0,.10)"; ctx.beginPath(); ctx.ellipse(28, 156, 16, 5, 0, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle="#5a6a4a"; ctx.beginPath(); ctx.ellipse(28, 148, 16, 9, 0, 0, Math.PI*2); ctx.fill();
