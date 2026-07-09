@@ -229,6 +229,13 @@ function tutBannerHtml(){
   </div>`;
 }
 
+// A prominent first-run guidance banner over the village: how to move + where to go.
+// Only shows during the opening objective, so it never nags experienced players.
+function firstRunHintHtml(){
+  if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step > 0) return "";
+  if ((S.prod.iron_ore||0) >= 5) return "";
+  return `<div class="firstrun-hint">🎮 Move with <b>WASD</b> / arrow keys — or <b>tap</b> where to go. Head <b>west ◀</b> to the quarry ⛏️ and tap the Iron Rock.</div>`;
+}
 /* ---------- original soundtrack (Web Audio chiptune, per-location) ---------- */
 function zoneForTab(tab){
   if (tab==="mining") return "quarry";
@@ -3684,6 +3691,7 @@ function drawVillage(t){
       const _cd = currentDistrict();
       if (_cd) html += `<div class="dist-chip" style="border-color:${_cd.color};color:${_cd.color}">${_cd.ic} ${_cd.name}</div>`;
     }
+    html += firstRunHintHtml();   // Task 3/4: opening movement + direction guidance
     overlay.innerHTML = html;
   }
   // night/sunrise/sunset sky tint
@@ -5947,7 +5955,13 @@ if (typeof document !== 'undefined'){
   .vlbl{position:absolute;transform:translate(-50%,-100%);background:rgba(255,248,230,.96);border:2px solid #8c6947;color:#453423;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:4px;white-space:nowrap;box-shadow:2px 2px 0 rgba(70,50,30,.25);pointer-events:none}
   .int-canvas-wrap .ilbl{position:absolute;transform:translate(-50%,0);background:rgba(69,52,35,.92);color:#fff8e6;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 0 rgba(0,0,0,.25)}
   .ilbl-lock{color:#ffd666}
-  .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);background:rgba(176,87,79,.92);color:#fff8e6;font:600 10px 'IBM Plex Mono',monospace;padding:1px 7px;border-radius:4px;pointer-events:none}
+  .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:3px;transform:translateX(-50%);background:rgba(176,60,50,.95);color:#fff8e6;font:700 11px 'IBM Plex Mono',monospace;padding:3px 10px;border-radius:5px;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.4);animation:exitPulse 1.8s ease-in-out infinite}
+  @keyframes exitPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,90,70,.55)}50%{box-shadow:0 0 0 5px rgba(232,90,70,0)}}
+  .firstrun-hint{position:absolute;top:28px;left:50%;transform:translateX(-50%);max-width:94%;background:rgba(42,26,10,.93);color:#fff8e6;border:2px solid #e8961e;border-radius:8px;padding:7px 14px;font:600 12px/1.45 'IBM Plex Mono',monospace;text-align:center;pointer-events:none;box-shadow:0 3px 10px rgba(0,0,0,.45);animation:frPulse 2.2s ease-in-out infinite}
+  .firstrun-hint b{color:#ffd666}
+  @keyframes frPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,150,30,.5)}50%{box-shadow:0 0 0 6px rgba(232,150,30,0)}}
+  .fullscreen-mode .firstrun-hint{font-size:15px;padding:9px 18px}
+  @media (prefers-reduced-motion: reduce){.firstrun-hint,.int-canvas-wrap .ilbl-exit{animation:none}}
   .vhint{text-align:center}
   .btn.quickstart{background:#2a6a3a;color:#fff8e6;border:2px solid #1a4a28;font-size:13px;padding:9px 18px}
   .btn.quickstart:hover{background:#348046}
@@ -8199,7 +8213,7 @@ function interiorHtml(title){
   const depotLbl = S.tab==="contracts" ? `<div class="ilbl" style="left:73%;top:5%;background:rgba(255,248,230,.96);color:#453423;font:700 9px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;pointer-events:none">BUYR FREIGHT</div>` : "";
   return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap" style="max-width:${cw*2}px;margin:0 auto;position:relative;">
     <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
-    ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><div class="ilbl-exit">🚪 EXIT ↓</div>
+    ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><div class="ilbl-exit">🚪 Walk south to leave ↓</div>
     <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
     <div id="interior-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
   </div>
