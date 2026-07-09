@@ -4248,10 +4248,33 @@ function drawInterior(t){
       ctx.fillStyle="#ffd666"; ctx.beginPath(); ctx.arc(fx+19,52,4*fl+1,Math.PI,0); ctx.fill();
       ctx.fillStyle="#e05a20"; ctx.fillRect(fx+6,10,5,8); ctx.fillRect(fx+27,10,5,8);
     }
-    // anvil (below steel_bar station at x=205, y=88 — anvil at y=112 so player passes above it)
+    // anvil — comes alive with glowing metal + hammer strikes while you're smithing
     ctx.fillStyle="#808898"; ctx.fillRect(201,106,26,6); ctx.fillStyle="#6a7080"; ctx.fillRect(198,112,32,8);
     ctx.fillStyle="#5a6070"; ctx.fillRect(203,120,6,7); ctx.fillRect(218,120,6,7);
-    drawEmojiC(ctx,"🔨",213,104,10);
+    if (S.action && S.action.skill === "steelworks"){
+      const PERIOD = 0.7;
+      const p = (((t % PERIOD) + PERIOD) % PERIOD) / PERIOD;   // 0..1
+      const easeIn = u => u*u, easeOut = u => 1-(1-u)*(1-u);
+      const hang = p < 0.55 ? -1.6*easeOut(p/0.55) : -1.6 + 1.6*easeIn((p-0.55)/0.45);  // raise then strike
+      const impact = (p > 0.9) ? (p-0.9)/0.1 : 0;              // near the bottom of the strike
+      const heat = 1 - Math.sin(p*Math.PI)*0.6;                // brightest just after each blow
+      // glowing hot bar on the anvil face (+ a soft halo)
+      ctx.fillStyle = `rgba(255,150,50,${(heat*0.4).toFixed(2)})`; ctx.fillRect(203,100,22,9);
+      ctx.fillStyle = heat>0.8 ? "#fff2c8" : heat>0.55 ? "#ffb84a" : "#ff6a24";
+      ctx.fillRect(206,103,16,4);
+      // the hammer, pivoted above the anvil, head at the far (striking) end
+      ctx.save(); ctx.translate(220, 90); ctx.rotate(hang);
+      ctx.fillStyle="#6a4423"; ctx.fillRect(-1.5,0,3,13);      // handle
+      ctx.fillStyle="#3a3a44"; ctx.fillRect(-5,11,10,6);       // head
+      ctx.fillStyle="#c9d2dd"; ctx.fillRect(-5,11,10,1);       // shine
+      ctx.restore();
+      // sparks fly off the struck metal
+      if (impact > 0){
+        for (let i=0;i<7;i++){ const a=-0.15-i*0.34, d=5+((i*53+Math.floor(t*90))%12); ctx.fillStyle = i%2 ? "#ffe070" : "#ff9a30"; ctx.fillRect(Math.round(213+Math.cos(a)*d), Math.round(103-Math.sin(a)*d*0.7), 2, 2); }
+      }
+    } else {
+      drawEmojiC(ctx,"🔨",213,104,10);   // idle: hammer resting on the anvil
+    }
     // tool rack (right)
     ctx.fillStyle="#6a4a28"; ctx.fillRect(244,103,6,29); ctx.fillStyle="#8c6947"; ctx.fillRect(240,103,14,3);
     drawEmojiC(ctx,"🔧",249,116,8); drawEmojiC(ctx,"🪛",249,126,8);
