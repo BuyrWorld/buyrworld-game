@@ -21,6 +21,7 @@ import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } fro
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
+import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -1255,9 +1256,7 @@ const STATION_DEFS = {
     { fx:0.86, fy:0.65, sk:'prop_machine', skill:'crafting', id:'gift_basket', ic:'🧺', lbl:'Gift Basket' },
   ],
   fishing: [
-    { fx:0.25, fy:0.36, sk:'prop_hopper', skill:'fishing', id:'sardine',  ic:'🐟', lbl:'Sardine Spot' },
-    { fx:0.50, fy:0.30, sk:'prop_hopper', skill:'fishing', id:'mackerel', ic:'🐠', lbl:'Mackerel Spot' },
-    { fx:0.75, fy:0.36, sk:'prop_hopper', skill:'fishing', id:'bass',     ic:'🐡', lbl:'Bass Spot' },
+    { fx:0.50, fy:0.32, sk:'prop_hopper', skill:'fishing', id:'fish', ic:'🎣', lbl:'Fishing Spot' },
   ],
 };
 // Skill interior canvas size (mining/steelworks/manufacturing/woodcutting)
@@ -4366,11 +4365,33 @@ function drawInterior(t){
       if((Math.floor(wy/16)+Math.floor(t*2))%3===0) ctx.fillRect(6+(wy*13)%38,wy,W*.16,2);
       if((Math.floor(wy/16)+Math.floor(t*1.4)+2)%4===0) ctx.fillRect(W*.55+(wy*7)%32,wy+4,W*.12,2);
     }
-    // fish silhouettes drifting below surface
-    for(let i=0;i<5;i++){
-      const fx=(t*0.9+i*62)%(W+80)-40, fy=H*.15+Math.sin(t+i*1.3)*H*.09;
-      ctx.fillStyle="rgba(255,255,255,0.12)";
-      ctx.beginPath(); ctx.ellipse(fx, fy, 14, 5, Math.sin(t*0.4+i)*0.2, 0, 7); ctx.fill();
+    // an occasional shark shadow glides down through the deep (behind the fish)
+    {
+      const SHARK_CYCLE = 24;                      // seconds between passes
+      const sp = (t % SHARK_CYCLE) / SHARK_CYCLE;
+      if (sp < 0.5){
+        const syp = sp/0.5;                        // 0..1 top → surface
+        const shx = W*0.5 + Math.sin(t*0.5)*W*0.16;
+        const shy = -32 + syp*(H*.44 + 40);
+        const wig = Math.sin(t*3)*3;
+        ctx.save(); ctx.globalAlpha = 0.20; ctx.fillStyle = "#08222f";
+        ctx.beginPath(); ctx.ellipse(shx, shy, 9, 27, 0, 0, 7); ctx.fill();                       // body
+        ctx.beginPath(); ctx.moveTo(shx-8, shy-24); ctx.lineTo(shx+wig, shy-36); ctx.lineTo(shx+8, shy-24); ctx.closePath(); ctx.fill();  // tail
+        ctx.beginPath(); ctx.moveTo(shx, shy-6); ctx.lineTo(shx+14, shy+2); ctx.lineTo(shx, shy+7); ctx.closePath(); ctx.fill();          // dorsal fin
+        ctx.restore();
+      }
+    }
+    // fish swimming below the surface — body + a flicking tail, both directions
+    for(let i=0;i<7;i++){
+      const dir = (i%2) ? 1 : -1;
+      const speed = 13 + (i%3)*7;
+      const travel = (t*speed + i*57) % (W+90);
+      const fx = dir>0 ? travel-45 : W+45-travel;
+      const fy = H*.08 + (i*0.13 % 1)*H*.30 + Math.sin(t*1.2+i*1.4)*4;
+      const wig = Math.sin(t*6 + i)* 2;
+      ctx.fillStyle = i%4===0 ? "rgba(40,70,90,.4)" : "rgba(30,60,80,.32)";
+      ctx.beginPath(); ctx.ellipse(fx, fy, 6, 2.6, 0, 0, 7); ctx.fill();                 // body
+      ctx.beginPath(); ctx.moveTo(fx - dir*6, fy); ctx.lineTo(fx - dir*10, fy-2.5+wig); ctx.lineTo(fx - dir*10, fy+2.5+wig); ctx.closePath(); ctx.fill();  // tail
     }
     // pier deck planks
     ctx.fillStyle="#8c6947"; ctx.fillRect(0,H*.50,W,H*.50);
@@ -4387,60 +4408,72 @@ function drawInterior(t){
     if (!_fishNow) _fishActiveId = null;
     const _fcAge = _now - _fishCatchT;
     const _castAge = _now - _fishCastT;
-    // Only the spot the CHARACTER is fishing shows a line — cast from the rod they
-    // hold (tip published in _fishRodTip by drawPerson), so it's clearly them fishing.
+    // The bobber sits at a FIXED spot on the water; the line runs from the rod the
+    // character holds (tip in _fishRodTip). Wander up to 3 blocks and it stays
+    // connected; past 3 it retracts to just the rod; at 4 the line snaps.
     if (_fishNow){
-      const _fcAge = _now - _fishCatchT;
-      const _castAge = _now - _fishCastT;
-      const st = STATION_DEFS.fishing.find(s => s.id === S.action.id);
-      const tipX = _fishRodTip.x || (st ? st.fx*W : W/2);
+      const spotX = STATION_DEFS.fishing[0].fx * W;      // fixed fishing spot
+      const spotY = H*.18;
+      const tipX = _fishRodTip.x || spotX;
       const tipY = _fishRodTip.y || H*.30;
-      const restX = tipX + 2, restY = tipY - 16;         // bobber floats on the water just past the rod
-      const CAST = 520;
-      let bx, by, casting = _castAge < CAST;
-      if (casting){
-        const cp = _castAge / CAST;
-        bx = tipX + (restX - tipX) * cp;
-        by = tipY + (restY - tipY) * cp - Math.sin(cp*Math.PI) * 20;   // arcs out and settles
+      const blocks = Math.hypot(IP.x - spotX, IP.y - H*.44) / 30;   // how far the angler wandered
+      if (blocks >= 4){
+        // line snaps — a frayed end whips back to the rod, and the cast ends
+        ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(tipX+3, tipY+9); ctx.stroke();
+        toast("🎣 Too far — your line snapped!");
+        log("🎣 You wandered too far and your line snapped.", "");
+        S.action = null; renderNav();
+      } else if (blocks > 3){
+        // retracted — the angler just holds the rod, a short slack line dangling
+        ctx.strokeStyle="rgba(245,245,245,.5)"; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(tipX+2, tipY+8+Math.sin(t*3)*2); ctx.stroke();
       } else {
-        const wob = Math.sin(t*2.0)*2.2;
-        const nibble = (Math.sin(t*0.7) > 0.85) ? Math.sin(t*20)*2.5 : 0;
-        const biting = _fcAge < 260;
-        bx = restX + Math.sin(t*1.3)*3;
-        by = restY + wob + nibble + (biting ? 6 : 0);
-      }
-      // line from the character's rod tip to the bobber
-      ctx.strokeStyle = "rgba(245,245,245,.75)"; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(tipX, tipY);
-      ctx.quadraticCurveTo((tipX+bx)/2, Math.max(tipY,by)+3, bx, by); ctx.stroke();
-      if (!(casting && _castAge < 60)){
-        ctx.fillStyle="#dd4444"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, 7); ctx.fill();
-        ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.arc(bx, by, 4, Math.PI, 0); ctx.fill();
-        ctx.fillStyle="#7a1e1e"; ctx.fillRect(bx-1, by-5, 2, 2);
-      }
-      if (!casting){
-        const rr = (t*30 % 26);
-        ctx.strokeStyle = `rgba(255,255,255,${(0.35*(1-rr/26)).toFixed(2)})`; ctx.lineWidth=1;
-        ctx.beginPath(); ctx.ellipse(bx, by+3, 5+rr*0.5, 2+rr*0.2, 0, 0, 7); ctx.stroke();
-      }
-      if (!casting && _castAge < CAST+220){
-        const sp = (_castAge-CAST)/220;
-        ctx.strokeStyle=`rgba(255,255,255,${(0.7*(1-sp)).toFixed(2)})`; ctx.lineWidth=2;
-        ctx.beginPath(); ctx.arc(restX, restY+3, 4+sp*16, 0, 7); ctx.stroke();
-      }
-      // catch! splash + reel the flapping fish up the line to the rod
-      if (_fcAge < 1000){
-        const rp = _fcAge/1000;
-        if (rp < 0.4){
-          ctx.strokeStyle=`rgba(255,255,255,${(0.8*(1-rp/0.4)).toFixed(2)})`; ctx.lineWidth=2;
-          ctx.beginPath(); ctx.arc(bx, by+2, 5+rp*22, 0, 7); ctx.stroke();
-          for(let d=0;d<4;d++){ const a=-0.6+d*0.5; ctx.fillStyle="rgba(220,240,255,.7)"; ctx.fillRect(bx+Math.cos(a)*rp*18, by-Math.sin(a)*rp*20, 2, 2); }
+        const _fcAge = _now - _fishCatchT, _castAge = _now - _fishCastT;
+        const CAST = 520;
+        let bx, by, casting = _castAge < CAST;
+        if (casting){
+          const cp = _castAge / CAST;
+          bx = tipX + (spotX - tipX) * cp;
+          by = tipY + (spotY - tipY) * cp - Math.sin(cp*Math.PI) * 20;   // arcs out and settles
+        } else {
+          const wob = Math.sin(t*2.0)*2.2;
+          const nibble = (Math.sin(t*0.7) > 0.85) ? Math.sin(t*20)*2.5 : 0;
+          const biting = _fcAge < 260;
+          bx = spotX + Math.sin(t*1.3)*2;
+          by = spotY + wob + nibble + (biting ? 6 : 0);
         }
-        const fx = bx + (tipX-bx)*rp, fy = by + (tipY-by)*rp;
-        ctx.save(); ctx.translate(fx, fy); ctx.rotate(Math.sin(t*24)*0.4 - 0.5);
-        ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("🐟", 0, 0);
-        ctx.restore();
-        if (rp>0.3){ ctx.fillStyle="rgba(180,215,240,.6)"; ctx.fillRect(fx-1, fy+6+(_fcAge%180)/22, 2, 3); }
+        ctx.strokeStyle = "rgba(245,245,245,.75)"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(tipX, tipY);
+        ctx.quadraticCurveTo((tipX+bx)/2, Math.max(tipY,by)+3, bx, by); ctx.stroke();
+        if (!(casting && _castAge < 60)){
+          ctx.fillStyle="#dd4444"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, 7); ctx.fill();
+          ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.arc(bx, by, 4, Math.PI, 0); ctx.fill();
+          ctx.fillStyle="#7a1e1e"; ctx.fillRect(bx-1, by-5, 2, 2);
+        }
+        if (!casting){
+          const rr = (t*30 % 26);
+          ctx.strokeStyle = `rgba(255,255,255,${(0.35*(1-rr/26)).toFixed(2)})`; ctx.lineWidth=1;
+          ctx.beginPath(); ctx.ellipse(bx, by+3, 5+rr*0.5, 2+rr*0.2, 0, 0, 7); ctx.stroke();
+        }
+        if (!casting && _castAge < CAST+220){
+          const sp = (_castAge-CAST)/220;
+          ctx.strokeStyle=`rgba(255,255,255,${(0.7*(1-sp)).toFixed(2)})`; ctx.lineWidth=2;
+          ctx.beginPath(); ctx.arc(spotX, spotY+3, 4+sp*16, 0, 7); ctx.stroke();
+        }
+        if (_fcAge < 1000){
+          const rp = _fcAge/1000;
+          if (rp < 0.4){
+            ctx.strokeStyle=`rgba(255,255,255,${(0.8*(1-rp/0.4)).toFixed(2)})`; ctx.lineWidth=2;
+            ctx.beginPath(); ctx.arc(bx, by+2, 5+rp*22, 0, 7); ctx.stroke();
+            for(let d=0;d<4;d++){ const a=-0.6+d*0.5; ctx.fillStyle="rgba(220,240,255,.7)"; ctx.fillRect(bx+Math.cos(a)*rp*18, by-Math.sin(a)*rp*20, 2, 2); }
+          }
+          const fx = bx + (tipX-bx)*rp, fy = by + (tipY-by)*rp;
+          ctx.save(); ctx.translate(fx, fy); ctx.rotate(Math.sin(t*24)*0.4 - 0.5);
+          ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("🐟", 0, 0);
+          ctx.restore();
+          if (rp>0.3){ ctx.fillStyle="rgba(180,215,240,.6)"; ctx.fillRect(fx-1, fy+6+(_fcAge%180)/22, 2, 3); }
+        }
       }
     }
   } else if (S.tab==="contracts"){
@@ -7319,10 +7352,17 @@ function completeAction(act, skill, silent){
     }
     for (const [id,q] of Object.entries(act.in)) S.items[id] -= effCost(act, id, q);
   }
-  for (const [id,q] of Object.entries(act.out)){ addItem(id, q); S.prod[id] = (S.prod[id]||0) + q; }
+  // Fishing lands a probabilistic catch (rarer/pricier fish need a better rod),
+  // rather than a fixed output — everything below uses this rolled `_out`.
+  let _out = act.out, _fishCaught = null;
+  if (skill === "fishing"){
+    _fishCaught = _rollCatch(toolTier(), Math.random);
+    _out = { [_fishCaught]: 1 };
+  }
+  for (const [id,q] of Object.entries(_out)){ addItem(id, q); S.prod[id] = (S.prod[id]||0) + q; }
   // Occy: 20% chance to yield a bonus crafted item
   if (S.pets.active === "occy" && skill === "crafting" && Math.random() < 0.20){
-    const _bonusId = Object.keys(act.out)[0];
+    const _bonusId = Object.keys(_out)[0];
     addItem(_bonusId, 1);
     S.prod[_bonusId] = (S.prod[_bonusId]||0) + 1;
     if (!silent) toast(`🐙 Occy lends a tentacle — bonus ${ITEMS[_bonusId].n}!`);
@@ -7335,8 +7375,8 @@ function completeAction(act, skill, silent){
       const _def = PERK_DEFS[_pid];
       if (!_def || (_def.type!=='yield' && _def.type!=='yield3')) continue;
       if (Math.random() < _def.val){
-        const _bid = Object.keys(act.out)[0];
-        const _bq = _def.type==='yield3' ? act.out[_bid]*2 : act.out[_bid];
+        const _bid = Object.keys(_out)[0];
+        const _bq = _def.type==='yield3' ? _out[_bid]*2 : _out[_bid];
         addItem(_bid, _bq);
         S.prod[_bid] = (S.prod[_bid]||0) + _bq;
         if (!silent) toast(`⭐ ${_def.label} — +${ITEMS[_bid].n}!`);
@@ -7347,22 +7387,28 @@ function completeAction(act, skill, silent){
   {
     const _ay = autoYieldChance(skill, S.automatons?.[skill]);
     if (_ay > 0 && Math.random() < _ay){
-      const _bid = Object.keys(act.out)[0];
-      const _bq = act.out[_bid];
+      const _bid = Object.keys(_out)[0];
+      const _bq = _out[_bid];
       addItem(_bid, _bq); S.prod[_bid] = (S.prod[_bid]||0) + _bq;
       if (!silent) toast(`🤖 Automaton bonus — +${_bq} ${ITEMS[_bid].n}!`);
     }
   }
   if (!silent && skill==="fishing") _fishCatchT = (typeof performance!=="undefined"?performance.now():Date.now());
-  grantXp(skill, act.xp);
+  // fishing XP scales with the fish landed; everything else uses the action's xp
+  grantXp(skill, _fishCaught ? (fishById(_fishCaught)?.xp || act.xp) : act.xp);
   S.counters.actions++;
   rollPet(skill);
-  if (!silent && typeof pushVfx === "function") pushVfx(skill, act);
+  if (!silent && typeof pushVfx === "function" && skill!=="fishing") pushVfx(skill, act);
   if (!silent && typeof SFX !== "undefined") SFX.play(skill);
   tutCheck();
   achCheck();
   if (!silent){
-    const outName = Object.keys(act.out).map(id=>ITEMS[id].n).join(", ");
+    if (_fishCaught){
+      const _rar = fishById(_fishCaught)?.rarity || 0;
+      const _tag = _rar >= 3 ? " 🌟 A prize catch!" : _rar >= 2 ? " ✨ A rare one!" : "";
+      toast(`🎣 Landed a ${ITEMS[_fishCaught].n}!${_tag}`);
+    }
+    const outName = Object.keys(_out).map(id=>ITEMS[id].n).join(", ");
     log(`${SKILLS[skill].ic} ${act.n} → +${outName}`);
   }
   // Tree chopping (direct click on tree): record respawn and stop action
