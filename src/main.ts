@@ -2036,10 +2036,16 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   const _fem = female || false;
   const _stride = +(opts.stride) || 1;   // >1 exaggerates the walk cycle (used by the big previews)
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
+  // foraging crouch-and-gather cycle: the body dips down to pick from the ground
+  const _forage = tool === "🌿" && !moving;
+  let _fPhase = 0, _fBend = 0;
+  if (_forage){ const FP = 1.3; _fPhase = (((t % FP) + FP) % FP) / FP; _fBend = _fPhase < 0.65 ? Math.sin(_fPhase/0.65*Math.PI) : 0; }
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
   if (scale !== 1.0) ctx.scale(scale, scale);
-  // shadow
+  // shadow (drawn before the crouch so it stays planted on the ground)
   ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(0, 10-bob, 8, 3, 0, 0, 7); ctx.fill();
+  // apply the crouch squash to the body only (feet stay planted)
+  if (_fBend > 0){ const s = 1 - _fBend*0.16; ctx.translate(facing*_fBend*2, 10*(1-s)); ctx.scale(1, s); }
   const legSwing = moving ? Math.sin(t*10)*3*_stride : 0;
   const armSwing = moving ? Math.sin(t*10+Math.PI)*3*_stride : 0;   // arms swing opposite to legs
   // alternating foot lift — only kicks in when the walk is exaggerated (stride>1),
@@ -2182,8 +2188,21 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
       ctx.fillStyle = "rgba(168,150,112,.5)"; ctx.fillRect(hx-3, hy+2, 7, 2);
       ctx.restore();
     }
+  } else if (tool === "🌿"){
+    // foraging: a hand reaches to the ground, then gathered specks pop up when picked
+    const reach = _fBend;
+    ctx.save(); ctx.translate(facing*6, -3); ctx.rotate(facing*(0.5 + reach*0.8));
+    ctx.fillStyle=shirt; ctx.fillRect(-1.5, 0, 3, 6+reach*3);
+    ctx.fillStyle=skin;  ctx.fillRect(-1.5, 6+reach*3, 3, 3);
+    ctx.restore();
+    if (_fPhase > 0.5 && _fPhase < 0.95){
+      const pp = (_fPhase-0.5)/0.45;
+      const cols = ["#6a9a3a","#8a4a9a","#c07a3a"];
+      for (let i=0;i<3;i++){ ctx.globalAlpha = 1-pp; ctx.fillStyle = cols[i]; ctx.fillRect(facing*8 + i*2 - 2, -4 - pp*15 - i*2, 2, 2); }
+      ctx.globalAlpha = 1;
+    }
   } else if (tool){
-    // gentle handheld emoji for non-strike activities (fishing rod, herbs, jar, wrench)
+    // gentle handheld emoji for other activities (fishing rod, jar, wrench)
     const sway = Math.sin(t*4)*0.18;
     ctx.save(); ctx.translate(facing*9,-4); ctx.rotate(facing*(sway-0.2));
     ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
