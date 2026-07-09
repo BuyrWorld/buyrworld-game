@@ -293,5 +293,10 @@
     "n": "Diamond",
     "ic": "💠",
     "v": 240
+  },
+  "diamond_drill": {
+    "n": "Diamond Drill",
+    "ic": "🛠️",
+    "v": 620
   }
 }

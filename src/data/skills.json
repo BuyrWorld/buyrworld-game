@@ -239,6 +239,20 @@
         "out": {
           "servo_unit": 1
         }
+      },
+      {
+        "id": "diamond_drill",
+        "n": "Assemble Diamond Drill",
+        "lvl": 55,
+        "ms": 12000,
+        "xp": 95,
+        "in": {
+          "diamond": 1,
+          "steel_bar": 2
+        },
+        "out": {
+          "diamond_drill": 1
+        }
       }
     ]
   },

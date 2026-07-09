@@ -1,44 +1,105 @@
 [
   {
-    "id": "marge", "n": "Marge", "ic": "👩‍🌾",
-    "title": "Featherstone Ore Broker", "lvl": 1,
+    "id": "marge",
+    "n": "Marge",
+    "ic": "👩‍🌾",
+    "title": "Featherstone Ore Broker",
+    "lvl": 1,
     "quip": "Cash for rocks, rocks for cash. No invoices, no drama.",
-    "stock": ["iron_ore", "copper_ore", "coal", "bauxite"]
+    "stock": [
+      "iron_ore",
+      "copper_ore",
+      "coal",
+      "bauxite"
+    ]
   },
   {
-    "id": "bolt", "n": "Bolt", "ic": "🧑‍🏭",
-    "title": "Rustbelt Scrap Dealer", "lvl": 10,
+    "id": "bolt",
+    "n": "Bolt",
+    "ic": "🧑‍🏭",
+    "title": "Rustbelt Scrap Dealer",
+    "lvl": 10,
     "quip": "Everything's refurbished. Even the refurbishments.",
-    "stock": ["iron_bar", "copper_wire", "steel_bar", "alu_ingot"]
+    "stock": [
+      "iron_bar",
+      "copper_wire",
+      "steel_bar",
+      "alu_ingot"
+    ]
   },
   {
-    "id": "perry", "n": "Perry", "ic": "🧑‍✈️",
-    "title": "Port Salvo Freight Agent", "lvl": 25,
+    "id": "perry",
+    "n": "Perry",
+    "ic": "🧑‍✈️",
+    "title": "Port Salvo Freight Agent",
+    "lvl": 25,
     "quip": "If it fits in a container, I know someone who wants it.",
-    "stock": ["bracket", "wiring_loom", "gearbox", "chassis", "rare_earth"]
+    "stock": [
+      "bracket",
+      "wiring_loom",
+      "gearbox",
+      "chassis",
+      "rare_earth"
+    ]
   },
   {
-    "id": "quinn", "n": "Quinn", "ic": "🧑‍💼",
-    "title": "Port Salvo Wholesaler", "lvl": 35,
+    "id": "quinn",
+    "n": "Quinn",
+    "ic": "🧑‍💼",
+    "title": "Port Salvo Wholesaler",
+    "lvl": 35,
     "quip": "Nothing in this container by accident.",
-    "stock": ["pallet_jack", "sensor", "servo_unit", "tech_alloy", "chassis"]
+    "stock": [
+      "pallet_jack",
+      "sensor",
+      "servo_unit",
+      "tech_alloy",
+      "chassis",
+      "diamond",
+      "diamond_drill"
+    ]
   },
   {
-    "id": "marina", "n": "Marina", "ic": "🧑‍🍳",
-    "title": "Pier Fishmonger", "lvl": 1,
+    "id": "marina",
+    "n": "Marina",
+    "ic": "🧑‍🍳",
+    "title": "Pier Fishmonger",
+    "lvl": 1,
     "quip": "Fresh off the line, love. Never been near a tin.",
-    "stock": ["sardine", "mackerel", "bass", "salmon", "tuna"]
+    "stock": [
+      "sardine",
+      "mackerel",
+      "bass",
+      "salmon",
+      "tuna"
+    ]
   },
   {
-    "id": "finn", "n": "Finn", "ic": "🪑",
-    "title": "Furniture & Homeware Trader", "lvl": 1,
+    "id": "finn",
+    "n": "Finn",
+    "ic": "🪑",
+    "title": "Furniture & Homeware Trader",
+    "lvl": 1,
     "quip": "Good taste costs a bit more. Worth every penny.",
-    "stock": ["painting", "vase", "fancy_rug", "lamp", "bookcase"]
+    "stock": [
+      "painting",
+      "vase",
+      "fancy_rug",
+      "lamp",
+      "bookcase"
+    ]
   },
   {
-    "id": "wren", "n": "Wren", "ic": "🌿",
-    "title": "Forest Forager", "lvl": 1,
+    "id": "wren",
+    "n": "Wren",
+    "ic": "🌿",
+    "title": "Forest Forager",
+    "lvl": 1,
     "quip": "What the forest gives, I'll sell fair.",
-    "stock": ["mushroom", "berries", "wild_herb"]
+    "stock": [
+      "mushroom",
+      "berries",
+      "wild_herb"
+    ]
   }
 ]
