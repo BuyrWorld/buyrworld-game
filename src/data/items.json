@@ -288,5 +288,10 @@
     "n": "Celebration Feast",
     "ic": "🍱",
     "v": 620
+  },
+  "diamond": {
+    "n": "Diamond",
+    "ic": "💠",
+    "v": 240
   }
 }

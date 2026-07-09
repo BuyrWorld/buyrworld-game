@@ -1241,7 +1241,8 @@ const STATION_DEFS = {
     { fx:0.40, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
     { fx:0.65, fy:0.34, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
     { fx:0.86, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'bauxite',    ic:'🟠', lbl:'Bauxite' },
-    { fx:0.50, fy:0.70, sk:'prop_hopper',   skill:'mining',        id:'rare_earth', ic:'💎', lbl:'Rare Earths' },
+    { fx:0.35, fy:0.72, sk:'prop_hopper',   skill:'mining',        id:'rare_earth', ic:'💎', lbl:'Rare Earths' },
+    { fx:0.68, fy:0.72, sk:'prop_hopper',   skill:'mining',        id:'diamond',    ic:'💠', lbl:'Diamond' },
   ],
   steelworks:    [
     { fx:0.28, fy:0.55, sk:'prop_machine',  skill:'steelworks',    id:'iron_bar',   ic:'🔩', lbl:'Smelt Iron' },
@@ -4304,7 +4305,7 @@ function drawInterior(t){
     });
     ctx.fillStyle="#4a3018"; ctx.fillRect(0,0,W,7);   // ceiling beam across the top
     // ore-vein rock mounds at every mining station — the "veins" you walk up to
-    const _oreCols = { iron_ore:"#aab2bd", copper_ore:"#c97b45", coal:"#3a3a44", bauxite:"#e0863a", rare_earth:"#8fe6ff" };
+    const _oreCols = { iron_ore:"#aab2bd", copper_ore:"#c97b45", coal:"#3a3a44", bauxite:"#e0863a", rare_earth:"#8fe6ff", diamond:"#d4f6ff" };
     STATION_DEFS.mining.forEach(st=>{
       const sx=st.fx*W, sy=st.fy*H, col=_oreCols[st.id]||"#8a8a92";
       // rocky mound

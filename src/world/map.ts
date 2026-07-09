@@ -107,6 +107,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'rock_baux2',  kind: 'rock',  tx: 4,  ty: 27, ore: 'bauxite',    lvl: 20, vein: '#e0863a' },
   { id: 'rock_rare',   kind: 'rock',  tx: 2,  ty: 26, ore: 'rare_earth', lvl: 40, vein: '#7ee0ff', sparkle: true },
   { id: 'rock_rare2',  kind: 'rock',  tx: 7,  ty: 27, ore: 'rare_earth', lvl: 40, vein: '#7ee0ff', sparkle: true },
+  { id: 'rock_diamond',kind: 'rock',  tx: 4,  ty: 24, ore: 'diamond',    lvl: 60, vein: '#c8f4ff', sparkle: true },
   // --- Industrial buildings ---
   { id: 'furnace',     kind: 'bld',   tx: 11, ty: 22, w: 3, h: 3, tab: 'steelworks',    name: 'Furnace',       ic: '🔥', wall: '#c9b294', roof: '#8a5a3c', chimney: true },
   { id: 'workshop',    kind: 'bld',   tx: 15, ty: 22, w: 3, h: 3, tab: 'manufacturing', name: 'Workshop',      ic: '⚙️', wall: '#dbc99f', roof: '#5f7fbe' },

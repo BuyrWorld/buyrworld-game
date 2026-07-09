@@ -53,6 +53,16 @@
         "out": {
           "rare_earth": 1
         }
+      },
+      {
+        "id": "diamond",
+        "n": "Mine Diamond",
+        "lvl": 60,
+        "ms": 16000,
+        "xp": 100,
+        "out": {
+          "diamond": 1
+        }
       }
     ]
   },
