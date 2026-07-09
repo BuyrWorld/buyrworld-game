@@ -81,11 +81,11 @@ nav button.locked:hover{ opacity:.85; background:rgba(255,248,230,0.3); }
 main{ flex:1; width:100%; max-width:1400px; margin:0 auto; padding:14px; }
 .panel{
   background:var(--panel); border:2px solid var(--edge);
-  box-shadow:4px 4px 0 var(--shadow); padding:14px; margin-bottom:14px;
+  box-shadow:4px 4px 0 var(--shadow); padding:16px; margin-bottom:16px;
   border-top:3px solid var(--amber);
 }
-.panel h2{ font-size:11px; color:var(--amber); margin-bottom:10px; }
-.panel h2 small{ display:block; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--dim); margin-top:6px; font-weight:400; }
+.panel h2{ font-size:12px; color:var(--amber); margin-bottom:11px; line-height:1.4; }
+.panel h2 small{ display:block; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--dim); margin-top:6px; font-weight:400; line-height:1.5; }
 
 /* ---------- skill xp bar ---------- */
 .xpwrap{ margin-bottom:12px; }
@@ -136,8 +136,8 @@ main{ flex:1; width:100%; max-width:1400px; margin:0 auto; padding:14px; }
 .contract .req .have{ color:var(--mint); } .contract .req .short{ color:var(--orange); }
 .contract .pay{ font-size:12px; color:var(--amber); }
 .btn{
-  background:var(--orange); color:#1a0d05; border:none; padding:8px 14px;
-  font-size:12px; font-weight:600; box-shadow:3px 3px 0 var(--shadow);
+  background:var(--orange); color:#1a0d05; border:none; padding:9px 16px;
+  font-size:13px; font-weight:600; box-shadow:3px 3px 0 var(--shadow);
   transition:background 0.12s, transform 0.08s, box-shadow 0.08s;
 }
 .btn:hover:not(:disabled){ background:#ff9e72; }
@@ -259,7 +259,20 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .wiz-dot{ width:7px; height:7px; border-radius:50%; background:var(--edge); transition:transform .12s,background .12s; }
 .wiz-dot.done{ background:#7cb46b; }
 .wiz-dot.on{ background:var(--amber); transform:scale(1.35); }
-.btn.big{ font-size:14px; padding:12px 22px; }
+.btn.big{ font-size:15px; padding:13px 24px; }
+
+/* ---------- Task 5: readability on small screens & touch ---------- */
+@media (max-width:640px){
+  body{ font-size:15px; }
+  .btn{ font-size:14px; padding:11px 16px; min-height:44px; }
+  nav button{ font-size:13px; padding:13px 14px; }
+  .panel h2{ font-size:13px; }
+  .panel h2 small{ font-size:12.5px; }
+  .frost .say p{ font-size:14px; }
+  .frost .say .obj{ font-size:13.5px; }
+  .stat .v{ font-size:12px; }
+  .stat .l{ font-size:10px; }
+}
 
 /* ---------- M1 Identity Pack ---------- */
 @keyframes logoShine{
@@ -322,13 +335,14 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 
 /* ---------- Frost tutorial banner ---------- */
 .frost{
-  background:var(--sky); border:2px solid var(--edge); box-shadow:4px 4px 0 var(--shadow);
-  padding:12px; margin-bottom:14px; display:flex; gap:12px; align-items:center;
+  background:var(--sky); border:2px solid var(--edge); border-left:6px solid var(--amber);
+  box-shadow:4px 4px 0 var(--shadow);
+  padding:14px; margin-bottom:16px; display:flex; gap:12px; align-items:center;
 }
 .frost .say{ flex:1; min-width:200px; }
-.frost .say .who{ font-family:'Press Start 2P',monospace; font-size:9px; color:var(--text); margin-bottom:6px; }
-.frost .say p{ font-size:12px; }
-.frost .say .obj{ font-size:11px; color:var(--text); margin-top:6px; font-weight:600; }
+.frost .say .who{ font-family:'Press Start 2P',monospace; font-size:10px; color:var(--amber); margin-bottom:7px; }
+.frost .say p{ font-size:13.5px; line-height:1.5; }
+.frost .say .obj{ font-size:13px; color:#3a2a10; margin-top:8px; font-weight:700; background:rgba(232,150,30,.22); border:1px solid rgba(232,150,30,.5); border-radius:5px; padding:5px 9px; display:inline-block; }
 .frost svg{ flex-shrink:0; }
 
 /* ---------- village layout ---------- */
