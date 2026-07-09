@@ -729,6 +729,7 @@ const INTERIOR_RESIDENTS = {
   fishmonger_wh:  { name:"Pearl",        x:150, y:100, lines:["Freshest catch on the coast.","Sell in bulk and I'll pay a premium.","Pearl by name, pearls of the sea by trade."] },
   village_fund:   { name:"The Committee",x:90,  y:76,  lines:["Every donation makes the valley bloom.","We've grand plans for the village green.","Thank you kindly for your generosity."] },
   contracts:      { name:"Depot Clerk",  x:43,  y:120, lines:["Orders keep piling up — grand for business!","Deliver the goods, collect your coin.","Bigger orders pay the most, mind.","The lorry's due in any minute now."] },
+  upgrades:       { name:"The Mayor",    x:160, y:56,  lines:["Welcome to the Town Hall!","Invest your profits — every upgrade pays for itself.","A prosperous founder makes a prosperous valley.","We're always improving Featherstone."] },
 };
 let _intChat = null; // {name, lines, idx} — the resident NPC you're currently chatting with
 // ---- Dialogue system v2: ambient, situational, legible speech bubbles ----
@@ -4764,6 +4765,10 @@ function drawInterior(t){
     });
     for(const bx of [12,288]){ ctx.fillStyle="#7a5230"; ctx.fillRect(bx,146,20,24); ctx.fillStyle="#5a3a20"; ctx.fillRect(bx,152,20,3); ctx.fillRect(bx,161,20,3); ctx.fillStyle="#8c6947"; ctx.fillRect(bx,146,20,4); }
     drawEmojiC(ctx,"🧺", 60, 154, 13); drawEmojiC(ctx,"🍎", W-60, 154, 11);
+    // a hanging set of scales over the counter + shoppers browsing (a bustling hall)
+    ctx.fillStyle="#6a4a2a"; ctx.fillRect(W/2-1, 96, 2, 10); drawEmojiC(ctx,"⚖️", W/2, 108, 12);
+    for(let s=0;s<2;s++){ const _ph=t*0.4 + s*2.3; const _shx = 48 + s*168 + Math.sin(_ph)*34; const _shf = Math.cos(_ph)>=0?1:-1;
+      drawPerson(ctx, _shx, 150, ["#8a6a4a","#5a3a2a"][s], ["#6a8ac0","#c07a4a"][s], t+s, true, _shf, null, _shf>0?"right":"left"); }
   } else if (S.tab==="pets"){
     room("#5a3e22","#7c5a38","#caa870","#c09c62","#4a3018");
     ctx.fillStyle="#5a4228"; ctx.fillRect(0,40,W,7);
@@ -5237,6 +5242,11 @@ function drawInterior(t){
     }
     ctx.fillStyle="#5a6a7a"; ctx.fillRect(16,60,22,42); ctx.fillStyle="#48586a"; for(const cy of [66,80,92]) ctx.fillRect(18,cy,18,8);
     drawEmojiC(ctx,"💼", 188, 82, 10);
+    // a civic banner behind the podium
+    ctx.fillStyle="#3a5a8a"; ctx.fillRect(120,40,80,10); ctx.fillStyle="#ffd666"; fitText(ctx,"FEATHERSTONE TOWN HALL",160,45,74,5,{weight:"bold",baseline:"middle"});
+    // a couple of attendees seated in the audience
+    drawPerson(ctx, 78+34+8,  104+2, "#6a4a2a", "#5a7a9a", t, false, 1,  null, "up");
+    drawPerson(ctx, 78+3*34+8, 134+2, "#8a6a4a", "#9a5a4a", t, false, -1, null, "up");
     const _bigPlant = (px, py) => {
       ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(px, py+14, 11, 3, 0, 0, 7); ctx.fill();
       ctx.fillStyle="#b06a42"; ctx.fillRect(px-8, py, 16, 13);
