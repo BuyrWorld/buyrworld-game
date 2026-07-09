@@ -2059,6 +2059,26 @@ function drawChild(ctx, x, y, hair, shirt, t, moving, dir, trouser, female, sz){
   ctx.restore();
 }
 function drawEmojiC(ctx, em, x, y, px){ ctx.font = px+"px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(em, x, y); }
+// Draw board/sign text that ALWAYS fits within maxW by shrinking the font (down to a
+// floor) — so captions never spill outside their panel. Sets alignment explicitly so
+// it never depends on leftover canvas state. Centered by default.
+function fitText(ctx, text, cx, y, maxW, maxPx, opts){
+  opts = opts || {};
+  const family = opts.family || "'IBM Plex Mono',monospace";
+  const weight = opts.weight || "";
+  const min = opts.min || 4;
+  ctx.textAlign = opts.align || "center";
+  ctx.textBaseline = opts.baseline || "top";
+  let px = maxPx;
+  while (px > min){
+    ctx.font = (weight ? weight+" " : "") + px + "px " + family;
+    if (ctx.measureText(text).width <= maxW) break;
+    px -= 0.5;
+  }
+  ctx.fillText(text, cx, y);
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";   // restore defaults
+  return px;
+}
 function drawOccy(ctx, cx, cy, t, sz){
   const s = sz / 18;
   // tentacles — 8 animated wavy arms
@@ -2933,31 +2953,20 @@ function drawObjects(ctx, t){
 function drawSeasonalBillboard(ctx, t){
   const _curSeason = getSeason();
   const _billX = 40*TILE, _billY = 2*TILE;
-  if (_curSeason === "summer"){
-    ctx.fillStyle="#5a3a1a"; ctx.fillRect(_billX, _billY+12, 3, 22);
-    ctx.fillStyle="#e8d090"; ctx.fillRect(_billX-22, _billY, 48, 18);
-    ctx.fillStyle="#c04030"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
-    ctx.fillText("☀️ SUMMER FETE", _billX+2, _billY+2);
-    ctx.fillStyle="#5a3010"; ctx.font="5px 'IBM Plex Mono',monospace";
-    ctx.fillText("Jun 1 – Aug 31", _billX+2, _billY+11);
-    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-  } else if (_curSeason === "autumn"){
-    ctx.fillStyle="#5a3a1a"; ctx.fillRect(_billX, _billY+12, 3, 22);
-    ctx.fillStyle="#e0a050"; ctx.fillRect(_billX-22, _billY, 48, 18);
-    ctx.fillStyle="#3a2010"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
-    ctx.fillText("🍂 HARVEST FEST", _billX+2, _billY+2);
-    ctx.fillStyle="#5a3010"; ctx.font="5px 'IBM Plex Mono',monospace";
-    ctx.fillText("Sep – Nov", _billX+2, _billY+11);
-    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-  } else if (_curSeason === "winter"){
-    ctx.fillStyle="#3a3a5a"; ctx.fillRect(_billX, _billY+12, 3, 22);
-    ctx.fillStyle="#c8d8f0"; ctx.fillRect(_billX-22, _billY, 48, 18);
-    ctx.fillStyle="#2a3a6a"; ctx.font="bold 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
-    ctx.fillText("❄️ XMAS MARKET", _billX+2, _billY+2);
-    ctx.fillStyle="#3a3a5a"; ctx.font="5px 'IBM Plex Mono',monospace";
-    ctx.fillText("Dec – Jan", _billX+2, _billY+11);
-    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-  }
+  const THEMES = {
+    summer: { post:"#5a3a1a", bg:"#e8d090", edge:"#c8a860", fg:"#a83020", sub:"#5a3010", title:"☀ SUMMER FETE",  dates:"Jun – Aug" },
+    autumn: { post:"#5a3a1a", bg:"#e0a050", edge:"#b87838", fg:"#3a2010", sub:"#5a3010", title:"🍂 HARVEST FEST", dates:"Sep – Nov" },
+    winter: { post:"#3a3a5a", bg:"#c8d8f0", edge:"#98a8c8", fg:"#2a3a6a", sub:"#3a3a5a", title:"❄ XMAS MARKET",  dates:"Dec – Jan" },
+  };
+  const th = THEMES[_curSeason]; if (!th) return;
+  // wider board so the caption always sits comfortably inside it
+  const bw = 72, bh = 22, left = _billX - bw/2;
+  ctx.fillStyle = th.post; ctx.fillRect(_billX-1, _billY+bh-2, 3, 22);   // hanging post
+  ctx.fillStyle = th.edge; ctx.fillRect(left-1, _billY-1, bw+2, bh+2);   // frame
+  ctx.fillStyle = th.bg;   ctx.fillRect(left, _billY, bw, bh);           // board face
+  const cx = _billX;
+  ctx.fillStyle = th.fg;  fitText(ctx, th.title, cx, _billY+3,  bw-8, 8, { weight:"bold" });
+  ctx.fillStyle = th.sub; fitText(ctx, th.dates, cx, _billY+13, bw-8, 7);
 }
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
@@ -2996,10 +3005,9 @@ function drawExtras(ctx, t){
     // "HIGH STREET" sign on a post at tx≈35
     const _signX = 35*TILE, _signY = 3*TILE;
     ctx.fillStyle="#3a2010"; ctx.fillRect(_signX-1, _signY, 3, TILE*2);
-    ctx.fillStyle="#c8a060"; ctx.fillRect(_signX-22, _signY+8, 46, 14);
-    ctx.fillStyle="#1a0c00"; ctx.font="bold 7px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillText("HIGH STREET", _signX+1, _signY+16);
-    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+    ctx.fillStyle="#c8a060"; ctx.fillRect(_signX-24, _signY+8, 50, 14);
+    ctx.fillStyle="#1a0c00";
+    fitText(ctx, "HIGH STREET", _signX+1, _signY+15, 46, 8, { weight:"bold", family:"sans-serif", baseline:"middle" });
     // Seasonal high street decorations
     const _curSeason = getSeason();
     if (_curSeason === "winter"){
@@ -4325,8 +4333,9 @@ function drawInterior(t){
     // price board
     ctx.fillStyle="#3a2010"; ctx.fillRect(W/2-48,56,96,32);
     ctx.fillStyle="#c9a86a"; ctx.fillRect(W/2-46,58,92,28);
-    ctx.fillStyle="#3a2010"; ctx.font="7px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
-    ctx.fillText("BOAT HIRE",W/2,68); ctx.fillText("10 coins per trip",W/2,79); ctx.textAlign="left";
+    ctx.fillStyle="#3a2010";
+    fitText(ctx, "BOAT HIRE",       W/2, 63, 84, 9, { weight:"bold" });
+    fitText(ctx, "10 coins / trip", W/2, 76, 84, 7);
     // fishing nets on right
     drawEmojiC(ctx,"🪣",W-30,100,12); drawEmojiC(ctx,"🎣",W-52,100,12);
     // harbour keeper silhouette (no NPC inside — self-service)
@@ -4897,9 +4906,12 @@ function drawInterior(t){
     drawEmojiC(ctx,"🧊",W-49,H-48,10); drawEmojiC(ctx,"🚰",W-23,H-46,10);
     // shopkeeper Nell (female, warm shirt)
     drawPerson(ctx, W/2+60, 52, "#8a5a20", "#c86030", t, false, -1, null, "down", "#e8b880", "#4a3020", null, true);
-    // price tag on shelf
-    ctx.fillStyle="#fff8f0"; ctx.fillRect(W*0.45|0,47,36,16); ctx.fillStyle="#5a3a18"; ctx.font="bold 6px monospace";
-    ctx.textAlign="left"; ctx.fillText("🛋️ FROM 20c",W*0.45+2|0,56); ctx.fillText("DELIVERY FREE",W*0.45+2|0,62); ctx.textAlign="left";
+    // price tag on shelf — widened so both lines fit inside
+    const _ftx = W*0.45|0;
+    ctx.fillStyle="#fff8f0"; ctx.fillRect(_ftx,46,52,18);
+    ctx.fillStyle="#5a3a18";
+    fitText(ctx, "🛋 FROM 20c",   _ftx+26, 48, 48, 7, { weight:"bold" });
+    fitText(ctx, "DELIVERY FREE", _ftx+26, 56, 48, 7, { weight:"bold" });
   }
   if (S.tab==="pub"){
     // The Rose & Pallet — classic British pub
@@ -4985,8 +4997,9 @@ function drawInterior(t){
     // pub sign on back wall top-right
     ctx.fillStyle="#2a1008"; ctx.fillRect(W-82,4,72,30);
     ctx.fillStyle="#8a4020"; ctx.fillRect(W-80,6,68,26);
-    ctx.fillStyle="#ffd666"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
-    ctx.fillText("THE ROSE",W-45,18); ctx.fillText("& PALLET",W-45,28); ctx.textAlign="left";
+    ctx.fillStyle="#ffd666";
+    fitText(ctx, "THE ROSE", W-46, 9,  64, 9, { weight:"bold" });
+    fitText(ctx, "& PALLET", W-46, 20, 64, 9, { weight:"bold" });
   }
   if (S.tab==="police_station"){
     room("#1a2a5a","#c0c8d8","#d8e0ec","#ccd8e8","#2a3a5a");
@@ -5002,9 +5015,12 @@ function drawInterior(t){
     // wanted poster board
     ctx.fillStyle="#5a4030"; ctx.fillRect(W-44,10,36,52);
     ctx.fillStyle="#f4e8d0"; ctx.fillRect(W-42,12,32,48);
-    ctx.fillStyle="#3a2020"; ctx.font="bold 5px monospace"; ctx.textAlign="center";
-    ctx.fillText("WANTED",W-26,21); ctx.fillText("have you",W-26,30); ctx.fillText("seen this",W-26,38); ctx.fillText("person?",W-26,46);
-    drawEmojiC(ctx,"❓",W-26,58,9); ctx.textAlign="left";
+    ctx.fillStyle="#3a2020";
+    fitText(ctx, "WANTED",    W-26, 16, 30, 6, { weight:"bold" });
+    fitText(ctx, "have you",  W-26, 27, 30, 5, { weight:"bold" });
+    fitText(ctx, "seen this", W-26, 35, 30, 5, { weight:"bold" });
+    fitText(ctx, "person?",   W-26, 43, 30, 5, { weight:"bold" });
+    drawEmojiC(ctx,"❓",W-26,58,9);
     // filing cabinet
     ctx.fillStyle="#4a5a6a"; ctx.fillRect(10,52,22,90);
     for(let fi=0;fi<4;fi++){ ctx.fillStyle="#5a6a7a"; ctx.fillRect(12,54+fi*22,18,18); ctx.fillStyle="#c8a040"; ctx.fillRect(18,62+fi*22,6,2); }
@@ -5077,11 +5093,15 @@ function drawInterior(t){
     // display items on counter
     const _rItems = ["🥐","🍎","🧁","🎀","🪴"];
     _rItems.forEach((em,i)=>{ drawEmojiC(ctx, em, 30+i*52, 52, 12); });
-    // chalk price board on back wall
+    // chalk price board on back wall — text centred and fitted within the board
     ctx.fillStyle="#2a1020"; ctx.fillRect(W-80,8,70,44);
     ctx.fillStyle="#3a2030"; ctx.fillRect(W-78,10,66,40);
-    ctx.fillStyle="rgba(255,255,255,.6)"; ctx.font="bold 7px monospace";
-    ctx.fillText("TODAY'S", W-74, 22); ctx.fillText("SPECIALS", W-74, 31); ctx.fillText("✦ Fresh ✦", W-74, 40);
+    const _pbcx = W-45;   // board centre (W-78..W-12)
+    ctx.fillStyle="rgba(255,255,255,.72)";
+    fitText(ctx, "TODAY'S",   _pbcx, 14, 60, 8, { weight:"bold" });
+    fitText(ctx, "SPECIALS",  _pbcx, 24, 60, 8, { weight:"bold" });
+    ctx.fillStyle="rgba(255,220,150,.85)";
+    fitText(ctx, "✦ Fresh ✦", _pbcx, 34, 60, 7);
     // shopkeeper
     drawPerson(ctx, W/2, 46, "#c9a24b", "#e84060", t, false, 1, null, "down", null, "#4a1828", null, true);
     // bunting across ceiling
