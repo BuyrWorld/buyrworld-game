@@ -21,6 +21,7 @@ import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } fro
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
+import { timeOfDay as _timeOfDay, pickLine as _pickLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
 import { preloadAll, drawSprite, getSprite, drawFurnitureTile } from './world/assets.ts';
@@ -647,6 +648,29 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
            iwx:0, iwy:0, iwTimer:Math.random()*3, iwTarget:null };
 });
 let CHAT_NPC = null; // villager the player is talking to inside a building
+// ---- Dialogue system v2: ambient, situational, legible speech bubbles ----
+// A villager "speaks" for SPEAK_ON seconds out of every SPEAK_CYCLE, staggered by a
+// hash of their id so the town chatters continuously without everyone talking at once.
+const SPEAK_CYCLE = 13, SPEAK_ON = 5;
+function _idHash(s){ let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0; return h; }
+function _dlgCtx(){ return { timeOfDay:_timeOfDay(gameHour()), weather:_weather.type, season:getSeason() }; }
+function _speakOffset(v){ return (_idHash(v.id) % 1000) / 1000 * SPEAK_CYCLE; }
+// Is this villager mid-utterance right now?
+function isSpeaking(v){ return (((Date.now()/1000) + _speakOffset(v)) % SPEAK_CYCLE) < SPEAK_ON; }
+// The line a villager is currently saying — stable within one speak window, mixing
+// their personal quips with situational lines. Deterministic per window (no flicker).
+function speechLine(v){
+  const quips = v.quips && v.quips.length ? v.quips : ["..."];
+  const win = Math.floor(((Date.now()/1000) + _speakOffset(v)) / SPEAK_CYCLE);
+  const quip = quips[Math.abs(win) % quips.length];
+  let s = (_idHash(v.id) ^ (win * 2654435761)) >>> 0;
+  const rng = () => { s = (s*1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  return _pickLine(quip, _dlgCtx(), rng, 0.4);
+}
+// A crisp, legible speech bubble anchored at screen-percentage (x%,y%) above a head.
+function speechBubbleHtml(name, line, xPct, yPct){
+  return `<div class="npc-bubble" style="left:${xPct.toFixed(1)}%;top:${yPct.toFixed(1)}%"><span class="nb-name">${name}</span>${esc(line)}</div>`;
+}
 // Children NPCs — derived from villager family data + extra school children
 const CHILDREN_DATA = [
   { id:"ruby",    n:"Ruby",    age:9,  female:true,  hair:"#c9a24b", shirt:"#ff8070", trouser:"#4a5a8a", homeId:"home_03" },
@@ -3548,7 +3572,7 @@ function drawVillage(t){
         const _urg = _mLeft <= 5 ? `<span style="color:#ff8870;margin-left:8px">⏰ ${_mLeft}m left!</span>` : `<span style="color:rgba(255,255,255,.5);margin-left:8px">${_mLeft}m left</span>`;
         html += `<div class="speech-dock"><b>${dockV.n}:</b> "Could you spare ${S.deliveryReq.qty}× ${ITEMS[S.deliveryReq.itemId].n}? I'll pay ${fmt(S.deliveryReq.reward)} coins!"${_btn}${_urg}</div>`;
       } else {
-        const q = dockV.quips[dockV.quipIdx % dockV.quips.length];
+        const q = speechLine(dockV);
         const _fId = dockV.id;
         const _hHtml = heartsHtml(_fId, 10);
         const _lastChat = S.friendships?.[_fId]?.lastChat || 0;
@@ -3571,6 +3595,23 @@ function drawVillage(t){
             ${_giftBtns.length ? `<span style="color:rgba(0,0,0,.4);font-size:9px">gift:</span>${_giftBtns}` : ''}
           </div>
         </div>`;
+      }
+    }
+    // ambient speech bubbles: villagers you can see chatter as they go about their
+    // day. Cap to the nearest few so it stays legible, and skip the one docked below.
+    {
+      const _speakers = VILLAGER_STATE
+        .filter(v => !v.indoor && v.phase !== "sleep" && v !== dockV && v.quips && isSpeaking(v))
+        .map(v => ({ v, d: Math.hypot(VP.x - v.x, VP.y - v.y) }))
+        .filter(o => o.d < 9 * TILE)
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 3);
+      for (const { v } of _speakers){
+        const bx = (v.x - CAM.x) / VIEW_W * 100;
+        const by = (v.y - 34 - CAM.y) / VIEW_H * 100;
+        if (bx > 2 && bx < 98 && by > 4 && by < 98){
+          html += speechBubbleHtml(v.n, speechLine(v), bx, by);
+        }
       }
     }
     // district identity: a single subtle "you're in" chip, top-right only
@@ -5354,20 +5395,28 @@ function drawInterior(t){
   if (_iOverlay){
     let _iHtml = "";
     _tabWorkers.forEach(v => {
-      const dist = Math.hypot(IP.x-v.iwx, IP.y-v.iwy);
-      if (dist < 28){
-        const px = v.iwx/W*100, py = (v.iwy-30)/H*100;
-        _iHtml += `<div class="int-vlbl" style="left:${px.toFixed(1)}%;top:${py.toFixed(1)}%">${v.n}</div>`;
+      const px = v.iwx/W*100;
+      // speaking villagers get a legible bubble you can read across the room;
+      // otherwise just a name tag when you're close.
+      if (v !== CHAT_NPC && isSpeaking(v)){
+        _iHtml += speechBubbleHtml(v.n, speechLine(v), px, (v.iwy-34)/H*100);
+      } else if (Math.hypot(IP.x-v.iwx, IP.y-v.iwy) < 28){
+        _iHtml += `<div class="int-vlbl" style="left:${px.toFixed(1)}%;top:${((v.iwy-30)/H*100).toFixed(1)}%">${v.n}</div>`;
       }
     });
     if (CHAT_NPC){
-      const q = CHAT_NPC.quips[CHAT_NPC.quipIdx % CHAT_NPC.quips.length];
-      _iHtml += `<div class="int-chat"><span class="int-chat-name">${CHAT_NPC.n}:</span><span class="int-chat-txt"> ${q}</span><span class="int-chat-dim"> · tap to dismiss</span></div>`;
+      const q = speechLine(CHAT_NPC);
+      _iHtml += `<div class="int-chat"><span class="int-chat-name">${CHAT_NPC.n}:</span><span class="int-chat-txt"> ${esc(q)}</span><span class="int-chat-dim"> · tap to dismiss</span></div>`;
     }
-    // home villager crisp name label (legible, follows them as they wander)
+    // home occupant: a legible speech bubble when they're chatting, else a name tag
     if (S.tab==="home" && _homeVilLbl){
-      const _hx = _homeVilLbl.x/W*100, _hy = (_homeVilLbl.y-30)/H*100;
-      _iHtml += `<div class="int-vlbl" style="left:${_hx.toFixed(1)}%;top:${_hy.toFixed(1)}%">${_homeVilLbl.name}</div>`;
+      const _hx = _homeVilLbl.x/W*100;
+      const _hv = VILLAGERS.find(vl => vl.homeId === S.roomObjId);
+      if (_hv && isSpeaking(_hv)){
+        _iHtml += speechBubbleHtml(_homeVilLbl.name, speechLine(_hv), _hx, (_homeVilLbl.y-34)/H*100);
+      } else {
+        _iHtml += `<div class="int-vlbl" style="left:${_hx.toFixed(1)}%;top:${((_homeVilLbl.y-30)/H*100).toFixed(1)}%">${_homeVilLbl.name}</div>`;
+      }
     }
     // trespass badge
     if (S.tab==="home" && S.trespass?.active){
@@ -8050,7 +8099,7 @@ function renderMain(){
     else if (S.tab==="home"){
       const _homeVillager = VILLAGERS.find(v => v.homeId === S.roomObjId);
       const _hvName = _homeVillager ? _homeVillager.n : "Someone";
-      const _hvQuip = _homeVillager ? _homeVillager.quips[Math.floor(Date.now()/8000) % _homeVillager.quips.length] : "A quiet life in the valley.";
+      const _hvQuip = _homeVillager ? speechLine(_homeVillager) : "A quiet life in the valley.";
       const _hvFamily = _homeVillager
         ? [_homeVillager.partner ? `Partner: ${_homeVillager.partner.charAt(0).toUpperCase()+_homeVillager.partner.slice(1)}` : null,
            (_homeVillager.children && _homeVillager.children.length) ? `Children: ${_homeVillager.children.join(", ")}` : null

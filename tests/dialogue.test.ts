@@ -1,0 +1,69 @@
+import { describe, it, expect } from 'vitest';
+import {
+  TIME_LINES, WEATHER_LINES, SEASON_LINES, timeOfDay, contextLines, pickLine,
+} from '../src/data/dialogue.ts';
+
+const CTX = { timeOfDay: 'morning', weather: 'rain', season: 'spring' };
+
+describe('Dialogue — line pools', () => {
+  it('every pool is non-empty with trimmed strings', () => {
+    for (const group of [TIME_LINES, WEATHER_LINES, SEASON_LINES]) {
+      for (const [k, lines] of Object.entries(group)) {
+        expect(lines.length, k).toBeGreaterThan(0);
+        for (const l of lines) expect(l.trim(), k).toBe(l);
+      }
+    }
+  });
+
+  it('covers all four parts of the day and all four seasons', () => {
+    expect(Object.keys(TIME_LINES).sort()).toEqual(['afternoon', 'evening', 'morning', 'night']);
+    expect(Object.keys(SEASON_LINES).sort()).toEqual(['autumn', 'spring', 'summer', 'winter']);
+  });
+});
+
+describe('Dialogue — timeOfDay', () => {
+  it('maps hours to the right part of the day', () => {
+    expect(timeOfDay(7)).toBe('morning');
+    expect(timeOfDay(10.9)).toBe('morning');
+    expect(timeOfDay(11)).toBe('afternoon');
+    expect(timeOfDay(16)).toBe('afternoon');
+    expect(timeOfDay(17)).toBe('evening');
+    expect(timeOfDay(20)).toBe('evening');
+    expect(timeOfDay(21)).toBe('night');
+    expect(timeOfDay(23.9)).toBe('night');
+    expect(timeOfDay(0)).toBe('morning');
+  });
+});
+
+describe('Dialogue — contextLines', () => {
+  it('merges the matching time, weather and season pools', () => {
+    const pool = contextLines(CTX);
+    expect(pool).toEqual([...TIME_LINES.morning, ...WEATHER_LINES.rain, ...SEASON_LINES.spring]);
+  });
+
+  it('skips unknown context keys gracefully', () => {
+    const pool = contextLines({ timeOfDay: 'morning', weather: 'meteor-shower', season: 'spring' });
+    expect(pool).toEqual([...TIME_LINES.morning, ...SEASON_LINES.spring]);
+  });
+});
+
+describe('Dialogue — pickLine', () => {
+  it('returns a situational line when the roll is under contextChance', () => {
+    // rng() first call < 0.4 → pick context; second call selects index 0
+    const seq = [0.1, 0];
+    let i = 0;
+    const rng = () => seq[i++];
+    const line = pickLine('MY QUIP', CTX, rng, 0.4);
+    expect(line).toBe(contextLines(CTX)[0]);
+  });
+
+  it('returns the personal quip when the roll is over contextChance', () => {
+    const rng = () => 0.99;   // 0.99 >= 0.4 → keep personal quip
+    expect(pickLine('MY QUIP', CTX, rng, 0.4)).toBe('MY QUIP');
+  });
+
+  it('falls back to the personal quip when there are no context lines', () => {
+    const emptyCtx = { timeOfDay: 'x', weather: 'y', season: 'z' };
+    expect(pickLine('MY QUIP', emptyCtx, () => 0, 1)).toBe('MY QUIP');
+  });
+});
