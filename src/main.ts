@@ -1225,9 +1225,11 @@ const COURSES = [
 ];
 const STATION_DEFS = {
   mining:        [
-    { fx:0.16, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
-    { fx:0.50, fy:0.62, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
-    { fx:0.84, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
+    { fx:0.15, fy:0.34, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
+    { fx:0.40, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
+    { fx:0.65, fy:0.34, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
+    { fx:0.86, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'bauxite',    ic:'🟠', lbl:'Bauxite' },
+    { fx:0.50, fy:0.70, sk:'prop_hopper',   skill:'mining',        id:'rare_earth', ic:'💎', lbl:'Rare Earths' },
   ],
   steelworks:    [
     { fx:0.28, fy:0.55, sk:'prop_machine',  skill:'steelworks',    id:'iron_bar',   ic:'🔩', lbl:'Smelt Iron' },
@@ -1300,14 +1302,10 @@ function showZoneCard(tab){
 // Solid collision rects for interior rooms (pixel coords on 320×200 canvas)
 const INTERIOR_COLS = {
   mining: [
-    {x:12,  y:8,  w:7,  h:156}, // beam 1 (left of iron_ore station x=45)
-    {x:78,  y:8,  w:7,  h:156}, // beam 2 (between iron x=45 and copper x=128)
-    {x:160, y:8,  w:7,  h:156}, // beam 3 (between copper x=128 and coal x=211)
-    {x:248, y:8,  w:7,  h:156}, // beam 4 (right of coal station x=211)
-    {x:66,  y:160,w:36, h:20},  // minecart
-    {x:222, y:158,w:14, h:14},  // crate a
-    {x:238, y:158,w:14, h:14},  // crate b
-    {x:4,   y:154,w:22, h:32},  // coal pile
+    // Open cave — support beams only clip the ceiling now, so you can walk freely
+    // to every ore vein. Just a couple of low props remain as obstacles.
+    {x:4,   y:160,w:22, h:26},  // coal pile (bottom-left corner)
+    {x:280, y:160,w:34, h:24},  // crates (bottom-right corner)
   ],
   steelworks: [
     {x:42,  y:10, w:38, h:38},  // furnace 1
@@ -4229,33 +4227,37 @@ function drawInterior(t){
     ctx.fillStyle="#211910"; ctx.fillRect(0,H-12,W,12);
     ctx.fillStyle="#3d3020"; ctx.fillRect(W*.36,H-12,2,12); ctx.fillRect(W*.55,H-12,2,12);
     for(let x=W*.36+3;x<W*.55;x+=6){ ctx.fillStyle="#4a3828"; ctx.fillRect(x,H-7,3,3); }
-    // 4 support beams (between station x-positions: stations at x≈45,128,211)
-    [12,78,160,248].forEach(bx=>{
-      ctx.fillStyle="#5a3a1e"; ctx.fillRect(bx,8,7,H-20);
-      ctx.fillStyle="#7a5534"; ctx.fillRect(bx,8,7,5); ctx.fillRect(bx,H*.44,7,4);
-      ctx.fillStyle="#6a4828"; for(const by of[H*.26,H*.52]) ctx.fillRect(bx-4,by,15,3);
+    // ceiling support beams only clip the top now (they no longer block the floor)
+    [40,120,200,280].forEach(bx=>{
+      ctx.fillStyle="#5a3a1e"; ctx.fillRect(bx-3,0,7,30);
+      ctx.fillStyle="#7a5534"; ctx.fillRect(bx-5,28,11,4);
     });
-    // minecart body + wheels
-    ctx.fillStyle="#4a3428"; ctx.fillRect(W*.36,H*.75,W*.19,H*.14);
-    ctx.fillStyle="#231810"; ctx.fillRect(W*.38,H*.79,W*.15,H*.08);
-    ctx.fillStyle="#1e1a18"; ctx.beginPath(); ctx.arc(W*.41,H*.9,5,0,7); ctx.arc(W*.52,H*.9,5,0,7); ctx.fill();
-    drawEmojiC(ctx,"⛏️",W*.47,H*.76,9);
-    // coal pile (left)
-    ctx.fillStyle="#1e1814"; ctx.fillRect(4,H*.74,W*.09,H*.26); ctx.fillRect(5,H*.69,W*.07,H*.07); ctx.fillRect(6,H*.64,W*.04,H*.07);
-    // crates (right of coal station)
-    [[W*.72,H*.79],[W*.80,H*.79]].forEach(([x,y],i)=>{
-      const cw=W*.07,ch=H*.12,c=i?"#7a5a38":"#8c6947";
-      ctx.fillStyle=c; ctx.fillRect(x,y,cw,ch); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1;
-      ctx.strokeRect(x,y,cw,ch); ctx.fillStyle="#5a3a20"; ctx.fillRect(x+cw*.5-1,y,2,ch); ctx.fillRect(x,y+ch*.5-1,cw,2);
+    ctx.fillStyle="#4a3018"; ctx.fillRect(0,0,W,7);   // ceiling beam across the top
+    // ore-vein rock mounds at every mining station — the "veins" you walk up to
+    const _oreCols = { iron_ore:"#aab2bd", copper_ore:"#c97b45", coal:"#3a3a44", bauxite:"#e0863a", rare_earth:"#8fe6ff" };
+    STATION_DEFS.mining.forEach(st=>{
+      const sx=st.fx*W, sy=st.fy*H, col=_oreCols[st.id]||"#8a8a92";
+      // rocky mound
+      ctx.fillStyle="#2a2320"; ctx.beginPath(); ctx.ellipse(sx, sy+9, 20, 8, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#463a32"; ctx.beginPath(); ctx.moveTo(sx-18,sy+10); ctx.lineTo(sx-11,sy-9); ctx.lineTo(sx-2,sy-3); ctx.lineTo(sx+7,sy-11); ctx.lineTo(sx+18,sy+10); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="#54463c"; ctx.beginPath(); ctx.moveTo(sx-11,sy-9); ctx.lineTo(sx-2,sy-3); ctx.lineTo(sx-6,sy+4); ctx.closePath(); ctx.fill();
+      // glittering ore veins embedded in the rock
+      ctx.fillStyle=col; for(let g=0;g<5;g++){ const gx=sx-10+((g*97)%20), gy=sy-6+((g*53)%13); ctx.fillRect(gx,gy,2,2); }
+      if (Math.floor(t*3+sx)%3===0){ ctx.fillStyle="#ffffff"; const gy=sy-6+((Math.floor(t*2)+Math.floor(sx))%12); ctx.fillRect(sx-6+((Math.floor(t*4))%12),gy,1,1); }
     });
-    // hanging lanterns above each station
-    for(const fx of[0.14,0.40,0.66]){
-      ctx.fillStyle="rgba(255,200,80,0.18)"; ctx.beginPath(); ctx.arc(W*fx,H*.12,W*.055,0,7); ctx.fill();
-      drawEmojiC(ctx,"🏮",W*fx,H*.14,10);
-    }
-    // ore glints in the veins + pickaxe strike scuffs on the rock
-    for(const [gx,gy] of [[15,10],[106,8],[194,12],[278,7]] as [number,number][]){
-      if (Math.floor(t*3+gx)%3===0){ ctx.fillStyle="rgba(255,255,255,.8)"; ctx.fillRect(gx+1,gy+((Math.floor(t*2)+gx)%18),2,2); }
+    // props tucked in the corners (walk-through; collision matches the two corners)
+    ctx.fillStyle="#1e1814"; ctx.fillRect(4,H-40,22,26); ctx.fillRect(6,H-46,14,8);   // coal pile (bottom-left)
+    [[284,H-40],[296,H-40]].forEach(([x,y],i)=>{                                        // crates (bottom-right)
+      const cw=14,ch=22,c=i?"#7a5a38":"#8c6947";
+      ctx.fillStyle=c; ctx.fillRect(x,y,cw,ch); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1; ctx.strokeRect(x,y,cw,ch);
+    });
+    // minecart on the rail (decorative, walk-through)
+    ctx.fillStyle="#4a3428"; ctx.fillRect(W*.30,H-30,W*.15,H*.11);
+    ctx.fillStyle="#1e1a18"; ctx.beginPath(); ctx.arc(W*.34,H-6,4,0,7); ctx.arc(W*.42,H-6,4,0,7); ctx.fill();
+    // hanging lanterns for light
+    for(const fx of[0.15,0.50,0.86]){
+      ctx.fillStyle="rgba(255,200,80,0.16)"; ctx.beginPath(); ctx.arc(W*fx,H*.10,W*.06,0,7); ctx.fill();
+      drawEmojiC(ctx,"🏮",W*fx,H*.10,10);
     }
     ctx.strokeStyle="rgba(0,0,0,.25)"; ctx.lineWidth=1;
     for(const [mx,my] of [[60,30],[140,42],[230,26],[95,54]] as [number,number][]){ ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(mx+6,my+4); ctx.moveTo(mx+3,my-2); ctx.lineTo(mx+8,my+2); ctx.stroke(); }
