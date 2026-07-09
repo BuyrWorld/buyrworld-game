@@ -7045,7 +7045,11 @@ function updateDeliveries(){
     }
   }
   if (!S.deliveryReq && _now > (S.nextDeliveryAt||0)){
-    const _it = DELIVERY_POOL[Math.floor(Math.random()*DELIVERY_POOL.length)];
+    // ask for something the player has actually made before (so it's fulfillable);
+    // fall back to the full pool only if they've produced nothing yet.
+    const _made = DELIVERY_POOL.filter(id => (S.prod?.[id]||0) > 0);
+    const _src = _made.length ? _made : DELIVERY_POOL;
+    const _it = _src[Math.floor(Math.random()*_src.length)];
     const _qty = 1 + Math.floor(Math.random()*4);
     const _reward = Math.round(ITEMS[_it].v * _qty * (1.6 + Math.random()*0.8));
     const _vi = Math.floor(Math.random()*VILLAGERS.length);
