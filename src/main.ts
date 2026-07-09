@@ -5770,6 +5770,35 @@ function _drawTitlePreview(){
   drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, !_face, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), {...plOpts(), stride:2.4});
   _titlePreviewRaf = requestAnimationFrame(_drawTitlePreview);
 }
+// Build a fully random appearance for Quick Start (fields match the wizard).
+function randomAppearance(){
+  const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+  const g = Math.random() < 0.5 ? 'male' : 'female';
+  const ap = Object.assign({}, DEFAULT_APPEARANCE);
+  ap.gender     = g;
+  ap.skin       = pick(SKIN_TONES).v;
+  ap.hair       = pick(HAIR_COLOURS).v;
+  ap.hairStyle  = Math.floor(Math.random()*HAIR_STYLE_LABELS.length);
+  ap.eyeColor   = pick(EYE_COLOURS).v;
+  ap.facialHair = g === 'female' ? 'none' : pick(FACIAL_HAIR_STYLES).v;
+  ap.shirt      = pick(SHIRT_COLOURS).v;
+  ap.jacket     = pick(JACKET_COLOURS).v;
+  ap.trousers   = pick(TROUSER_COLOURS).v;
+  ap.shoes      = pick(SHOE_COLOURS).v;
+  ap.accessory  = pick(ACCESSORY_STYLES).v;
+  ap.scarfColor = pick(SCARF_COLOURS).v;
+  ap.hat        = pick(HAT_STYLES).v;
+  ap.hatColor   = pick(HAT_COLOURS).v;
+  return ap;
+}
+// Give keyboard focus to the game so WASD/arrows work immediately after starting.
+function focusGameInput(){
+  try {
+    const el = document.getElementById("village") || document.getElementById("main");
+    if (el){ if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1"); (el as HTMLElement).focus({ preventScroll:true }); }
+    else window.focus();
+  } catch(e){}
+}
 function showTitle(){
   const tEl = document.getElementById("title");
   tEl.style.display = "flex";
@@ -5861,6 +5890,24 @@ function showTitle(){
   _renderWizard();
 
   document.getElementById("btn-preview").onclick = () => { MUSIC.unlocked = true; MUSIC.play("valley"); };
+  // shared launch — validated name in, game begins. Used by START and Quick Start.
+  const _launch = (name, delay) => {
+    _errEl.style.display = "none";
+    S.playerName = name;
+    cancelAnimationFrame(_titlePreviewRaf);
+    const badge = document.getElementById("name-badge");
+    const badgeVal = document.getElementById("badge-name-val");
+    if (badge && badgeVal){ badgeVal.textContent = name.toUpperCase(); badge.classList.add("show"); }
+    setTimeout(()=>{
+      tEl.style.display = "none";
+      MUSIC.unlocked = true; updateMusicZone();
+      const stat = document.getElementById("hud-name-stat");
+      if (stat){ stat.classList.add("named","named-anim"); setTimeout(()=>stat.classList.remove("named-anim"),500); }
+      log(`❄️ Frost: "Welcome to Featherstone Valley, <b>${pName()}</b>! Follow my lead and you'll be running this valley by teatime."`, "good");
+      updateHud(); renderNav(); renderMain(); save();
+      focusGameInput();   // Task 3: keyboard works the moment you land in the village
+    }, delay);
+  };
   _btnStart.onclick = () => {
     const _n = _input.value.trim().replace(/[<>"'&]/g,"").slice(0,16);
     if (!_n){
@@ -5871,20 +5918,15 @@ function showTitle(){
       setTimeout(()=>_input.classList.remove("input-shake"), 450);
       return;
     }
-    _errEl.style.display = "none";
-    S.playerName = _n;
-    cancelAnimationFrame(_titlePreviewRaf);
-    const badge = document.getElementById("name-badge");
-    const badgeVal = document.getElementById("badge-name-val");
-    if (badge && badgeVal){ badgeVal.textContent = _n.toUpperCase(); badge.classList.add("show"); }
-    setTimeout(()=>{
-      tEl.style.display = "none";
-      MUSIC.unlocked = true; updateMusicZone();
-      const stat = document.getElementById("hud-name-stat");
-      if (stat){ stat.classList.add("named","named-anim"); setTimeout(()=>stat.classList.remove("named-anim"),500); }
-      log(`❄️ Frost: "Welcome to Featherstone Valley, <b>${pName()}</b>! Follow my lead and you'll be running this valley by teatime."`, "good");
-      updateHud(); renderMain(); save();
-    }, 1100);
+    _launch(_n, 1100);
+  };
+  // Quick Start — a random character and a default name, straight into the game.
+  const _btnQuick = document.getElementById("btn-quick") as HTMLButtonElement;
+  if (_btnQuick) _btnQuick.onclick = () => {
+    S.appearance = randomAppearance();
+    const _n = _input.value.trim().replace(/[<>"'&]/g,"").slice(0,16) || "Founder";
+    toast(`⚡ Quick start! Welcome, ${_n}.`);
+    _launch(_n, 500);
   };
   _input.onkeydown = e => { if (e.key==="Enter") _btnStart.click(); };
   const box = tEl.querySelector(".box") as HTMLElement;
@@ -5907,6 +5949,9 @@ if (typeof document !== 'undefined'){
   .ilbl-lock{color:#ffd666}
   .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);background:rgba(176,87,79,.92);color:#fff8e6;font:600 10px 'IBM Plex Mono',monospace;padding:1px 7px;border-radius:4px;pointer-events:none}
   .vhint{text-align:center}
+  .btn.quickstart{background:#2a6a3a;color:#fff8e6;border:2px solid #1a4a28;font-size:13px;padding:9px 18px}
+  .btn.quickstart:hover{background:#348046}
+  @media(max-width:560px){.btn.quickstart{font-size:14px;padding:11px 18px}}
   .int-layout{display:flex;flex-direction:column;gap:14px;isolation:isolate}
   .int-left{position:relative;z-index:2}
   .int-left .int-canvas-wrap{overflow:hidden;border-radius:4px}
