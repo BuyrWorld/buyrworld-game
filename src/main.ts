@@ -2784,20 +2784,50 @@ const FEEDBACK_LINK = "";
 function openRoadmap(){
   const ex = document.getElementById("roadmap-modal"); if (ex){ ex.remove(); return; }
   const list = (items) => items.map(i => `<li style="margin:3px 0">${i}</li>`).join("");
-  const nowItems = [
-    "⛏️ The full supply chain — mine, smelt, craft, trade &amp; deliver",
-    "🎣 Fishing, foraging, woodcutting &amp; the artisan's shed",
-    "🏡 The village: 17 named neighbours with routines &amp; conversations",
-    "🍳 Cooking, gardening, your own cottage &amp; furniture",
-    "🏦 Districts, the exchange, the bank, automation &amp; the power grid",
-    "🍺 The pub, nightclub, festivals &amp; seasonal events",
-    "🧭 The Founder's Journey, 📔 Valley Journal &amp; achievements",
+  // comprehensive milestone log, grouped so it's easy to skim
+  const sections = [
+    { h:"🏭 The supply chain", items:[
+      "Mine ore, smelt bars, manufacture parts, and deliver contracts at the Depot",
+      "Nine skills: Mining, Smelting, Manufacturing, Logistics, Trading, Woodcutting, Fishing, Foraging &amp; Crafting",
+      "Tool tiers — wood → stone → iron → gold → diamond — that speed up and improve your yields",
+    ]},
+    { h:"🎣 Gathering &amp; making", items:[
+      "Fishing at the pier with a probabilistic catch (better rods land rarer fish)",
+      "Foraging, woodcutting, and the Artisan's Shed for jams, teas, baskets &amp; more",
+      "The Village Kitchen — cook what you grow &amp; catch into meals that sell high or grant buffs",
+      "A cottage garden with crops that grow over time",
+    ]},
+    { h:"🏡 Village life", items:[
+      "17 named neighbours with daily routines, homes, and two-way conversations",
+      "Situational dialogue that reacts to time, weather, season &amp; your progress",
+      "Your own cottage with furniture, décor &amp; upgrade tiers",
+      "The Rose &amp; Pallet pub, Club Featherstone (themed nights), seasonal festivals &amp; the seasonal market",
+      "Mischief &amp; the Law — trespass, sneak-steal, and the village police",
+    ]},
+    { h:"💰 Economy &amp; districts", items:[
+      "A living economy — supply &amp; demand, business cycles, news &amp; a net-worth dashboard",
+      "The Exchange (commodity speculation) and the Bank (interest &amp; loans)",
+      "Eight districts + the Harbour, with a Town Directory &amp; fast travel",
+      "The Automation Lab (helper bots) and the Data Centre's Power Grid",
+      "Estate agent rentals, retail auto-sell &amp; the village beautification fund",
+    ]},
+    { h:"🏆 Goals &amp; progression", items:[
+      "The Founder's Journey (11-stage story with earned titles) &amp; the 📔 Valley Journal of firsts",
+      "Achievements, skill perks, University degrees, companions/pets &amp; a bike",
+      "Notice-board quests, daily challenges &amp; personal villager requests",
+      "Friendship keepsakes &amp; prestige bonuses",
+    ]},
+    { h:"✨ Comfort &amp; onboarding", items:[
+      "Quick Start, a guided first quest with on-map markers, and self-teaching tips",
+      "Progressive tab unlocking so new players aren't overwhelmed",
+      "Fullscreen &amp; couch/TV legibility, gamepad support &amp; an inventory view",
+    ]},
   ];
   const nextItems = [
+    "🎨 An aesthetic pass on the activity interiors",
+    "🍋 School fundraiser events (lemonade stand → school upgrades)",
     "📖 More story, characters &amp; guided quests",
-    "💖 Deeper relationships &amp; village events",
     "⚖️ Ongoing balancing &amp; polish — shaped by your feedback",
-    "📱 Continued mobile &amp; couch/TV improvements",
   ];
   const feedback = FEEDBACK_LINK
     ? `<a href="${FEEDBACK_LINK}" target="_blank" rel="noopener" style="color:#4a9ad8;font-weight:700">Share your feedback →</a>`
@@ -2813,12 +2843,13 @@ function openRoadmap(){
       change and grow. Your progress saves in this browser — export it from the
       💾 Save tab to keep it safe.
     </div>
-    <div style="font-weight:800;font-size:13px;color:#4aa86a;margin-bottom:2px">✅ Playable now</div>
-    <ul style="font-size:12px;color:var(--text);margin:0 0 12px;padding-left:18px">${list(nowItems)}</ul>
-    <div style="font-weight:800;font-size:13px;color:#8a6a2a;margin-bottom:2px">🔜 Coming next</div>
-    <ul style="font-size:12px;color:var(--text);margin:0 0 12px;padding-left:18px">${list(nextItems)}</ul>
-    <div style="font-weight:800;font-size:13px;margin-bottom:2px">💬 Feedback</div>
-    <p style="font-size:12px;color:var(--dim);margin:0">${feedback}</p>
+    <div style="font-weight:800;font-size:14px;color:#5ad07a;margin-bottom:4px">✅ Playable now</div>
+    ${sections.map(sec => `<div style="font-weight:700;font-size:12.5px;color:#ffd666;margin:8px 0 2px">${sec.h}</div>
+      <ul style="font-size:12.5px;line-height:1.5;color:#f2ead6;margin:0;padding-left:18px">${list(sec.items)}</ul>`).join("")}
+    <div style="font-weight:800;font-size:14px;color:#e8a648;margin:14px 0 4px">🔜 Coming next</div>
+    <ul style="font-size:12.5px;line-height:1.5;color:#f2ead6;margin:0 0 12px;padding-left:18px">${list(nextItems)}</ul>
+    <div style="font-weight:800;font-size:14px;margin-bottom:2px;color:#f2ead6">💬 Feedback</div>
+    <p style="font-size:12.5px;color:#c8bd9e;margin:0">${feedback}</p>
   </div>`;
   document.body.appendChild(el);
   el.addEventListener("click", e => { if (e.target === el) el.remove(); });

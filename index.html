@@ -438,7 +438,11 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .vp-close:hover{ color:#ffd666; }
 /* districts — town directory modal + map identity */
 .dd-modal{ position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); padding:16px; }
-.dd-card{ position:relative; background:#221a12; border:2px solid #ffd666; border-radius:8px; padding:16px 16px 12px; width:min(460px,94vw); max-height:86vh; overflow-y:auto; box-shadow:6px 6px 0 rgba(0,0,0,.4); }
+.dd-card{ position:relative; background:#221a12; border:2px solid #ffd666; border-radius:8px; padding:16px 16px 12px; width:min(460px,94vw); max-height:86vh; overflow-y:auto; box-shadow:6px 6px 0 rgba(0,0,0,.4);
+  /* the card is dark, so rescope text vars to light — fixes dark-on-dark text in
+     the roadmap, ledger, journey, journal, inventory and districts modals */
+  --text:#f2ead6; --dim:#b6a888; color:#f2ead6; }
+.dd-card b{ color:#fff3d0; }
 .dd-title{ font-family:'Press Start 2P',monospace; font-size:12px; color:#ffd666; margin-bottom:5px; }
 .dd-sub{ font-size:11px; color:#8a7a60; margin-bottom:12px; }
 .inv-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:8px; }
