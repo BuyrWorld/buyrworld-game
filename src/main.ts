@@ -195,15 +195,31 @@ function frostSvg(size){
   </svg>`;
 }
 const TUT = [
-  { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path west into the quarry canyon and tap the Iron Rock and mine <b>5 Iron Ore</b>.`,
-    obj:"Mine 5 Iron Ore", cond:()=> (S.prod.iron_ore||0) >= 5, reward:60 },
-  { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk up to the <b>Furnace</b> (the building with the chimney) and smelt <b>2 Iron Bars</b>.`,
-    obj:"Smelt 2 Iron Bars", cond:()=> (S.prod.iron_bar||0) >= 2, reward:90 },
+  { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>5 Iron Ore</b>.`,
+    obj:"Mine 5 Iron Ore", cond:()=> (S.prod.iron_ore||0) >= 5, reward:60,
+    target:"rock_iron", where:"Quarry (far west)", cur:()=>(S.prod.iron_ore||0), max:5 },
+  { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk to the <b>Furnace</b> (the building with the chimney, west of the quarry) and smelt <b>2 Iron Bars</b>.`,
+    obj:"Smelt 2 Iron Bars", cond:()=> (S.prod.iron_bar||0) >= 2, reward:90,
+    target:"furnace", where:"The Furnace", cur:()=>(S.prod.iron_bar||0), max:2 },
   { say:()=>`Toasty! Now make something someone will pay for — pop into the <b>Workshop</b> next door and press <b>1 Bracket</b>.`,
-    obj:"Press 1 Bracket", cond:()=> (S.prod.bracket||0) >= 1, reward:120 },
+    obj:"Press 1 Bracket", cond:()=> (S.prod.bracket||0) >= 1, reward:120,
+    target:"workshop", where:"The Workshop", cur:()=>(S.prod.bracket||0), max:1 },
   { say:()=>`Last step: head to the <b>Depot</b> and deliver an order. Clients round here love punctuality almost as much as I love this t-shirt.`,
-    obj:"Deliver 1 contract", cond:()=> S.counters.contracts >= 1, reward:200 },
+    obj:"Deliver 1 contract", cond:()=> S.counters.contracts >= 1, reward:200,
+    target:"depot", where:"The Depot", cur:()=>S.counters.contracts, max:1 },
 ];
+// Current tutorial objective + live progress (for the Warehouse panel & banner).
+function tutObjectiveHtml(){
+  if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
+  const st = TUT[S.tut.step];
+  const cur = Math.min(st.max, st.cur ? st.cur() : 0), max = st.max || 1;
+  const pct = Math.round(cur / max * 100);
+  return `<div class="obj-tracker">
+    <div class="obj-row"><span>🎯 ${st.obj}</span><span><b>${cur}/${max}</b></span></div>
+    <div class="obj-bar"><div class="obj-fill" style="width:${pct}%"></div></div>
+    <div class="obj-where">📍 Go to: <b>${st.where}</b></div>
+  </div>`;
+}
 function tutCheck(){
   if (!S.tut || S.tut.done) return;
   let advanced = false;
@@ -236,24 +252,33 @@ function firstRunHintHtml(){
   if ((S.prod.iron_ore||0) >= 5) return "";
   return `<div class="firstrun-hint">🎮 Move with <b>WASD</b> / arrow keys — or <b>tap</b> where to go. Head <b>west ◀</b> to the quarry ⛏️ and tap the Iron Rock.</div>`;
 }
-// Task 4: a quest marker guiding the player to the first Iron Rock — a floating
-// label when it's on screen, or an edge arrow pointing toward the quarry when not.
+// Task 4: a quest marker guiding the player to the CURRENT objective's location —
+// a floating label when it's on screen, or an edge arrow pointing toward it when not.
+const QUEST_TARGET_LABEL = {
+  rock_iron: "⛏️ Iron Rock — tap to mine!",
+  furnace:   "🔥 Furnace — smelt here",
+  workshop:  "🏭 Workshop — craft here",
+  depot:     "📦 Depot — deliver here",
+};
 function questMarkerHtml(){
-  if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step !== 0) return "";
-  if ((S.prod.iron_ore||0) >= 5) return "";
-  const rock = V_OBJECTS.find(o => o.id === "rock_iron");
-  if (!rock) return "";
-  const rx = (rock.tx + 0.5) * TILE, ry = (rock.ty + 0.5) * TILE;
+  if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
+  const st = TUT[S.tut.step];
+  const target = V_OBJECTS.find(o => o.id === st.target);
+  if (!target) return "";
+  let rx, ry;
+  if (target.kind === "rock"){ rx = (target.tx + 0.5) * TILE; ry = (target.ty + 0.5) * TILE; }
+  else { const r = objRect(target); rx = r.x + r.w/2; ry = r.y + r.h; }
   const sx = (rx - CAM.x) / VIEW_W * 100, sy = (ry - CAM.y) / VIEW_H * 100;
+  const lbl = QUEST_TARGET_LABEL[st.target] || `📍 ${st.where}`;
   if (sx > 3 && sx < 97 && sy > 8 && sy < 94){
-    return `<div class="quest-rock" style="left:${sx.toFixed(1)}%;top:${sy.toFixed(1)}%">⛏️ Iron Rock — tap to mine!</div>`;
+    return `<div class="quest-rock" style="left:${sx.toFixed(1)}%;top:${sy.toFixed(1)}%">${lbl}</div>`;
   }
-  // off screen: an arrow at the screen edge pointing toward the quarry
+  // off screen: an arrow at the screen edge pointing toward the objective
   const ang = Math.atan2(ry - (CAM.y + VIEW_H/2), rx - (CAM.x + VIEW_W/2));
   const ex = Math.max(9, Math.min(91, 50 + Math.cos(ang) * 44));
   const ey = Math.max(14, Math.min(86, 50 + Math.sin(ang) * 38));
   return `<div class="quest-arrow" style="left:${ex.toFixed(1)}%;top:${ey.toFixed(1)}%;transform:translate(-50%,-50%) rotate(${ang.toFixed(3)}rad)">➤</div>`
-       + `<div class="quest-arrow-lbl" style="left:${ex.toFixed(1)}%;top:${(ey+8).toFixed(1)}%">⛏️ Quarry</div>`;
+       + `<div class="quest-arrow-lbl" style="left:${ex.toFixed(1)}%;top:${(ey+8).toFixed(1)}%">${esc(st.where)}</div>`;
 }
 /* ---------- original soundtrack (Web Audio chiptune, per-location) ---------- */
 function zoneForTab(tab){
@@ -962,7 +987,7 @@ const HEARTBEAT_POOL = [
     if (_weather.type==="rain") return "🌧️ The rain patters steadily across the valley.";
     if (_weather.type==="fog")  return "🌫️ Fog hangs low over the rooftops today.";
     if (_weather.type==="overcast") return "☁️ Grey skies over the valley — but dry, at least.";
-    const _h=S.clock?S.clock.h:9;
+    const _h=gameHour();
     if (_h>=22||_h<6) return "🌙 Stars are bright over Featherstone tonight.";
     if (_h>=6&&_h<9) return "🌅 A fine morning. The valley is waking up.";
     if (_h>=17&&_h<20) return "🌇 The sun is getting low over the ridge.";
@@ -6892,7 +6917,8 @@ function updateLoans(){
     if (_elapsed >= _dayMs){ ln.interestAccrued = (ln.interestAccrued||0) + ln.amount*0.05; ln.lastAccrual = _now; save(); }
   });
 }
-function gameHour(){ const h = S.clock ? S.clock.h : 9; const m = S.clock ? S.clock.m : 0; return h + m/60; }
+// (game time comes from the imported real-time gameHour in world/daynight.ts —
+//  1 game hour ≈ 1 real minute. A stale local override used to freeze it at 9:00.)
 function _villagerTileOk(x, y){
   const t = tileAt(x, y);
   return t !== "W" && t !== "T" && t !== "C";
@@ -7595,9 +7621,14 @@ function renderSkillPanel(skill){
 }
 function renderInventoryPanel(){
   const entries = Object.entries(S.items).filter(([,q])=>q>0);
-  let html = `<div class="panel"><h2>📦 Warehouse</h2><div class="inv">`;
+  let html = `<div class="panel"><h2>📦 Warehouse</h2>${tutObjectiveHtml()}<div class="inv">`;
   if (!entries.length) html += `<span style="color:var(--dim);font-size:12px;">Empty. The auditors would approve. Go mine something.</span>`;
-  entries.forEach(([id,q])=>{ html += `<span class="chip">${ITEMS[id].ic} ${ITEMS[id].n} <b>${fmt(q)}</b></span>`; });
+  entries.forEach(([id,q])=>{
+    // highlight the item the current objective wants, so progress is obvious
+    const _hl = (!S.tut || S.tut.done) ? false
+      : (S.tut.step===0 && id==="iron_ore") || (S.tut.step===1 && id==="iron_bar") || (S.tut.step===2 && id==="bracket");
+    html += `<span class="chip${_hl?' chip-obj':''}">${ITEMS[id].ic} ${ITEMS[id].n} <b>${fmt(q)}</b></span>`;
+  });
   html += `</div></div>`;
   return html;
 }
@@ -8420,7 +8451,7 @@ function renderMain(){
         </div>
         <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD/arrows also work</div>
       </div>
-      <div class="village-sidebar">${renderInventoryPanel()}</div>
+      <div class="village-sidebar" id="village-sidebar">${renderInventoryPanel()}</div>
     </div>`;
   else if (S.tab==="character") m.innerHTML = banner + renderCharacterCustomisation();
   else if (S.tab==="settings") m.innerHTML = banner + renderSettings();
@@ -9539,8 +9570,15 @@ setInterval(()=>{
   syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
   checkJournal();           // auto-grant Valley Journal "firsts" rewards
   if (rollMarket(false) && S.tab === "trade") renderMain();
-  if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
+  const _itemsChanged = JSON.stringify(S.items) !== beforeItems;
+  if (_itemsChanged && (S.tab in SKILLS || S.tab==="contracts")) {
     renderMain(); updateHud();
+  }
+  // Village: refresh just the Warehouse sidebar so ore/bar counts and the
+  // objective tracker update live while mining, without rebuilding the canvas.
+  if (S.tab === "village"){
+    const _sb = document.getElementById("village-sidebar");
+    if (_sb && (_itemsChanged || (S.tut && !S.tut.done))) _sb.innerHTML = renderInventoryPanel();
   }
 }, 200);
 setInterval(save, 15000);
