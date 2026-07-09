@@ -22,6 +22,7 @@ import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMu
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
+import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -974,6 +975,15 @@ const DELIVERY_POOL = ["iron_ore","copper_ore","coal","iron_bar","steel_bar","br
 let _heartbeatAt = 0;
 const _heartbeatCD = {};
 const HEARTBEAT_POOL = [
+  { id:"lemonade", w:4, fn:()=>{
+    if (!lemonadeOpen()) return null;
+    if (!S.school) S.school = { raised:0, notifiedTier:0 };
+    S.school.raised += LEMONADE.price;   // a passer-by buys one; proceeds go to the school
+    checkSchoolTier();
+    const _v = VILLAGERS[Math.floor(Math.random()*VILLAGERS.length)];
+    const _c = ["Refreshing!","Just the ticket on a warm day.","For a good cause, too.","Mmm — tart and sweet.","The little ones make a grand lemonade.","Keep the change, kids!"];
+    return `🍋 ${_v.n} bought a lemonade — "${_c[Math.floor(Math.random()*_c.length)]}"`;
+  }},
   { id:"v_life", w:3, fn:()=>{
     const _vs = VILLAGER_STATE.filter(v=>!v.indoor&&v.phase!=="sleep");
     if (!_vs.length) return null;
@@ -2000,6 +2010,11 @@ function villageClick(e){
   for (const w of WANDERERS){
     if (Math.hypot(wx-w.x, wy-w.y) < 20){ showWandererProfile(w); return; }
   }
+  // the children's lemonade stand (when it's open)
+  if (lemonadeOpen()){
+    const _lsx = (LEMONADE.tx+0.5)*TILE, _lsy = LEMONADE.ty*TILE;
+    if (Math.abs(wx-_lsx) < TILE*1.1 && wy > _lsy-TILE*1.2 && wy < _lsy+TILE*1.4){ openLemonadeStand(); return; }
+  }
   for (const o of V_OBJECTS){
     const r = objRect(o), pad=6;
     if (wx>=r.x-pad && wx<=r.x+r.w+pad && wy>=r.y-pad && wy<=r.y+r.h+pad){
@@ -2855,6 +2870,70 @@ function openRoadmap(){
   document.body.appendChild(el);
   el.addEventListener("click", e => { if (e.target === el) el.remove(); });
 }
+// ---- The children's lemonade stand — funds the village school (opens after school) ----
+const LEMONADE = { tx:18, ty:5, price:5 };
+function lemonadeOpen(){ const h = gameHour(); return h >= 15.5 && h < 19.5; }   // 4 hours after school ends
+function _lemonDay(){ return Math.floor(Date.now() / 86400000); }
+function lemonadeSellers(){
+  const k = CHILDREN_DATA; if (!k.length) return [];
+  const a = k[_lemonDay() % k.length], b = k[(_lemonDay()+3) % k.length];
+  return (b && b !== a) ? [a, b] : [a];
+}
+function checkSchoolTier(){
+  if (!S.school) S.school = { raised:0, notifiedTier:0 };
+  const tier = schoolTier(S.school.raised);
+  if (tier > (S.school.notifiedTier||0)){
+    for (let i=(S.school.notifiedTier||0); i<tier; i++){ const u = SCHOOL_UPGRADES[i]; toast(`🏫 School fund: bought ${u.ic} ${u.name}!`); log(`🏫 <b>The school</b> raised enough for ${u.ic} <b>${u.name}</b>!`, "good"); }
+    S.school.notifiedTier = tier;
+  }
+}
+function buyLemonade(){
+  if (!lemonadeOpen()){ toast("🍋 The stand's shut — it opens for 4 hours after school."); return; }
+  if (S.coins < LEMONADE.price){ toast("Not enough coins."); return; }
+  S.coins -= LEMONADE.price;
+  if (!S.school) S.school = { raised:0, notifiedTier:0 };
+  S.school.raised += LEMONADE.price;
+  addItem("lemonade", 1); S.prod.lemonade = (S.prod.lemonade||0) + 1;
+  S.counters.lemonadeBought = (S.counters.lemonadeBought||0) + 1;
+  const kid = lemonadeSellers()[0];
+  const thanks = ["Thank you!", "Every penny helps!", "Wait till Miss hears!", "You're the best!"];
+  toast(`🍋 ${kid ? kid.n : "The kids"}: "${thanks[Math.floor(Math.random()*thanks.length)]} That's ${LEMONADE.price}c for the school!"`);
+  checkSchoolTier(); updateHud(); save();
+  if (document.getElementById("lemonade-modal")) renderLemonadeStand();
+}
+function closeLemonadeStand(){ const e = document.getElementById("lemonade-modal"); if (e) e.remove(); }
+function renderLemonadeStand(){
+  const raised = S.school?.raised || 0, tier = schoolTier(raised), nx = nextUpgrade(raised);
+  const names = lemonadeSellers().map(k => k.n).join(" & ");
+  const rows = SCHOOL_UPGRADES.map((u,i)=>{
+    const bought = i < tier, isNext = !!nx && nx.upgrade.id === u.id;
+    const bar = isNext ? `<div style="background:rgba(0,0,0,.18);border-radius:4px;height:7px;overflow:hidden;margin-top:3px"><div style="width:${Math.round(nx.have/nx.need*100)}%;height:100%;background:#5ad07a"></div></div><div style="font-size:10px;color:var(--dim);margin-top:1px">${fmt(nx.have)} / ${fmt(nx.need)}c</div>` : "";
+    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-top:1px solid rgba(255,255,255,.08);opacity:${bought||isNext?1:.6}">
+      <div style="font-size:22px;width:26px;text-align:center">${bought?"✅":u.ic}</div>
+      <div style="flex:1"><div style="font-weight:700;font-size:13px;color:${bought?'#5ad07a':'var(--text)'}">${u.name}</div>
+        <div style="font-size:11px;color:var(--dim)">${bought?"Bought!":`Needs ${fmt(u.cost)}c raised`}</div>${bar}</div></div>`;
+  }).join("");
+  const inner = `<div class="dd-card" style="max-width:460px">
+    <button class="vp-close" onclick="document.getElementById('lemonade-modal').remove()">✕</button>
+    <div class="dd-title">🍋 Lemonade Stand</div>
+    <div class="dd-sub">${names?esc(names):"The children"}'s fundraiser for the village school</div>
+    <div style="background:rgba(255,224,80,.12);border:1px solid rgba(232,180,40,.4);border-radius:6px;padding:9px 11px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:700">🏫 Raised for the school</span><span style="font-size:19px;font-weight:800;color:#f0c050">${fmt(raised)}c</span></div>
+      ${nx?`<div style="font-size:11px;color:var(--dim);margin-top:2px">Saving for ${nx.upgrade.ic} ${nx.upgrade.name}</div>`:`<div style="font-size:11px;color:#5ad07a;margin-top:2px">✨ Every upgrade funded — what a school!</div>`}
+    </div>
+    <button data-buy-lemonade style="background:#e8a020;color:#161008;border:none;padding:10px 16px;border-radius:5px;cursor:pointer;font-size:15px;font-weight:800;width:100%">🍋 Buy a lemonade — ${LEMONADE.price}c</button>
+    <div style="font-size:11px;color:var(--dim);text-align:center;margin:5px 0 10px">All proceeds go straight to the school.</div>
+    <div style="font-weight:700;font-size:12px;color:#ffd666;margin-bottom:2px">🏫 Equipment fund</div>
+    ${rows}
+  </div>`;
+  const open = document.getElementById("lemonade-modal");
+  if (open){ open.innerHTML = inner; open.querySelector("[data-buy-lemonade]").onclick = ()=>buyLemonade(); return; }
+  const el = document.createElement("div"); el.id = "lemonade-modal"; el.className = "dd-modal"; el.innerHTML = inner;
+  document.body.appendChild(el);
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+  el.querySelector("[data-buy-lemonade]").onclick = ()=>buyLemonade();
+}
+function openLemonadeStand(){ closeLemonadeStand(); renderLemonadeStand(); }
 // ---- The Village Kitchen — cook what you grow, catch and forage into meals ----
 function mealBuffRemainingMs(){ return S.mealBuff ? Math.max(0, S.mealBuff.until - Date.now()) : 0; }
 function cookRecipe(id){
@@ -3453,6 +3532,27 @@ function drawExtras(ctx, t){
       drawEmojiC(ctx,"🍦", 30*TILE, _topY+20, 11);
       drawEmojiC(ctx,"🎈", 12*TILE, _topY+18, 12);
       drawEmojiC(ctx,"🎈", 28*TILE, _topY+18, 12);
+    }
+    // Children's lemonade stand (open for 4 hours after school) — funds the school
+    if (lemonadeOpen()){
+      const sx = LEMONADE.tx*TILE, sy = LEMONADE.ty*TILE;
+      // sign on a post
+      ctx.fillStyle="#8a6a40"; ctx.fillRect(sx+12, sy-16, 2, 20);
+      ctx.fillStyle="#fff4e0"; ctx.fillRect(sx+2, sy-18, 22, 12);
+      ctx.strokeStyle="#c89020"; ctx.lineWidth=1; ctx.strokeRect(sx+2, sy-18, 22, 12);
+      ctx.fillStyle="#c84020"; fitText(ctx,"LEMONADE", sx+13, sy-16, 20, 5, {weight:"bold"});
+      ctx.fillStyle="#3a7a3a"; fitText(ctx, LEMONADE.price+"c → school", sx+13, sy-10, 20, 4);
+      // the child(ren) serving, drawn behind the stall
+      const _kids = lemonadeSellers();
+      if (_kids[0]) drawPerson(ctx, sx+7,  sy+1, _kids[0].hair||"#6a4a2f", _kids[0].shirt||"#ffd666", t, false, 1,  null, "down", null, _kids[0].trouser||"#4a5a3a", null, _kids[0].female, 0.82);
+      if (_kids[1]) drawPerson(ctx, sx+19, sy+1, _kids[1].hair||"#8a6a2a", _kids[1].shirt||"#f0b0dc", t, false, -1, null, "down", null, _kids[1].trouser||"#5a3a3a", null, _kids[1].female, 0.82);
+      // stall table + striped cloth in front of them
+      ctx.fillStyle="#8a5a2a"; ctx.fillRect(sx, sy+8, 26, 3); ctx.fillRect(sx+1, sy+11, 3, 9); ctx.fillRect(sx+22, sy+11, 3, 9);
+      for(let s=0;s<6;s++){ ctx.fillStyle = s%2 ? "#ffe25a" : "#ff9a3c"; ctx.fillRect(sx+s*4.4, sy+11, 5, 8); }
+      // pitcher + cups on the table
+      ctx.fillStyle="#fff8e6"; ctx.fillRect(sx+11, sy+4, 5, 6); ctx.fillStyle="#ffe25a"; ctx.fillRect(sx+11, sy+5, 5, 4);
+      ctx.fillStyle="#fff8e6"; ctx.fillRect(sx+4, sy+7, 3, 3); ctx.fillRect(sx+20, sy+7, 3, 3);
+      drawEmojiC(ctx,"🍋", sx+6, sy+3, 7); drawEmojiC(ctx,"🍋", sx+22, sy+3, 7);
     }
   }
   // park (tx:76-86, ty:6-10): traditional manicured park
@@ -6493,7 +6593,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false,
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -6584,6 +6684,7 @@ function load(){
       if (!S.unlockedTabs) S.unlockedTabs = {};
       if (!S.firsts) S.firsts = {};
       if (typeof S.npcMet !== "boolean") S.npcMet = false;
+      if (!S.school) S.school = { raised:0, notifiedTier:0 };
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
@@ -8855,6 +8956,14 @@ function renderMain(){
             ? `<div style="background:rgba(74,255,136,.12);border:1px solid rgba(74,255,136,.3);border-radius:4px;padding:6px 10px;font-size:12px;color:#4aff88">📚 Education buff active — ${_buffMins} min remaining. All XP +15%.</div>`
             : `<button data-school-donate style="background:#3a5a3a;color:#fff;border:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px">Donate Supplies — 100 coins</button>`}
           <p style="font-size:10px;color:var(--dim);margin:8px 0 0">For advanced academic qualifications, visit the University in the east district.</p>
+        </div>
+        <div class="panel" style="padding:10px;margin-top:8px">
+          <h3 style="margin:0 0 6px;font-size:13px">🍋 School Fund</h3>
+          <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Raised at the children's lemonade stand on the high street — open for 4 hours after school${lemonadeOpen()?` · <b style="color:#4aa86a">open now!</b>`:""}.</p>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span style="font-weight:700;font-size:12px">Total raised</span><span style="font-size:17px;font-weight:800;color:#e8961e">${fmt(S.school?.raised||0)}c</span></div>
+          ${SCHOOL_UPGRADES.map((u,i)=>{ const _rt=S.school?.raised||0; const _t=schoolTier(_rt); const _b=i<_t; const _nx=nextUpgrade(_rt); const _isN=_nx&&_nx.upgrade.id===u.id;
+            return `<div style="display:flex;gap:8px;align-items:center;padding:3px 0;border-top:1px solid rgba(0,0,0,.05);font-size:12px;opacity:${_b||_isN?1:.55}"><span style="width:22px;text-align:center;font-size:15px">${_b?"✅":u.ic}</span><span style="flex:1;${_b?"color:#4aa86a;font-weight:700":""}">${u.name}</span><span style="font-size:10px;color:var(--dim)">${_b?"bought":_isN&&_nx?`${fmt(_nx.have)}/${fmt(_nx.need)}c`:`${fmt(u.cost)}c`}</span></div>`;
+          }).join("")}
         </div>`
       );
     }
