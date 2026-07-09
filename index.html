@@ -62,7 +62,8 @@ header h1 span{ color:var(--dim); font-size:8px; display:block; margin-top:4px; 
 .stat.coins .v{ color:var(--amber); }
 
 /* ---------- nav ---------- */
-nav{ display:flex; overflow-x:auto; background:var(--panel2); border-bottom:2px solid var(--edge); }
+nav{ display:flex; overflow-x:auto; background:var(--panel2); border-bottom:2px solid var(--edge); scrollbar-width:none; -ms-overflow-style:none; }
+nav::-webkit-scrollbar{ display:none; height:0; }
 nav button{
   background:none; border:none; border-right:2px solid var(--edge);
   color:var(--dim); padding:10px 14px; font-size:12px; white-space:nowrap;
@@ -465,6 +466,15 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .fullscreen-mode .vlbl { font-size:13px; padding:2px 9px; }
 .fullscreen-mode .action .nm { font-size:13px; }
 .fullscreen-mode .action .meta { font-size:12px; }
+/* Couch / TV fullscreen: drop the side inventory panel — from the sofa you open
+   the dedicated 🎒 Inventory modal (I key / gamepad Y) instead — and let the map
+   fill the screen, capped to the viewport height so the whole town stays visible
+   without scrolling. This kills the stray "text at the side" of the game. */
+.fullscreen-mode .village-sidebar { display:none; }
+.fullscreen-mode .village-wrap { justify-content:center; }
+.fullscreen-mode .village-canvas-panel { display:flex; flex-direction:column; align-items:center; width:100%; }
+.fullscreen-mode #village { width:auto !important; max-width:100%; height:calc(100vh - 150px); }
+.fullscreen-mode .village-canvas-rel { width:fit-content; max-width:100%; margin:0 auto; }
 /* Xbox / TV safe-zone — slight inner margin so nothing clips behind bezel */
 .fullscreen-mode { padding:0; }
 @media (display-mode: fullscreen){
