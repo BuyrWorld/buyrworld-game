@@ -94,12 +94,19 @@ export interface WorldObject {
 }
 
 export const V_OBJECTS: WorldObject[] = [
-  // --- Mining rocks (west quarry) ---
+  // --- Mining rocks (west quarry) — several veins so there's always somewhere to mine ---
   { id: 'rock_iron',   kind: 'rock',  tx: 3,  ty: 23, ore: 'iron_ore',   lvl: 1,  vein: '#aab2bd' },
+  { id: 'rock_iron2',  kind: 'rock',  tx: 6,  ty: 23, ore: 'iron_ore',   lvl: 1,  vein: '#aab2bd' },
+  { id: 'rock_iron3',  kind: 'rock',  tx: 2,  ty: 24, ore: 'iron_ore',   lvl: 1,  vein: '#aab2bd' },
+  { id: 'rock_iron4',  kind: 'rock',  tx: 7,  ty: 24, ore: 'iron_ore',   lvl: 1,  vein: '#aab2bd' },
   { id: 'rock_copper', kind: 'rock',  tx: 5,  ty: 23, ore: 'copper_ore', lvl: 5,  vein: '#c97b45' },
+  { id: 'rock_copper2',kind: 'rock',  tx: 8,  ty: 26, ore: 'copper_ore', lvl: 5,  vein: '#c97b45' },
   { id: 'rock_coal',   kind: 'rock',  tx: 3,  ty: 25, ore: 'coal',       lvl: 10, vein: '#2f2f38' },
+  { id: 'rock_coal2',  kind: 'rock',  tx: 6,  ty: 26, ore: 'coal',       lvl: 10, vein: '#2f2f38' },
   { id: 'rock_baux',   kind: 'rock',  tx: 5,  ty: 25, ore: 'bauxite',    lvl: 20, vein: '#e0863a' },
+  { id: 'rock_baux2',  kind: 'rock',  tx: 4,  ty: 27, ore: 'bauxite',    lvl: 20, vein: '#e0863a' },
   { id: 'rock_rare',   kind: 'rock',  tx: 2,  ty: 26, ore: 'rare_earth', lvl: 40, vein: '#7ee0ff', sparkle: true },
+  { id: 'rock_rare2',  kind: 'rock',  tx: 7,  ty: 27, ore: 'rare_earth', lvl: 40, vein: '#7ee0ff', sparkle: true },
   // --- Industrial buildings ---
   { id: 'furnace',     kind: 'bld',   tx: 11, ty: 22, w: 3, h: 3, tab: 'steelworks',    name: 'Furnace',       ic: '🔥', wall: '#c9b294', roof: '#8a5a3c', chimney: true },
   { id: 'workshop',    kind: 'bld',   tx: 15, ty: 22, w: 3, h: 3, tab: 'manufacturing', name: 'Workshop',      ic: '⚙️', wall: '#dbc99f', roof: '#5f7fbe' },

@@ -1729,7 +1729,7 @@ function moveActor(a, dt, speed, free=false){
 }
 function stationPos(skill, actId){
   if (skill==="mining"){
-    const o = V_OBJECTS.find(x=>x.kind==="rock" && x.ore===actId);
+    const o = S.action?.objId ? V_OBJECTS.find(x=>x.id===S.action.objId) : V_OBJECTS.find(x=>x.kind==="rock" && x.ore===actId);
     if (o){ const r=objRect(o); return { x:r.x+12, y:r.y+22 }; }
   }
   if (skill==="steelworks"){ const o=V_OBJECTS.find(x=>x.id==="furnace"); const a=objApproach(o); return {x:a.x, y:a.y}; }
@@ -1895,11 +1895,11 @@ function interactObj(o){
   }
   if (o.kind==="rock"){
     if (skillLvl("mining") < o.lvl){ toast(`Requires Mining level ${o.lvl}.`); return; }
-    if (S.action && S.action.skill==="mining" && S.action.id===o.ore){
+    if (S.action && S.action.skill==="mining" && S.action.objId===o.id){
       swing(); return;   // M12: click the rock you're mining to swing (idle continues if you stop)
     }
     tipOnce("mining", SYSTEM_TUTORIAL.mining);
-    S.action = { skill:"mining", id:o.ore, progress:0 };
+    S.action = { skill:"mining", id:o.ore, objId:o.id, progress:0 };
     toast(`⛏️ Mining ${ITEMS[o.ore].n}...`);
     log(`▶ Started: Mine ${ITEMS[o.ore].n}`);
     renderNav(); save();
