@@ -23,6 +23,7 @@ import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage,
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
+import { PRESTIGE_MIN_TOTAL, prestigeEligible, legacyXpMult, legacySellMult, legacyStars, legacyRank, legacyBonusText } from './data/legacy.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -147,7 +148,7 @@ function buyPrice(npc, it){
 function sellPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell'));
+  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell') * legacySellMult(S.legacy));
   return Math.max(1, Math.min(p, buyPrice(npc, it) - 1));
 }
 function doTrade(npcId, it, qty, mode){
@@ -615,6 +616,8 @@ const ACH = [
   { id:"town_planner",    ic:"🗺️", n:"Town Planner",     ds:"Reach total level 200 — every district unlocked.",    r:1500, c:()=>totalLvl()>=200 },
   { id:"self_made",       ic:"💎", n:"Self-Made",        ds:"Reach a net worth of 100,000 coins.",                 r:2000, c:()=>netWorth()>=100000 },
   { id:"market_mover",    ic:"📊", n:"Market Mover",     ds:"Move prices — cause 5 market gluts or shortages by trading in bulk.", r:400, c:()=>(S.counters?.econShocks||0)>=5 },
+  { id:"new_chapter",     ic:"🌟", n:"A New Chapter",    ds:"Begin your first New Chapter — pass the valley to a successor.",       r:1000, c:()=>(S.legacy||0)>=1 },
+  { id:"living_legacy",   ic:"✨", n:"Living Legacy",    ds:"Reach Legacy 3 — three New Chapters written.",                        r:5000, c:()=>(S.legacy||0)>=3 },
 ];
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
@@ -2621,9 +2624,17 @@ function openLedger(){
     ${row('🏅 Achievements', `${achDone}/${ACH.length}`)}
     ${row('💖 Best friends', `${bff}/${VILLAGERS.length}`)}
     ${row('📊 Market', `${ph.ic} ${ph.name}`)}
+    ${(S.legacy||0) > 0 ? row('🌟 Legacy', `${"⭐".repeat(legacyStars(S.legacy))} ${legacyRank(S.legacy)}`, legacyBonusText(S.legacy)) : ''}
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:12px;font-weight:700">🌟 A New Chapter${prestigeEligible(tl)?'':` <span style="color:var(--dim);font-weight:400">(total lvl ${PRESTIGE_MIN_TOTAL})</span>`}</span>
+        <button id="ledger-prestige" style="background:${prestigeEligible(tl)?'#e8b020':'#5a5040'};color:#161008;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800">${prestigeEligible(tl)?'Begin →':'Locked 🔒'}</button>
+      </div>
+    </div>
   </div>`;
   document.body.appendChild(el);
   el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
+  const _pb = document.getElementById("ledger-prestige"); if (_pb) _pb.onclick = ()=>{ el.remove(); openPrestige(); };
 }
 // ---- The Founder's Journey — an ordered story-quest chain across the whole game ----
 // Live metrics for the journey objectives, read from existing game state/counters.
@@ -2845,9 +2856,10 @@ function openRoadmap(){
     ]},
     { h:"🏆 Goals &amp; progression", items:[
       "The Founder's Journey (11-stage story with earned titles) &amp; the 📔 Valley Journal of firsts",
+      "🌟 The Legacy — a cosy prestige: start a New Chapter for permanent bonuses &amp; a rank",
       "Achievements, skill perks, University degrees, companions/pets &amp; a bike",
       "Notice-board quests, daily challenges &amp; personal villager requests",
-      "Friendship keepsakes &amp; prestige bonuses",
+      "Friendship keepsakes, village beautification &amp; the school fund",
     ]},
     { h:"✨ Comfort &amp; onboarding", items:[
       "Quick Start, a guided first quest with on-map markers, and self-teaching tips",
@@ -2856,9 +2868,8 @@ function openRoadmap(){
     ]},
   ];
   const nextItems = [
-    "🎨 An aesthetic pass on the activity interiors",
-    "🍋 School fundraiser events (lemonade stand → school upgrades)",
     "📖 More story, characters &amp; guided quests",
+    "🎪 More living-world village events",
     "⚖️ Ongoing balancing &amp; polish — shaped by your feedback",
   ];
   const feedback = FEEDBACK_LINK
@@ -2950,6 +2961,53 @@ function renderLemonadeStand(){
   el.querySelector("[data-buy-lemonade]").onclick = ()=>buyLemonade();
 }
 function openLemonadeStand(){ closeLemonadeStand(); renderLemonadeStand(); }
+// ---- The Legacy — a cosy prestige / "New Chapter" (endgame milestone) ----
+function doPrestige(){
+  if (!prestigeEligible(totalLvl())){ toast(`🌟 Reach total level ${PRESTIGE_MIN_TOTAL} to start a New Chapter.`); return; }
+  S.legacy = (S.legacy||0) + 1;
+  // reset the economic grind…
+  for (const k in S.skills) S.skills[k] = { xp:0 };
+  S.coins = 200; S.items = {}; S.prod = {}; S.action = null;
+  S.upgrades = {}; S.automatons = {}; S.grid = { tier:0 };
+  S.perks = {}; S.degrees = []; S.studying = null;
+  S.contracts = []; S.exchange = { positions:[] };
+  S.caffBuff = 0; S.pintBuff = 0; S.mealBuff = null; S.danceBuff = 0; S.schoolBuff = 0;
+  // …but keep name, appearance, home & furniture, friends & keepsakes, achievements,
+  //   Founder's Journey titles, beautification, the school fund, and unlocked tabs.
+  S.tut = { step:99, done:true };   // no re-tutorial
+  fillContracts(); ensureMarket(); rollMarket(false); achCheck();
+  try{ SFX.fanfare(); }catch(e){}
+  const rank = legacyRank(S.legacy);
+  toast(`🌟 New Chapter ${S.legacy}! You are now ${rank}.`);
+  log(`🌟 <b>New Chapter ${S.legacy}</b> — you handed the valley to a successor and began again as <b>${rank}</b>. Permanent Legacy: ${legacyBonusText(S.legacy)}.`, "rare");
+  showJourneyBurst({ ic:"🌟", title:`New Chapter — ${rank}`, reward:{ title:rank } });
+  S.tab = "village"; closePrestige();
+  renderNav(); renderMain(); updateHud(); save();
+}
+function closePrestige(){ const e = document.getElementById("prestige-modal"); if (e) e.remove(); }
+function openPrestige(){
+  closePrestige();
+  const tl = totalLvl(), elig = prestigeEligible(tl), lg = S.legacy||0;
+  const el = document.createElement("div"); el.id = "prestige-modal"; el.className = "dd-modal";
+  el.innerHTML = `<div class="dd-card" style="max-width:480px">
+    <button class="vp-close" onclick="document.getElementById('prestige-modal').remove()">✕</button>
+    <div class="dd-title">🌟 A New Chapter</div>
+    <div class="dd-sub">Hand the valley to a successor and begin again — wiser, and quicker.</div>
+    ${lg>0?`<div style="background:rgba(255,214,102,.12);border:1px solid rgba(255,214,102,.35);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px">Current Legacy: ${"⭐".repeat(legacyStars(lg))} <b>${legacyRank(lg)}</b><br><span style="color:var(--dim)">${legacyBonusText(lg)}</span></div>`:""}
+    <p style="font-size:12px;line-height:1.5;margin:0 0 8px">Start a New Chapter and you keep your <b>name, home, friends, achievements and Founder's titles</b> — but your <b>skills, coins and upgrades reset</b>. In return you gain a permanent <b>Legacy</b> that makes every future climb faster and every sale worth more.</p>
+    <div style="background:rgba(90,150,60,.1);border:1px solid rgba(90,150,60,.3);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px">
+      Next chapter → ${"⭐".repeat(legacyStars(lg+1))} <b>${legacyRank(lg+1)}</b> · <b style="color:#5ad07a">${legacyBonusText(lg+1)}</b>
+    </div>
+    <div style="font-size:11px;color:var(--dim);margin-bottom:8px"><b>Kept:</b> name, home &amp; furniture, friends &amp; keepsakes, achievements, Journey titles, beautification, the school fund, unlocked tabs.<br><b>Reset:</b> all skills, coins, items, upgrades, automatons, power grid, perks &amp; degrees.</div>
+    ${elig
+      ? `<button data-prestige style="background:#e8b020;color:#161008;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-size:15px;font-weight:800;width:100%">🌟 Begin a New Chapter</button>`
+      : `<div style="text-align:center;color:#e8a648;font-size:12px;font-weight:700;padding:8px">🔒 Reach total level ${PRESTIGE_MIN_TOTAL} to begin (you're at ${tl}).</div>`}
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+  const b = el.querySelector("[data-prestige]");
+  if (b) b.onclick = () => { if (confirm("Begin a New Chapter?\n\nYour skills, coins and upgrades will reset — but you keep a permanent Legacy, your home, friends, achievements and titles.")) doPrestige(); };
+}
 // ---- The Village Kitchen — cook what you grow, catch and forage into meals ----
 function mealBuffRemainingMs(){ return S.mealBuff ? Math.max(0, S.mealBuff.until - Date.now()) : 0; }
 function cookRecipe(id){
@@ -6724,7 +6782,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 },
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0,
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -6816,6 +6874,7 @@ function load(){
       if (!S.firsts) S.firsts = {};
       if (typeof S.npcMet !== "boolean") S.npcMet = false;
       if (!S.school) S.school = { raised:0, notifiedTier:0 };
+      if (typeof S.legacy !== "number") S.legacy = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
@@ -7649,6 +7708,7 @@ function grantXp(skill, xp){
   if ((S.schoolBuff||0) > Date.now()) xp = Math.round(xp * 1.15);
   { const _mb = mealBuffMult('xp'); if (_mb !== 1) xp = Math.round(xp * _mb); }   // cooking: a meal that sharpens the mind
   const _pxm = prestigeXpMult(); if (_pxm > 1) xp = Math.round(xp * _pxm);
+  const _lxm = legacyXpMult(S.legacy); if (_lxm > 1) xp = Math.round(xp * _lxm);   // permanent Legacy bonus
   const _xpBonus = skillXpBonus(skill); if (_xpBonus > 0) xp = Math.round(xp * (1 + _xpBonus));
   const _kxp = keepsakeXpBonus(skill); if (_kxp > 0) xp = Math.round(xp * (1 + _kxp));
   const before = skillLvl(skill);
@@ -9951,9 +10011,11 @@ function updateHud(){
   if (nameEl) nameEl.textContent = S.playerName || "—";
   const titleEl = document.getElementById("hud-title");
   if (titleEl){
+    const lg = S.legacy||0;
     const t = earnedTitle((S.journey && S.journey.claimed) || []);
-    titleEl.textContent = t ? `“${t}”` : "";
-    titleEl.style.display = t ? "block" : "none";
+    const txt = lg > 0 ? `${"⭐".repeat(legacyStars(lg))} ${legacyRank(lg)}` : (t ? `“${t}”` : "");
+    titleEl.textContent = txt;
+    titleEl.style.display = txt ? "block" : "none";
   }
   const stat = document.getElementById("hud-name-stat");
   if (stat){
