@@ -2065,18 +2065,16 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   ctx.fillRect(-5, 2-_lL, 4, 8+legSwing*0.4); ctx.fillRect(1, 2-_lR, 4, 8-legSwing*0.4);
   // shoes
   if (_sh){ ctx.fillStyle=_sh; ctx.fillRect(-6,8+legSwing*0.4-_lL,5,2); ctx.fillRect(0,8-legSwing*0.4-_lR,5,2); }
-  // shirt body + arms. The tool-side arm is skipped during an activity because the
-  // animated activity arm (drawn later, in the tool block) takes its place.
+  // shirt body + arms. During an activity BOTH base arms are skipped — the activity
+  // block below draws its own arms (a working arm + a supporting arm), so no static
+  // limb is left showing next to the animated one.
   ctx.fillStyle=shirt; ctx.fillRect(-7,-6,14,10);
-  const _skipR = _activity && facing >= 0, _skipL = _activity && facing < 0;
-  if (!_skipL) ctx.fillRect(-9,-5+armSwing*0.3,3,8);
-  if (!_skipR) ctx.fillRect(6,-5-armSwing*0.3,3,8);
-  // hands
-  ctx.fillStyle=skin;
-  if (!_skipL) ctx.fillRect(-9,2+armSwing*0.3,3,3);
-  if (!_skipR) ctx.fillRect(6,2-armSwing*0.3,3,3);
-  // jacket overlay
-  if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); ctx.fillRect(-9,-5+armSwing*0.3,3,6); ctx.fillRect(6,-5-armSwing*0.3,3,6); }
+  if (!_activity){
+    ctx.fillRect(-9,-5+armSwing*0.3,3,8); ctx.fillRect(6,-5-armSwing*0.3,3,8);
+    ctx.fillStyle=skin; ctx.fillRect(-9,2+armSwing*0.3,3,3); ctx.fillRect(6,2-armSwing*0.3,3,3);
+  }
+  // jacket overlay (torso always; arms only when not doing an activity)
+  if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); if (!_activity){ ctx.fillRect(-9,-5+armSwing*0.3,3,6); ctx.fillRect(6,-5-armSwing*0.3,3,6); } }
   // head
   ctx.fillStyle=skin; ctx.fillRect(-5,-16,10,10);
   // scarf at neck
@@ -2201,6 +2199,8 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   } else if (tool === "🌿"){
     // foraging: a hand reaches to the ground, then gathered specks pop up when picked
     const reach = _fBend;
+    // support arm braced on the knee
+    ctx.fillStyle=shirt; ctx.fillRect(facing*-8, -3, 3, 7); ctx.fillStyle=skin; ctx.fillRect(facing*-8, 3, 3, 3);
     ctx.save(); ctx.translate(facing*6, -3); ctx.rotate(facing*(0.5 + reach*0.8));
     ctx.fillStyle=shirt; ctx.fillRect(-1.5, 0, 3, 6+reach*3);
     ctx.fillStyle=skin;  ctx.fillRect(-1.5, 6+reach*3, 3, 3);
@@ -2221,7 +2221,8 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     const sway = Math.sin(t*1.5)*0.8;
     const gripX = facing*4, gripY = -4;
     const tipX = facing*7 + sway + jerk*0.4, tipY = -26 - jerk*0.5;
-    // raised arm gripping the rod
+    // lower support hand on the rod butt + raised arm gripping higher up
+    ctx.fillStyle=shirt; ctx.fillRect(facing*-6, -3, 3, 6); ctx.fillStyle=skin; ctx.fillRect(facing*-6, 3, 3, 3);   // support arm
     ctx.fillStyle=shirt; ctx.fillRect(facing*3-1, -7, 3, 6);   // upper arm reaching up
     ctx.fillStyle=skin;  ctx.fillRect(gripX-1, gripY-1, 3, 3); // hand on the grip
     // the rod
@@ -3702,7 +3703,8 @@ function drawWorkerAndVfx(ctx, t){
   if (S.action && SKILL_TOOL[S.action.skill]){
     const p = stationPos(S.action.skill, S.action.id);
     if (p){
-      const near = Math.hypot(VP.x-p.x, VP.y-p.y) < 64;
+      // the tool only comes out once the character is right next to the spot (~1 block)
+      const near = Math.hypot(VP.x-p.x, VP.y-p.y) < TILE*1.7;
       if (near){
         playerTool = SKILL_TOOL[S.action.skill];
         VP.facing = p.x >= VP.x ? 1 : -1;
@@ -3725,19 +3727,9 @@ function drawWorkerAndVfx(ctx, t){
           }
           ctx.restore();
         }
-        if (S.action.skill==="fishing"){
-          // rod casting line to water
-          ctx.save();
-          ctx.strokeStyle="rgba(180,200,255,.55)"; ctx.lineWidth=1;
-          const rodTip = { x: VP.x + VP.facing*10, y: VP.y - 18 };
-          const waterX = p.x + VP.facing*18, waterY = p.y + 8;
-          ctx.beginPath(); ctx.moveTo(rodTip.x, rodTip.y); ctx.quadraticCurveTo((rodTip.x+waterX)/2, rodTip.y-20, waterX, waterY); ctx.stroke();
-          ctx.fillStyle="rgba(100,180,255,.7)"; ctx.beginPath(); ctx.arc(waterX, waterY, 3+Math.sin(t*4)*1.2, 0, Math.PI*2); ctx.fill();
-          ctx.restore();
-        }
-      } else {
-        drawPerson(ctx, p.x, p.y, plHair(), plShirt(), t, false, -1, SKILL_TOOL[S.action.skill], null, plSkin(), plTrousers(), toolTierColor(), plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
       }
+      // (no "ghost worker" is drawn at the station when the player is away — the
+      //  tool only appears on the character once they walk up to the spot.)
     }
   }
   const now = Date.now();
