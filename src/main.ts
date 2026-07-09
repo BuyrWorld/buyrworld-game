@@ -5141,22 +5141,41 @@ function drawInterior(t){
       ctx.fillStyle="#1a1a1a"; ctx.fillRect(_fx+16, H*0.65, 2, 2);
     }
   } else if (S.tab==="woodcutting"){
-    room("#465a36","#5c7044","#b08c58","#a68050","#3a4a28");
-    ctx.fillStyle="#6a5240"; ctx.fillRect(36,86,64,8); ctx.fillStyle="#7c6450"; ctx.fillRect(36,76,64,12);
-    ctx.fillStyle="#a8b0b8"; ctx.beginPath(); ctx.arc(68,76,9,0,7); ctx.fill();
-    ctx.fillStyle="#7a828a"; for(let a=0;a<8;a++){ const ang=a/8*6.283 + t*3; ctx.fillRect(68+Math.cos(ang)*9-1, 76+Math.sin(ang)*9-1, 3,3); }
-    for(const [lx,ly] of [[248,146],[268,146],[258,136]]){ ctx.fillStyle="#8a5a30"; ctx.fillRect(lx,ly,22,10); ctx.fillStyle="#c9955a"; ctx.beginPath(); ctx.arc(lx+22,ly+5,5,0,7); ctx.fill(); ctx.fillStyle="#8a5a30"; ctx.beginPath(); ctx.arc(lx+22,ly+5,3,0,7); ctx.fill(); }
-    ctx.fillStyle="#c9a05a"; ctx.fillRect(14,150,44,5); ctx.fillRect(18,144,44,5);
-    ctx.fillStyle="rgba(222,196,140,.5)"; for(const [dx,dy] of [[60,104],[84,110],[110,150]]){ ctx.beginPath(); ctx.ellipse(dx,dy,9,3,0,0,7); ctx.fill(); }
-    drawEmojiC(ctx,"🪚", 90, 70, 10);
-    // goods shelf — cut timber and wooden wares for sale
-    ctx.fillStyle="#5a4228"; ctx.fillRect(196,12,110,32);
-    ctx.fillStyle="#6e5234"; for(const sy of [22,36]) ctx.fillRect(198,sy,106,4);
-    ctx.fillStyle="#c9a05a"; ctx.fillRect(202,15,26,4); ctx.fillRect(204,20,26,4);
-    ctx.fillStyle="#a87c42"; ctx.fillRect(236,15,20,8);
-    drawEmojiC(ctx,"🪑", 270, 18, 11); drawEmojiC(ctx,"🧺", 292, 18, 10);
-    ctx.fillStyle="#c9a05a"; ctx.fillRect(202,28,30,4); ctx.fillRect(240,28,26,4);
-    drawEmojiC(ctx,"🥣", 284, 31, 9);
+    room("#3f5330","#4f6339","#b08c58","#a68050","#324226");
+    // timber-planked back wall
+    ctx.fillStyle="#6a5238"; for(let px=0;px<W;px+=26) ctx.fillRect(px,7,24,32);
+    ctx.fillStyle="rgba(0,0,0,.10)"; for(let px=0;px<W;px+=26) ctx.fillRect(px+24,7,2,32);
+    // sunny window with a forest view + a soft sunbeam onto the floor
+    ctx.fillStyle="#2e4a24"; ctx.fillRect(214,10,40,24); ctx.fillStyle="#3f6a30"; ctx.fillRect(214,12,40,12); ctx.fillStyle="#54863c"; for(const _tx of [220,232,244]){ ctx.beginPath(); ctx.moveTo(_tx,26); ctx.lineTo(_tx+5,14); ctx.lineTo(_tx+10,26); ctx.closePath(); ctx.fill(); }
+    ctx.strokeStyle="#7a5a38"; ctx.lineWidth=2; ctx.strokeRect(214,10,40,24); ctx.beginPath(); ctx.moveTo(234,10); ctx.lineTo(234,34); ctx.moveTo(214,22); ctx.lineTo(254,22); ctx.stroke();
+    ctx.fillStyle="rgba(255,240,180,.10)"; ctx.beginPath(); ctx.moveTo(214,34); ctx.lineTo(254,34); ctx.lineTo(240,H-12); ctx.lineTo(180,H-12); ctx.closePath(); ctx.fill();
+    // big circular saw bench, centre-back
+    ctx.fillStyle="#6a5240"; ctx.fillRect(120,70,80,10); ctx.fillStyle="#7c6450"; ctx.fillRect(120,62,80,10);
+    ctx.fillStyle="#3a3a40"; ctx.fillRect(150,50,20,14);                       // motor housing
+    const _cutting = S.action?.skill === "woodcutting";
+    const _spin = t * (_cutting ? 9 : 2.5);
+    ctx.fillStyle="#c8ccd2"; ctx.beginPath(); ctx.arc(138,62,13,0,7); ctx.fill();
+    ctx.fillStyle="#9aa0a8"; for(let a=0;a<12;a++){ const ang=a/12*6.283 + _spin; ctx.fillRect(138+Math.cos(ang)*13-1, 62+Math.sin(ang)*13-1, 3,3); }
+    ctx.fillStyle="#6a7078"; ctx.beginPath(); ctx.arc(138,62,4,0,7); ctx.fill();
+    // log piles at each cutting station, in that timber's colour
+    const _woodCols = { pine:["#e2c288","#caa262"], oak:["#bb8c4c","#98723c"], hardwood:["#7c5432","#5e3e22"] };
+    STATION_DEFS.woodcutting.forEach(st=>{
+      const sx = st.fx*W, sy = st.fy*H, cols = _woodCols[st.id] || ["#c9a05a","#a87c42"];
+      const _log = (lx,ly)=>{ ctx.fillStyle=cols[1]; ctx.fillRect(lx,ly,22,7); ctx.fillStyle=cols[0]; ctx.beginPath(); ctx.arc(lx+22,ly+3.5,4,0,7); ctx.fill(); ctx.fillStyle="#5a3a20"; ctx.beginPath(); ctx.arc(lx+22,ly+3.5,2,0,7); ctx.fill(); };
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(sx, sy+16, 20, 4, 0, 0, 7); ctx.fill();
+      _log(sx-12, sy+8); _log(sx-6, sy+1); _log(sx-12, sy-6);
+    });
+    // stack of finished planks (bottom-left)
+    ctx.fillStyle="#c9a05a"; for(let p=0;p<4;p++){ ctx.fillRect(12+p, 150-p*5, 46, 4); }
+    // wood-wares goods shelf (top-right)
+    ctx.fillStyle="#5a4228"; ctx.fillRect(268,10,44,34);
+    ctx.fillStyle="#6e5234"; for(const _sy of [20,33]) ctx.fillRect(270,_sy,40,3);
+    drawEmojiC(ctx,"🪑", 280, 16, 11); drawEmojiC(ctx,"🥣", 300, 16, 9); drawEmojiC(ctx,"🧺", 290, 30, 10);
+    // sawdust motes drifting in the light — a flurry of chips while you're cutting
+    for(let i=0;i<(_cutting?12:4);i++){
+      const _dx = (i*53 + (_cutting?t*40:t*8)) % W, _dy = 60 + ((i*37 + t*14) % (H-80));
+      ctx.fillStyle = `rgba(224,196,140,${_cutting?0.5:0.28})`; ctx.fillRect(_dx, _dy, 2, 2);
+    }
   } else if (S.tab==="upgrades"){
     room("#4e5a68","#6c7c8c","#cfc8b8","#c3bcac","#3e4a56");
     winP(18,34);
