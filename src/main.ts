@@ -683,6 +683,8 @@ let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-
 let _fishCastT = 0;          // timestamp of the last cast (new fishing station), for the cast animation
 let _fishActiveId = null;    // which fishing station is currently being fished
 let _fishRodTip = { x:0, y:0 };  // world position of the player's rod tip (so the line connects to the character)
+let _intVfx = [];               // interior completion rewards (floating +item pops)
+let _comboCount = 0, _comboAt = 0, _comboSkill = null;   // consecutive-action streak (addictive feedback)
 let _fishSpot = null;            // where the bobber has been cast (interior coords) — click the water to set it
 let _fishAnchor = { x:0, y:0 };  // where the angler stood when they cast (for the retract/snap distance)
 let _cat = { x:29*TILE, y:28*TILE, tx:29*TILE, ty:28*TILE, pauseT:0, facing:1, moving:false };
@@ -6102,6 +6104,32 @@ function drawInterior(t){
   // works every tool themselves (including the fishing rod).
   const _iTool = SKILL_TOOL[active] || null;
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
+  // completion feedback: floating "+item" rewards that pop and rise from the station
+  {
+    const _nowv = Date.now();
+    for (let i=_intVfx.length-1; i>=0; i--){
+      const f = _intVfx[i], age = (_nowv - f.born) / 1200;
+      if (age >= 1){ _intVfx.splice(i,1); continue; }
+      const _yy = f.y - 22 - age*22, _bounce = Math.sin(Math.min(1, age*3)*Math.PI)*4;
+      if (age < 0.3){ ctx.strokeStyle = `rgba(255,240,150,${(0.85*(1-age/0.3)).toFixed(2)})`; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(f.x, f.y-6, 5+age*44, 0, 7); ctx.stroke(); }
+      ctx.globalAlpha = Math.min(1, (1-age)*1.6);
+      ctx.font="bold 11px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      const _txt = `+${f.n} ${f.ic}`;
+      ctx.fillStyle="rgba(0,0,0,.55)"; ctx.fillText(_txt, f.x+1, _yy-_bounce+1);
+      ctx.fillStyle="#fff2c0"; ctx.fillText(_txt, f.x, _yy-_bounce);
+      ctx.globalAlpha = 1;
+    }
+    // combo streak badge (top-centre) while a run is going
+    if (_comboCount >= 3 && (_nowv - _comboAt) < 3200){
+      ctx.globalAlpha = Math.min(1, (3200-(_nowv-_comboAt))/900);
+      ctx.font="bold 12px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      const _ct = `🔥 ${_comboCount} in a row!`;
+      ctx.fillStyle="rgba(0,0,0,.55)"; ctx.fillText(_ct, W/2+1, 15);
+      ctx.fillStyle="#ffd666"; ctx.fillText(_ct, W/2, 14);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  }
   // crisp HTML overlays: name tags + chat panel
   const _iOverlay = document.getElementById("interior-overlay");
   if (_iOverlay){
@@ -7687,6 +7715,20 @@ function completeAction(act, skill, silent){
       addItem(_bid, _bq); S.prod[_bid] = (S.prod[_bid]||0) + _bq;
       if (!silent) toast(`🤖 Automaton bonus — +${_bq} ${ITEMS[_bid].n}!`);
     }
+  }
+  // interior completion feedback: a satisfying floating reward at the station, and
+  // a consecutive-action combo streak to keep the loop moreish.
+  if (!silent && INTERIOR_TABS.has(S.tab) && S.action){
+    const _st = (STATION_DEFS[S.tab]||[]).find(s => s.id === S.action.id);
+    const _oid = Object.keys(_out)[0];
+    if (_oid && ITEMS[_oid]){
+      _intVfx.push({ x: _st ? _st.fx*icanvasW() : icanvasW()/2, y: _st ? _st.fy*icanvasH() : icanvasH()*0.5, born: Date.now(), ic: ITEMS[_oid].ic, n: _out[_oid] });
+      if (_intVfx.length > 20) _intVfx.shift();
+    }
+    const _n = Date.now();
+    const _win = (act.ms * speedMult(skill)) * 2.2 + 1500;
+    _comboCount = (_comboSkill === skill && (_n - _comboAt) < _win) ? _comboCount + 1 : 1;
+    _comboSkill = skill; _comboAt = _n;
   }
   if (!silent && skill==="fishing") _fishCatchT = (typeof performance!=="undefined"?performance.now():Date.now());
   // fishing XP scales with the fish landed; everything else uses the action's xp
