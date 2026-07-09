@@ -671,6 +671,7 @@ let _lastIActionId = null;   // tracks the last interior action so the player re
 let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-up animation
 let _fishCastT = 0;          // timestamp of the last cast (new fishing station), for the cast animation
 let _fishActiveId = null;    // which fishing station is currently being fished
+let _fishRodTip = { x:0, y:0 };  // world position of the player's rod tip (so the line connects to the character)
 let _cat = { x:29*TILE, y:28*TILE, tx:29*TILE, ty:28*TILE, pauseT:0, facing:1, moving:false };
 let _bflies = [];            // ambient butterflies (warm seasons)
 let _homeVil = null;         // wandering home-villager state (per home)
@@ -2036,8 +2037,13 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   const _fem = female || false;
   const _stride = +(opts.stride) || 1;   // >1 exaggerates the walk cycle (used by the big previews)
   const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
-  // foraging crouch-and-gather cycle: the body dips down to pick from the ground
+  // ---- activity detection: which activity (if any) the character is performing ----
+  // The tool-side arm is REPLACED by an animated activity arm so the character
+  // visibly does the work rather than a prop moving next to a static body.
+  const _swingType = (!moving && tool==="⛏️") ? "pick" : (!moving && tool==="🪓") ? "axe" : (!moving && tool==="🔨") ? "hammer" : null;
+  const _fishing = !moving && tool === "🎣";
   const _forage = tool === "🌿" && !moving;
+  const _activity = _swingType ? "swing" : _fishing ? "fish" : _forage ? "forage" : null;
   let _fPhase = 0, _fBend = 0;
   if (_forage){ const FP = 1.3; _fPhase = (((t % FP) + FP) % FP) / FP; _fBend = _fPhase < 0.65 ? Math.sin(_fPhase/0.65*Math.PI) : 0; }
   ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
@@ -2059,11 +2065,16 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   ctx.fillRect(-5, 2-_lL, 4, 8+legSwing*0.4); ctx.fillRect(1, 2-_lR, 4, 8-legSwing*0.4);
   // shoes
   if (_sh){ ctx.fillStyle=_sh; ctx.fillRect(-6,8+legSwing*0.4-_lL,5,2); ctx.fillRect(0,8-legSwing*0.4-_lR,5,2); }
-  // shirt body + arms
+  // shirt body + arms. The tool-side arm is skipped during an activity because the
+  // animated activity arm (drawn later, in the tool block) takes its place.
   ctx.fillStyle=shirt; ctx.fillRect(-7,-6,14,10);
-  ctx.fillRect(-9,-5+armSwing*0.3,3,8); ctx.fillRect(6,-5-armSwing*0.3,3,8);
+  const _skipR = _activity && facing >= 0, _skipL = _activity && facing < 0;
+  if (!_skipL) ctx.fillRect(-9,-5+armSwing*0.3,3,8);
+  if (!_skipR) ctx.fillRect(6,-5-armSwing*0.3,3,8);
   // hands
-  ctx.fillStyle=skin; ctx.fillRect(-9,2+armSwing*0.3,3,3); ctx.fillRect(6,2-armSwing*0.3,3,3);
+  ctx.fillStyle=skin;
+  if (!_skipL) ctx.fillRect(-9,2+armSwing*0.3,3,3);
+  if (!_skipR) ctx.fillRect(6,2-armSwing*0.3,3,3);
   // jacket overlay
   if (_jk){ ctx.fillStyle=_jk; ctx.fillRect(-7,-6,14,8); ctx.fillRect(-9,-5+armSwing*0.3,3,6); ctx.fillRect(6,-5-armSwing*0.3,3,6); }
   // head
@@ -2155,7 +2166,6 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   // Strike tools (pick / axe / hammer) get a proper animation cycle: a slow
   // wind-up raising the tool overhead, a fast downswing, an impact with sparks
   // and dust, then an ease back to rest. Non-strike tools keep a gentle emoji.
-  const _swingType = tool==="⛏️" ? "pick" : tool==="🪓" ? "axe" : tool==="🔨" ? "hammer" : null;
   if (_swingType){
     const PERIOD = 0.85;                                   // seconds per full swing
     const p = (((t % PERIOD) + PERIOD) % PERIOD) / PERIOD; // phase 0..1
@@ -2201,8 +2211,29 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
       for (let i=0;i<3;i++){ ctx.globalAlpha = 1-pp; ctx.fillStyle = cols[i]; ctx.fillRect(facing*8 + i*2 - 2, -4 - pp*15 - i*2, 2, 2); }
       ctx.globalAlpha = 1;
     }
+  } else if (_fishing){
+    // fishing: the character raises an arm and holds a rod pointing up toward the
+    // water, with a rapid reel jerk while a fish is on. The line/bobber are drawn
+    // by the water so they connect to this rod tip (published in _fishRodTip).
+    const now = (typeof performance!=="undefined"?performance.now():Date.now());
+    const reeling = (now - _fishCatchT) < 900;
+    const jerk = reeling ? Math.sin((now - _fishCatchT)/45)*2 : 0;
+    const sway = Math.sin(t*1.5)*0.8;
+    const gripX = facing*4, gripY = -4;
+    const tipX = facing*7 + sway + jerk*0.4, tipY = -26 - jerk*0.5;
+    // raised arm gripping the rod
+    ctx.fillStyle=shirt; ctx.fillRect(facing*3-1, -7, 3, 6);   // upper arm reaching up
+    ctx.fillStyle=skin;  ctx.fillRect(gripX-1, gripY-1, 3, 3); // hand on the grip
+    // the rod
+    ctx.strokeStyle="#7a4f26"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(gripX, gripY); ctx.lineTo(tipX, tipY); ctx.stroke();
+    ctx.strokeStyle="#9a6f36"; ctx.lineWidth=0.8;
+    ctx.beginPath(); ctx.moveTo(gripX, gripY); ctx.lineTo(tipX, tipY); ctx.stroke();
+    ctx.fillStyle="#e8d84a"; ctx.fillRect(Math.round(tipX)-1, Math.round(tipY)-1, 2, 2);   // rod-tip guide
+    // publish the rod tip in world space (scale assumed 1 for in-world sprites)
+    _fishRodTip = { x: Math.round(x) + tipX, y: Math.round(y+bob) + tipY };
   } else if (tool){
-    // gentle handheld emoji for other activities (fishing rod, jar, wrench)
+    // gentle handheld emoji for other activities (jar, wrench, etc.)
     const sway = Math.sin(t*4)*0.18;
     ctx.save(); ctx.translate(facing*9,-4); ctx.rotate(facing*(sway-0.2));
     ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
@@ -4252,26 +4283,12 @@ function drawInterior(t){
     ctx.fillStyle="#808898"; ctx.fillRect(201,106,26,6); ctx.fillStyle="#6a7080"; ctx.fillRect(198,112,32,8);
     ctx.fillStyle="#5a6070"; ctx.fillRect(203,120,6,7); ctx.fillRect(218,120,6,7);
     if (S.action && S.action.skill === "steelworks"){
-      const PERIOD = 0.7;
-      const p = (((t % PERIOD) + PERIOD) % PERIOD) / PERIOD;   // 0..1
-      const easeIn = u => u*u, easeOut = u => 1-(1-u)*(1-u);
-      const hang = p < 0.55 ? -1.6*easeOut(p/0.55) : -1.6 + 1.6*easeIn((p-0.55)/0.45);  // raise then strike
-      const impact = (p > 0.9) ? (p-0.9)/0.1 : 0;              // near the bottom of the strike
-      const heat = 1 - Math.sin(p*Math.PI)*0.6;                // brightest just after each blow
-      // glowing hot bar on the anvil face (+ a soft halo)
-      ctx.fillStyle = `rgba(255,150,50,${(heat*0.4).toFixed(2)})`; ctx.fillRect(203,100,22,9);
-      ctx.fillStyle = heat>0.8 ? "#fff2c8" : heat>0.55 ? "#ffb84a" : "#ff6a24";
+      // a piece of hot metal rests on the anvil, glowing as it's worked (the
+      // hammering itself is done by the character, who swings their own hammer)
+      const glow = 0.6 + 0.4*Math.sin(t*6);
+      ctx.fillStyle = `rgba(255,150,50,${(glow*0.4).toFixed(2)})`; ctx.fillRect(203,100,22,9);
+      ctx.fillStyle = glow>0.85 ? "#ffd88a" : glow>0.6 ? "#ffb84a" : "#ff7a2a";
       ctx.fillRect(206,103,16,4);
-      // the hammer, pivoted above the anvil, head at the far (striking) end
-      ctx.save(); ctx.translate(220, 90); ctx.rotate(hang);
-      ctx.fillStyle="#6a4423"; ctx.fillRect(-1.5,0,3,13);      // handle
-      ctx.fillStyle="#3a3a44"; ctx.fillRect(-5,11,10,6);       // head
-      ctx.fillStyle="#c9d2dd"; ctx.fillRect(-5,11,10,1);       // shine
-      ctx.restore();
-      // sparks fly off the struck metal
-      if (impact > 0){
-        for (let i=0;i<7;i++){ const a=-0.15-i*0.34, d=5+((i*53+Math.floor(t*90))%12); ctx.fillStyle = i%2 ? "#ffe070" : "#ff9a30"; ctx.fillRect(Math.round(213+Math.cos(a)*d), Math.round(103-Math.sin(a)*d*0.7), 2, 2); }
-      }
     } else {
       drawEmojiC(ctx,"🔨",213,104,10);   // idle: hammer resting on the anvil
     }
@@ -4364,65 +4381,48 @@ function drawInterior(t){
     if (!_fishNow) _fishActiveId = null;
     const _fcAge = _now - _fishCatchT;
     const _castAge = _now - _fishCastT;
-    STATION_DEFS.fishing.forEach(st=>{
-      const sx = st.fx*W;
-      const _isAct = _fishNow && S.action.id===st.id;
-      // rod tip sits above the railing; the rod angles out over the water
-      const rodBaseX = sx, rodBaseY = H*.44;
-      const tipX = sx + 20, tipY = H*.30;
-      // resting spot of the bobber on the water
-      const restX = sx + 34, restY = H*.205;
-      // ---- the rod itself (drawn, tapered) ----
-      ctx.strokeStyle = "#6a4423"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(rodBaseX-6, rodBaseY+6); ctx.lineTo(tipX, tipY); ctx.stroke();
-      ctx.strokeStyle = "#8a5f30"; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(rodBaseX-6, rodBaseY+6); ctx.lineTo(tipX, tipY); ctx.stroke();
-      ctx.fillStyle = "#e8d84a"; ctx.fillRect(tipX-1, tipY-1, 2, 2);   // rod-tip guide
-      if (!_isAct){
-        // idle rod — a quiet bobber, no line drama
-        const ibx = restX, iby = restY + Math.sin(t*1.4+st.fx*4)*2;
-        ctx.strokeStyle="rgba(240,240,240,.5)"; ctx.lineWidth=1;
-        ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(ibx,iby); ctx.stroke();
-        ctx.fillStyle="#cc5555"; ctx.beginPath(); ctx.arc(ibx,iby,3,0,7); ctx.fill();
-        return;
-      }
-      const CAST = 520;                                  // cast duration (ms)
-      // bobber position: flies out during the cast, then bobs/nibbles while waiting
+    // Only the spot the CHARACTER is fishing shows a line — cast from the rod they
+    // hold (tip published in _fishRodTip by drawPerson), so it's clearly them fishing.
+    if (_fishNow){
+      const _fcAge = _now - _fishCatchT;
+      const _castAge = _now - _fishCastT;
+      const st = STATION_DEFS.fishing.find(s => s.id === S.action.id);
+      const tipX = _fishRodTip.x || (st ? st.fx*W : W/2);
+      const tipY = _fishRodTip.y || H*.30;
+      const restX = tipX + 2, restY = tipY - 16;         // bobber floats on the water just past the rod
+      const CAST = 520;
       let bx, by, casting = _castAge < CAST;
       if (casting){
-        const cp = _castAge / CAST;                      // 0..1 cast arc
+        const cp = _castAge / CAST;
         bx = tipX + (restX - tipX) * cp;
-        by = tipY + (restY - tipY) * cp - Math.sin(cp*Math.PI) * 26;   // arcs up then down
+        by = tipY + (restY - tipY) * cp - Math.sin(cp*Math.PI) * 20;   // arcs out and settles
       } else {
-        const wob = Math.sin(t*2.0 + st.fx*5)*2.5;
-        const nibble = (Math.sin(t*0.7)>0.85) ? Math.sin(t*20)*2.5 : 0;   // occasional teasing nibble
-        const biting = _fcAge < 260;                     // sharp yank the instant a fish takes it
-        bx = restX + Math.sin(t*1.3+st.fx*4)*3;
-        by = restY + wob + nibble + (biting ? 7 : 0);
+        const wob = Math.sin(t*2.0)*2.2;
+        const nibble = (Math.sin(t*0.7) > 0.85) ? Math.sin(t*20)*2.5 : 0;
+        const biting = _fcAge < 260;
+        bx = restX + Math.sin(t*1.3)*3;
+        by = restY + wob + nibble + (biting ? 6 : 0);
       }
-      // line from rod tip to bobber (slight slack curve)
-      ctx.strokeStyle = "rgba(245,245,245,.7)"; ctx.lineWidth = 1;
+      // line from the character's rod tip to the bobber
+      ctx.strokeStyle = "rgba(245,245,245,.75)"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(tipX, tipY);
-      ctx.quadraticCurveTo((tipX+bx)/2, Math.max(tipY,by)+4, bx, by); ctx.stroke();
-      // the bobber (red/white float)
+      ctx.quadraticCurveTo((tipX+bx)/2, Math.max(tipY,by)+3, bx, by); ctx.stroke();
       if (!(casting && _castAge < 60)){
         ctx.fillStyle="#dd4444"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, 7); ctx.fill();
         ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.arc(bx, by, 4, Math.PI, 0); ctx.fill();
-        ctx.fillStyle="#7a1e1e"; ctx.fillRect(bx-1, by-5, 2, 2);   // antenna tip
+        ctx.fillStyle="#7a1e1e"; ctx.fillRect(bx-1, by-5, 2, 2);
       }
-      // ripple rings where the bobber meets the water
       if (!casting){
         const rr = (t*30 % 26);
         ctx.strokeStyle = `rgba(255,255,255,${(0.35*(1-rr/26)).toFixed(2)})`; ctx.lineWidth=1;
         ctx.beginPath(); ctx.ellipse(bx, by+3, 5+rr*0.5, 2+rr*0.2, 0, 0, 7); ctx.stroke();
       }
-      // cast splash when the bobber lands
       if (!casting && _castAge < CAST+220){
         const sp = (_castAge-CAST)/220;
         ctx.strokeStyle=`rgba(255,255,255,${(0.7*(1-sp)).toFixed(2)})`; ctx.lineWidth=2;
         ctx.beginPath(); ctx.arc(restX, restY+3, 4+sp*16, 0, 7); ctx.stroke();
       }
-      // ---- catch! big splash, then reel the flapping fish up the line ----
+      // catch! splash + reel the flapping fish up the line to the rod
       if (_fcAge < 1000){
         const rp = _fcAge/1000;
         if (rp < 0.4){
@@ -4430,15 +4430,13 @@ function drawInterior(t){
           ctx.beginPath(); ctx.arc(bx, by+2, 5+rp*22, 0, 7); ctx.stroke();
           for(let d=0;d<4;d++){ const a=-0.6+d*0.5; ctx.fillStyle="rgba(220,240,255,.7)"; ctx.fillRect(bx+Math.cos(a)*rp*18, by-Math.sin(a)*rp*20, 2, 2); }
         }
-        // fish travels from the bite point up to the rod tip, wiggling
         const fx = bx + (tipX-bx)*rp, fy = by + (tipY-by)*rp;
         ctx.save(); ctx.translate(fx, fy); ctx.rotate(Math.sin(t*24)*0.4 - 0.5);
         ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("🐟", 0, 0);
         ctx.restore();
-        // water drips off the reeled fish
         if (rp>0.3){ ctx.fillStyle="rgba(180,215,240,.6)"; ctx.fillRect(fx-1, fy+6+(_fcAge%180)/22, 2, 3); }
       }
-    });
+    }
   } else if (S.tab==="contracts"){
     room("#6a5a44","#8a7a62","#c9beac","#bfb2a0","#5a4a34");
     winP(20);
@@ -5805,9 +5803,9 @@ function drawInterior(t){
     if (!v.iwx){ v.iwx = (i+1)/(_tabWorkers.length+1)*W; v.iwy = H*0.58; }
     drawPerson(ctx, v.iwx, v.iwy, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir||"down", null, v.trouser, null, v.female);
   });
-  // player drawn last so they render above furniture. Fishing draws its own rod at
-  // the station, so the player doesn't also hold the emoji rod.
-  const _iTool = active==="fishing" ? null : (SKILL_TOOL[active] || null);
+  // player drawn last so they render above furniture. The character now holds and
+  // works every tool themselves (including the fishing rod).
+  const _iTool = SKILL_TOOL[active] || null;
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
   // crisp HTML overlays: name tags + chat panel
   const _iOverlay = document.getElementById("interior-overlay");
