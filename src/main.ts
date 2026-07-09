@@ -669,6 +669,8 @@ const WANDERERS = [
 const VP = { x: 75*TILE, y: 28*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 let _lastIActionId = null;   // tracks the last interior action so the player re-walks to a new station
 let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-up animation
+let _fishCastT = 0;          // timestamp of the last cast (new fishing station), for the cast animation
+let _fishActiveId = null;    // which fishing station is currently being fished
 let _cat = { x:29*TILE, y:28*TILE, tx:29*TILE, ty:28*TILE, pauseT:0, facing:1, moving:false };
 let _bflies = [];            // ambient butterflies (warm seasons)
 let _homeVil = null;         // wandering home-villager state (per home)
@@ -4312,24 +4314,87 @@ function drawInterior(t){
     // pier railing
     ctx.fillStyle="#5a3a20"; ctx.fillRect(0,H*.44,W,5);
     for(let rx=0;rx<W;rx+=32){ ctx.fillStyle="#6a4a28"; ctx.fillRect(rx,H*.44-2,5,18); }
-    // rod + bobber for each station
-    const _fcAge = (typeof performance!=="undefined"?performance.now():Date.now()) - _fishCatchT;
+    // ---- fishing: a full cast → bob → nibble → bite → reel cycle ----
+    const _now = (typeof performance!=="undefined"?performance.now():Date.now());
+    // detect a new cast (active station changed) so the line whips out fresh
+    const _fishNow = S.action?.skill==="fishing";
+    if (_fishNow && S.action.id !== _fishActiveId){ _fishActiveId = S.action.id; _fishCastT = _now; }
+    if (!_fishNow) _fishActiveId = null;
+    const _fcAge = _now - _fishCatchT;
+    const _castAge = _now - _fishCastT;
     STATION_DEFS.fishing.forEach(st=>{
-      const sx=st.fx*W;
-      const _isAct = S.action?.skill==="fishing" && S.action.id===st.id;
-      const _biting = _isAct && _fcAge < 1200;      // a fish is on the line
-      const bx=sx+Math.sin(t*1.8+st.fx*5)*9, by=H*.20+Math.sin(t*1.3+st.fx*4)*8 + (_biting?Math.sin(t*22)*3:0);
-      ctx.strokeStyle="#5a3a1e"; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(sx, H*.44); ctx.lineTo(bx, by); ctx.stroke();
-      ctx.fillStyle="#dd4444"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, 7); ctx.fill();
-      ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.arc(bx, by, 4, Math.PI, 0); ctx.fill();
-      if(Math.sin(t*4.1+st.fx*11)>0.90){ ctx.fillStyle="rgba(255,255,255,.7)"; ctx.fillRect(bx-6,by+4,12,2); }
-      // catch! reel a fish up the line toward the rod tip, with a splash at the bite
-      if (_isAct && _fcAge < 900){
-        const _p = _fcAge/900;
-        if (_p < 0.35){ ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(bx, by, 5+_p*16, 0, 7); ctx.stroke(); }
-        const _fx = bx+(sx-bx)*_p, _fy = by+(H*.44-by)*_p;
-        ctx.font="13px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("🐟", _fx, _fy); ctx.textAlign="left";
+      const sx = st.fx*W;
+      const _isAct = _fishNow && S.action.id===st.id;
+      // rod tip sits above the railing; the rod angles out over the water
+      const rodBaseX = sx, rodBaseY = H*.44;
+      const tipX = sx + 20, tipY = H*.30;
+      // resting spot of the bobber on the water
+      const restX = sx + 34, restY = H*.205;
+      // ---- the rod itself (drawn, tapered) ----
+      ctx.strokeStyle = "#6a4423"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(rodBaseX-6, rodBaseY+6); ctx.lineTo(tipX, tipY); ctx.stroke();
+      ctx.strokeStyle = "#8a5f30"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(rodBaseX-6, rodBaseY+6); ctx.lineTo(tipX, tipY); ctx.stroke();
+      ctx.fillStyle = "#e8d84a"; ctx.fillRect(tipX-1, tipY-1, 2, 2);   // rod-tip guide
+      if (!_isAct){
+        // idle rod — a quiet bobber, no line drama
+        const ibx = restX, iby = restY + Math.sin(t*1.4+st.fx*4)*2;
+        ctx.strokeStyle="rgba(240,240,240,.5)"; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(ibx,iby); ctx.stroke();
+        ctx.fillStyle="#cc5555"; ctx.beginPath(); ctx.arc(ibx,iby,3,0,7); ctx.fill();
+        return;
+      }
+      const CAST = 520;                                  // cast duration (ms)
+      // bobber position: flies out during the cast, then bobs/nibbles while waiting
+      let bx, by, casting = _castAge < CAST;
+      if (casting){
+        const cp = _castAge / CAST;                      // 0..1 cast arc
+        bx = tipX + (restX - tipX) * cp;
+        by = tipY + (restY - tipY) * cp - Math.sin(cp*Math.PI) * 26;   // arcs up then down
+      } else {
+        const wob = Math.sin(t*2.0 + st.fx*5)*2.5;
+        const nibble = (Math.sin(t*0.7)>0.85) ? Math.sin(t*20)*2.5 : 0;   // occasional teasing nibble
+        const biting = _fcAge < 260;                     // sharp yank the instant a fish takes it
+        bx = restX + Math.sin(t*1.3+st.fx*4)*3;
+        by = restY + wob + nibble + (biting ? 7 : 0);
+      }
+      // line from rod tip to bobber (slight slack curve)
+      ctx.strokeStyle = "rgba(245,245,245,.7)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(tipX, tipY);
+      ctx.quadraticCurveTo((tipX+bx)/2, Math.max(tipY,by)+4, bx, by); ctx.stroke();
+      // the bobber (red/white float)
+      if (!(casting && _castAge < 60)){
+        ctx.fillStyle="#dd4444"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, 7); ctx.fill();
+        ctx.fillStyle="#fff8e6"; ctx.beginPath(); ctx.arc(bx, by, 4, Math.PI, 0); ctx.fill();
+        ctx.fillStyle="#7a1e1e"; ctx.fillRect(bx-1, by-5, 2, 2);   // antenna tip
+      }
+      // ripple rings where the bobber meets the water
+      if (!casting){
+        const rr = (t*30 % 26);
+        ctx.strokeStyle = `rgba(255,255,255,${(0.35*(1-rr/26)).toFixed(2)})`; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.ellipse(bx, by+3, 5+rr*0.5, 2+rr*0.2, 0, 0, 7); ctx.stroke();
+      }
+      // cast splash when the bobber lands
+      if (!casting && _castAge < CAST+220){
+        const sp = (_castAge-CAST)/220;
+        ctx.strokeStyle=`rgba(255,255,255,${(0.7*(1-sp)).toFixed(2)})`; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(restX, restY+3, 4+sp*16, 0, 7); ctx.stroke();
+      }
+      // ---- catch! big splash, then reel the flapping fish up the line ----
+      if (_fcAge < 1000){
+        const rp = _fcAge/1000;
+        if (rp < 0.4){
+          ctx.strokeStyle=`rgba(255,255,255,${(0.8*(1-rp/0.4)).toFixed(2)})`; ctx.lineWidth=2;
+          ctx.beginPath(); ctx.arc(bx, by+2, 5+rp*22, 0, 7); ctx.stroke();
+          for(let d=0;d<4;d++){ const a=-0.6+d*0.5; ctx.fillStyle="rgba(220,240,255,.7)"; ctx.fillRect(bx+Math.cos(a)*rp*18, by-Math.sin(a)*rp*20, 2, 2); }
+        }
+        // fish travels from the bite point up to the rod tip, wiggling
+        const fx = bx + (tipX-bx)*rp, fy = by + (tipY-by)*rp;
+        ctx.save(); ctx.translate(fx, fy); ctx.rotate(Math.sin(t*24)*0.4 - 0.5);
+        ctx.font="14px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("🐟", 0, 0);
+        ctx.restore();
+        // water drips off the reeled fish
+        if (rp>0.3){ ctx.fillStyle="rgba(180,215,240,.6)"; ctx.fillRect(fx-1, fy+6+(_fcAge%180)/22, 2, 3); }
       }
     });
   } else if (S.tab==="contracts"){
@@ -5698,8 +5763,9 @@ function drawInterior(t){
     if (!v.iwx){ v.iwx = (i+1)/(_tabWorkers.length+1)*W; v.iwy = H*0.58; }
     drawPerson(ctx, v.iwx, v.iwy, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir||"down", null, v.trouser, null, v.female);
   });
-  // player drawn last so they render above furniture
-  const _iTool = SKILL_TOOL[active] || null;
+  // player drawn last so they render above furniture. Fishing draws its own rod at
+  // the station, so the player doesn't also hold the emoji rod.
+  const _iTool = active==="fishing" ? null : (SKILL_TOOL[active] || null);
   drawPerson(ctx, IP.x, IP.y, plHair(), plShirt(), t, IP.moving, IP.facing, _iTool, IP.dir, plSkin(), plTrousers(), _iTool ? toolTierColor() : null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
   // crisp HTML overlays: name tags + chat panel
   const _iOverlay = document.getElementById("interior-overlay");
