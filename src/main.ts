@@ -5999,7 +5999,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{},
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -6087,6 +6087,7 @@ function load(){
       if (!S.perks) S.perks = {};
       if (!S.seenTips) S.seenTips = {};
       if (!S.journey || !Array.isArray(S.journey.claimed)) S.journey = { claimed:[], notified:"" };
+      if (!S.unlockedTabs) S.unlockedTabs = {};
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
@@ -7204,9 +7205,67 @@ const TABS = [
   { id:"character", n:"Character", ic:"👤" },
   { id:"settings", n:"Save", ic:"💾" },
 ];
+// ---- Progressive tab unlocking (Tasks 2 & 6) ----
+// New players see only the essentials; advanced tabs unlock as they play so the UI
+// never overwhelms and nothing reads as an empty "coming soon" panel. Unlocks are
+// persisted (S.unlockedTabs) so they can never re-lock (e.g. after a prestige reset).
+const TAB_ALWAYS = new Set(["village", "mining", "character", "settings"]);
+const TAB_COND = {
+  steelworks:    () => prodSum(ORES) >= 1,
+  manufacturing: () => prodSum(BARS) >= 1,
+  woodcutting:   () => !!(S.tut && S.tut.done) || prodSum(BARS) >= 1,
+  fishing:       () => !!(S.tut && S.tut.done) || prodSum(BARS) >= 1,
+  contracts:     () => prodSum(GOODS) >= 1,
+  trade:         () => (S.counters?.contracts || 0) >= 1,
+  upgrades:      () => (S.counters?.coinsEarned || 0) >= 100,
+  pets:          () => !!(S.tut && S.tut.done),
+  ach:           () => !!(S.tut && S.tut.done),
+};
+const TAB_UNLOCK_HINT = {
+  steelworks:    "Mine some ore to unlock",
+  manufacturing: "Smelt a bar to unlock",
+  woodcutting:   "Finish Frost's tutorial to unlock",
+  fishing:       "Finish Frost's tutorial to unlock",
+  contracts:     "Manufacture a part to unlock",
+  trade:         "Deliver a contract to unlock",
+  upgrades:      "Earn 100 coins to unlock",
+  pets:          "Finish Frost's tutorial to unlock",
+  ach:           "Finish Frost's tutorial to unlock",
+};
+function tabUnlocked(id){ return TAB_ALWAYS.has(id) || !!(S.unlockedTabs && S.unlockedTabs[id]); }
+// Grant any newly-earned tab unlocks. `silent` skips the toast/log (used on load to
+// back-fill existing saves so nothing they already earned disappears).
+function syncTabUnlocks(silent){
+  if (!S.unlockedTabs) S.unlockedTabs = {};
+  let changed = false;
+  for (const id in TAB_COND){
+    if (!S.unlockedTabs[id] && TAB_COND[id]()){
+      S.unlockedTabs[id] = true; changed = true;
+      if (!silent){
+        const t = TABS.find(x => x.id === id);
+        if (t){ toast(`🔓 ${t.ic} ${t.n} unlocked!`); log(`🔓 <b>${t.n}</b> is now available in your tabs.`, "good"); }
+      }
+    }
+  }
+  if (changed && !silent) renderNav();
+  return changed;
+}
 function renderNav(){
   const nav = $("#nav"); nav.innerHTML = "";
+  let shownLocked = 0;
   TABS.forEach(t => {
+    if (!tabUnlocked(t.id)){
+      // show just the next locked tab as a progression hint; hide the rest
+      if (shownLocked >= 1 || !TAB_UNLOCK_HINT[t.id]) return;
+      shownLocked++;
+      const lb = document.createElement("button");
+      lb.className = "locked";
+      lb.innerHTML = `🔒 ${t.n}`;
+      lb.title = TAB_UNLOCK_HINT[t.id];
+      lb.onclick = () => toast(`🔒 ${t.ic} ${t.n} — ${TAB_UNLOCK_HINT[t.id]}.`);
+      nav.appendChild(lb);
+      return;
+    }
     const b = document.createElement("button");
     let label = `${t.ic} ${t.n}`;
     if (t.skill) label += ` <span class="lvl">${skillLvl(t.id)}</span>`;
@@ -9139,6 +9198,7 @@ function updateProgressBar(){
 /* ---------- boot ---------- */
 const hadSave = load();
 applyOffline();
+syncTabUnlocks(true);   // back-fill tab unlocks for existing saves (never lose earned tabs)
 ensureMarket(); rollMarket(false);
 fillContracts();
 if (!TABS.some(t=>t.id===S.tab)) S.tab = "village";
@@ -9299,6 +9359,7 @@ setInterval(()=>{
   sampleNetWorth();   // LE4: throttled net-worth history sampling
   checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
   checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
+  syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
   if (rollMarket(false) && S.tab === "trade") renderMain();
   if (JSON.stringify(S.items) !== beforeItems && (S.tab in SKILLS || S.tab==="contracts")) {
     renderMain(); updateHud();
