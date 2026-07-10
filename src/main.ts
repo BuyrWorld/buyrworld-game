@@ -32,7 +32,7 @@ import { RENOWN_UPGRADES, renownForAch, upgradeById as renownUpgradeById, isBoug
 import { LORE, loreById, loreFound, isLoreComplete } from './data/lore.ts';
 import { POOL, POCKETS, BALL_COLORS, ballGroup, isStripe, rackBalls, allStopped, stepBalls, shootCue, remaining, resolveShot } from './data/pool.ts';
 import { FARM_CROPS, MAX_PLOTS, cropsForLevel, plotsUnlocked as farmPlotsUnlocked, waterReductionMs, fertilisedYield, WATER_COST, FERTILISE_COST } from './data/farming.ts';
-import { BR, BOT_NAMES, BOT_COLORS, spawnFighters, stormRadius, outsideStorm, applyDamage, aliveCount, aliveEnemies, player as brPlayer, playerWon, playerLost, nearestEnemy, aimAngle, bulletHits, clampToArena, STORM_CX, STORM_CY } from './data/battle.ts';
+import { BR, BOT_NAMES, BOT_COLORS, spawnFighters, stormRadius, outsideStorm, applyDamage, aliveCount, aliveEnemies, player as brPlayer, playerWon, playerLost, nearestEnemy, aimAngle, bulletHits, clampToArena, STORM_CX, STORM_CY, WEAPONS, weaponById, weaponDamage, applyHit, BR_SHIELD_MAX, PERSONALITIES, COVER, POIS, pointBlocked, segmentBlocked, moveFighter, spawnLoot, evaluateMedals, stormClosing, stormNextRadius, stormTicksToClose, stormDamage } from './data/battle.ts';
 import { CUES, cueById, cuePower, cueAim, cueOwned, canBuyCue } from './data/cues.ts';
 import { DART_SECTORS, DART_RINGS, scoreAt as dartScoreAt, aimPointFor, DART_DIFFICULTIES, difficultyById, DARTS_START, dartOutcome, botTarget } from './data/darts.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
@@ -9823,22 +9823,29 @@ function _poolAimTrace(c, ang){
 }
 // ===== Battle Royale — the console mini game in the player's cottage =====
 let _br = null;
+const BR_SPAWN_PROTECT = 90;   // ticks of spawn immunity (ends for you on first shot)
+function _brFreshState(){
+  return { fighters:spawnFighters(), bullets:[], loot:spawnLoot(),
+    muzzles:[], tracers:[], particles:[], dmgNums:[], markers:[], elimFx:[], pickups:[],
+    tick:0, over:false, result:null, phase:'play', bannerLife:0,
+    keys:{}, aim:{ x:BR.W/2, y:120 }, firing:false, recoil:0, shake:0, stamina:100, hurtDir:null,
+    feed:[], stormR:stormRadius(0), raf:0,
+    stats:{ shots:0, hits:0, damageDealt:0, damageTaken:0, elims:0, firstElim:false, minHp:100, wasLowHp:false, stormTicks:0, byWeapon:{}, startTick:0 } };
+}
 function openArcade(){
   if (document.getElementById("arcade-modal")) return;
   S.arcade = S.arcade || { medals:0, plays:0 };
-  _br = { fighters:spawnFighters(), bullets:[], tick:0, over:false, result:null,
-    keys:{}, aim:{ x:BR.W/2, y:60 }, firing:false, fireCd:0, reloadT:0, ammo:BR.MAG,
-    feed:[], stormR:stormRadius(0), raf:0 };
+  _br = _brFreshState();
   const el = document.createElement("div"); el.id="arcade-modal"; el.className="dd-modal";
-  el.innerHTML = `<div class="dd-card" style="max-width:640px">
+  el.innerHTML = `<div class="dd-card" style="max-width:660px">
     <button class="vp-close" id="arcade-close">✕</button>
     <div class="dd-title">🎮 Battle Royale <span style="font-size:12px;color:var(--dim);font-weight:400">· 🏅 ${S.arcade.medals} Victory Medal${S.arcade.medals===1?'':'s'}</span></div>
-    <div id="arcade-msg" class="dd-sub" style="min-height:20px">Last one standing wins — beat Donna, Daz, Reanna, Becky &amp; Noa!</div>
+    <div id="arcade-msg" class="dd-sub" style="min-height:20px">Loot up, use cover, and be the last one standing — beat Donna, Daz, Reanna, Becky &amp; Noa!</div>
     <div style="position:relative;width:100%;background:#0b1220;border-radius:10px;padding:8px">
       <canvas id="arcade-cv" width="${BR.W}" height="${BR.H}" tabindex="0" style="width:100%;height:auto;display:block;border-radius:6px;touch-action:none;cursor:crosshair;outline:none"></canvas>
     </div>
     <div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:11px;color:var(--dim);flex-wrap:wrap">
-      <span>⌨️ <b>WASD</b> move · <b>Mouse</b> aim · <b>Click/Space</b> shoot · <b>R</b> reload · <b>Shift</b> sprint</span>
+      <span>⌨️ <b>WASD</b> move · <b>Mouse</b> aim · <b>Click/Space</b> fire · <b>R</b> reload · <b>Shift</b> sprint · walk over loot to pick up</span>
       <span id="arcade-again"></span>
     </div>
   </div>`;
@@ -9847,7 +9854,7 @@ function openArcade(){
   const _loc = (e)=>{ const r=cv.getBoundingClientRect(); const p=(e.touches&&e.touches[0])||e; return { x:(p.clientX-r.left)*(cv.width/r.width), y:(p.clientY-r.top)*(cv.height/r.height) }; };
   const kd = (e)=>{ if(!_br) return; const k=(e.key||"").toLowerCase();
     if(k===' '||k==='r'||['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
-    _br.keys[k]=true; if(k===' ') _brShoot(); if(k==='r') _brReload(); };
+    _br.keys[k]=true; if(k===' ') _brShoot(); if(k==='r') _brReload(brPlayer(_br.fighters)); };
   const ku = (e)=>{ if(_br) _br.keys[(e.key||"").toLowerCase()]=false; };
   const mm = (e)=>{ if(_br) _br.aim=_loc(e); };
   const md = (e)=>{ if(!_br) return; e.preventDefault(); cv.focus(); _br.aim=_loc(e); _br.firing=true; _brShoot(); };
@@ -9859,139 +9866,320 @@ function openArcade(){
   cv.addEventListener("touchend",()=>{ if(_br) _br.firing=false; });
   const close=()=>{ if(_br) cancelAnimationFrame(_br.raf); window.removeEventListener("mouseup",mu); el.remove(); _br=null; };
   document.getElementById("arcade-close").onclick=close;
+  _br._close=close;
   el.addEventListener("click",e=>{ if(e.target===el) close(); });
   _brLoop();
 }
-function _brShoot(){
-  if(!_br||_br.over) return;
-  const p=brPlayer(_br.fighters); if(!p||!p.alive) return;
-  if(_br.reloadT>0||_br.fireCd>0) return;
-  if(_br.ammo<=0){ _brReload(); return; }
-  const ang=aimAngle(p.x,p.y,_br.aim.x,_br.aim.y);
-  _br.bullets.push({ x:p.x+Math.cos(ang)*(BR.FIGHTER_R+2), y:p.y+Math.sin(ang)*(BR.FIGHTER_R+2), vx:Math.cos(ang)*BR.BULLET_SPEED, vy:Math.sin(ang)*BR.BULLET_SPEED, owner:0, life:72 });
-  _br.ammo--; _br.fireCd=BR.FIRE_CD;
-  try{ SFX.blip ? SFX.blip() : (SFX.snap && SFX.snap()); }catch(e){}
-  if(_br.ammo<=0) _brReload();
+function _brSfx(kind){ try{
+  if(kind==='reload'){ SFX.blip&&SFX.blip(); }
+  else if(kind==='empty'){ SFX.snap&&SFX.snap(); }
+  else if(kind==='elim'){ SFX.thud?SFX.thud():(SFX.snap&&SFX.snap()); }
+  else if(kind==='pickup'){ SFX.chime?SFX.chime():(SFX.blip&&SFX.blip()); }
+  else { SFX.blip?SFX.blip():(SFX.snap&&SFX.snap()); }   // generic shot
+}catch(e){} }
+// Fire a fighter's weapon toward (tx,ty). Handles pellets, spread, ammo, muzzle flash, recoil.
+function _brFire(f, tx, ty){
+  const w = weaponById(f.weapon);
+  if(f.reloadT>0 || f.fireCd>0 || f.alive===false) return false;
+  if(f.ammo<=0){ _brReload(f); if(f.isPlayer) _brSfx('empty'); return false; }
+  const base = aimAngle(f.x,f.y,tx,ty);
+  const spreadBonus = f.isPlayer ? _br.recoil : 0;
+  for(let p=0;p<w.pellets;p++){
+    const ang = base + (Math.random()-0.5)*(w.spread+spreadBonus)*2 + (w.pellets>1?(p-(w.pellets-1)/2)*w.spread*0.6:0);
+    const ox=f.x+Math.cos(ang)*(BR.FIGHTER_R+2), oy=f.y+Math.sin(ang)*(BR.FIGHTER_R+2);
+    _br.bullets.push({ x:ox, y:oy, ox, oy, vx:Math.cos(ang)*w.bulletSpeed, vy:Math.sin(ang)*w.bulletSpeed, owner:f.id, wid:w.id, life:Math.ceil(w.range/w.bulletSpeed)+6 });
+  }
+  _br.muzzles.push({ x:f.x+Math.cos(base)*(BR.FIGHTER_R+3), y:f.y+Math.sin(base)*(BR.FIGHTER_R+3), ang:base, life:5, big:w.pellets>1 });
+  f.ammo = Math.max(0, f.ammo-1);          // never negative
+  f.fireCd = w.fireCd;
+  f.spawnProtect = 0;                        // firing drops spawn protection
+  if(f.isPlayer){ _br.recoil = Math.min(0.18, _br.recoil + w.recoil*0.02); _br.shake = Math.min(6, _br.shake + w.recoil*1.6); _br.stats.shots += w.pellets; }
+  _brSfx('shot');
+  if(f.ammo<=0) _brReload(f);
+  return true;
 }
-function _brReload(){ if(_br && _br.reloadT<=0 && _br.ammo<BR.MAG) _br.reloadT=BR.RELOAD; }
+function _brShoot(){
+  if(!_br||_br.phase!=='play') return;
+  const p=brPlayer(_br.fighters); if(!p||!p.alive) return;
+  _brFire(p, _br.aim.x, _br.aim.y);
+}
+function _brReload(f){ const w=weaponById(f.weapon); if(f.reloadT<=0 && f.ammo<w.mag){ f.reloadT=w.reload; if(f.isPlayer) _brSfx('reload'); } }
 function _brElim(f, byId){
   const by = byId>=0 ? _br.fighters.find(x=>x.id===byId) : null;
-  _br.feed.unshift({ text:(by?by.name:'The storm')+' KO’d '+f.name });
-  if(_br.feed.length>4) _br.feed.pop();
+  _br.feed.unshift({ text:(by?by.name:'The storm')+' KO’d '+f.name, life:260 });
+  if(_br.feed.length>5) _br.feed.pop();
+  _br.elimFx.push({ x:f.x, y:f.y, life:26 });
+  if(by){ by.elims=(by.elims||0)+1; if(by.isPlayer){ _br.stats.elims++; if(!_br.stats.firstElim){ _br.stats.firstElim=true; } } }
+  _brSfx('elim');
+}
+// Nearest solid-cover point to duck behind, roughly between b and its threat.
+function _brNearestCover(b){
+  let best=null, bd=Infinity;
+  for(const c of COVER){ const cx=c.x+c.w/2, cy=c.y+c.h/2, d=Math.hypot(cx-b.x,cy-b.y); if(d<bd){ bd=d; best={x:cx,y:cy,d}; } }
+  return best;
 }
 function _brBotAI(b, F, r){
-  const target=nearestEnemy(b,F);
-  let tx=STORM_CX, ty=STORM_CY;
-  if(outsideStorm(b,r)){ tx=STORM_CX; ty=STORM_CY; }
-  else if(target){
-    const d=Math.hypot(target.x-b.x,target.y-b.y), ang=Math.atan2(target.y-b.y,target.x-b.x);
-    if(d>BR.BOT_RANGE*0.7){ tx=b.x+Math.cos(ang)*24; ty=b.y+Math.sin(ang)*24; }
-    else if(d<BR.BOT_RANGE*0.4){ tx=b.x-Math.cos(ang)*24; ty=b.y-Math.sin(ang)*24; }
-    else { const s=(b.id%2)?1:-1; tx=b.x+Math.cos(ang+Math.PI/2)*24*s; ty=b.y+Math.sin(ang+Math.PI/2)*24*s; }
+  const per = PERSONALITIES[b.personality] || PERSONALITIES.aggressive;
+  const w = weaponById(b.weapon);
+  const target = nearestEnemy(b, F);
+  const tdist = target ? Math.hypot(target.x-b.x, target.y-b.y) : Infinity;
+  const inStorm = outsideStorm(b, r);
+  let tx, ty, state;
+  // 1) escape the storm above all
+  if(inStorm){ state='escape'; tx=STORM_CX; ty=STORM_CY; }
+  // 2) low health + safe → retreat/heal
+  else if(b.hp < 34 && tdist > 150){ state='heal'; const cv=_brNearestCover(b); tx=cv?cv.x:STORM_CX; ty=cv?cv.y:STORM_CY; b.hp=Math.min(BR.MAX_HP, b.hp+0.35); }
+  // 3) scavenger heads for loot when no immediate threat
+  else if(b.personality==='scavenger' && tdist>180){ const l=_br.loot.find(x=>!x.taken); state='loot'; tx=l?l.x:STORM_CX; ty=l?l.y:STORM_CY; }
+  // 4) engage a target: hold personality's preferred range, strafing
+  else if(target){ state='engage';
+    const ang=Math.atan2(target.y-b.y,target.x-b.x);
+    if(tdist > per.keepDist+30){ tx=b.x+Math.cos(ang)*24; ty=b.y+Math.sin(ang)*24; }          // close in
+    else if(tdist < per.keepDist-30){ tx=b.x-Math.cos(ang)*24; ty=b.y-Math.sin(ang)*24; }      // back off
+    else { const s=((b.id+ (_br.tick>>6))%2)?1:-1; tx=b.x+Math.cos(ang+Math.PI/2)*22*s; ty=b.y+Math.sin(ang+Math.PI/2)*22*s; } // strafe
+    // cautious types drift toward cover
+    if(Math.random()<per.coverBias*0.25){ const cv=_brNearestCover(b); if(cv){ tx=(tx+cv.x)/2; ty=(ty+cv.y)/2; } }
+  } else { state='patrol'; if(!b._wander||_br.tick>b._wander.until){ b._wander={ x:40+Math.random()*(BR.W-80), y:40+Math.random()*(BR.H-80), until:_br.tick+80+Math.random()*120 }; } tx=b._wander.x; ty=b._wander.y; }
+  b.state=state;
+  // move (slide along cover; never faster diagonally)
+  const mx=tx-b.x, my=ty-b.y, mm=Math.hypot(mx,my)||1, sp=BR.SPEED*0.9;
+  moveFighter(b, mx/mm*sp, my/mm*sp);
+  // shoot: only with clear line of sight, in range, and off cooldown; miss some
+  if(target && b.fireCd<=0 && b.reloadT<=0 && tdist < w.range*1.05 && !segmentBlocked(b.x,b.y,target.x,target.y)){
+    // lead the target a touch
+    const lead = w.pellets>1?0:8;
+    const px = target.x + (target._vx||0)*lead, py = target.y + (target._vy||0)*lead;
+    const err = (1-per.accuracy)*0.5;
+    _brFire(b, px+(Math.random()-0.5)*err*120, py+(Math.random()-0.5)*err*120);
+    b.fireCd += Math.floor(Math.random()*10);   // slight cadence variance
   }
-  const mx=tx-b.x, my=ty-b.y, mm=Math.hypot(mx,my)||1;
-  b.x+=mx/mm*BR.SPEED*0.92; b.y+=my/mm*BR.SPEED*0.92; clampToArena(b);
-  if(target && b.fireCd<=0){
-    const d=Math.hypot(target.x-b.x,target.y-b.y);
-    if(d<BR.BOT_RANGE){ const ang=Math.atan2(target.y-b.y,target.x-b.x)+(Math.random()-0.5)*0.2;
-      _br.bullets.push({ x:b.x+Math.cos(ang)*(BR.FIGHTER_R+2), y:b.y+Math.sin(ang)*(BR.FIGHTER_R+2), vx:Math.cos(ang)*BR.BULLET_SPEED, vy:Math.sin(ang)*BR.BULLET_SPEED, owner:b.id, life:72 });
-      b.fireCd=BR.FIRE_CD+18+Math.floor(Math.random()*22); }
+}
+function _brPickup(f){
+  for(const l of _br.loot){ if(l.taken) continue;
+    if(Math.hypot(l.x-f.x, l.y-f.y) < BR.FIGHTER_R+6){
+      if(l.kind==='weapon'){ f.weapon=l.weapon; f.ammo=weaponById(l.weapon).mag; f.reloadT=0; }
+      else if(l.kind==='shield'){ f.shield=Math.min(BR_SHIELD_MAX, (f.shield||0)+50); }
+      else if(l.kind==='health'){ f.hp=Math.min(BR.MAX_HP, f.hp+40); }
+      l.taken=true;
+      if(f.isPlayer){ _br.pickups.push({ text:l.kind==='weapon'?('Picked up '+weaponById(l.weapon).n):(l.kind==='shield'?'+50 Shield':'+40 Health'), life:90 }); _brSfx('pickup'); }
+    }
   }
 }
 function _brUpdate(){
   _br.tick++;
-  const F=_br.fighters, r=stormRadius(_br.tick); _br.stormR=r;
+  const F=_br.fighters, r=stormRadius(_br.tick), sdmg=stormDamage(_br.tick); _br.stormR=r;
   const p=brPlayer(F);
-  if(p.alive){
+  // decay effects & timers
+  if(_br.recoil>0) _br.recoil=Math.max(0,_br.recoil-0.01);
+  if(_br.shake>0) _br.shake=Math.max(0,_br.shake-0.4);
+  for(const f of F){ if(f.fireCd>0)f.fireCd--; if(f.reloadT>0){ f.reloadT--; if(f.reloadT<=0) f.ammo=weaponById(f.weapon).mag; } if(f.spawnProtect>0)f.spawnProtect--; if(f.hitFlash>0)f.hitFlash--; }
+  // player control (only while actually playing, not spectating)
+  if(_br.phase==='play' && p.alive){
     let dx=0,dy=0; const K=_br.keys;
     if(K['w']||K['arrowup'])dy-=1; if(K['s']||K['arrowdown'])dy+=1;
     if(K['a']||K['arrowleft'])dx-=1; if(K['d']||K['arrowright'])dx+=1;
-    if(dx||dy){ const m=Math.hypot(dx,dy), sp=(K['shift']?BR.SPRINT:BR.SPEED); p.x+=dx/m*sp; p.y+=dy/m*sp; clampToArena(p); }
+    const sprinting = (K['shift']||K['shiftleft']) && _br.stamina>4 && (dx||dy);
+    if(dx||dy){ const m=Math.hypot(dx,dy), sp=(sprinting?BR.SPRINT:BR.SPEED); const _pv={x:p.x,y:p.y}; moveFighter(p, dx/m*sp, dy/m*sp); p._vx=p.x-_pv.x; p._vy=p.y-_pv.y; } else { p._vx=0; p._vy=0; }
+    _br.stamina = sprinting ? Math.max(0,_br.stamina-0.9) : Math.min(100,_br.stamina+0.55);
     if(_br.firing) _brShoot();
+    _brPickup(p);
+    _br.stats.minHp=Math.min(_br.stats.minHp,p.hp); if(p.hp<=25) _br.stats.wasLowHp=true;
+    if(outsideStorm(p,r)) _br.stats.stormTicks++;
   }
-  if(_br.fireCd>0)_br.fireCd--;
-  if(_br.reloadT>0){ _br.reloadT--; if(_br.reloadT<=0) _br.ammo=BR.MAG; }
-  for(const b of F){ if(b.isPlayer||!b.alive) continue; _brBotAI(b,F,r); if(b.fireCd>0)b.fireCd--; }
-  for(let i=_br.bullets.length-1;i>=0;i--){ const bl=_br.bullets[i];
-    bl.x+=bl.vx; bl.y+=bl.vy; bl.life--;
-    if(bl.life<=0||bl.x<0||bl.x>BR.W||bl.y<0||bl.y>BR.H){ _br.bullets.splice(i,1); continue; }
-    const hit=bulletHits(bl,F);
-    if(hit){ const dead=applyDamage(hit,BR.BULLET_DMG); _br.bullets.splice(i,1); if(dead) _brElim(hit,bl.owner); }
+  // bots
+  for(const b of F){ if(b.isPlayer||!b.alive) continue; const _bv={x:b.x,y:b.y}; _brBotAI(b,F,r); b._vx=b.x-_bv.x; b._vy=b.y-_bv.y; _brPickup(b); }
+  // bullets — sub-stepped so nothing tunnels through cover or fighters
+  for(let i=_br.bullets.length-1;i>=0;i--){ const bl=_br.bullets[i]; let gone=false;
+    const speed=Math.hypot(bl.vx,bl.vy), sub=Math.max(1,Math.ceil(speed/4));
+    for(let s=0;s<sub && !gone;s++){
+      bl.x+=bl.vx/sub; bl.y+=bl.vy/sub;
+      if(bl.x<0||bl.x>BR.W||bl.y<0||bl.y>BR.H){ gone=true; break; }
+      if(pointBlocked(bl.x,bl.y)){ for(let k=0;k<4;k++)_br.particles.push({x:bl.x,y:bl.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:12,col:'#c9b089'}); gone=true; break; }
+      const hit=bulletHits(bl,F);
+      if(hit){
+        if(hit.spawnProtect>0){ gone=true; break; }   // spawn immunity
+        const dmg=weaponDamage(weaponById(bl.wid), Math.hypot(bl.x-bl.ox,bl.y-bl.oy));
+        const res=applyHit(hit,dmg); hit.hitFlash=4;
+        _br.dmgNums.push({ x:hit.x, y:hit.y-BR.FIGHTER_R-4, val:res.dmg, life:34, shield:res.shieldHit });
+        for(let k=0;k<3;k++)_br.particles.push({x:hit.x,y:hit.y,vx:(Math.random()-0.5)*2.4,vy:(Math.random()-0.5)*2.4,life:10,col:res.shieldHit?'#7ad0ff':'#ff6a5a'});
+        if(bl.owner===0){ _br.markers.push({life:8}); _br.stats.hits++; _br.stats.damageDealt+=res.dmg; _br.stats.byWeapon[bl.wid]=(_br.stats.byWeapon[bl.wid]||0)+res.dmg; }
+        if(hit.isPlayer){ _br.stats.damageTaken+=res.dmg; _br.shake=Math.min(7,_br.shake+2); _br.hurtDir={ ang:Math.atan2(hit.y-bl.y,hit.x-bl.x)+Math.PI, life:26 }; }
+        if(res.elim) _brElim(hit,bl.owner);
+        gone=true; break;
+      }
+    }
+    if(gone||(--bl.life<=0)) _br.bullets.splice(i,1);
   }
-  for(const f of F){ if(f.alive && outsideStorm(f,r)){ if(applyDamage(f,BR.STORM_DMG)) _brElim(f,-1); } }
-  if(playerWon(F)) _brEnd('win');
-  else if(playerLost(F)) _brEnd('lose');
+  // storm damage (ramps up; ignores spawn protection)
+  for(const f of F){ if(f.alive && f.spawnProtect<=0 && outsideStorm(f,r)){ if(applyDamage(f,sdmg)){ if(f.isPlayer)_br.stats.damageTaken+=sdmg; _brElim(f,-1); } } }
+  // effect lifetimes
+  for(const a of [_br.muzzles,_br.tracers,_br.particles,_br.dmgNums,_br.markers,_br.elimFx,_br.pickups,_br.feed]) for(let i=a.length-1;i>=0;i--){ const e=a[i]; if(e.life!==undefined && --e.life<=0) a.splice(i,1); }
+  for(const p2 of _br.particles){ p2.x+=p2.vx; p2.y+=p2.vy; }
+  if(_br.hurtDir && --_br.hurtDir.life<=0) _br.hurtDir=null;
+  if(_br.bannerLife>0) _br.bannerLife--;
+  // match state
+  if(_br.phase==='play'){
+    if(playerWon(F)){ _brWin(); }
+    else if(playerLost(F)){ _brKnockout(); }
+  } else if(_br.phase==='spectate'){
+    if(aliveCount(F)<=1) _brFinish();   // match resolved while spectating
+  }
 }
-function _brEnd(result){
-  if(_br.over) return; _br.over=true; _br.result=result;
-  S.arcade.plays=(S.arcade.plays||0)+1;
-  const msg=document.getElementById("arcade-msg"), again=document.getElementById("arcade-again");
-  if(result==='win'){
-    S.arcade.medals=(S.arcade.medals||0)+1;
-    try{ SFX.fanfare && SFX.fanfare(); }catch(e){}
-    toast('🏅 VICTORY! You earned a Victory Medal!');
-    log('🎮 <b>Battle Royale</b> — you outlasted Donna, Daz, Reanna, Becky &amp; Noa and claimed a <b>Victory Medal</b>! 🏅','rare');
-    achCheck(); updateHud(); save();
-    if(msg) msg.innerHTML=`🏆 <b style="color:#ffd666">VICTORY!</b> You beat all five and earned a 🏅 Victory Medal! (Total: ${S.arcade.medals})`;
-  } else {
-    if(msg) msg.innerHTML=`💀 Knocked out — you placed #${aliveCount(_br.fighters)+1} of 6. Try again!`;
-    save();
-  }
-  if(again) again.innerHTML=`<button id="arcade-rematch" style="background:#2a7a2a;color:#fff;border:none;padding:5px 14px;border-radius:5px;cursor:pointer;font-weight:700">🎮 Rematch</button>`;
-  const rb=document.getElementById("arcade-rematch"); if(rb) rb.onclick=()=>{
-    Object.assign(_br,{ fighters:spawnFighters(), bullets:[], tick:0, over:false, result:null, ammo:BR.MAG, reloadT:0, fireCd:0, feed:[], firing:false });
-    const t=document.getElementById("arcade-msg"); if(t) t.textContent='Last one standing wins!';
-    const a=document.getElementById("arcade-again"); if(a) a.innerHTML='';
-    document.getElementById("arcade-cv").focus();
-  };
+function _brPlacement(){ return aliveCount(_br.fighters) + (brPlayer(_br.fighters).alive?0:1); }
+function _brWin(){
+  if(_br.phase==='over') return; _br.phase='over'; _br.result='win'; _br.placement=1; _br.bannerLife=120;
+  try{ SFX.fanfare&&SFX.fanfare(); }catch(e){}
+  _brFinish();
 }
-function _brLoop(){ if(!_br) return; if(!_br.over) _brUpdate(); _brDraw(); _br.raf=requestAnimationFrame(_brLoop); }
+function _brKnockout(){
+  if(_br.phase!=='play') return;
+  _br.phase='spectate'; _br.result='lose'; _br.placement=_brPlacement(); _br.bannerLife=140;
+  const msg=document.getElementById("arcade-msg");
+  if(msg) msg.innerHTML=`💀 Knocked out — placed #${_br.placement} of 6. Spectating the rest… <button id="arcade-leave" style="background:#3a4a5a;color:#fff;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700">See results</button>`;
+  const lb=document.getElementById("arcade-leave"); if(lb) lb.onclick=()=>_brFinish();
+  save();
+}
+function _brFinish(){
+  if(_br.phase==='over' && _br._finished) return; _br.phase='over'; _br._finished=true;
+  const won=_br.result==='win'; if(won) _br.placement=1;
+  _br.stats.placement=_br.placement||_brPlacement();
+  const st=_br.stats, acc=st.shots?Math.round(st.hits/st.shots*100):0;
+  const survival=Math.round(_br.tick/60);
+  const bestW=Object.keys(st.byWeapon).sort((a,b)=>st.byWeapon[b]-st.byWeapon[a])[0];
+  const medals=evaluateMedals(st);
+  if(won){ S.arcade.medals=(S.arcade.medals||0)+1; toast('🏅 VICTORY! You earned a Victory Medal!'); log('🎮 <b>Battle Royale</b> — you were the last one standing and claimed a <b>Victory Medal</b>! 🏅','rare'); }
+  S.arcade.plays=(S.arcade.plays||0)+1; achCheck(); updateHud(); save();
+  const msg=document.getElementById("arcade-msg");
+  if(msg) msg.innerHTML = won
+    ? `🏆 <b style="color:#ffd666">VICTORY ROYALE!</b> 🏅 Victory Medal earned (total ${S.arcade.medals})`
+    : `Match over — you placed <b>#${_br.stats.placement}</b> of 6.`;
+  const box=document.getElementById("arcade-again"); if(!box) return;
+  const row=(a,b)=>`<span style="display:inline-block;min-width:118px"><span style="color:var(--dim)">${a}:</span> <b>${b}</b></span>`;
+  const medalHtml = medals.length ? `<div style="margin-top:6px">${medals.map(m=>`<span style="display:inline-block;background:#3a3a20;color:#ffd666;border-radius:4px;padding:1px 7px;margin:2px;font-size:10px;font-weight:700">🎖️ ${m.n}</span>`).join('')}</div>` : `<div style="margin-top:6px;color:var(--dim);font-size:10px">No medals this round.</div>`;
+  box.innerHTML = `<div style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;margin-top:6px;text-align:left;font-size:11px">
+    <div style="font-weight:800;margin-bottom:4px">📊 Match summary — #${_br.stats.placement} of 6</div>
+    ${row('Eliminations',st.elims)} ${row('Damage dealt',Math.round(st.damageDealt))}<br>
+    ${row('Accuracy',acc+'%')} ${row('Damage taken',Math.round(st.damageTaken))}<br>
+    ${row('Survival',survival+'s')} ${row('Best weapon',bestW?weaponById(bestW).n:'—')}
+    ${medalHtml}
+    <div style="margin-top:8px;text-align:center">
+      <button id="arcade-rematch" style="background:#2a7a2a;color:#fff;border:none;padding:5px 14px;border-radius:5px;cursor:pointer;font-weight:700;margin:2px">🎮 Rematch</button>
+      <button id="arcade-pub" style="background:#5a3a1a;color:#fff;border:none;padding:5px 14px;border-radius:5px;cursor:pointer;font-weight:700;margin:2px">🍺 Return to Pub</button>
+    </div></div>`;
+  const rb=document.getElementById("arcade-rematch"); if(rb) rb.onclick=()=>{ Object.assign(_br,_brFreshState(), {raf:_br.raf,_close:_br._close}); const m=document.getElementById("arcade-msg"); if(m) m.textContent='Loot up and fight — last one standing wins!'; box.innerHTML=''; document.getElementById("arcade-cv").focus(); };
+  const pb=document.getElementById("arcade-pub"); if(pb) pb.onclick=()=>{ if(_br&&_br._close) _br._close(); };
+}
+function _brLoop(){ if(!_br) return; if(_br.phase==='play'||_br.phase==='spectate') _brUpdate(); _brDraw(); _br.raf=requestAnimationFrame(_brLoop); }
 function _brDraw(){
   const cv=document.getElementById("arcade-cv"); if(!cv||!_br) return;
-  const g=cv.getContext("2d"), W=BR.W, H=BR.H;
-  g.fillStyle="#243a2a"; g.fillRect(0,0,W,H);
-  g.strokeStyle="rgba(255,255,255,.045)"; g.lineWidth=1;
+  const g=cv.getContext("2d"), W=BR.W, H=BR.H, P=brPlayer(_br.fighters);
+  g.save();
+  if(_br.shake>0.2){ g.translate((Math.random()-0.5)*_br.shake,(Math.random()-0.5)*_br.shake); }
+  // ground + subtle grid
+  g.fillStyle="#243a2a"; g.fillRect(-8,-8,W+16,H+16);
+  g.strokeStyle="rgba(255,255,255,.04)"; g.lineWidth=1;
   for(let x=0;x<W;x+=40){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,H); g.stroke(); }
   for(let y=0;y<H;y+=40){ g.beginPath(); g.moveTo(0,y); g.lineTo(W,y); g.stroke(); }
-  // scattered cover blocks (decorative)
-  g.fillStyle="rgba(0,0,0,.14)";
-  for(const [bx,by,bw,bh] of [[90,90,24,24],[360,80,26,20],[210,150,30,22],[120,250,24,24],[350,260,26,26],[250,60,20,20]]) g.fillRect(bx,by,bw,bh);
-  // storm — darken everything outside the safe circle
-  const r=_br.stormR||stormRadius(_br.tick);
+  // POI ground markers
+  for(const poi of POIS){ g.fillStyle="rgba(255,255,255,.05)"; g.beginPath(); g.arc(poi.x,poi.y,34,0,7); g.fill();
+    g.fillStyle="rgba(255,255,255,.22)"; g.font="8px sans-serif"; g.textAlign="center"; g.fillText(poi.n.toUpperCase(),poi.x,poi.y-40); g.textAlign="left"; }
+  // cover
+  for(const c of COVER){ const col={wall:'#6a6a72',crate:'#9a6a3a',rock:'#7a7a82',tree:'#2f6a34',car:'#7a3a3a',fence:'#5a4a30'}[c.type]||'#666';
+    g.fillStyle="rgba(0,0,0,.28)"; g.fillRect(c.x+2,c.y+3,c.w,c.h);
+    g.fillStyle=col; g.fillRect(c.x,c.y,c.w,c.h);
+    g.fillStyle="rgba(255,255,255,.12)"; g.fillRect(c.x,c.y,c.w,2);
+    if(c.type==='tree'){ g.fillStyle="#3a8a44"; g.beginPath(); g.arc(c.x+c.w/2,c.y+c.h/2,c.w*0.7,0,7); g.fill(); }
+  }
+  // loot
+  for(const l of _br.loot){ if(l.taken) continue; const bob=Math.sin(_br.tick*0.1+l.x)*1.5;
+    g.fillStyle="rgba(255,255,255,.14)"; g.beginPath(); g.arc(l.x,l.y+bob,8,0,7); g.fill();
+    const ic=l.kind==='weapon'?weaponById(l.weapon).ic:(l.kind==='shield'?'🛡️':'❤️');
+    g.font="12px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(ic,l.x,l.y+bob); g.textAlign="left"; g.textBaseline="alphabetic"; }
+  // storm: darken outside + edge + next-zone preview
+  const r=_br.stormR||stormRadius(_br.tick), nr=stormNextRadius(_br.tick);
   g.save(); g.fillStyle="rgba(96,44,168,.34)"; g.fillRect(0,0,W,H);
   g.globalCompositeOperation="destination-out"; g.beginPath(); g.arc(STORM_CX,STORM_CY,r,0,7); g.fill(); g.restore();
   g.strokeStyle="#b070ff"; g.lineWidth=2; g.beginPath(); g.arc(STORM_CX,STORM_CY,r,0,7); g.stroke();
-  // bullets
-  for(const bl of _br.bullets){ g.fillStyle=bl.owner===0?"#fff2a0":"#ff9a6a"; g.beginPath(); g.arc(bl.x,bl.y,BR.BULLET_R,0,7); g.fill(); }
+  if(nr<r-1){ g.strokeStyle="rgba(255,255,255,.35)"; g.setLineDash([5,5]); g.lineWidth=1; g.beginPath(); g.arc(STORM_CX,STORM_CY,nr,0,7); g.stroke(); g.setLineDash([]); }
+  // tracers (drawn as short streaks behind bullets)
+  for(const bl of _br.bullets){ g.strokeStyle=bl.owner===0?"rgba(255,240,150,.5)":"rgba(255,150,110,.4)"; g.lineWidth=1.5; g.beginPath(); g.moveTo(bl.x-bl.vx*1.5,bl.y-bl.vy*1.5); g.lineTo(bl.x,bl.y); g.stroke();
+    g.fillStyle=bl.owner===0?"#fff2a0":"#ff9a6a"; g.beginPath(); g.arc(bl.x,bl.y,BR.BULLET_R,0,7); g.fill(); }
+  // impact / muzzle particles
+  for(const p2 of _br.particles){ g.globalAlpha=Math.max(0,p2.life/12); g.fillStyle=p2.col; g.fillRect(p2.x-1,p2.y-1,2,2); g.globalAlpha=1; }
+  for(const m of _br.muzzles){ g.globalAlpha=m.life/5; g.fillStyle="#ffe27a"; g.beginPath(); g.arc(m.x,m.y,m.big?5:3,0,7); g.fill(); g.globalAlpha=1; }
+  // elimination bursts
+  for(const e of _br.elimFx){ g.globalAlpha=e.life/26; g.strokeStyle="#ffd666"; g.lineWidth=2; g.beginPath(); g.arc(e.x,e.y,(26-e.life)*1.4,0,7); g.stroke(); g.globalAlpha=1; }
   // fighters
   for(const f of _br.fighters){ if(!f.alive) continue;
-    g.fillStyle=f.color; g.beginPath(); g.arc(f.x,f.y,BR.FIGHTER_R,0,7); g.fill();
-    g.strokeStyle="rgba(0,0,0,.45)"; g.lineWidth=1.5; g.stroke();
-    if(f.isPlayer){ const ang=aimAngle(f.x,f.y,_br.aim.x,_br.aim.y); g.strokeStyle="#fff"; g.lineWidth=2; g.beginPath(); g.moveTo(f.x,f.y); g.lineTo(f.x+Math.cos(ang)*16,f.y+Math.sin(ang)*16); g.stroke(); }
-    g.fillStyle="rgba(0,0,0,.6)"; g.fillRect(f.x-11,f.y-BR.FIGHTER_R-11,22,3);
-    g.fillStyle=f.hp>40?"#5ad06a":"#e05a4a"; g.fillRect(f.x-11,f.y-BR.FIGHTER_R-11,22*(Math.max(0,f.hp)/BR.MAX_HP),3);
-    g.fillStyle="#fff"; g.font="bold 8px sans-serif"; g.textAlign="center"; g.fillText(f.name,f.x,f.y-BR.FIGHTER_R-13); g.textAlign="left";
+    g.fillStyle="rgba(0,0,0,.25)"; g.beginPath(); g.ellipse(f.x,f.y+BR.FIGHTER_R-1,BR.FIGHTER_R*0.9,3.5,0,0,7); g.fill();   // shadow
+    g.fillStyle=f.hitFlash>0?"#ffffff":f.color; g.beginPath(); g.arc(f.x,f.y,BR.FIGHTER_R,0,7); g.fill();
+    g.strokeStyle=f.isPlayer?"#ffffff":"rgba(0,0,0,.5)"; g.lineWidth=f.isPlayer?2.4:1.5; g.stroke();
+    if(f.spawnProtect>0){ g.strokeStyle="rgba(120,200,255,"+(0.4+0.3*Math.sin(_br.tick*0.4))+")"; g.lineWidth=1.5; g.beginPath(); g.arc(f.x,f.y,BR.FIGHTER_R+3,0,7); g.stroke(); }
+    // facing / weapon orientation
+    const fang = f.isPlayer ? aimAngle(f.x,f.y,_br.aim.x,_br.aim.y) : Math.atan2(f._vy||0,f._vx||0.001);
+    g.strokeStyle=f.isPlayer?"#fff":"rgba(20,20,20,.7)"; g.lineWidth=f.isPlayer?2.5:2; g.beginPath(); g.moveTo(f.x,f.y); g.lineTo(f.x+Math.cos(fang)*(BR.FIGHTER_R+6),f.y+Math.sin(fang)*(BR.FIGHTER_R+6)); g.stroke();
+    // health bar only when hurt or engaged
+    if(f.hp<BR.MAX_HP || f.hitFlash>0){
+      const bw=22, bx=f.x-bw/2, by=f.y-BR.FIGHTER_R-12;
+      g.fillStyle="rgba(0,0,0,.6)"; g.fillRect(bx,by,bw,4);
+      if(f.shield>0){ g.fillStyle="#5ab0ff"; g.fillRect(bx,by,bw*(f.shield/BR_SHIELD_MAX),2); }
+      g.fillStyle=f.hp>40?"#5ad06a":"#e05a4a"; g.fillRect(bx,by+2,bw*(Math.max(0,f.hp)/BR.MAX_HP),2);
+    }
+    g.fillStyle=f.isPlayer?"#ffffff":"rgba(235,235,235,.85)"; g.font=(f.isPlayer?"bold ":"")+"8px sans-serif"; g.textAlign="center"; g.fillText(f.name,f.x,f.y-BR.FIGHTER_R-15); g.textAlign="left";
   }
-  // reticle
-  g.strokeStyle="rgba(255,255,255,.7)"; g.lineWidth=1;
-  g.beginPath(); g.arc(_br.aim.x,_br.aim.y,6,0,7); g.stroke();
-  g.beginPath(); g.moveTo(_br.aim.x-9,_br.aim.y); g.lineTo(_br.aim.x+9,_br.aim.y); g.moveTo(_br.aim.x,_br.aim.y-9); g.lineTo(_br.aim.x,_br.aim.y+9); g.stroke();
-  // HUD
+  // reticle + player hit marker
+  if(P.alive && _br.phase==='play'){ const a=_br.aim;
+    g.strokeStyle=_br.markers.length?"#ff6a5a":"rgba(255,255,255,.75)"; g.lineWidth=1.5;
+    g.beginPath(); g.arc(a.x,a.y,6,0,7); g.stroke();
+    g.beginPath(); g.moveTo(a.x-9,a.y); g.lineTo(a.x-3,a.y); g.moveTo(a.x+3,a.y); g.lineTo(a.x+9,a.y); g.moveTo(a.x,a.y-9); g.lineTo(a.x,a.y-3); g.moveTo(a.x,a.y+3); g.lineTo(a.x,a.y+9); g.stroke();
+    if(_br.markers.length){ g.strokeStyle="#ff6a5a"; g.lineWidth=2; g.beginPath(); g.moveTo(a.x-4,a.y-4); g.lineTo(a.x+4,a.y+4); g.moveTo(a.x+4,a.y-4); g.lineTo(a.x-4,a.y+4); g.stroke(); }
+  }
+  // damage numbers
+  for(const d of _br.dmgNums){ g.globalAlpha=Math.max(0,d.life/34); g.fillStyle=d.shield?"#8ad0ff":"#ffd0c0"; g.font="bold 9px sans-serif"; g.textAlign="center"; g.fillText(String(d.val),d.x,d.y-(34-d.life)*0.4); g.textAlign="left"; g.globalAlpha=1; }
+  g.restore();   // end camera shake
+  // ---- HUD (P5) ----
   g.textBaseline="middle";
-  g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(6,6,92,20);
-  g.fillStyle="#fff"; g.font="bold 11px sans-serif"; g.textAlign="left"; g.fillText("👥 "+aliveCount(_br.fighters)+" left",12,16);
-  g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(W-98,H-26,92,20);
-  g.fillStyle=_br.reloadT>0?"#ffb03a":"#fff"; g.fillText(_br.reloadT>0?"⟳ reloading…":("🔫 "+_br.ammo+" / "+BR.MAG),W-92,H-16);
+  // top-left: players + elims + storm message
+  g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(6,6,120,34);
+  g.fillStyle="#fff"; g.font="bold 11px sans-serif"; g.textAlign="left";
+  g.fillText("👥 "+aliveCount(_br.fighters)+" left   💀 "+_br.stats.elims,12,16);
+  const closing=stormClosing(_br.tick), toClose=stormTicksToClose(_br.tick);
+  g.fillStyle=closing?"#e070ff":"#cfa0ff"; g.font="bold 10px sans-serif";
+  g.fillText(closing?"⚠ STORM CLOSING":(toClose>0?"🌀 Storm moves in "+Math.ceil(toClose/60)+"s":"🌀 Final zone"),12,30);
+  // kill feed top-right
   g.font="9px sans-serif"; g.textAlign="right";
-  _br.feed.forEach((fe,i)=>{ g.fillStyle="rgba(255,255,255,"+(0.9-i*0.18).toFixed(2)+")"; g.fillText(fe.text,W-8,14+i*12); });
-  g.textAlign="left"; g.textBaseline="alphabetic";
-  if(_br.over){
-    g.fillStyle="rgba(0,0,0,.6)"; g.fillRect(0,H/2-32,W,64);
-    g.textAlign="center"; g.textBaseline="middle";
-    if(_br.result==='win'){ g.fillStyle="#ffd666"; g.font="bold 26px sans-serif"; g.fillText("👑 VICTORY!",W/2,H/2-7); g.fillStyle="#fff"; g.font="bold 12px sans-serif"; g.fillText("🏅 Victory Medal earned",W/2,H/2+15); }
-    else { g.fillStyle="#ff7a6a"; g.font="bold 22px sans-serif"; g.fillText("KNOCKED OUT",W/2,H/2); }
-    g.textAlign="left"; g.textBaseline="alphabetic";
+  _br.feed.forEach((fe,i)=>{ g.fillStyle="rgba(255,255,255,"+Math.min(0.9,fe.life/60).toFixed(2)+")"; g.fillText(fe.text,W-8,14+i*12); });
+  // pickup labels (centre-low)
+  g.textAlign="center"; _br.pickups.forEach((pk,i)=>{ g.globalAlpha=Math.min(1,pk.life/40); g.fillStyle="#ffe27a"; g.font="bold 10px sans-serif"; g.fillText(pk.text,W/2,H-60-i*13); g.globalAlpha=1; });
+  g.textAlign="left";
+  // directional hit indicator
+  if(_br.hurtDir){ g.save(); g.translate(W/2,H/2); g.rotate(_br.hurtDir.ang); g.globalAlpha=_br.hurtDir.life/26; g.strokeStyle="#ff4040"; g.lineWidth=3; g.beginPath(); g.arc(0,0,40,-0.5,0.5); g.stroke(); g.globalAlpha=1; g.restore(); }
+  // bottom-left: player weapon + ammo + health + shield + stamina
+  if(P){
+    const w=weaponById(P.weapon);
+    g.fillStyle="rgba(0,0,0,.55)"; g.fillRect(6,H-52,168,46);
+    g.fillStyle="#fff"; g.font="bold 11px sans-serif"; g.textAlign="left";
+    g.fillText(w.ic+" "+w.n,12,H-40);
+    g.fillStyle=P.reloadT>0?"#ffb03a":"#fff"; g.font="bold 12px sans-serif";
+    g.fillText(P.reloadT>0?("⟳ reloading "+Math.ceil(P.reloadT/w.reload*100)+"%"):("🔫 "+P.ammo+" / "+w.mag),12,H-26);
+    // health + shield bars
+    g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(12,H-16,150,5);
+    g.fillStyle="#e05a4a"; g.fillRect(12,H-16,150*(Math.max(0,P.hp)/BR.MAX_HP),5);
+    if(P.shield>0){ g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(12,H-22,150,4); g.fillStyle="#5ab0ff"; g.fillRect(12,H-22,150*(P.shield/BR_SHIELD_MAX),4); }
+    // stamina pip
+    g.fillStyle="rgba(0,0,0,.4)"; g.fillRect(12,H-9,150,2); g.fillStyle="#e8d060"; g.fillRect(12,H-9,150*(_br.stamina/100),2);
   }
+  g.textBaseline="alphabetic";
+  // knockout / victory banner (fades, doesn't block the whole arena)
+  if(_br.bannerLife>0 && (_br.phase==='spectate'||_br.result==='win')){
+    g.globalAlpha=Math.min(1,_br.bannerLife/40);
+    g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(0,H/2-22,W,44);
+    g.textAlign="center"; g.textBaseline="middle";
+    if(_br.result==='win'){ g.fillStyle="#ffd666"; g.font="bold 24px sans-serif"; g.fillText("👑 VICTORY!",W/2,H/2); }
+    else { g.fillStyle="#ff7a6a"; g.font="bold 20px sans-serif"; g.fillText("KNOCKED OUT — #"+_br.placement,W/2,H/2); }
+    g.textAlign="left"; g.textBaseline="alphabetic"; g.globalAlpha=1;
+  }
+  if(_br.phase==='spectate'){ g.fillStyle="rgba(255,255,255,.6)"; g.font="9px sans-serif"; g.textAlign="center"; g.fillText("👁 spectating",W/2,14); g.textAlign="left"; }
 }
 // ===== Darts — 301 vs an opponent, at your chosen difficulty (The Rose & Pallet) =====
 let _darts = null;
