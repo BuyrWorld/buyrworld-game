@@ -3989,23 +3989,36 @@ function drawExtras(ctx, t){
       }
       for(let px=_rx0+20; px<_rx1-10; px+=52) drawEmojiC(ctx,"🎃", px, _ryBase-2, 9);
     }
-    // Summer Fete — a purely decorative event ABOVE the high street so it never
-    // obstructs anyone walking. A striped marquee anchors it.
+    // Summer Fete — set on the one clear building-free stretch of the high
+    // street (between the furniture shop @tx37 and the pub @tx52) so nothing
+    // overlays a shopfront. Laid out symmetrically around a central marquee.
     if (_curSeason === "summer"){
-      const _topY = 2*TILE;   // row 2, above the walkable street (row 4)
-      // striped marquee tent centred on the high street
-      const _mqX = 20*TILE;
-      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(_mqX, _topY+30, 40, 6, 0, 0, 7); ctx.fill();
-      ctx.fillStyle="#f6ecd8"; ctx.fillRect(_mqX-34, _topY+14, 68, 18);                 // tent body
-      for (let s=0;s<7;s++){ ctx.fillStyle = s%2 ? "#e84060" : "#fff6e6"; ctx.beginPath(); ctx.moveTo(_mqX-34+s*10, _topY+15); ctx.lineTo(_mqX-34+s*10+5, _topY+2); ctx.lineTo(_mqX-34+s*10+10, _topY+15); ctx.closePath(); ctx.fill(); }  // striped roof
-      ctx.fillStyle="#8a6a4a"; ctx.fillRect(_mqX-34, _topY+14, 2, 18); ctx.fillRect(_mqX+32, _topY+14, 2, 18);  // poles
-      ctx.fillStyle="#3aa66a"; ctx.beginPath(); ctx.moveTo(_mqX, _topY-6); ctx.lineTo(_mqX+9, _topY-3); ctx.lineTo(_mqX, _topY); ctx.closePath(); ctx.fill();  // pennant
-      ctx.fillStyle="#6a4a2f"; ctx.fillRect(_mqX-0.5, _topY-6, 1, 8);
-      drawEmojiC(ctx,"🎪", _mqX, _topY+22, 12);
-      // bunting helpers & treats, all above the street
-      drawEmojiC(ctx,"🍦", 30*TILE, _topY+20, 11);
-      drawEmojiC(ctx,"🎈", 12*TILE, _topY+18, 12);
-      drawEmojiC(ctx,"🎈", 28*TILE, _topY+18, 12);
+      const _feteCx = 45*TILE;       // centre of the tx39-51 gap
+      const _topY   = 2*TILE + 2;    // row 2 grass, tidy above the street
+      // neat bunting swag strung across the clear stretch only
+      const _bx0 = 40*TILE, _bx1 = 50*TILE, _bDip = 5;
+      ctx.strokeStyle="#8a6a4a"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(_bx0, _topY-2); ctx.quadraticCurveTo(_feteCx, _topY-2+_bDip, _bx1, _topY-2); ctx.stroke();
+      const _fc = ["#e84060","#ffd666","#4a8ae8","#68cc68","#e86040","#c840e8"];
+      const _bn = 10;
+      for (let i=0;i<=_bn;i++){
+        const _tt=i/_bn, _fx=_bx0+(_bx1-_bx0)*_tt, _fy=_topY-2+Math.sin(Math.PI*_tt)*_bDip;
+        ctx.fillStyle=_fc[i%_fc.length];
+        ctx.beginPath(); ctx.moveTo(_fx-3,_fy); ctx.lineTo(_fx+3,_fy); ctx.lineTo(_fx,_fy+6); ctx.closePath(); ctx.fill();
+      }
+      // striped marquee tent, centred
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(_feteCx, _topY+34, 38, 6, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#f6ecd8"; ctx.fillRect(_feteCx-32, _topY+18, 64, 16);            // tent body
+      for (let s=0;s<7;s++){ ctx.fillStyle = s%2 ? "#e84060" : "#fff6e6"; ctx.beginPath(); ctx.moveTo(_feteCx-32+s*9.3, _topY+19); ctx.lineTo(_feteCx-32+s*9.3+4.6, _topY+7); ctx.lineTo(_feteCx-32+s*9.3+9.3, _topY+19); ctx.closePath(); ctx.fill(); } // striped roof
+      ctx.fillStyle="#8a6a4a"; ctx.fillRect(_feteCx-32, _topY+18, 2, 16); ctx.fillRect(_feteCx+30, _topY+18, 2, 16); // poles
+      ctx.fillStyle="#3aa66a"; ctx.beginPath(); ctx.moveTo(_feteCx, _topY+1); ctx.lineTo(_feteCx+8, _topY+4); ctx.lineTo(_feteCx, _topY+7); ctx.closePath(); ctx.fill();  // pennant
+      ctx.fillStyle="#6a4a2f"; ctx.fillRect(_feteCx-0.5, _topY+1, 1, 7);
+      drawEmojiC(ctx,"🎪", _feteCx, _topY+26, 11);
+      // treats + balloons flanking the marquee symmetrically, all on clear grass
+      drawEmojiC(ctx,"🎈", _feteCx-40, _topY+16, 11);
+      drawEmojiC(ctx,"🎈", _feteCx+40, _topY+16, 11);
+      drawEmojiC(ctx,"🍦", _feteCx-22, _topY+30, 9);
+      drawEmojiC(ctx,"🧁", _feteCx+22, _topY+30, 9);
     }
     // Children's lemonade stand (open for 4 hours after school) — funds the school
     if (lemonadeOpen()){
@@ -4074,9 +4087,10 @@ function drawExtras(ctx, t){
       drawEmojiC(ctx, "🏛️", mnx+8, mny-8, 10);
     }
   }
-  // park (tx:76-86, ty:6-10): traditional manicured park
+  // park (tx:79-89, ty:6-10): traditional manicured park — shifted east so its
+  // tarmac perimeter no longer clips the player's cottage at tx74-75.
   {
-    const pkX = 76*TILE, pkY = (6+NORTH_EXT)*TILE, pkW = 10*TILE, pkH = 4*TILE;
+    const pkX = 79*TILE, pkY = (6+NORTH_EXT)*TILE, pkW = 10*TILE, pkH = 4*TILE;
     const pcy = pkY + pkH/2;
     // rich grass base with mowed stripe texture
     ctx.fillStyle="#4e9e3a"; ctx.fillRect(pkX, pkY, pkW, pkH);
@@ -5996,8 +6010,7 @@ function drawInterior(t){
   }
   if (S.tab==="myhome"){
     const _ht = S.homeTier||0;
-    room("#6a5a3a","#8a7050","#d4c8a0","#c8bc90","#4a3020");
-    winP(W*0.12, 34); winP(W*0.62, 34);
+    room("#6a5a3a","#8a7050","#caa878","#b89860","#4a3020");
     // _ft: draw furniture tile (col,row) at dest (x,y) scaled 2×; falls back to canvas rect
     const _sc = 2, _tsz = 16 * _sc; // 32px per tile at scale 2
     const _ft = (col, row, x, y, tw=1, th=1, fbCol="#8a6a4a") => {
@@ -6005,41 +6018,101 @@ function drawInterior(t){
         ctx.fillStyle = fbCol; ctx.fillRect(x, y, _tsz*tw, _tsz*th);
       }
     };
-    // T0+: bed — top-right corner (2×2 tiles = 64×64px)
-    // roguelikeIndoor: single bed is at col 0, row 0 (2×2 block)
-    _ft(0, 0, W-70, 50, 2, 2, "#7a5030");
-    // T1+: bookshelf (left wall), oval rug + table (floor centre)
+    // ---- warm wooden floorboards ----
+    ctx.fillStyle="rgba(70,45,20,.10)";
+    for(let py=50; py<H; py+=13) ctx.fillRect(0,py,W,1);
+    for(let px=0; px<W; px+=52) { ctx.fillStyle="rgba(70,45,20,.05)"; ctx.fillRect(px,50,1,H-50); }
+    // ---- windows with cheery curtains + a sunny sky ----
+    winP(W*0.15, 30); winP(W*0.63, 30);
+    for(const _wx of [W*0.15, W*0.63]){
+      ctx.fillStyle="#7a3028"; ctx.fillRect(_wx-24,22,48,3);                                  // curtain rail
+      ctx.fillStyle="#c05548"; ctx.fillRect(_wx-23,24,7,28); ctx.fillRect(_wx+16,24,7,28);    // curtains
+      ctx.fillStyle="#d8685a"; ctx.fillRect(_wx-23,24,2,28); ctx.fillRect(_wx+16,24,2,28);
+    }
+    // ---- kitchen counter along the left of the back wall ----
+    ctx.fillStyle="#7a5230"; ctx.fillRect(6,54,98,24);              // counter body
+    ctx.fillStyle="#caa878"; ctx.fillRect(6,51,98,4);              // worktop
+    ctx.fillStyle="#e0c498"; ctx.fillRect(6,51,98,1);
+    ctx.fillStyle="#5f4020"; for(let cx=10; cx<102; cx+=22){ ctx.fillRect(cx,60,18,15); }     // cupboard doors
+    ctx.fillStyle="#caa060"; for(let cx=10; cx<102; cx+=22){ ctx.fillRect(cx+15,66,2,3); }    // handles
+    ctx.fillStyle="#b8c0c8"; ctx.fillRect(20,52,20,4); ctx.fillStyle="#8a95a0"; ctx.fillRect(22,53,16,2);  // sink basin
+    ctx.strokeStyle="#8a95a0"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(30,52); ctx.lineTo(30,47); ctx.lineTo(35,47); ctx.stroke();  // tap
+    ctx.fillStyle="#33333c"; ctx.fillRect(70,51,26,5); ctx.fillStyle="#5a5a66"; ctx.beginPath(); ctx.arc(77,53,2.3,0,7); ctx.arc(89,53,2.3,0,7); ctx.fill();  // stove hobs
+    drawEmojiC(ctx,"🫖",58,48,9);
+    // upper shelf with jars & crockery
+    ctx.fillStyle="#5f4020"; ctx.fillRect(8,40,92,3);
+    for(let jx=14; jx<98; jx+=15) drawEmojiC(ctx,["🫙","🍯","🧂","🍶","🥫"][((jx/15)|0)%5], jx, 36, 8);
+    // ---- framed landscape picture + wall clock on the back wall (centre-right) ----
+    ctx.fillStyle="#4a2f18"; ctx.fillRect(W/2+6,26,42,26); ctx.fillStyle="#8ec8e8"; ctx.fillRect(W/2+9,29,36,20);
+    ctx.fillStyle="#6ab060"; ctx.fillRect(W/2+9,42,36,7); ctx.fillStyle="#c8e090"; ctx.beginPath(); ctx.arc(W/2+38,35,4,0,7); ctx.fill();  // sun over hills
+    ctx.fillStyle="#3a6ab0"; ctx.fillRect(W/2+9,47,36,2);
+    ctx.fillStyle="#e8e0d0"; ctx.beginPath(); ctx.arc(W-30,36,9,0,7); ctx.fill(); ctx.strokeStyle="#5f4020"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(W-30,36,9,0,7); ctx.stroke();  // clock
+    ctx.strokeStyle="#2a2018"; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(W-30,36); ctx.lineTo(W-30,30); ctx.moveTo(W-30,36); ctx.lineTo(W-25,38); ctx.stroke();
+    // ---- cosy hearth / wood-burning stove on the far left wall, with live fire ----
+    ctx.fillStyle="#5a5048"; ctx.fillRect(6,150,46,42);            // stone surround
+    ctx.fillStyle="#6a5f54"; for(let sx=8; sx<50; sx+=11) for(let sy=152; sy<190; sy+=10){ ctx.fillRect(sx+((sy/10)%2?5:0),sy,9,8); }
+    ctx.fillStyle="#7a5230"; ctx.fillRect(2,144,54,8);            // mantel
+    ctx.fillStyle="#1a1410"; ctx.fillRect(14,160,30,28);         // firebox
+    { const _fl=0.6+0.4*Math.abs(Math.sin(t*6));                  // flames
+      ctx.fillStyle="#e86020"; ctx.beginPath(); ctx.moveTo(20,186); ctx.quadraticCurveTo(18,172,29,164-_fl*4); ctx.quadraticCurveTo(40,172,38,186); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="#f8b030"; ctx.beginPath(); ctx.moveTo(25,186); ctx.quadraticCurveTo(24,176,29,169); ctx.quadraticCurveTo(34,176,33,186); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="rgba(255,180,80,"+(0.10+0.06*Math.sin(t*6))+")"; ctx.beginPath(); ctx.arc(29,178,26,0,7); ctx.fill(); }
+    drawEmojiC(ctx,"🕯️",44,140,8);
+    // ---- bed in the top-right corner, made up cosy ----
+    ctx.fillStyle="#5f4020"; ctx.fillRect(W-78,52,68,48);         // frame
+    ctx.fillStyle="#d8d0c0"; ctx.fillRect(W-76,58,64,40);         // mattress
+    ctx.fillStyle="#b0483a"; ctx.fillRect(W-76,74,64,24);         // quilt
+    ctx.fillStyle="#c85a4a"; for(let qx=W-76; qx<W-12; qx+=12) ctx.fillRect(qx,74,1,24);
+    ctx.fillStyle="#c85a4a"; for(let qy=74; qy<98; qy+=8) ctx.fillRect(W-76,qy,64,1);
+    ctx.fillStyle="#f4efe4"; ctx.fillRect(W-74,60,26,14); ctx.fillStyle="#e8e0d0"; ctx.fillRect(W-74,60,26,2);  // pillow
+    ctx.fillStyle="#5f4020"; ctx.fillRect(W-14,74,6,26);          // footboard post
+    // bedside table + lamp
+    ctx.fillStyle="#6a4a2a"; ctx.fillRect(W-100,78,18,20); ctx.fillStyle="#7a5a3a"; ctx.fillRect(W-100,86,18,2);
+    ctx.fillStyle="#b0895a"; ctx.fillRect(W-95,70,8,4); ctx.fillStyle="#ffe6a0"; ctx.beginPath(); ctx.moveTo(W-96,70); ctx.lineTo(W-86,70); ctx.lineTo(W-88,62); ctx.lineTo(W-94,62); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="rgba(255,230,150,.2)"; ctx.beginPath(); ctx.arc(W-91,68,14,0,7); ctx.fill();
+    // ---- round rug + dining table + two chairs, centre floor ----
+    ctx.fillStyle="#3a6a8a"; ctx.beginPath(); ctx.ellipse(W/2-6,H-46,60,34,0,0,7); ctx.fill();
+    ctx.fillStyle="#4a7a9a"; ctx.beginPath(); ctx.ellipse(W/2-6,H-46,52,28,0,0,7); ctx.fill();
+    ctx.fillStyle="#d9b26a"; ctx.beginPath(); ctx.ellipse(W/2-6,H-46,40,20,0,0,7); ctx.fill();
+    ctx.fillStyle="rgba(255,255,255,.12)"; ctx.beginPath(); ctx.ellipse(W/2-6,H-46,26,12,0,0,7); ctx.fill();
+    ctx.fillStyle="#7a5230"; ctx.beginPath(); ctx.ellipse(W/2-6,H-52,22,12,0,0,7); ctx.fill();   // table top
+    ctx.fillStyle="#8a5f38"; ctx.beginPath(); ctx.ellipse(W/2-6,H-54,22,12,0,0,7); ctx.fill();
+    ctx.fillStyle="#5f4020"; ctx.fillRect(W/2-8,H-52,4,16);
+    drawEmojiC(ctx,"🍎",W/2-6,H-58,8);                                                            // fruit bowl
+    ctx.fillStyle="#6a4a2a"; ctx.fillRect(W/2-40,H-52,8,14); ctx.fillRect(W/2-42,H-56,12,5);      // left chair
+    ctx.fillStyle="#6a4a2a"; ctx.fillRect(W/2+26,H-52,8,14); ctx.fillRect(W/2+24,H-56,12,5);      // right chair
+    // ---- potted plant (bottom-left) + welcome mat (door, bottom-centre) ----
+    ctx.fillStyle="#b06038"; ctx.fillRect(12,H-30,16,18); ctx.fillStyle="#c47048"; ctx.fillRect(12,H-30,16,3);
+    ctx.fillStyle="#3a8a3a"; ctx.beginPath(); ctx.arc(20,H-34,10,0,7); ctx.arc(13,H-38,6,0,7); ctx.arc(27,H-38,6,0,7); ctx.fill();
+    ctx.fillStyle="#4aa84a"; ctx.beginPath(); ctx.arc(20,H-40,6,0,7); ctx.fill();
+    ctx.fillStyle="#9a6a3a"; ctx.fillRect(W/2-20,H-9,40,7); ctx.fillStyle="#b08050"; ctx.fillRect(W/2-18,H-8,36,2);
+    ctx.fillStyle="#7a5030"; fitText(ctx,"HOME",W/2,H-8,32,5,{weight:"bold"});
+    // ---- upgrades layer on premium pieces ----
+    // T1+: tall bookshelf on the left wall
     if (_ht >= 1){
-      // bookshelf: col 8, row 2 (1 wide, 2 tall) = 32×64px
-      _ft(8, 2, 8, 50, 1, 2, "#6a4228");
-      // oval rug: col 0, row 7 (3 wide, 2 tall) = 96×64px — centre floor
-      _ft(0, 7, W/2-48, H-74, 3, 2, "#b07848");
-      // table: col 4, row 0 (2×2) above rug
-      _ft(4, 0, W/2-32, H-100, 2, 2, "#7a5030");
+      ctx.fillStyle="#5f4020"; ctx.fillRect(6,96,30,50);
+      ctx.fillStyle="#3a2410"; for(let by=100; by<144; by+=11) ctx.fillRect(8,by,26,2);
+      const _bc=["#b0483a","#3a6ab0","#3a8a4a","#c8a030","#8a4aa0"];
+      for(let by=101; by<142; by+=11) for(let bx=9; bx<33; bx+=5){ ctx.fillStyle=_bc[(bx+by)%5]; ctx.fillRect(bx,by,4,8); }
     }
-    // T2+: sofa (right) + fireplace (left wall)
+    // T2+: comfy sofa + coffee table (right side)
     if (_ht >= 2){
-      // fireplace: col 22, row 0 (2×2) on left wall below shelf
-      _ft(22, 0, 8, 116, 2, 2, "#4a3020");
-      // sofa: col 0, row 4 (3 wide, 1 tall) right side floor
-      _ft(0, 4, W-100, H-56, 3, 1, "#7a5a60");
+      ctx.fillStyle="#4a6a7a"; ctx.fillRect(W-96,H-52,84,30);          // sofa base
+      ctx.fillStyle="#5a7f92"; ctx.fillRect(W-96,H-62,84,14);         // back
+      ctx.fillStyle="#5a7f92"; ctx.fillRect(W-98,H-58,8,34); ctx.fillRect(W-20,H-58,8,34);  // arms
+      ctx.fillStyle="#6a91a4"; ctx.fillRect(W-90,H-50,36,10); ctx.fillRect(W-50,H-50,36,10); // cushions
     }
-    // T3+: wall art (back wall) + cabinet (left of shelf)
+    // T3+: gallery wall art + a dresser
     if (_ht >= 3){
-      // painting on back wall: col 16, row 0 (3 wide, 1 tall)
-      _ft(16, 0, W/2-24, 10, 3, 1, "#5a3a20");
-      // cabinet: col 12, row 0 (1 wide, 2 tall)
-      _ft(12, 0, 44, 50, 1, 2, "#6a4228");
+      for(let k=0;k<3;k++){ ctx.fillStyle="#4a2f18"; ctx.fillRect(120+k*18,8,14,12); ctx.fillStyle=["#c86a5a","#6a9ac8","#c8b06a"][k]; ctx.fillRect(122+k*18,10,10,8); }
+      ctx.fillStyle="#6a4228"; ctx.fillRect(108,96,26,40); ctx.fillStyle="#caa060"; ctx.fillRect(112,104,4,2); ctx.fillRect(126,104,4,2); ctx.fillRect(112,118,4,2); ctx.fillRect(126,118,4,2);
     }
-    // T4+: piano + potted plant + decorative floor border
+    // T4+: an upright piano
     if (_ht >= 4){
-      // piano: canvas rect (unique, no tilesheet equivalent)
-      ctx.fillStyle="#282828"; ctx.fillRect(64,50,48,36); ctx.fillStyle="#f0f0f0"; ctx.fillRect(66,64,44,10);
-      for(let ki=0;ki<10;ki++) { ctx.fillStyle=ki%3===2?"#282828":"#fff"; ctx.fillRect(67+ki*4+(ki>4?2:0),64,3,8); }
-      // potted plant: col 14, row 0 (1×2)
-      _ft(14, 0, W/2+28, 48, 1, 2, "#3a8a2a");
-      // decorative border strip
-      ctx.fillStyle="rgba(160,120,50,.18)"; ctx.fillRect(0,H-48,W,2); ctx.fillRect(0,H-50,W,2);
+      ctx.fillStyle="#2a1a14"; ctx.fillRect(150,100,58,40); ctx.fillStyle="#1a0f0a"; ctx.fillRect(150,100,58,6);
+      ctx.fillStyle="#f0ece4"; ctx.fillRect(154,118,50,10);
+      for(let ki=0;ki<12;ki++){ ctx.fillStyle=(ki%7===2||ki%7===6)?"#f0ece4":"#1a1410"; ctx.fillRect(155+ki*4,118,3, ki%7===2||ki%7===6?6:9); }
+      ctx.fillStyle="#3a2418"; ctx.fillRect(150,140,6,10); ctx.fillRect(202,140,6,10);
     }
     // bonus sprites if player owns legacy furniture items
     if (S.items && S.items["fancy_rug"] > 0) _ft(3, 7, W/2-48, H-40, 3, 2, "#c06830");
@@ -6242,9 +6315,14 @@ function drawInterior(t){
     drawPerson(ctx,W/2,52,"#3a3a4a","#2a3a5a",t,false,1,null,"down","#d4b896","#1a2a4a",null,false);
     drawPerson(ctx,W*0.16,H*0.62,"#4a4a3a","#2a3a5a",t,false,1,null,"down","#c8a070","#1a2a4a",null,false);
     drawPerson(ctx,W*0.84,H*0.62,"#6a4a30","#2a3a5a",t,false,-1,null,"left","#d4b090","#1a2a4a",null,true);
-    // floor badge
-    ctx.fillStyle="#3a4a7a"; ctx.beginPath(); ctx.ellipse(W/2,H-28,36,14,0,0,7); ctx.fill();
-    ctx.fillStyle="#ffd666"; ctx.font="bold 5px monospace"; ctx.textAlign="center"; ctx.fillText("FEATHERSTONE CONSTABULARY",W/2,H-25); ctx.textAlign="left";
+    // floor crest — big and legible ("clear from the sofa")
+    const _cbcx=W/2, _cbcy=H-30;
+    ctx.fillStyle="#2a3a66"; ctx.beginPath(); ctx.ellipse(_cbcx,_cbcy,62,26,0,0,7); ctx.fill();      // navy disc
+    ctx.strokeStyle="#ffd666"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.ellipse(_cbcx,_cbcy,62,26,0,0,7); ctx.stroke();  // gold ring
+    ctx.strokeStyle="#3a4a7a"; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(_cbcx,_cbcy,55,22,0,0,7); ctx.stroke();    // inner ring
+    ctx.fillStyle="#ffe27a";
+    fitText(ctx,"FEATHERSTONE",_cbcx,_cbcy-19,108,12,{ weight:"bold", family:"'Arial',sans-serif" });
+    fitText(ctx,"CONSTABULARY",_cbcx,_cbcy+6,108,12,{ weight:"bold", family:"'Arial',sans-serif" });
   }
   if (S.tab==="police_cell"){
     // grim grey cell

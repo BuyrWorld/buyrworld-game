@@ -285,6 +285,6 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'school',     kind: 'bld', tx: 76, ty: 22, w: 5, h: 3, tab: 'school',     name: 'Village School', ic: '🏫', wall: '#e8e4c0', roof: '#5a8a4a' },
   { id: 'university', kind: 'bld', tx: 82, ty: 22, w: 3, h: 3, tab: 'university', name: 'University',     ic: '🎓', wall: '#ddd8c0', roof: '#4a3a7a' },
   // --- Park interactive equipment (interaction zones; drawn by drawExtras) ---
-  { id: 'park_slide', kind: 'slide', tx: 82, ty: 26, w: 2, h: 2, name: 'Slide' },
-  { id: 'park_swing', kind: 'swing', tx: 84, ty: 27, w: 2, h: 2, name: 'Swings' },
+  { id: 'park_slide', kind: 'slide', tx: 85, ty: 26, w: 2, h: 2, name: 'Slide' },
+  { id: 'park_swing', kind: 'swing', tx: 87, ty: 27, w: 2, h: 2, name: 'Swings' },
 ];
