@@ -1285,12 +1285,15 @@ const COURSES = [
 ];
 const STATION_DEFS = {
   mining:        [
-    { fx:0.15, fy:0.34, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
-    { fx:0.40, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
-    { fx:0.65, fy:0.34, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
-    { fx:0.86, fy:0.50, sk:'prop_hopper',   skill:'mining',        id:'bauxite',    ic:'🟠', lbl:'Bauxite' },
-    { fx:0.35, fy:0.72, sk:'prop_hopper',   skill:'mining',        id:'rare_earth', ic:'💎', lbl:'Rare Earths' },
-    { fx:0.68, fy:0.72, sk:'prop_hopper',   skill:'mining',        id:'diamond',    ic:'💠', lbl:'Diamond' },
+    // A roomier cave with more veins to work, spread out with clear walking lanes.
+    { fx:0.13, fy:0.30, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
+    { fx:0.34, fy:0.28, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
+    { fx:0.55, fy:0.31, sk:'prop_hopper',   skill:'mining',        id:'copper_ore', ic:'🟤', lbl:'Copper Ore' },
+    { fx:0.78, fy:0.29, sk:'prop_hopper',   skill:'mining',        id:'bauxite',    ic:'🟠', lbl:'Bauxite' },
+    { fx:0.20, fy:0.60, sk:'prop_hopper',   skill:'mining',        id:'rare_earth', ic:'💎', lbl:'Rare Earths' },
+    { fx:0.42, fy:0.63, sk:'prop_hopper',   skill:'mining',        id:'iron_ore',   ic:'🪨', lbl:'Iron Ore' },
+    { fx:0.64, fy:0.61, sk:'prop_hopper',   skill:'mining',        id:'diamond',    ic:'💠', lbl:'Diamond' },
+    { fx:0.86, fy:0.63, sk:'prop_hopper',   skill:'mining',        id:'coal',       ic:'⚫', lbl:'Coal' },
   ],
   steelworks:    [
     { fx:0.28, fy:0.55, sk:'prop_machine',  skill:'steelworks',    id:'iron_bar',   ic:'🔩', lbl:'Smelt Iron' },
@@ -1325,9 +1328,12 @@ const STATION_DEFS = {
 // Skill interior canvas size (mining/steelworks/manufacturing/woodcutting)
 const INT_W = 320;
 const INT_H = 200;
+// A few interiors get a roomier canvas so there's space to move around. Stations
+// are fractional and collisions/clicks all read these, so everything scales.
+const INT_SIZES = { mining: { w: 448, h: 288 } };
 // Returns the current interior canvas logical dimensions
-function icanvasW(){ return INT_W; }
-function icanvasH(){ return INT_H; }
+function icanvasW(){ return (INT_SIZES[S.tab] && INT_SIZES[S.tab].w) || INT_W; }
+function icanvasH(){ return (INT_SIZES[S.tab] && INT_SIZES[S.tab].h) || INT_H; }
 
 const ZONE_TIPS = {
   mining:        { ic:"⛏️", n:"The Quarry",         tip:"Strike the vein to collect ore." },
@@ -1367,10 +1373,8 @@ const INTERIOR_COLS = {
     {x:0, y:0, w:320, h:86},
   ],
   mining: [
-    // Open cave — support beams only clip the ceiling now, so you can walk freely
-    // to every ore vein. Just a couple of low props remain as obstacles.
-    {x:4,   y:160,w:22, h:26},  // coal pile (bottom-left corner)
-    {x:280, y:160,w:34, h:24},  // crates (bottom-right corner)
+    // Fully open cave — nothing blocks the floor, so you can walk freely to every
+    // vein and manoeuvre around them. (Props are decorative / walk-through.)
   ],
   steelworks: [
     {x:42,  y:10, w:38, h:38},  // furnace 1
@@ -2273,8 +2277,9 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     ctx.translate(facing*5, -6 + dip);
     ctx.rotate(facing*ang);
     ctx.fillStyle=shirt; ctx.fillRect(-1.5,0,3,7);        // upper arm
-    ctx.fillStyle=skin;  ctx.fillRect(-1.5,6,3,4);        // hand grips handle
-    drawSwingTool(ctx, _swingType, toolColor);
+    drawSwingTool(ctx, _swingType, toolColor);            // tool first, so the hand grips OVER the handle
+    ctx.fillStyle=skin;  ctx.fillRect(-2.5,5,5,5);        // fist wrapping the handle (visible on top)
+    ctx.fillStyle="#00000022"; ctx.fillRect(-2.5,7,5,1);  // knuckle shade
     ctx.restore();
     // impact flash — sparks + a puff of dust where the tool lands
     if (impact > 0){
@@ -2313,12 +2318,13 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     // lower support hand on the rod butt + raised arm gripping higher up
     { const _oaX = facing>=0 ? -9 : 6; ctx.fillStyle=shirt; ctx.fillRect(_oaX,-5,3,8); ctx.fillStyle=skin; ctx.fillRect(_oaX,2,3,3); }   // support arm, flush to the body
     ctx.fillStyle=shirt; ctx.fillRect(facing*3-1, -7, 3, 6);   // upper arm reaching up
-    ctx.fillStyle=skin;  ctx.fillRect(gripX-1, gripY-1, 3, 3); // hand on the grip
-    // the rod
+    // the rod (drawn first so the gripping hand sits visibly on top of it)
     ctx.strokeStyle="#7a4f26"; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(gripX, gripY); ctx.lineTo(tipX, tipY); ctx.stroke();
     ctx.strokeStyle="#9a6f36"; ctx.lineWidth=0.8;
     ctx.beginPath(); ctx.moveTo(gripX, gripY); ctx.lineTo(tipX, tipY); ctx.stroke();
+    ctx.fillStyle=skin;  ctx.fillRect(gripX-2, gripY-1, 4, 4); // fist gripping the rod, over it
+    ctx.fillStyle="#00000022"; ctx.fillRect(gripX-2, gripY+1, 4, 1);
     ctx.fillStyle="#e8d84a"; ctx.fillRect(Math.round(tipX)-1, Math.round(tipY)-1, 2, 2);   // rod-tip guide
     // publish the rod tip in world space (scale assumed 1 for in-world sprites)
     _fishRodTip = { x: Math.round(x) + tipX, y: Math.round(y+bob) + tipY };
@@ -4922,19 +4928,19 @@ function drawInterior(t){
     ctx.fillStyle="#6a5240"; ctx.fillRect(x+w/2-1,14,2,22); ctx.fillRect(x,24,w,2);
   };
   if (S.tab==="mining"){
-    // stone cave — 320×200 canvas
+    // spacious stone cavern (sized by INT_SIZES.mining — all props are W/H-relative)
     ctx.fillStyle="#3a2e26"; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#2e2320"; for(let i=0;i<W;i+=10) ctx.fillRect(i,0,5,(i*7)%8+3);
-    // ore vein streaks near back wall
-    [{c:"#aab2bd",x:15,w:3,h:26},{c:"#c97b45",x:106,w:3,h:22},{c:"#2f2f38",x:194,w:4,h:28},{c:"#7ee0ff",x:278,w:3,h:20}].forEach(v=>{
-      ctx.fillStyle=v.c+"90"; ctx.fillRect(v.x,0,v.w,v.h);
+    // ore vein streaks near back wall, spread across the width
+    [{c:"#aab2bd",f:0.05,w:3,h:26},{c:"#c97b45",f:0.28,w:3,h:22},{c:"#2f2f38",f:0.52,w:4,h:28},{c:"#e0863a",f:0.72,w:3,h:24},{c:"#7ee0ff",f:0.90,w:3,h:20}].forEach(v=>{
+      ctx.fillStyle=v.c+"90"; ctx.fillRect(Math.round(v.f*W),0,v.w,v.h);
     });
     // floor + mini rail track
     ctx.fillStyle="#211910"; ctx.fillRect(0,H-12,W,12);
     ctx.fillStyle="#3d3020"; ctx.fillRect(W*.36,H-12,2,12); ctx.fillRect(W*.55,H-12,2,12);
     for(let x=W*.36+3;x<W*.55;x+=6){ ctx.fillStyle="#4a3828"; ctx.fillRect(x,H-7,3,3); }
     // ceiling support beams only clip the top now (they no longer block the floor)
-    [40,120,200,280].forEach(bx=>{
+    [0.09,0.30,0.52,0.74,0.93].forEach(bf=>{ const bx=Math.round(bf*W);
       ctx.fillStyle="#5a3a1e"; ctx.fillRect(bx-3,0,7,30);
       ctx.fillStyle="#7a5534"; ctx.fillRect(bx-5,28,11,4);
     });
@@ -4951,22 +4957,22 @@ function drawInterior(t){
       ctx.fillStyle=col; for(let g=0;g<5;g++){ const gx=sx-10+((g*97)%20), gy=sy-6+((g*53)%13); ctx.fillRect(gx,gy,2,2); }
       if (Math.floor(t*3+sx)%3===0){ ctx.fillStyle="#ffffff"; const gy=sy-6+((Math.floor(t*2)+Math.floor(sx))%12); ctx.fillRect(sx-6+((Math.floor(t*4))%12),gy,1,1); }
     });
-    // props tucked in the corners (walk-through; collision matches the two corners)
-    ctx.fillStyle="#1e1814"; ctx.fillRect(4,H-40,22,26); ctx.fillRect(6,H-46,14,8);   // coal pile (bottom-left)
-    [[284,H-40],[296,H-40]].forEach(([x,y],i)=>{                                        // crates (bottom-right)
-      const cw=14,ch=22,c=i?"#7a5a38":"#8c6947";
+    // decorative corner props (walk-through — nothing blocks the floor)
+    ctx.fillStyle="#1e1814"; ctx.fillRect(5,H-42,24,28); ctx.fillRect(7,H-48,15,9);   // coal pile (bottom-left)
+    [[W-42,H-42],[W-28,H-42]].forEach(([x,y],i)=>{                                      // crates (bottom-right)
+      const cw=14,ch=24,c=i?"#7a5a38":"#8c6947";
       ctx.fillStyle=c; ctx.fillRect(x,y,cw,ch); ctx.strokeStyle="#5a3a20"; ctx.lineWidth=1; ctx.strokeRect(x,y,cw,ch);
     });
     // minecart on the rail (decorative, walk-through)
     ctx.fillStyle="#4a3428"; ctx.fillRect(W*.30,H-30,W*.15,H*.11);
     ctx.fillStyle="#1e1a18"; ctx.beginPath(); ctx.arc(W*.34,H-6,4,0,7); ctx.arc(W*.42,H-6,4,0,7); ctx.fill();
-    // hanging lanterns for light
-    for(const fx of[0.15,0.50,0.86]){
-      ctx.fillStyle="rgba(255,200,80,0.16)"; ctx.beginPath(); ctx.arc(W*fx,H*.10,W*.06,0,7); ctx.fill();
+    // hanging lanterns for light, spaced across the wider cavern
+    for(const fx of[0.12,0.38,0.62,0.88]){
+      ctx.fillStyle="rgba(255,200,80,0.16)"; ctx.beginPath(); ctx.arc(W*fx,H*.10,W*.05,0,7); ctx.fill();
       drawEmojiC(ctx,"🏮",W*fx,H*.10,10);
     }
     ctx.strokeStyle="rgba(0,0,0,.25)"; ctx.lineWidth=1;
-    for(const [mx,my] of [[60,30],[140,42],[230,26],[95,54]] as [number,number][]){ ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(mx+6,my+4); ctx.moveTo(mx+3,my-2); ctx.lineTo(mx+8,my+2); ctx.stroke(); }
+    for(const [mf,my] of [[0.14,30],[0.34,44],[0.56,26],[0.78,50],[0.90,34]] as [number,number][]){ const mx=mf*W; ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(mx+6,my+4); ctx.moveTo(mx+3,my-2); ctx.lineTo(mx+8,my+2); ctx.stroke(); }
     // deep-underground vignette
     const _mv = ctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,W*0.7);
     _mv.addColorStop(0,"rgba(0,0,0,0)"); _mv.addColorStop(1,"rgba(0,0,0,0.45)");
@@ -6771,9 +6777,10 @@ function drawInterior(t){
         _iHtml += `<div class="int-vlbl" style="left:${_hx.toFixed(1)}%;top:${((_homeVilLbl.y-30)/H*100).toFixed(1)}%">${_homeVilLbl.name}</div>`;
       }
     }
-    // crisp "gone to work" note when the occupant is out (legible, not tiny canvas text)
+    // crisp "gone to work" note when the occupant is out — pinned top-centre so it
+    // never sits over the doorway/character as they walk in from the bottom
     if (S.tab==="home" && _homeAwayName){
-      _iHtml += `<div class="int-note" style="left:50%;top:${((H-40)/H*100).toFixed(1)}%">🏢 Gone to work!<span class="int-note-sub">— ${esc(_homeAwayName)}</span></div>`;
+      _iHtml += `<div class="int-note" style="left:50%;top:14%">🏢 Gone to work!<span class="int-note-sub">— ${esc(_homeAwayName)}</span></div>`;
     }
     // trespass badge
     if (S.tab==="home" && S.trespass?.active){
