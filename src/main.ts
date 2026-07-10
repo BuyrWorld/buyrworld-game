@@ -26,6 +26,7 @@ import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './da
 import { PRESTIGE_MIN_TOTAL, prestigeEligible, legacyXpMult, legacySellMult, legacyStars, legacyRank, legacyBonusText } from './data/legacy.ts';
 import { VILLAGE_EVENTS, todaysEvent, marketDayActive, merchantActive, fairActive } from './data/events.ts';
 import { VOYAGE_DESTINATIONS, MAX_VOYAGES, voyageById, voyageDurationMs, voyageProgress, voyageReady } from './data/voyages.ts';
+import { STORY, chapterComplete, chapterProgress, currentChapterIndex, currentChapter, isStoryComplete } from './data/story.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -2641,6 +2642,12 @@ function openLedger(){
     ${row('💖 Best friends', `${bff}/${VILLAGERS.length}`)}
     ${row('📊 Market', `${ph.ic} ${ph.name}`)}
     ${(S.legacy||0) > 0 ? row('🌟 Legacy', `${"⭐".repeat(legacyStars(S.legacy))} ${legacyRank(S.legacy)}`, legacyBonusText(S.legacy)) : ''}
+    ${(()=>{ const done=S.story?.done||0, cc=currentChapter(done), complete=isStoryComplete(done), ready=cc&&chapterComplete(cc,storyCtx());
+      return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:12px;font-weight:700">📜 The Founder's Trail${complete?` <span style="color:#4aff88;font-weight:400">✓ complete</span>`:` <span style="color:var(--dim);font-weight:400">ch. ${Math.min(done+1,STORY.length)}/${STORY.length}</span>`}</span>
+        <button id="ledger-story" style="background:${ready?'#c08a3a':'#8a6a3a'};color:#160f08;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800">${complete?'Re-read':(ready?'Continue →':'Read')}${ready&&!complete?' •':''}</button>
+      </div></div>`; })()}
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1)">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <span style="font-size:12px;font-weight:700">🌟 A New Chapter${prestigeEligible(tl)?'':` <span style="color:var(--dim);font-weight:400">(total lvl ${PRESTIGE_MIN_TOTAL})</span>`}</span>
@@ -2650,6 +2657,7 @@ function openLedger(){
   </div>`;
   document.body.appendChild(el);
   el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
+  const _sb = document.getElementById("ledger-story"); if (_sb) _sb.onclick = ()=>{ el.remove(); openStory(); };
   const _pb = document.getElementById("ledger-prestige"); if (_pb) _pb.onclick = ()=>{ el.remove(); openPrestige(); };
 }
 // ---- The Founder's Journey — an ordered story-quest chain across the whole game ----
@@ -2768,6 +2776,115 @@ function wireJourneyButtons(root){
   if (b) b.onclick = () => claimJourneyStage();
 }
 function openJourney(){ closeJourney(); renderJourney(); }
+// ---- The Founder's Trail — a light story arc about the valley's first founder ----
+// Live metrics for the story objectives, read from existing counters/state.
+function storyCtx(){
+  return {
+    actions:    S.counters?.actions || 0,
+    npcMet:     S.npcMet ? 1 : 0,
+    goods:      prodSum(GOODS),
+    voyages:    S.counters?.voyages || 0,
+    totalLevel: totalLvl(),
+  };
+}
+// Nudge once (per chapter) when the current chapter's objective becomes met.
+function checkStory(){
+  if (!S.story) S.story = { done:0, seen:0, title:"" };
+  const cc = currentChapter(S.story.done);
+  if (!cc) return;
+  if (chapterComplete(cc, storyCtx()) && S.story.seen !== S.story.done + 1){
+    S.story.seen = S.story.done + 1;
+    toast(`📜 The Founder's Trail continues — “${cc.title}”`);
+    log(`📜 <b>The Founder's Trail</b> — a new chapter awaits. Open your 📖 Ledger to read on.`, "good");
+    save();
+  }
+}
+// Advance the story: grant the reward, record any earned title, show the next beat.
+function advanceStory(){
+  if (!S.story) S.story = { done:0, seen:0, title:"" };
+  const cc = currentChapter(S.story.done);
+  if (!cc){ toast("📜 The Founder's Trail is complete."); return; }
+  if (!chapterComplete(cc, storyCtx())){ toast("That part of the tale isn't ready yet."); return; }
+  S.story.done += 1;
+  S.coins += cc.reward.coins;
+  S.counters.coinsEarned = (S.counters.coinsEarned || 0) + cc.reward.coins;
+  if (cc.reward.title) S.story.title = cc.reward.title;
+  const titleMsg = cc.reward.title ? ` You are honoured as <b>“${cc.reward.title}”</b>.` : "";
+  log(`📜 The Founder's Trail: <b>${cc.title}</b> — +${fmt(cc.reward.coins)} coins.${titleMsg}`, "rare");
+  toast(`📜 ${cc.title} — +${fmt(cc.reward.coins)}c${cc.reward.title ? ` · “${cc.reward.title}”` : ""}`);
+  try{ SFX.fanfare(); }catch(e){}
+  if (isStoryComplete(S.story.done)){
+    setTimeout(()=>{ toast("🏛️ Elias's monument stands on the green — his trail is yours now."); }, 1400);
+    try{ updateHud(); }catch(e){}
+  }
+  updateHud(); save(); openStory();
+}
+function openStory(){
+  const done = S.story?.done || 0;
+  const cc = currentChapter(done);
+  const complete = isStoryComplete(done);
+  const ctx = storyCtx();
+  // History: chapters already read, shown as a slim recap above the live beat.
+  const past = STORY.slice(0, done).map(c =>
+    `<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid rgba(0,0,0,.08);opacity:.72">
+      <div style="font-size:18px;width:24px;text-align:center;flex-shrink:0">${c.ic}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">${c.title} <span style="color:#4aa86a;font-weight:400">✓</span></div>
+      <div style="font-size:11px;color:var(--dim);line-height:1.5">${c.story}</div></div>
+    </div>`).join("");
+  let live = "";
+  if (cc){
+    const ready = chapterComplete(cc, ctx);
+    const pr = chapterProgress(cc, ctx);
+    live = `<div style="background:rgba(192,138,58,.12);border:1px solid rgba(192,138,58,.35);border-radius:8px;padding:12px;margin-top:8px">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div style="font-size:30px;line-height:1;flex-shrink:0">${cc.ic}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:800;font-size:15px;margin-bottom:4px">Chapter ${done+1} · ${cc.title}</div>
+          <div style="font-size:13px;line-height:1.65;color:var(--text)">${cc.story}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(0,0,0,.1)">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="color:var(--dim)">${ready?'✔ ':''}${cc.objText}</span>
+          <span style="font-weight:700;color:${ready?'#4aa86a':'var(--dim)'}">${fmt(pr.cur)}/${fmt(pr.max)}</span>
+        </div>
+        <div style="background:rgba(0,0,0,.12);border-radius:4px;height:8px;overflow:hidden"><div style="width:${pr.pct}%;height:100%;background:${ready?'#4aa86a':'#c08a3a'};transition:width .3s"></div></div>
+        <div style="text-align:right;margin-top:8px">
+          ${ready
+            ? `<button data-story-next style="background:#c08a3a;color:#160f08;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:800">Continue the tale → +${fmt(cc.reward.coins)}c${cc.reward.title?` · “${cc.reward.title}”`:''}</button>`
+            : `<span style="font-size:11px;color:var(--dim)">Reward on completion: +${fmt(cc.reward.coins)}c${cc.reward.title?` · title “${cc.reward.title}”`:''}</span>`}
+        </div>
+      </div>
+    </div>`;
+  } else {
+    live = `<div style="background:rgba(74,168,106,.12);border:1px solid rgba(74,168,106,.35);border-radius:8px;padding:14px;margin-top:8px;text-align:center">
+      <div style="font-size:34px">🏛️</div>
+      <div style="font-weight:800;font-size:14px;margin:4px 0">The Founder's Trail is complete</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.6">Elias's monument stands on the village green. You carry the title <b>“${S.story?.title||"Elias's Heir"}”</b> — a founder in full, ready one day to pass the valley on.</div>
+    </div>`;
+  }
+  const headline = complete
+    ? `The tale of Elias Featherstone, told in full.`
+    : `Chapter ${Math.min(done+1, STORY.length)} of ${STORY.length} · the tale of the valley's first founder.`;
+  const inner = `<div class="dd-card" style="max-width:560px">
+    <button class="vp-close" onclick="document.getElementById('story-modal').remove()">✕</button>
+    <div class="dd-title">📜 The Founder's Trail</div>
+    <div class="dd-sub">${headline}</div>
+    ${past ? `<div style="max-height:26vh;overflow-y:auto;margin-bottom:2px">${past}</div>` : ''}
+    ${live}
+  </div>`;
+  let el = document.getElementById("story-modal");
+  if (el){ el.innerHTML = inner; }
+  else {
+    el = document.createElement("div");
+    el.id = "story-modal"; el.className = "dd-modal";
+    el.innerHTML = inner;
+    document.body.appendChild(el);
+    el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+  }
+  const nb = el.querySelector("[data-story-next]");
+  if (nb) nb.onclick = () => advanceStory();
+}
 // ---- Valley Journal (Task 9): a gentle first-session checklist of "firsts" ----
 const VALLEY_JOURNAL = [
   { id:'first_ore',     ic:'⛏️', title:'First Ore',      hint:'Mine ore at the quarry',           reward:20, cond:()=> prodSum(ORES) >= 1 },
@@ -3750,6 +3867,24 @@ function drawExtras(ctx, t){
       // a bobbing balloon
       const _by = fy - 6 + Math.sin(t*1.5)*2; ctx.strokeStyle="#8a6a4a"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(fx+30, _by); ctx.lineTo(fx+30, fy+10); ctx.stroke();
       ctx.fillStyle="#4a8ae8"; ctx.beginPath(); ctx.arc(fx+30, _by, 4, 0, 7); ctx.fill();
+    }
+    // ---- Elias's monument — raised on the green once the Founder's Trail is complete ----
+    if (isStoryComplete(S.story?.done||0)){
+      const mnx = 7*TILE, mny = 2*TILE;   // upper plaza, clear of the marquee/street
+      ctx.fillStyle="rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(mnx+8, mny+34, 18, 5, 0, 0, 7); ctx.fill();
+      // stepped stone plinth
+      ctx.fillStyle="#b9b2a2"; ctx.fillRect(mnx-6, mny+28, 28, 6);
+      ctx.fillStyle="#a7a091"; ctx.fillRect(mnx-2, mny+22, 20, 7);
+      ctx.fillStyle="#cfc8b6"; ctx.fillRect(mnx+2, mny+10, 12, 13);      // column
+      ctx.fillStyle="#bfb8a6"; ctx.fillRect(mnx+2, mny+10, 3, 13);
+      // bronze bust of the founder
+      ctx.fillStyle="#7d6a3a"; ctx.beginPath(); ctx.arc(mnx+8, mny+6, 6, 0, 7); ctx.fill();   // head
+      ctx.fillStyle="#8a763f"; ctx.fillRect(mnx+3, mny+8, 10, 4);                              // shoulders
+      ctx.fillStyle="#6a5a2f"; ctx.fillRect(mnx+4, mny+1, 8, 3);                               // hair/cap
+      // little brass plaque with a gentle glint
+      ctx.fillStyle="#caa64a"; ctx.fillRect(mnx-1, mny+23, 18, 4);
+      ctx.fillStyle="rgba(255,255,255,"+(0.25+0.2*Math.abs(Math.sin(t*0.8)))+")"; ctx.fillRect(mnx-1, mny+23, 4, 4);
+      drawEmojiC(ctx, "🏛️", mnx+8, mny-8, 10);
     }
   }
   // park (tx:76-86, ty:6-10): traditional manicured park
@@ -6906,11 +7041,11 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[],
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
-    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0 },
+    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0, voyages:0 },
     action:null,
     contracts:[],
     tab:"village",
@@ -7000,6 +7135,8 @@ function load(){
       if (!S.school) S.school = { raised:0, notifiedTier:0 };
       if (typeof S.legacy !== "number") S.legacy = 0;
       if (!Array.isArray(S.voyages)) S.voyages = [];
+      if (!S.story || typeof S.story.done !== "number") S.story = { done:0, seen:0, title:"" };
+      if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
@@ -8631,9 +8768,10 @@ function checkVoyages(silent){
       S.voyages.splice(i,1); changed = true;
       if (!v) continue;
       S.coins += v.coins; S.counters.coinsEarned = (S.counters.coinsEarned||0) + v.coins;
+      S.counters.voyages = (S.counters.voyages||0) + 1;
       const parts = [`${fmt(v.coins)}c`];
       for (const [id,q] of Object.entries(v.items)){ addItem(id,q); S.prod[id]=(S.prod[id]||0)+q; parts.push(`${q}× ${ITEMS[id]?.n||id}`); }
-      if (!silent){ toast(`${v.ic} ${v.name} home with ${parts.join(", ")}!`); log(`${v.ic} <b>${v.name}</b> returned with ${parts.join(", ")}.`, "good"); }
+      if (!silent){ toast(`${v.ic} ${v.name} home with ${parts.join(", ")}!`); log(`${v.ic} <b>${v.name}</b> returned with ${parts.join(", ")}.`, "good"); checkStory(); }
     }
   }
   if (changed){ updateHud(); save(); if (!silent && S.tab === "harbour_office") renderMain(); }
@@ -10378,6 +10516,7 @@ setInterval(()=>{
   sampleNetWorth();   // LE4: throttled net-worth history sampling
   checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
   checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
+  checkStory();             // nudge when a Founder's Trail chapter becomes readable
   syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
   checkJournal();           // auto-grant Valley Journal "firsts" rewards
   checkVoyages(false);      // land any returned ocean voyages
