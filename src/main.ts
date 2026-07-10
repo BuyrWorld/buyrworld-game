@@ -24,6 +24,7 @@ import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDuration
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
 import { PRESTIGE_MIN_TOTAL, prestigeEligible, legacyXpMult, legacySellMult, legacyStars, legacyRank, legacyBonusText } from './data/legacy.ts';
+import { VILLAGE_EVENTS, todaysEvent, marketDayActive, merchantActive, fairActive } from './data/events.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -148,7 +149,8 @@ function buyPrice(npc, it){
 function sellPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
-  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell') * legacySellMult(S.legacy));
+  const _mkt = marketDayActive(_eventDay()) ? 1.20 : 1;   // Market Day: +20% on every sale
+  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell') * legacySellMult(S.legacy) * _mkt);
   return Math.max(1, Math.min(p, buyPrice(npc, it) - 1));
 }
 function doTrade(npcId, it, qty, mode){
@@ -2034,6 +2036,15 @@ function villageClick(e){
     const _lsx = (LEMONADE.tx+0.5)*TILE, _lsy = LEMONADE.ty*TILE;
     if (Math.abs(wx-_lsx) < TILE*1.1 && wy > _lsy-TILE*1.2 && wy < _lsy+TILE*1.4){ openLemonadeStand(); return; }
   }
+  // today's village event stall (travelling merchant / fair)
+  if (merchantActive(_eventDay())){
+    const _mx = (MERCHANT_POS.tx+0.6)*TILE, _my = MERCHANT_POS.ty*TILE;
+    if (Math.abs(wx-_mx) < TILE*1.3 && wy > _my-TILE*1.2 && wy < _my+TILE*1.4){ openMerchant(); return; }
+  }
+  if (fairActive(_eventDay())){
+    const _fx = (FAIR_POS.tx+0.6)*TILE, _fy = FAIR_POS.ty*TILE;
+    if (Math.abs(wx-_fx) < TILE*1.3 && wy > _fy-TILE*1.2 && wy < _fy+TILE*1.4){ openFair(); return; }
+  }
   for (const o of V_OBJECTS){
     const r = objRect(o), pad=6;
     if (wx>=r.x-pad && wx<=r.x+r.w+pad && wy>=r.y-pad && wy<=r.y+r.h+pad){
@@ -2984,6 +2995,86 @@ function doPrestige(){
   S.tab = "village"; closePrestige();
   renderNav(); renderMain(); updateHud(); save();
 }
+// ---- Village events — a rotating daily calendar (merchant / market day / fair) ----
+function _eventDay(){ return Math.floor(Date.now()/86400000); }
+function currentEvent(){ return todaysEvent(_eventDay()); }
+const MERCHANT_POS = { tx:24, ty:5 }, FAIR_POS = { tx:12, ty:5 };
+const MERCHANT_WARES = ["rare_wood","gift_basket","honey_cake","carved_bowl","smoked_fish","berry_jam","mulled_tea"];
+function merchantWare(){ return MERCHANT_WARES[Math.abs(_eventDay()) % MERCHANT_WARES.length]; }
+function buyMerchantWare(){
+  const id = merchantWare(), price = Math.round(ITEMS[id].v * 1.3);
+  if (S.coins < price){ toast("Not enough coins."); return; }
+  S.coins -= price; addItem(id,1); S.prod[id] = (S.prod[id]||0)+1;
+  toast(`🚚 Bought a ${ITEMS[id].n} from the pedlar.`); updateHud(); save();
+  if (document.getElementById("merchant-modal")) renderMerchant();
+}
+function buyMysteryCrate(){
+  const day = _eventDay();
+  if (S.counters.crateDay !== day){ S.counters.crateDay = day; S.counters.cratesToday = 0; }
+  if ((S.counters.cratesToday||0) >= 3){ toast("The pedlar's out of crates for today."); return; }
+  if (S.coins < 50){ toast("A mystery crate costs 50 coins."); return; }
+  S.coins -= 50; S.counters.cratesToday = (S.counters.cratesToday||0)+1;
+  const r = Math.random();
+  if (r < 0.06){ addItem("diamond",1); S.prod.diamond=(S.prod.diamond||0)+1; toast("💠 Jackpot — a Diamond in the crate!"); log("🎁 <b>Pedlar's crate jackpot</b> — a Diamond!","rare"); }
+  else if (r < 0.5){ const it = MERCHANT_WARES[Math.floor(Math.random()*MERCHANT_WARES.length)]; addItem(it,1); S.prod[it]=(S.prod[it]||0)+1; toast(`🎁 The crate held a ${ITEMS[it].n}!`); }
+  else { const c = 15 + Math.floor(Math.random()*70); S.coins += c; S.counters.coinsEarned=(S.counters.coinsEarned||0)+c; toast(`🎁 The crate held ${fmt(c)} coins.`); }
+  updateHud(); save();
+  if (document.getElementById("merchant-modal")) renderMerchant();
+}
+function closeMerchant(){ const e=document.getElementById("merchant-modal"); if(e) e.remove(); }
+function renderMerchant(){
+  const id = merchantWare(), price = Math.round(ITEMS[id].v * 1.3);
+  const day = _eventDay(); const left = 3 - (S.counters.crateDay===day ? (S.counters.cratesToday||0) : 0);
+  const inner = `<div class="dd-card" style="max-width:440px">
+    <button class="vp-close" onclick="document.getElementById('merchant-modal').remove()">✕</button>
+    <div class="dd-title">🚚 Travelling Merchant</div>
+    <div class="dd-sub">"Only in town for the day — come see my curiosities!"</div>
+    <div class="card" style="padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+      <div style="font-size:28px">${ITEMS[id].ic}</div>
+      <div style="flex:1"><div style="font-weight:700;font-size:13px">Today's featured ware: ${ITEMS[id].n}</div><div style="font-size:11px;color:var(--dim)">A fine piece, fairly priced.</div></div>
+      <button data-buy-ware style="background:${S.coins>=price?'#8a5a1a':'#555'};color:#fff;border:none;padding:7px 13px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:700">${fmt(price)}c</button>
+    </div>
+    <div class="card" style="padding:10px;display:flex;align-items:center;gap:10px">
+      <div style="font-size:28px">🎁</div>
+      <div style="flex:1"><div style="font-weight:700;font-size:13px">Mystery Crate</div><div style="font-size:11px;color:var(--dim)">Coins, a treasure… or something sparkling. ${left} left today.</div></div>
+      <button data-buy-crate style="background:${left>0&&S.coins>=50?'#7a3a8a':'#555'};color:#fff;border:none;padding:7px 13px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:700"${left>0?'':' disabled'}>50c</button>
+    </div>
+  </div>`;
+  let el = document.getElementById("merchant-modal");
+  if (el){ el.innerHTML = inner; } else { el = document.createElement("div"); el.id="merchant-modal"; el.className="dd-modal"; el.innerHTML=inner; document.body.appendChild(el); el.addEventListener("click", e=>{ if(e.target===el) el.remove(); }); }
+  el.querySelector("[data-buy-ware]").onclick = ()=>buyMerchantWare();
+  const _cb = el.querySelector("[data-buy-crate]"); if (_cb && left>0) _cb.onclick = ()=>buyMysteryCrate();
+}
+function openMerchant(){ closeMerchant(); renderMerchant(); }
+// --- Village Fair: a tombola ---
+function playTombola(){
+  if (S.coins < 10){ toast("A tombola ticket is 10 coins."); return; }
+  S.coins -= 10;
+  const r = Math.random();
+  if (r < 0.45){ toast("🎟️ Ah — better luck next time!"); }
+  else if (r < 0.9){ const c = 6 + Math.floor(Math.random()*22); S.coins += c; S.counters.coinsEarned=(S.counters.coinsEarned||0)+c; toast(`🎟️ You won ${fmt(c)} coins!`); }
+  else { const prizes=["gift_basket","honey_cake","carved_bowl","berry_jam","mulled_tea"]; const it=prizes[Math.floor(Math.random()*prizes.length)]; addItem(it,1); S.prod[it]=(S.prod[it]||0)+1; toast(`🎟️ You won a ${ITEMS[it].n}!`); }
+  updateHud(); save();
+  if (document.getElementById("fair-modal")) renderFair();
+}
+function closeFair(){ const e=document.getElementById("fair-modal"); if(e) e.remove(); }
+function renderFair(){
+  const inner = `<div class="dd-card" style="max-width:420px">
+    <button class="vp-close" onclick="document.getElementById('fair-modal').remove()">✕</button>
+    <div class="dd-title">🎟️ Village Fair</div>
+    <div class="dd-sub">Bunting, laughter and the smell of candyfloss on the green.</div>
+    <div class="card" style="padding:12px;text-align:center">
+      <div style="font-size:34px;margin-bottom:4px">🎪</div>
+      <div style="font-weight:700;font-size:14px;margin-bottom:2px">The Tombola</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px">Draw a ticket — win coins, a treat, or a friendly "better luck next time!"</div>
+      <button data-tombola style="background:#c0408a;color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:15px;font-weight:800">🎟️ Draw a ticket — 10c</button>
+    </div>
+  </div>`;
+  let el = document.getElementById("fair-modal");
+  if (el){ el.innerHTML = inner; } else { el = document.createElement("div"); el.id="fair-modal"; el.className="dd-modal"; el.innerHTML=inner; document.body.appendChild(el); el.addEventListener("click", e=>{ if(e.target===el) el.remove(); }); }
+  el.querySelector("[data-tombola]").onclick = ()=>playTombola();
+}
+function openFair(){ closeFair(); renderFair(); }
 function closePrestige(){ const e = document.getElementById("prestige-modal"); if (e) e.remove(); }
 function openPrestige(){
   closePrestige();
@@ -3628,6 +3719,33 @@ function drawExtras(ctx, t){
       ctx.fillStyle="#fff8e6"; ctx.fillRect(sx+4, sy+7, 3, 3); ctx.fillRect(sx+20, sy+7, 3, 3);
       drawEmojiC(ctx,"🍋", sx+6, sy+3, 7); drawEmojiC(ctx,"🍋", sx+22, sy+3, 7);
     }
+    // ---- Today's village event on the high-street plaza ----
+    if (merchantActive(_eventDay())){
+      const mx = MERCHANT_POS.tx*TILE, my = MERCHANT_POS.ty*TILE;
+      // pedlar's cart: canopy + wheels + crates
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(mx+14, my+22, 24, 5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#7a5230"; ctx.fillRect(mx, my+10, 32, 10);                       // cart body
+      ctx.fillStyle="#5a3a20"; ctx.fillRect(mx+2, my+14, 28, 4);
+      for(let s=0;s<5;s++){ ctx.fillStyle = s%2 ? "#c0408a" : "#f0e0c8"; ctx.fillRect(mx+s*6.4, my, 7, 8); } // striped canopy
+      ctx.fillStyle="#6a4a2a"; ctx.fillRect(mx-2, my+8, 36, 2);
+      ctx.fillStyle="#2a1a10"; ctx.beginPath(); ctx.arc(mx+7, my+21, 4, 0, 7); ctx.arc(mx+25, my+21, 4, 0, 7); ctx.fill();
+      ctx.fillStyle="#8c6947"; ctx.fillRect(mx+34, my+12, 8, 8);                        // a crate beside it
+      drawEmojiC(ctx,"📦", mx+38, my+14, 8);
+      // the merchant standing by
+      drawPerson(ctx, mx+16, my-2, "#3a2a1a", "#5a3a7a", t, false, 1, null, "down", "#c89060", "#3a2a4a");
+    }
+    if (fairActive(_eventDay())){
+      const fx = FAIR_POS.tx*TILE, fy = FAIR_POS.ty*TILE;
+      // fair tent + bunting + a balloon
+      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(fx+16, fy+24, 24, 5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#f4ecd8"; ctx.fillRect(fx-2, fy+10, 36, 14);
+      for(let s=0;s<7;s++){ ctx.fillStyle = s%2 ? "#e84060" : "#fff6e6"; ctx.beginPath(); ctx.moveTo(fx-2+s*5, fy+11); ctx.lineTo(fx-2+s*5+2.5, fy); ctx.lineTo(fx-2+s*5+5, fy+11); ctx.closePath(); ctx.fill(); }
+      ctx.fillStyle="#8a6a4a"; ctx.fillRect(fx-2, fy+10, 2, 14); ctx.fillRect(fx+32, fy+10, 2, 14);
+      drawEmojiC(ctx,"🎟️", fx+16, fy+18, 11);
+      // a bobbing balloon
+      const _by = fy - 6 + Math.sin(t*1.5)*2; ctx.strokeStyle="#8a6a4a"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(fx+30, _by); ctx.lineTo(fx+30, fy+10); ctx.stroke();
+      ctx.fillStyle="#4a8ae8"; ctx.beginPath(); ctx.arc(fx+30, _by, 4, 0, 7); ctx.fill();
+    }
   }
   // park (tx:76-86, ty:6-10): traditional manicured park
   {
@@ -4212,6 +4330,7 @@ function drawVillage(t){
     html += firstRunHintHtml();   // Task 3/4: opening movement + direction guidance
     html += questMarkerHtml();    // Task 4: marker/arrow to the first Iron Rock
     if (_comboCount >= 3 && (Date.now()-_comboAt) < 3200){ html += `<div class="combo-badge">🔥 ${_comboCount} in a row!</div>`; }
+    { const _ev = currentEvent(); if (_ev) html += `<div class="event-chip">${_ev.ic} Today: ${_ev.name}${_ev.id==='market_day'?' · +20% sales!':''}</div>`; }
     // a gentle marker so YOUR cottage is easy to pick out from the neighbours
     {
       const _ph = V_OBJECTS.find(o => o.id === "player_home");
