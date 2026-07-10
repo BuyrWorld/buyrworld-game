@@ -49,5 +49,13 @@ describe('Darts — game logic', () => {
     expect(botTarget(18)).toEqual({ number: 18, ring: 'single' });   // checkout on a single
     expect(botTarget(40)).toEqual({ number: 20, ring: 'double' });   // double 20 to finish
     expect(botTarget(180)).toEqual({ number: 20, ring: 'treble' });  // go for treble 20
+    expect(botTarget(45)).toEqual({ number: 15, ring: 'treble' });   // treble 15 = 45, exact
+    expect(botTarget(100)).toEqual({ number: 20, ring: 'treble' });  // treble 20, leaves 40
+  });
+  it('exact-zero wins, bust/continue at the wire', () => {
+    expect(dartOutcome(2, 1)).toEqual({ remaining: 1 });   // continue
+    expect(dartOutcome(1, 1)).toEqual({ win: true, remaining: 0 });
+    expect(dartOutcome(1, 20).bust).toBe(true);            // overshoot on the last point
+    expect(dartOutcome(1, 2).bust).toBe(true);
   });
 });

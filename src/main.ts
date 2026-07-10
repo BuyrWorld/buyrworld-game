@@ -9851,7 +9851,7 @@ function _brFreshState(){
   const p = fighters.find(x=>x.isPlayer);
   // player inventory (P4): two weapon slots, a heal slot and a utility slot
   p.weapons = [p.weapon]; p.ammos = [p.ammo]; p.active = 0; p.heal = null; p.utility = null;
-  p.boost = 0; p.mvx = 0; p.mvy = 0;
+  p.boost = 0; p.mvx = 0; p.mvy = 0; p.shield = 25;   // small starting shield for a fair first fight
   return { fighters, bullets:[], loot:spawnLoot(),
     muzzles:[], tracers:[], particles:[], dmgNums:[], markers:[], elimFx:[], pickups:[],
     tick:0, over:false, result:null, phase:'play', bannerLife:0, debug:false, telemetry:[], fps:60, lastFrame:0, swapPrompt:null,
@@ -10070,11 +10070,14 @@ function _brUpdate(){
         if(hit.spawnProtect>0){ gone=true; break; }   // spawn immunity
         const dmg=weaponDamage(weaponById(bl.wid), Math.hypot(bl.x-bl.ox,bl.y-bl.oy));
         const res=applyHit(hit,dmg); hit.hitFlash=4;
-        _br.dmgNums.push({ x:hit.x, y:hit.y-BR.FIGHTER_R-4, val:res.dmg, life:34, shield:res.shieldHit });
-        for(let k=0;k<3;k++)_br.particles.push({x:hit.x,y:hit.y,vx:(Math.random()-0.5)*2.4,vy:(Math.random()-0.5)*2.4,life:10,col:res.shieldHit?'#7ad0ff':'#ff6a5a'});
+        // merge pellet damage into one floating number per victim (no spam)
+        const _dn=_br.dmgNums.find(d=>d.vid===hit.id && d.life>22);
+        if(_dn){ _dn.val+=res.dmg; _dn.life=34; _dn.x=hit.x; _dn.y=hit.y-BR.FIGHTER_R-4; _dn.shield=_dn.shield||res.shieldHit; }
+        else _br.dmgNums.push({ x:hit.x, y:hit.y-BR.FIGHTER_R-4, val:res.dmg, life:34, shield:res.shieldHit, vid:hit.id });
+        for(let k=0;k<2;k++)_br.particles.push({x:hit.x,y:hit.y,vx:(Math.random()-0.5)*2.4,vy:(Math.random()-0.5)*2.4,life:10,col:res.shieldHit?'#7ad0ff':'#ff6a5a'});
         if(bl.owner===0||hit.isPlayer) _brSfx('hit', hit.isPlayer?0.9:0.7);
         if(res.shieldHit && hit.shield<=0) _brSfx('shieldbreak', hit.isPlayer?1:_brDistVol(hit)*0.8);
-        if(bl.owner===0){ _br.markers.push({life:8}); _br.stats.hits++; _br.stats.damageDealt+=res.dmg; _br.stats.byWeapon[bl.wid]=(_br.stats.byWeapon[bl.wid]||0)+res.dmg; }
+        if(bl.owner===0){ if(_br.markers.length){ _br.markers[0].life=8; } else _br.markers.push({life:8}); _br.stats.hits++; _br.stats.damageDealt+=res.dmg; _br.stats.byWeapon[bl.wid]=(_br.stats.byWeapon[bl.wid]||0)+res.dmg; }
         if(hit.isPlayer){ _br.stats.damageTaken+=res.dmg; _br.shake=Math.min(7,_br.shake+2); _br.hurtDir={ ang:Math.atan2(hit.y-bl.y,hit.x-bl.x)+Math.PI, life:26 }; }
         if(res.elim) _brElim(hit,bl.owner);
         gone=true; break;
@@ -10230,8 +10233,8 @@ function _brDraw(){
   g.textAlign="left";
   // directional hit indicator
   if(_br.hurtDir){ g.save(); g.translate(W/2,H/2); g.rotate(_br.hurtDir.ang); g.globalAlpha=_br.hurtDir.life/26; g.strokeStyle="#ff4040"; g.lineWidth=3; g.beginPath(); g.arc(0,0,40,-0.5,0.5); g.stroke(); g.globalAlpha=1; g.restore(); }
-  // bottom-left: player weapon + ammo + health + shield + stamina
-  if(P){
+  // bottom-left: player weapon + ammo + health + shield + stamina (only while alive)
+  if(P && P.alive){
     const w=weaponById(P.weapon);
     g.fillStyle="rgba(0,0,0,.55)"; g.fillRect(6,H-52,168,46);
     g.fillStyle="#fff"; g.font="bold 11px sans-serif"; g.textAlign="left";
