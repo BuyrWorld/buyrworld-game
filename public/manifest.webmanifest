@@ -1,0 +1,19 @@
+{
+  "name": "BuyrWorld",
+  "short_name": "BuyrWorld",
+  "description": "Build a legendary supply chain in a cosy pixel valley.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#12100c",
+  "theme_color": "#5aa54a",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
