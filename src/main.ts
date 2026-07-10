@@ -4644,7 +4644,11 @@ function drawVillage(t){
         if (++_ambient >= 3) break;
       }
     }
-    // district identity: a single subtle "you're in" chip, top-right only
+    // weather marker — top-left, shows the current conditions
+    { const _wi = WEATHER_INFO[_weather.type] || WEATHER_INFO.clear;
+      const _wn = _wi.n.charAt(0).toUpperCase() + _wi.n.slice(1);
+      html += `<div class="weather-chip">${_wi.ic} ${_wn}</div>`; }
+    // district identity: a single subtle "you're in" chip (top-left, below weather)
     {
       const _cd = currentDistrict();
       if (_cd) html += `<div class="dist-chip" style="border-color:${_cd.color};color:${_cd.color}">${_cd.ic} ${_cd.name}</div>`;
@@ -6924,7 +6928,11 @@ function villageFrame(ts){
       const _onF = tileAt(VP.x, VP.y) === 'F';
       S.bike.condition = Math.max(0, (S.bike.condition ?? 100) - dt * (_onF ? 0.17 : 0.083));
     }
-    if (VP.y > 18.2*TILE && (!globalThis._swimAt || performance.now() - globalThis._swimAt > 6000)){
+    // only nudge at the actual southern shoreline (row ~38, just above the sea at
+    // row 39) — the old 18.2 threshold predated the NORTH_EXT map shift and fired
+    // everywhere. Also require the player to actually be at the water's edge.
+    if (VP.y > (18.2+NORTH_EXT)*TILE && tileAt(VP.x, VP.y + TILE*0.6) === 'W'
+        && (!globalThis._swimAt || performance.now() - globalThis._swimAt > 8000)){
       globalThis._swimAt = performance.now();
       toast(`🌊 ${pName()}: "I can't swim… yet."`);
       log(`🌊 ${pName()} eyes the water: "I can't swim… yet."`);
