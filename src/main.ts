@@ -710,6 +710,7 @@ let _fishCastT = 0;          // timestamp of the last cast (new fishing station)
 let _fishActiveId = null;    // which fishing station is currently being fished
 let _fishRodTip = { x:0, y:0 };  // world position of the player's rod tip (so the line connects to the character)
 let _voyageRenderAt = 0;        // throttle for live-refreshing the harbour voyages panel
+let _cellRenderAt = 0;          // throttle for live-refreshing the holding-cell countdown
 let _intVfx = [];               // interior completion rewards (floating +item pops)
 let _comboCount = 0, _comboAt = 0, _comboSkill = null;   // consecutive-action streak (addictive feedback)
 let _fishSpot = null;            // where the bobber has been cast (interior coords) — click the water to set it
@@ -719,6 +720,8 @@ let _bflies = [];            // ambient butterflies (warm seasons)
 let _homeVil = null;         // wandering home-villager state (per home)
 let _homeVilLbl = null;      // {x,y,name} for the crisp home-villager label this frame
 let _homeAwayName = null;    // name of the home's occupant when they're away at work (crisp HTML note)
+let _homeVilBubble = null;   // {x,y,text} terrified shout from the occupant when trespassing
+const TRESPASS_CRIES = ["Who's there?! GET OUT!","AAAH! Intruder!","Get out of my house!!","Help! A burglar!","You?! OUT — now!"];
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
   { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
@@ -2077,10 +2080,13 @@ function villageClick(e){
     }
   }
   for (const o of V_OBJECTS){
-    const r = objRect(o), pad=6;
+    // signs (notice board, town directory, lore stone) get a bigger hit area and
+    // open immediately on click — no need to walk over to them first.
+    const _isSign = o.kind==="sign";
+    const r = objRect(o), pad = _isSign ? 16 : 6;
     if (wx>=r.x-pad && wx<=r.x+r.w+pad && wy>=r.y-pad && wy<=r.y+r.h+pad){
       const ap = objApproach(o);
-      if (Math.hypot(VP.x-ap.x, VP.y-ap.y) < 46) interactObj(o);
+      if (_isSign || Math.hypot(VP.x-ap.x, VP.y-ap.y) < 46) interactObj(o);
       else { VP.tx=ap.x; VP.ty=ap.y; VP.pending=o; }
       return;
     }
@@ -3943,58 +3949,20 @@ function drawExtras(ctx, t){
   _drawFence(39*TILE, [25,26,30,31]); // west forest west fence
   _drawFence(47*TILE, [25,26,30,31]); // west forest east fence
   _drawFence(87*TILE, [25,26,30,31]); // east forest west fence
-  // Retail high street — decorative bunting between lamp posts
+  // Retail high street — clean shopfronts (bunting/seasonal clutter removed so
+  // the post office and shops read clearly; the fete lives in the clear gap east).
   {
     const _ryBase = 4*TILE;  // retail HIGH STREET row y pixel (VMAP row 4)
     const _rx0 = 5*TILE;
     const _rx1 = 33*TILE;
-    // bunting string
-    ctx.strokeStyle="#8a6a4a"; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-8); ctx.lineTo(_rx1, _ryBase-8); ctx.stroke();
-    // bunting flags every ~18px
-    const _flagColors = ["#e84060","#ffd666","#4a8ae8","#68cc68","#e86040","#c840e8"];
-    for(let bi=0; bi<Math.floor((_rx1-_rx0)/18); bi++){
-      const _bx = _rx0 + bi*18 + 4;
-      ctx.fillStyle = _flagColors[bi % _flagColors.length];
-      ctx.beginPath(); ctx.moveTo(_bx, _ryBase-9); ctx.lineTo(_bx-5, _ryBase-1); ctx.lineTo(_bx+5, _ryBase-1); ctx.closePath(); ctx.fill();
-    }
     // "HIGH STREET" sign on a post at tx≈35
     const _signX = 35*TILE, _signY = 3*TILE;
     ctx.fillStyle="#3a2010"; ctx.fillRect(_signX-1, _signY, 3, TILE*2);
     ctx.fillStyle="#c8a060"; ctx.fillRect(_signX-24, _signY+8, 50, 14);
     ctx.fillStyle="#1a0c00";
     fitText(ctx, "HIGH STREET", _signX+1, _signY+15, 46, 8, { weight:"bold", family:"sans-serif", baseline:"middle" });
-    // Seasonal high street decorations
+    // (season still needed by the Summer Fete, which sits east in the clear gap)
     const _curSeason = getSeason();
-    if (_curSeason === "winter"){
-      // Christmas: red-green garland stripe + gold stars
-      ctx.strokeStyle="#c02020"; ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-13); ctx.lineTo(_rx1, _ryBase-13); ctx.stroke();
-      ctx.strokeStyle="#208a20"; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-11); ctx.lineTo(_rx1, _ryBase-11); ctx.stroke();
-      for(let sx=_rx0+14; sx<_rx1; sx+=32) drawEmojiC(ctx,"⭐", sx, _ryBase-18, 8);
-    } else if (_curSeason === "summer"){
-      // Summer fete: extra dense rainbow pennants on a second line
-      const _fcS = ["#ff4040","#ff9020","#ffe030","#40c040","#4080ff","#c040e0"];
-      ctx.strokeStyle="#5a3a2a"; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-15); ctx.lineTo(_rx1, _ryBase-15); ctx.stroke();
-      for(let bi=0; bi<Math.floor((_rx1-_rx0)/13); bi++){
-        const _bx = _rx0 + bi*13 + 3;
-        ctx.fillStyle = _fcS[bi % _fcS.length];
-        ctx.beginPath(); ctx.moveTo(_bx, _ryBase-16); ctx.lineTo(_bx-4, _ryBase-8); ctx.lineTo(_bx+4, _ryBase-8); ctx.closePath(); ctx.fill();
-      }
-    } else if (_curSeason === "autumn"){
-      // Harvest: orange/gold pennants + pumpkins at stall fronts
-      const _hc = ["#e06020","#c89020","#c84020","#a86020"];
-      ctx.strokeStyle="#5a3a10"; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(_rx0, _ryBase-13); ctx.lineTo(_rx1, _ryBase-13); ctx.stroke();
-      for(let bi=0; bi<Math.floor((_rx1-_rx0)/15); bi++){
-        const _bx = _rx0 + bi*15 + 4;
-        ctx.fillStyle = _hc[bi % _hc.length];
-        ctx.beginPath(); ctx.moveTo(_bx, _ryBase-14); ctx.lineTo(_bx-5, _ryBase-6); ctx.lineTo(_bx+5, _ryBase-6); ctx.closePath(); ctx.fill();
-      }
-      for(let px=_rx0+20; px<_rx1-10; px+=52) drawEmojiC(ctx,"🎃", px, _ryBase-2, 9);
-    }
     // Summer Fete — set on the one clear building-free stretch of the high
     // street (between the furniture shop @tx37 and the pub @tx52) so nothing
     // overlays a shopfront. Laid out symmetrically around a central marquee.
@@ -5093,31 +5061,38 @@ function drawInterior(t){
       if((Math.floor(wy/16)+Math.floor(t*2))%3===0) ctx.fillRect(6+(wy*13)%38,wy,W*.16,2);
       if((Math.floor(wy/16)+Math.floor(t*1.4)+2)%4===0) ctx.fillRect(W*.55+(wy*7)%32,wy+4,W*.12,2);
     }
-    // an occasional shark shadow glides down through the deep (behind the fish)
+    // a shark cruises across the deep every so often — a clear top-down silhouette
     {
-      const SHARK_CYCLE = 24;                      // seconds between passes
+      const SHARK_CYCLE = 20;                       // seconds between passes
       const sp = (t % SHARK_CYCLE) / SHARK_CYCLE;
-      if (sp < 0.5){
-        const syp = sp/0.5;                        // 0..1 top → surface
-        const shx = W*0.5 + Math.sin(t*0.5)*W*0.16;
-        const shy = -32 + syp*(H*.44 + 40);
-        const wig = Math.sin(t*3)*3;
-        ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = "#08222f";
-        // tapered body (nose down since it swims top→down), narrowing to the tail
+      if (sp < 0.62){
+        const dir = (Math.floor(t/SHARK_CYCLE)%2) ? 1 : -1;
+        const prog = sp/0.62;                        // 0..1 across the bay
+        const shx = dir>0 ? -46 + prog*(W+92) : W+46 - prog*(W+92);
+        const shy = H*0.22 + Math.sin(t*0.6)*9;
+        const wig = Math.sin(t*4)*0.14;              // tail sway
+        ctx.save(); ctx.translate(shx, shy); ctx.scale(dir,1); ctx.globalAlpha = 0.30; ctx.fillStyle = "#0a2230";
+        // body — pointed snout (front/right) tapering to the tail (back/left)
         ctx.beginPath();
-        ctx.moveTo(shx, shy+27);
-        ctx.quadraticCurveTo(shx-10, shy+6, shx-4, shy-18);
-        ctx.lineTo(shx, shy-21);
-        ctx.lineTo(shx+4, shy-18);
-        ctx.quadraticCurveTo(shx+10, shy+6, shx, shy+27);
+        ctx.moveTo(28, 0);
+        ctx.quadraticCurveTo(10, -8, -8, -5.5);
+        ctx.quadraticCurveTo(-20, -3.5, -30, -1.2);
+        ctx.lineTo(-30, 1.2);
+        ctx.quadraticCurveTo(-20, 3.5, -8, 5.5);
+        ctx.quadraticCurveTo(10, 8, 28, 0);
         ctx.closePath(); ctx.fill();
-        // forked caudal (tail) fin
-        ctx.beginPath(); ctx.moveTo(shx-1, shy-19); ctx.lineTo(shx-9+wig, shy-34); ctx.lineTo(shx, shy-25); ctx.lineTo(shx+9+wig, shy-34); ctx.lineTo(shx+1, shy-19); ctx.closePath(); ctx.fill();
-        // dorsal fin (to the side, top-down view)
-        ctx.beginPath(); ctx.moveTo(shx+6, shy-3); ctx.lineTo(shx+17, shy+3); ctx.lineTo(shx+6, shy+9); ctx.closePath(); ctx.fill();
-        // pectoral fins
-        ctx.beginPath(); ctx.moveTo(shx-5, shy+6); ctx.lineTo(shx-16, shy+13); ctx.lineTo(shx-4, shy+13); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(shx+5, shy+6); ctx.lineTo(shx+16, shy+13); ctx.lineTo(shx+4, shy+13); ctx.closePath(); ctx.fill();
+        // dorsal fin (triangular, mid-back)
+        ctx.beginPath(); ctx.moveTo(-1,-5); ctx.lineTo(-6,-15); ctx.lineTo(5,-5); ctx.closePath(); ctx.fill();
+        // pectoral fins (swept back)
+        ctx.beginPath(); ctx.moveTo(9,5); ctx.lineTo(0,16); ctx.lineTo(13,7); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(9,-5); ctx.lineTo(0,-16); ctx.lineTo(13,-7); ctx.closePath(); ctx.fill();
+        // forked caudal (tail) fin, swaying
+        ctx.save(); ctx.translate(-30,0); ctx.rotate(wig);
+        ctx.beginPath(); ctx.moveTo(2,0); ctx.lineTo(-13,-11); ctx.lineTo(-6,0); ctx.lineTo(-13,11); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        // faint gill slits
+        ctx.globalAlpha = 0.18; ctx.strokeStyle="#08202c"; ctx.lineWidth=0.8;
+        for(let gi=0;gi<3;gi++){ ctx.beginPath(); ctx.moveTo(14-gi*3, -3.5); ctx.lineTo(14-gi*3, 3.5); ctx.stroke(); }
         ctx.restore();
       }
     }
@@ -5871,26 +5846,37 @@ function drawInterior(t){
       _homeProp(ctx, _p.k, _p.x, _p.y, W, H, t, _ft, _pal);
     }
     // --- NPC daily routine (time-of-day activity) ---
-    _homeVilLbl = null; _homeAwayName = null;
+    _homeVilLbl = null; _homeAwayName = null; _homeVilBubble = null;
     if (_v){
       const _nHr=gameHour();
+      const _tres = !!(S.trespass?.active);
       if (_nHr>=22||_nHr<7){
-        // sleeping — head(s) peek above the duvet line
-        const _drawHead=(hx:number,hy:number,hc:string,fem2:boolean)=>{
-          ctx.fillStyle="#f2c49a"; ctx.beginPath(); ctx.arc(hx,hy,6,0,Math.PI*2); ctx.fill();
-          ctx.fillStyle=hc; ctx.fillRect(hx-5,hy-10,10,5);
-          if(fem2){ctx.fillRect(hx-8,hy-6,3,10);}
-        };
-        _drawHead(_bX+10,_bY+10,_v.hair||"#6a4a2f",_v.female||false);
-        if(_bConf.d){
-          const _p2=VILLAGERS.find(v2=>v2.n.toLowerCase()===(_v.partner||"").toLowerCase());
-          _drawHead(_bX+_bW/2+6,_bY+10,_p2?.hair||"#c9a24b",_p2?.female||false);
+        // night — the occupant is in bed asleep (or jolted awake by an intruder)
+        const _p2 = _bConf.d ? VILLAGERS.find(v2=>v2.n.toLowerCase()===(_v.partner||"").toLowerCase()) : null;
+        const _sleepers = [{ x:_bX+13, hair:_v.hair||"#6a4a2f", fem:_v.female||false, shirt:_v.shirt||"#8a6a9a", tr:_v.trouser }];
+        if (_p2) _sleepers.push({ x:_bX+_bW-15, hair:_p2.hair||"#c9a24b", fem:_p2.female||false, shirt:_p2.shirt||"#7a8a9a", tr:_p2.trouser });
+        if (_tres){
+          // startled awake — bolt upright, terrified
+          for (const s of _sleepers) drawPerson(ctx, s.x, _bY-3, s.hair, s.shirt, t, false, IP.x>=s.x?1:-1, null, "down", null, s.tr, null, s.fem);
+          ctx.fillStyle="#ff5040"; ctx.font="bold 12px monospace"; ctx.textAlign="center"; ctx.fillText("!", _bX+_bW/2, _bY-18); ctx.textAlign="left";
+          _homeVilBubble = { x:_bX+_bW/2, y:_bY-16, text: TRESPASS_CRIES[Math.floor(Date.now()/1500)%TRESPASS_CRIES.length], name:_v.n };
+        } else {
+          // peaceful sleep — pillow, breathing duvet, head resting, Zzz
+          const _breathe = 1 + Math.max(0, Math.sin(t*1.5))*1.4;
+          ctx.fillStyle="#e8e2ee"; ctx.fillRect(_bX+3, _bY+1, _bW-6, 7);                       // pillow
+          ctx.fillStyle="#6558a0"; ctx.fillRect(_bX+2, _bY+8, _bW-4, 16+_breathe);             // duvet
+          ctx.fillStyle="#7668b4"; ctx.fillRect(_bX+2, _bY+8, _bW-4, 3);                        // duvet fold highlight
+          ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(_bX+2, _bY+8, _bW-4, 1);
+          for (const s of _sleepers){
+            ctx.fillStyle="#f2c49a"; ctx.beginPath(); ctx.arc(s.x, _bY+6, 5, 0, 7); ctx.fill(); // head on pillow
+            ctx.fillStyle=s.hair; ctx.fillRect(s.x-5, _bY, 10, 4);                              // hair
+            if (s.fem) ctx.fillRect(s.x-6, _bY+2, 2, 6);
+            ctx.fillStyle="#7a5238"; ctx.fillRect(s.x-3, _bY+6, 2, 1); ctx.fillRect(s.x+1, _bY+6, 2, 1); // closed eyes
+          }
+          ctx.globalAlpha=0.3+Math.max(0,Math.sin(t*1.3))*0.25; ctx.fillStyle="#c9c4e6"; ctx.font="italic bold 9px 'IBM Plex Mono',monospace";
+          ctx.fillText("Zzz", _bX+_bW-4, _bY-3); ctx.globalAlpha=1;
         }
-        ctx.globalAlpha=0.35+Math.sin(t*1.4)*0.25;
-        ctx.fillStyle="#5a4a8a"; ctx.font="bold 8px monospace";
-        ctx.fillText("Zzz",_bX+(_bConf.d?Math.round(_bW*0.6):18)+6,_bY-4);
-        ctx.globalAlpha=1;
-      } else if ((_nHr>=9.5&&_nHr<12)||(_nHr>=13.5&&_nHr<18.5)){
+      } else if (!_tres && ((_nHr>=9.5&&_nHr<12)||(_nHr>=13.5&&_nHr<18.5))){
         // at work — a pinned note on the table; the crisp, legible text is drawn as
         // an HTML overlay (set _homeAwayName), not tiny canvas text.
         ctx.fillStyle="#f4e8c8"; ctx.fillRect(W/2-26,H-54,52,30);
@@ -5898,24 +5884,36 @@ function drawInterior(t){
         drawEmojiC(ctx,"📌",W/2+24,H-56,8);
         _homeAwayName = _v.n;
       } else {
-        // awake at home → wander between rooms doing chores
-        const _wp = [[66,96],[54,128],[158,165],[112,150],[Math.max(22,_bX-16),112]];
+        // awake at home
         if (!_homeVil || _homeVil.roomId !== S.roomObjId)
           _homeVil = { roomId:S.roomObjId, x:112, y:150, tx:112, ty:150, moving:false, facing:1, pauseT:0 };
-        const _dx=_homeVil.tx-_homeVil.x, _dy=_homeVil.ty-_homeVil.y, _dd=Math.hypot(_dx,_dy)||1;
-        if (_dd < 3){
-          if (!_homeVil.pauseT) _homeVil.pauseT = Date.now() + 1500 + Math.random()*2800;
-          if (Date.now() > _homeVil.pauseT){ const _n=_wp[Math.floor(Math.random()*_wp.length)]; _homeVil.tx=_n[0]; _homeVil.ty=_n[1]; _homeVil.pauseT=0; }
-          _homeVil.moving=false;
+        if (_tres){
+          // someone's broken in! freeze, back into the corner, face the intruder, terrified
+          const _cornerX = _bX>W/2 ? W-24 : 24;
+          _homeVil.x += (_cornerX-_homeVil.x)*0.12; _homeVil.y += (70-_homeVil.y)*0.12;
+          const _shake = Math.sin(t*22)*0.8;
+          drawPerson(ctx,Math.round(_homeVil.x+_shake),Math.round(_homeVil.y),_v.hair,_v.shirt,t,false,IP.x>=_homeVil.x?1:-1,null,"down",null,_v.trouser,null,_v.female||false);
+          ctx.fillStyle="#ff5040"; ctx.font="bold 12px monospace"; ctx.textAlign="center"; ctx.fillText("!",_homeVil.x,_homeVil.y-16); ctx.textAlign="left";
+          _homeVilBubble = { x:_homeVil.x, y:_homeVil.y-14, text: TRESPASS_CRIES[Math.floor(Date.now()/1500)%TRESPASS_CRIES.length], name:_v.n };
+          _homeVilLbl = { x:_homeVil.x, y:_homeVil.y, name:_v.n };
         } else {
-          _homeVil.x+=_dx/_dd*1.1; _homeVil.y+=_dy/_dd*1.1; _homeVil.moving=true; _homeVil.facing=_dx>=0?1:-1;
+          // wander between rooms doing chores
+          const _wp = [[66,96],[54,128],[158,165],[112,150],[Math.max(22,_bX-16),112]];
+          const _dx=_homeVil.tx-_homeVil.x, _dy=_homeVil.ty-_homeVil.y, _dd=Math.hypot(_dx,_dy)||1;
+          if (_dd < 3){
+            if (!_homeVil.pauseT) _homeVil.pauseT = Date.now() + 1500 + Math.random()*2800;
+            if (Date.now() > _homeVil.pauseT){ const _n=_wp[Math.floor(Math.random()*_wp.length)]; _homeVil.tx=_n[0]; _homeVil.ty=_n[1]; _homeVil.pauseT=0; }
+            _homeVil.moving=false;
+          } else {
+            _homeVil.x+=_dx/_dd*1.1; _homeVil.y+=_dy/_dd*1.1; _homeVil.moving=true; _homeVil.facing=_dx>=0?1:-1;
+          }
+          drawPerson(ctx,Math.round(_homeVil.x),Math.round(_homeVil.y),_v.hair,_v.shirt,t,_homeVil.moving,_homeVil.facing,null,"down",null,_v.trouser,null,_v.female||false);
+          if (!_homeVil.moving){
+            const _em = Math.hypot(_homeVil.x-66,_homeVil.y-96)<20?"☕":Math.hypot(_homeVil.x-54,_homeVil.y-128)<20?"🍽️":Math.hypot(_homeVil.x-158,_homeVil.y-165)<26?"📺":"✨";
+            drawEmojiC(ctx,_em,_homeVil.x+11,_homeVil.y-14,11);
+          }
+          _homeVilLbl = { x:_homeVil.x, y:_homeVil.y, name:_v.n };
         }
-        drawPerson(ctx,Math.round(_homeVil.x),Math.round(_homeVil.y),_v.hair,_v.shirt,t,_homeVil.moving,_homeVil.facing,null,"down",null,_v.trouser,null,_v.female||false);
-        if (!_homeVil.moving){
-          const _em = Math.hypot(_homeVil.x-66,_homeVil.y-96)<20?"☕":Math.hypot(_homeVil.x-54,_homeVil.y-128)<20?"🍽️":Math.hypot(_homeVil.x-158,_homeVil.y-165)<26?"📺":"✨";
-          drawEmojiC(ctx,_em,_homeVil.x+11,_homeVil.y-14,11);
-        }
-        _homeVilLbl = { x:_homeVil.x, y:_homeVil.y, name:_v.n };
       }
     }
   }
@@ -6270,24 +6268,24 @@ function drawInterior(t){
     // Rex landlord behind bar (white shirt)
     drawPerson(ctx, W/2-18, 48, "#5a3a20", "#e8e8e0", t, false, 1, null, "down", "#c89060", "#2a1808", null, false);
     ctx.fillStyle="rgba(255,255,255,.55)"; ctx.fillRect(W/2-22,38,8,18); // apron
-    // evening crowd
+    // evening crowd — spaced around the two tables so nobody stands on anybody
     const _evHr=gameHour();
     if (_evHr>=18.5||_evHr<2){
-      const _pats:[string,number,number,string,string,boolean][]=[
-        ["#8a4a20",W*0.10,H-68,"#4a6aaa","#2a2a4a",false],
-        ["#3a3a3a",W*0.38,H-64,"#c07040","#3a3020",true],
-        ["#c9a24b",W*0.10,H-80,"#4a8a3a","#2a3a20",false],
-        ["#6a3a20",W*0.38,H-78,"#9a3a60","#2a1a2a",true],
+      const _pats:[string,number,number,string,string,boolean,number][]=[
+        ["#8a4a20",W*0.03,H-60,"#4a6aaa","#2a2a4a",false, 1],   // left of table 1
+        ["#c9a24b",W*0.17,H-66,"#4a8a3a","#2a3a20",false,-1],   // right of table 1
+        ["#3a3a3a",W*0.31,H-60,"#c07040","#3a3020",true,  1],   // left of table 2
+        ["#6a3a20",W*0.45,H-66,"#9a3a60","#2a1a2a",true, -1],   // right of table 2
       ];
-      for(const [h2,px2,py2,sh2,tr2,fem] of _pats) drawPerson(ctx,px2,py2,h2,sh2,t,false,1,null,"down",null,tr2,null,fem);
-      // patron speech bubble
+      for(const [h2,px2,py2,sh2,tr2,fem,fc] of _pats) drawPerson(ctx,px2,py2,h2,sh2,t,false,fc,null,fc>=0?"right":"left",null,tr2,null,fem);
+      // patron speech bubble above the first patron
       const _qts=["*laughs*","Top drop!","Your round!","Cheers!","Grand pub this."];
       const _qt=_qts[Math.floor(Date.now()/5000)%_qts.length];
-      const _bw=_qt.length*6+12;
+      const _bw=_qt.length*6+12, _bx=W*0.10;
       ctx.fillStyle="rgba(255,248,220,.95)"; ctx.strokeStyle="#8a6040"; ctx.lineWidth=1;
-      ctx.fillRect(W*0.10-_bw/2,H-100,_bw,14); ctx.strokeRect(W*0.10-_bw/2,H-100,_bw,14);
+      ctx.fillRect(_bx-_bw/2,H-90,_bw,14); ctx.strokeRect(_bx-_bw/2,H-90,_bw,14);
       ctx.fillStyle="#453423"; ctx.font="bold 7px monospace"; ctx.textAlign="center";
-      ctx.fillText(_qt,W*0.10,H-90); ctx.textAlign="left";
+      ctx.fillText(_qt,_bx,H-80); ctx.textAlign="left";
     }
     // pub sign on back wall top-right
     ctx.fillStyle="#2a1008"; ctx.fillRect(W-82,4,72,30);
@@ -6299,10 +6297,12 @@ function drawInterior(t){
   if (S.tab==="police_station"){
     room("#1a2a5a","#c0c8d8","#d8e0ec","#ccd8e8","#2a3a5a");
     winP(W*0.12,34); winP(W*0.65,34);
-    // crest on back wall
-    ctx.fillStyle="#2a3a5a"; ctx.fillRect(W/2-22,8,44,32);
-    ctx.fillStyle="#1a2a4a"; ctx.fillRect(W/2-20,10,40,28);
-    ctx.fillStyle="#ffd666"; ctx.font="bold 11px serif"; ctx.textAlign="center"; ctx.fillText("⚖",W/2,28); ctx.textAlign="left";
+    // station nameplate on the back wall — legible and never blocked by the doorway
+    ctx.fillStyle="#22345f"; ctx.fillRect(W/2-100,4,200,22);
+    ctx.fillStyle="#152244"; ctx.fillRect(W/2-98,6,196,18);
+    ctx.strokeStyle="#ffd666"; ctx.lineWidth=1.5; ctx.strokeRect(W/2-100,4,200,22);
+    drawEmojiC(ctx,"⚖️",W/2-86,15,11);
+    ctx.fillStyle="#ffe27a"; fitText(ctx,"FEATHERSTONE CONSTABULARY",W/2+8,15,150,10,{ weight:"bold", family:"'Arial',sans-serif", baseline:"middle" });
     // reception desk
     ctx.fillStyle="#3a4a6a"; ctx.fillRect(W/2-50,58,100,28);
     ctx.fillStyle="#4a5a7a"; ctx.fillRect(W/2-48,60,96,14);
@@ -6328,14 +6328,9 @@ function drawInterior(t){
     drawPerson(ctx,W/2,52,"#3a3a4a","#2a3a5a",t,false,1,null,"down","#d4b896","#1a2a4a",null,false);
     drawPerson(ctx,W*0.16,H*0.62,"#4a4a3a","#2a3a5a",t,false,1,null,"down","#c8a070","#1a2a4a",null,false);
     drawPerson(ctx,W*0.84,H*0.62,"#6a4a30","#2a3a5a",t,false,-1,null,"left","#d4b090","#1a2a4a",null,true);
-    // floor crest — big and legible ("clear from the sofa")
-    const _cbcx=W/2, _cbcy=H-30;
-    ctx.fillStyle="#2a3a66"; ctx.beginPath(); ctx.ellipse(_cbcx,_cbcy,62,26,0,0,7); ctx.fill();      // navy disc
-    ctx.strokeStyle="#ffd666"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.ellipse(_cbcx,_cbcy,62,26,0,0,7); ctx.stroke();  // gold ring
-    ctx.strokeStyle="#3a4a7a"; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(_cbcx,_cbcy,55,22,0,0,7); ctx.stroke();    // inner ring
-    ctx.fillStyle="#ffe27a";
-    fitText(ctx,"FEATHERSTONE",_cbcx,_cbcy-19,108,12,{ weight:"bold", family:"'Arial',sans-serif" });
-    fitText(ctx,"CONSTABULARY",_cbcx,_cbcy+6,108,12,{ weight:"bold", family:"'Arial',sans-serif" });
+    // a small floor emblem, kept clear of the doorway (mid-floor, left of the exit)
+    ctx.strokeStyle="rgba(255,214,102,.28)"; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(W*0.30,H*0.80,20,10,0,0,7); ctx.stroke();
+    drawEmojiC(ctx,"⚖️",W*0.30,H*0.80,12);
   }
   if (S.tab==="police_cell"){
     // grim grey cell
@@ -6359,24 +6354,34 @@ function drawInterior(t){
     // comedy bucket
     ctx.fillStyle="#6a7a6a"; ctx.fillRect(W-22,H-32,14,20); ctx.fillStyle="#4a5a4a"; ctx.fillRect(W-22,H-32,14,4);
     drawEmojiC(ctx,"🪣",W-15,H-22,11);
-    // graffiti
-    ctx.fillStyle="rgba(255,255,255,.22)"; ctx.font="bold 6px monospace";
-    ctx.fillText("I WOZ ERE",Math.round(W*0.40),34); ctx.fillText("♥ BETTY",Math.round(W*0.60),26);
-    // cellmate
-    const _cmX=W*0.72, _cmY=H*0.65;
+    // graffiti scratched into the wall — legible, hand-scrawled
+    ctx.save(); ctx.fillStyle="rgba(230,230,240,.45)";
+    ctx.translate(Math.round(W*0.34),28); ctx.rotate(-0.06); fitText(ctx,"I WOZ 'ERE",0,0,64,9,{weight:"bold",family:"'Comic Sans MS',cursive",baseline:"middle"}); ctx.restore();
+    ctx.save(); ctx.fillStyle="rgba(230,210,210,.42)";
+    ctx.translate(Math.round(W*0.60),20); ctx.rotate(0.05); fitText(ctx,"♥ BETTY",0,0,52,9,{weight:"bold",family:"'Comic Sans MS',cursive",baseline:"middle"}); ctx.restore();
+    // cellmate + a crisp, readable speech bubble
+    const _cmX=W*0.74, _cmY=H*0.66;
     drawPerson(ctx,_cmX,_cmY,"#3a3a3a","#5a5a5a",t,false,-1,null,"left","#c89060","#3a3a3a",null,false);
     const _cLines=["First time? Heh. Won't be.","*snores loudly*","I was framed. Again.","The chips in here are terrible.","Officer Plonk's got it in for me.","You smell like someone else's house."];
     const _cl=_cLines[Math.floor(Date.now()/6000)%_cLines.length];
-    const _cbw=_cl.length*5+14;
-    ctx.fillStyle="rgba(240,240,220,.9)"; ctx.strokeStyle="#6a6a7a"; ctx.lineWidth=1;
-    ctx.fillRect(_cmX-_cbw+12,_cmY-38,_cbw,14); ctx.strokeRect(_cmX-_cbw+12,_cmY-38,_cbw,14);
-    ctx.fillStyle="#2a2a3a"; ctx.font="bold 6px monospace"; ctx.textAlign="center";
-    ctx.fillText(_cl,_cmX-_cbw/2+12,_cmY-28); ctx.textAlign="left";
+    ctx.font="bold 8px 'IBM Plex Mono',monospace"; const _cbw=Math.ceil(ctx.measureText(_cl).width)+14;
+    const _cbx=Math.max(4,_cmX-_cbw-2), _cby=_cmY-40;
+    ctx.fillStyle="rgba(248,248,236,.96)"; ctx.strokeStyle="#7a7a8a"; ctx.lineWidth=1;
+    ctx.fillRect(_cbx,_cby,_cbw,16); ctx.strokeRect(_cbx,_cby,_cbw,16);
+    ctx.beginPath(); ctx.moveTo(_cbx+_cbw-6,_cby+16); ctx.lineTo(_cbx+_cbw+2,_cby+22); ctx.lineTo(_cbx+_cbw-2,_cby+16); ctx.closePath(); ctx.fillStyle="rgba(248,248,236,.96)"; ctx.fill();
+    ctx.fillStyle="#2a2a3a"; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.fillText(_cl,_cbx+7,_cby+8); ctx.textBaseline="alphabetic";
     // blocked exit door
     ctx.fillStyle="#3a3a42"; ctx.fillRect(W/2-14,H-20,28,20);
     ctx.fillStyle="#4a4a52"; ctx.fillRect(W/2-12,H-18,24,16);
     ctx.fillStyle="#3a3a48"; for(let bi2=0;bi2<3;bi2++) ctx.fillRect(W/2-10+bi2*7,H-18,3,16);
     drawEmojiC(ctx,"🔒",W/2,H-8,10);
+    // prominent countdown to freedom
+    { const _rem=Math.max(0,(S.caught?.cellUntil||0)-Date.now());
+      const _m=Math.floor(_rem/60000), _s=Math.floor((_rem%60000)/1000);
+      const _txt=_rem>0?`⏳ ${_m}:${String(_s).padStart(2,'0')} TO FREEDOM`:"🔓 FREE TO GO";
+      ctx.fillStyle="rgba(0,0,0,.6)"; ctx.fillRect(W/2-80,10,160,18);
+      ctx.strokeStyle=_rem>0?"#ff6a4a":"#4aff88"; ctx.lineWidth=1.5; ctx.strokeRect(W/2-80,10,160,18);
+      ctx.fillStyle=_rem>0?"#ffd0c0":"#bfffcf"; fitText(ctx,_txt,W/2,19,150,10,{weight:"bold",family:"'Arial',sans-serif",baseline:"middle"}); }
     // player
     drawPerson(ctx,IP.x,IP.y,plHair(),plShirt(),t,IP.moving,IP.facing,null,IP.dir,plSkin(),plTrousers(),null,plGender()==='female',1.0,plHat(),plHatColor(),plOpts());
   }
@@ -6661,7 +6666,7 @@ function drawInterior(t){
   }
   // station nodes from STATION_DEFS — drawn on top of background, below player
   const stations = STATION_DEFS[S.tab];
-  if (stations){
+  if (stations && S.tab!=="fishing"){   // fishing has no deck node — you cast by clicking the water
     stations.forEach(st=>{
       const sx = st.fx * W, sy = st.fy * H;
       const isActive = active===st.skill && S.action?.id===st.id;
@@ -6767,8 +6772,12 @@ function drawInterior(t){
         }
       }
     }
+    // home occupant terrified by an intruder — an urgent crisp shout takes priority
+    if (S.tab==="home" && _homeVilBubble){
+      _iHtml += speechBubbleHtml(_homeVilBubble.name || 'Resident', '😱 '+_homeVilBubble.text, _homeVilBubble.x/W*100, (_homeVilBubble.y-4)/H*100);
+    }
     // home occupant: a legible speech bubble when they're chatting, else a name tag
-    if (S.tab==="home" && _homeVilLbl){
+    else if (S.tab==="home" && _homeVilLbl){
       const _hx = _homeVilLbl.x/W*100;
       const _hv = VILLAGERS.find(vl => vl.homeId === S.roomObjId);
       if (_hv && isSpeaking(_hv)){
@@ -9860,9 +9869,14 @@ function renderPoliceCellPanel(){
   }
   const _dealCost = Math.max(20, Math.round(S.coins * 0.15));
   const _canDeal = S.coins >= _dealCost;
+  const _rmMin = Math.floor(_remaining/60000), _rmSec = Math.floor((_remaining%60000)/1000);
   return `<div class="panel" style="padding:10px">
-    <h3 style="color:#ff8870;margin:0 0 4px">🚔 In Custody — Featherstone Constabulary</h3>
-    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_gameHrsLeft} game-hours remaining (~${_minsLeft} real min)</p>
+    <h3 style="color:#ff8870;margin:0 0 6px">🚔 In Custody — Featherstone Constabulary</h3>
+    <div style="text-align:center;background:rgba(255,80,64,.12);border:1px solid rgba(255,80,64,.4);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="font-size:11px;color:var(--dim);letter-spacing:1px">⏳ TIME TO FREEDOM</div>
+      <div style="font-size:26px;font-weight:800;color:#ff8870;font-variant-numeric:tabular-nums">${_rmMin}:${String(_rmSec).padStart(2,'0')}</div>
+      <div style="font-size:10px;color:var(--dim)">${_gameHrsLeft} game-hours left</div>
+    </div>
     <div style="height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin-bottom:10px">
       <div style="height:6px;background:#ff5040;border-radius:3px;width:${_pct}%;transition:width 1s"></div>
     </div>
@@ -9926,12 +9940,15 @@ function renderCharacterCustomisation(){
 function interiorHtml(title){
   const cw = icanvasW(), ch = icanvasH(), r = pixelScale();
   const stations = STATION_DEFS[S.tab] || [];
-  const lbls = stations.map(st=>{
-    const lvl = findAction(st.skill, st.id)?.lvl || 0;
-    const locked = skillLvl(st.skill) < lvl;
-    const topPct = ((st.fy + 0.12) * 100).toFixed(1);
-    return `<div class="ilbl" style="left:${(st.fx*100).toFixed(1)}%;top:${topPct}%">${st.ic} ${st.lbl}${locked?` <span class="ilbl-lock">Lv${lvl}</span>`:''}</div>`;
-  }).join('');
+  // fishing has no deck node — a single hint to cast on the water instead of station labels
+  const lbls = S.tab==="fishing"
+    ? `<div class="ilbl" style="left:50%;top:22%;transform:translateX(-50%)">🎣 Tap the water to cast</div>`
+    : stations.map(st=>{
+        const lvl = findAction(st.skill, st.id)?.lvl || 0;
+        const locked = skillLvl(st.skill) < lvl;
+        const topPct = ((st.fy + 0.12) * 100).toFixed(1);
+        return `<div class="ilbl" style="left:${(st.fx*100).toFixed(1)}%;top:${topPct}%">${st.ic} ${st.lbl}${locked?` <span class="ilbl-lock">Lv${lvl}</span>`:''}</div>`;
+      }).join('');
   const depotLbl = S.tab==="contracts" ? `<div class="ilbl" style="left:73%;top:5%;background:rgba(255,248,230,.96);color:#453423;font:700 9px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;pointer-events:none">BUYR FREIGHT</div>` : "";
   return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap" style="max-width:${cw*2}px;margin:0 auto;position:relative;">
     <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
@@ -11128,6 +11145,7 @@ setInterval(()=>{
   checkJournal();           // auto-grant Valley Journal "firsts" rewards
   checkVoyages(false);      // land any returned ocean voyages
   if (S.tab==="harbour_office" && (S.voyages||[]).length && Date.now()-_voyageRenderAt > 4000){ _voyageRenderAt = Date.now(); renderMain(); }
+  if (S.tab==="police_cell" && Date.now()-_cellRenderAt > 1000){ _cellRenderAt = Date.now(); renderMain(); }   // tick the countdown / reveal the walk-out
   if (rollMarket(false) && S.tab === "trade") renderMain();
   const _itemsChanged = JSON.stringify(S.items) !== beforeItems;
   if (_itemsChanged && (S.tab in SKILLS || S.tab==="contracts")) {
