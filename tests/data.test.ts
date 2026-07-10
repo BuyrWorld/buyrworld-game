@@ -10,8 +10,8 @@ import { VMAP, V_OBJECTS, VCOLS, VROWS, TILE, VIEW_W, VIEW_H } from '../src/worl
 
 /* ---- items ---- */
 describe('ITEMS', () => {
-  it('has exactly 60 items', () => {
-    expect(Object.keys(ITEMS).length).toBe(60);
+  it('has exactly 66 items', () => {
+    expect(Object.keys(ITEMS).length).toBe(66);
   });
 
   it('every item has a non-empty name', () => {
@@ -35,10 +35,10 @@ describe('ITEMS', () => {
 
 /* ---- skills ---- */
 describe('SKILLS', () => {
-  const SKILL_IDS = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading', 'fishing'];
+  const SKILL_IDS = ['mining', 'steelworks', 'manufacturing', 'logistics', 'trading', 'fishing', 'farming'];
 
-  it('has exactly 9 skills', () => {
-    expect(Object.keys(SKILLS).length).toBe(9);
+  it('has exactly 10 skills', () => {
+    expect(Object.keys(SKILLS).length).toBe(10);
   });
 
   it('contains all expected skill IDs', () => {

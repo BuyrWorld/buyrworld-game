@@ -298,5 +298,35 @@
     "n": "Diamond Drill",
     "ic": "🛠️",
     "v": 620
+  },
+  "carrot": {
+    "n": "Carrot",
+    "ic": "🥕",
+    "v": 8
+  },
+  "tomato": {
+    "n": "Tomato",
+    "ic": "🍅",
+    "v": 12
+  },
+  "sweetcorn": {
+    "n": "Sweetcorn",
+    "ic": "🌽",
+    "v": 16
+  },
+  "pumpkin": {
+    "n": "Pumpkin",
+    "ic": "🎃",
+    "v": 24
+  },
+  "strawberry": {
+    "n": "Strawberry",
+    "ic": "🍓",
+    "v": 20
+  },
+  "sunflower": {
+    "n": "Sunflower",
+    "ic": "🌻",
+    "v": 30
   }
 }

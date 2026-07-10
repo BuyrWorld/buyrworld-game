@@ -30,6 +30,7 @@ import { STORY, chapterComplete, chapterProgress, currentChapterIndex, currentCh
 import { RENOWN_UPGRADES, renownForAch, upgradeById as renownUpgradeById, isBought as renownBought, renownSpent, renownAvailable, canBuy as renownCanBuy, locked as renownLocked, renownXpMult, renownSellMult, renownSpeedMult, renownContractBonus, renownOfflineHours } from './data/renown.ts';
 import { LORE, loreById, loreFound, isLoreComplete } from './data/lore.ts';
 import { POOL, POCKETS, BALL_COLORS, ballGroup, isStripe, rackBalls, allStopped, stepBalls, shootCue, remaining } from './data/pool.ts';
+import { FARM_CROPS, MAX_PLOTS, cropsForLevel, plotsUnlocked as farmPlotsUnlocked, waterReductionMs, fertilisedYield, WATER_COST, FERTILISE_COST } from './data/farming.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -1003,13 +1004,8 @@ const HOME_TIERS = [
   { n:"Homely",         desc:"Cabinets, wall art, and a cosy reading nook.",           cost:4000  },
   { n:"Grand Cottage",  desc:"The finest cottage in the valley. Everything you need.", cost:12000 },
 ];
-const GARDEN_CROPS = [
-  { id:'berry_bush',   n:'Berry Bush',    ic:'🫐', seedCost:15,  ms:20*60*1000, out:{berries:6},              desc:'Juicy berries. Jams and requests.' },
-  { id:'herb_patch',   n:'Herb Patch',    ic:'🌿', seedCost:20,  ms:30*60*1000, out:{wild_herb:4},             desc:'Aromatic herbs for teas and tonics.' },
-  { id:'mushroom_log', n:'Mushroom Log',  ic:'🍄', seedCost:25,  ms:45*60*1000, out:{mushroom:5},              desc:'Grows best in shade. Steady yield.' },
-  { id:'wildflower',   n:'Wildflowers',   ic:'🌸', seedCost:30,  ms:60*60*1000, out:{berries:3, wild_herb:2},  desc:'Pretty and useful. Bees love them.' },
-];
-function plotsUnlocked(tier: number){ return Math.min(4, Math.max(0, tier)); }
+const GARDEN_CROPS = FARM_CROPS;   // Farming skill defines the full, level-gated crop list
+function plotsUnlocked(tier?: number){ return farmPlotsUnlocked(tier ?? (S.homeTier||0), skillLvl('farming')); }
 const DELIVERY_POOL = ["iron_ore","copper_ore","coal","iron_bar","steel_bar","bracket","wood","plank","sardine","mackerel","bass","wiring_loom","gearbox"];
 let _heartbeatAt = 0;
 const _heartbeatCD = {};
@@ -7320,7 +7316,7 @@ function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{},
-    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
+    skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
     counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0, voyages:0 },
@@ -7352,7 +7348,7 @@ function freshState(){
     villagerRequests: {},
     perks: {},
     dailyChallenge: null,
-    garden: [null, null, null, null],
+    garden: [null, null, null, null, null, null],
     keepsakes: [],
     festival: { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[] as string[], notified:"" },
     ownedFurniture: {} as Record<string,number>,
@@ -7395,6 +7391,7 @@ function load(){
       if (!S.skills.fishing) S.skills.fishing = { xp:0 };
       if (!S.skills.foraging) S.skills.foraging = { xp:0 };
       if (!S.skills.crafting) S.skills.crafting = { xp:0 };
+      if (!S.skills.farming) S.skills.farming = { xp:0 };
       if (!S.treeRespawn) S.treeRespawn = {};
       if (!S.bike) S.bike = { owned:false, equipped:false, color:'#e84040', wheels:'standard', hasLight:false, condition:100 };
       if (!S.friendships) S.friendships = {};
@@ -7418,7 +7415,8 @@ function load(){
       if (!S.lore || typeof S.lore !== "object") S.lore = {};
       if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
-      if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
+      if (!Array.isArray(S.garden)) S.garden = [null, null, null, null, null, null];
+      while (S.garden.length < MAX_PLOTS) S.garden.push(null);   // Farming: expand to 6 plots
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
       if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
       if (!S.ownedFurniture) S.ownedFurniture = {};
@@ -8022,6 +8020,7 @@ function updateVillagerRequests(now: number){
   if (S.garden[slot]){ toast("Plot already in use."); return; }
   const crop = GARDEN_CROPS.find(c=>c.id===cropId);
   if (!crop){ toast("Unknown crop."); return; }
+  if (skillLvl('farming') < (crop.lvl||1)){ toast(`🌾 Needs Farming level ${crop.lvl}.`); return; }
   if (S.coins < crop.seedCost){ toast("Not enough coins."); return; }
   S.coins -= crop.seedCost;
   const now = Date.now();
@@ -8031,22 +8030,48 @@ function updateVillagerRequests(now: number){
   toast(`🌱 ${crop.n} planted! Ready in ${Math.round(_ms/60000)} min.`);
   renderMain(); updateHud(); save();
 };
+(globalThis as any).waterGarden = function(slot: number){
+  const g = S.garden?.[slot];
+  if (!g){ toast("Nothing planted here."); return; }
+  if (g.watered){ toast("Already watered."); return; }
+  if (Date.now() >= g.readyAt){ toast("It's ready to harvest!"); return; }
+  if (S.coins < WATER_COST){ toast("Not enough coins."); return; }
+  const crop = GARDEN_CROPS.find(c=>c.id===g.cropId); if (!crop) return;
+  S.coins -= WATER_COST;
+  g.watered = true;
+  g.readyAt = Math.max(Date.now()+1000, g.readyAt - waterReductionMs(crop));
+  toast(`💧 Watered the ${crop.n} — it'll be ready sooner.`);
+  renderMain(); updateHud(); save();
+};
+(globalThis as any).fertiliseGarden = function(slot: number){
+  const g = S.garden?.[slot];
+  if (!g){ toast("Nothing planted here."); return; }
+  if (g.fertilised){ toast("Already fertilised."); return; }
+  if (S.coins < FERTILISE_COST){ toast("Not enough coins."); return; }
+  const crop = GARDEN_CROPS.find(c=>c.id===g.cropId); if (!crop) return;
+  S.coins -= FERTILISE_COST;
+  g.fertilised = true;
+  toast(`🌱 Fertilised the ${crop.n} — a bigger harvest awaits.`);
+  renderMain(); updateHud(); save();
+};
 (globalThis as any).harvestGarden = function(slot: number){
   const g = S.garden?.[slot];
   if (!g){ toast("Nothing to harvest."); return; }
   if (Date.now() < g.readyAt){ toast("Not ready yet!"); return; }
   const crop = GARDEN_CROPS.find(c=>c.id===g.cropId);
   if (!crop) return;
-  for (const [id, qty] of Object.entries(crop.out)){
+  const out = g.fertilised ? fertilisedYield(crop.out) : crop.out;
+  for (const [id, qty] of Object.entries(out)){
     addItem(id, qty as number);
     S.prod[id] = (S.prod[id]||0) + (qty as number);
   }
   S.garden[slot] = null;
   S.counters.gardenHarvests = (S.counters.gardenHarvests||0) + 1;
   _gardenToasted[slot] = false;
-  const outStr = Object.entries(crop.out).map(([id,q])=>`${q}× ${ITEMS[id]?.n||id}`).join(' + ');
-  toast(`🌻 Harvested ${crop.n}! Got ${outStr}.`);
-  log(`🌱 <b>Garden harvest:</b> ${crop.n} → ${outStr}`, "good");
+  grantXp('farming', crop.xp || 15);   // Farming skill levels through harvesting
+  const outStr = Object.entries(out).map(([id,q])=>`${q}× ${ITEMS[id]?.n||id}`).join(' + ');
+  toast(`🌻 Harvested ${crop.n}! Got ${outStr}${g.fertilised?' (fertilised!)':''}.`);
+  log(`🌱 <b>Garden harvest:</b> ${crop.n} → ${outStr} · +${crop.xp||15} Farming XP`, "good");
   achCheck(); renderMain(); updateHud(); save();
 };
 function updateLoans(){
@@ -8931,18 +8956,25 @@ function renderUpgrades(){
 function renderGarden(){
   const _ht = S.homeTier||0;
   const slots = plotsUnlocked(_ht);
+  const flvl = skillLvl('farming');
   if (slots === 0) return `<div class="panel" style="padding:10px;margin-top:8px;text-align:center">
     <p style="font-size:22px;margin:0 0 4px">🌱</p>
     <p style="font-size:12px;font-weight:600;margin:0 0 4px">Cottage Garden</p>
     <p style="color:var(--dim);font-size:11px;margin:0">Upgrade your cottage to Tier 1 to plant your first plot.</p>
   </div>`;
   const now = Date.now();
+  const _nextCrop = FARM_CROPS.find(c=>c.lvl>flvl);
   let html = `<div class="panel" style="padding:10px;margin-top:8px">
-    <h3 style="margin:0 0 4px;font-size:13px">🌱 Cottage Garden</h3>
-    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">Grow crops passively — harvest when ready.</p>`;
-  for (let i=0; i<4; i++){
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <h3 style="margin:0 0 4px;font-size:13px">🌾 Cottage Garden <span style="color:var(--dim);font-weight:400;font-size:11px">· Farming Lv ${flvl}</span></h3>
+    </div>
+    ${xpBarHtml('farming')}
+    <p style="color:var(--dim);font-size:11px;margin:6px 0 10px">Grow crops passively — harvest to level Farming, which unlocks richer produce and more plots.${_nextCrop?` <span style="color:#a8d870">Next: ${_nextCrop.ic} ${_nextCrop.n} at Lv ${_nextCrop.lvl}.</span>`:''}</p>`;
+  const _avail = cropsForLevel(flvl);
+  for (let i=0; i<MAX_PLOTS; i++){
     if (i >= slots){
-      html += `<div style="border:1px dashed #5a4a3a;border-radius:6px;padding:7px 10px;margin-bottom:7px;opacity:.4;text-align:center;font-size:10px;color:var(--dim)">🔒 Plot ${i+1} — unlocks at Cottage Tier ${i+1}</div>`;
+      const _tierNeed = i < 4 ? `Cottage Tier ${i+1}` : (i === 4 ? 'Farming Lv 15' : 'Farming Lv 30');
+      html += `<div style="border:1px dashed #5a4a3a;border-radius:6px;padding:7px 10px;margin-bottom:7px;opacity:.4;text-align:center;font-size:10px;color:var(--dim)">🔒 Plot ${i+1} — unlocks at ${_tierNeed}</div>`;
       continue;
     }
     const g = S.garden[i];
@@ -8950,26 +8982,32 @@ function renderGarden(){
       html += `<div style="border:1px solid #5a6a3a;border-radius:6px;padding:8px;margin-bottom:7px">
         <p style="font-size:10px;color:var(--dim);margin:0 0 5px;font-weight:600">Plot ${i+1} — empty</p>
         <div style="display:flex;flex-wrap:wrap;gap:4px">
-          ${GARDEN_CROPS.map(c=>`<button data-plant-garden="${i}|${c.id}" style="background:#1e3a10;color:#a8d870;border:1px solid #3a6a1a;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px"${S.coins<c.seedCost?' disabled':''} title="${c.desc} (${c.seedCost}c)">${c.ic} ${c.n} <span style="opacity:.65">${c.seedCost}c</span></button>`).join('')}
+          ${_avail.map(c=>`<button data-plant-garden="${i}|${c.id}" style="background:#1e3a10;color:#a8d870;border:1px solid #3a6a1a;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px"${S.coins<c.seedCost?' disabled':''} title="${c.desc} (${c.seedCost}c)">${c.ic} ${c.n} <span style="opacity:.65">${c.seedCost}c</span></button>`).join('')}
         </div>
+        ${_nextCrop?`<p style="font-size:9px;color:var(--dim);margin:5px 0 0;opacity:.7">🔒 ${_nextCrop.ic} ${_nextCrop.n} at Farming Lv ${_nextCrop.lvl}</p>`:''}
       </div>`;
     } else {
       const ready = now >= g.readyAt;
       const pct = Math.round(Math.min(1,(now-g.plantedAt)/(g.readyAt-g.plantedAt))*100);
       const minLeft = ready ? 0 : Math.ceil((g.readyAt-now)/60000);
       const crop = GARDEN_CROPS.find(c=>c.id===g.cropId);
-      const outStr = crop ? Object.entries(crop.out).map(([id,q])=>`${q}× ${ITEMS[id]?.n||id}`).join(' + ') : '';
+      const _shownOut = crop ? (g.fertilised ? fertilisedYield(crop.out) : crop.out) : {};
+      const outStr = Object.entries(_shownOut).map(([id,q])=>`${q}× ${ITEMS[id]?.n||id}`).join(' + ');
       html += `<div style="border:1px solid ${ready?'#40d040':'#3a6a1a'};border-radius:6px;padding:8px;margin-bottom:7px;background:${ready?'rgba(40,200,40,.06)':'transparent'}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-size:12px;font-weight:600">${crop?.ic||'🌱'} ${crop?.n||g.cropId}</span>
+          <span style="font-size:12px;font-weight:600">${crop?.ic||'🌱'} ${crop?.n||g.cropId} ${g.watered?'<span title="watered">💧</span>':''}${g.fertilised?'<span title="fertilised">🌱</span>':''}</span>
           <span style="font-size:10px;color:${ready?'#40d040':'var(--dim)'}">${ready?'✅ Ready!':minLeft+'m left'}</span>
         </div>
         <div style="background:#1a2a0a;border-radius:3px;height:4px;margin-bottom:6px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:${ready?'#40d040':'#2a8a1a'};border-radius:3px;transition:width .5s"></div>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
           <span style="font-size:10px;color:var(--dim)">Yields: ${outStr}</span>
-          ${ready?`<button data-harvest-garden="${i}" style="background:#28c828;color:#000;border:none;padding:3px 12px;border-radius:3px;cursor:pointer;font-size:10px;font-weight:bold">Harvest</button>`:''}
+          <span style="display:flex;gap:4px">
+            ${ready?`<button data-harvest-garden="${i}" style="background:#28c828;color:#000;border:none;padding:3px 12px;border-radius:3px;cursor:pointer;font-size:10px;font-weight:bold">Harvest</button>`
+              :`${g.watered?'':`<button data-water-garden="${i}" title="Water — ready sooner (${WATER_COST}c)" style="background:#1a4a6a;color:#bfe6ff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px"${S.coins<WATER_COST?' disabled':''}>💧 ${WATER_COST}c</button>`}
+                ${g.fertilised?'':`<button data-fertilise-garden="${i}" title="Fertilise — bigger harvest (${FERTILISE_COST}c)" style="background:#4a3a1a;color:#e8d090;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px"${S.coins<FERTILISE_COST?' disabled':''}>🌱 ${FERTILISE_COST}c</button>`}`}
+          </span>
         </div>
       </div>`;
     }
@@ -10678,6 +10716,12 @@ function bindMain(){
   document.querySelectorAll("[data-harvest-garden]").forEach(b=> b.onclick = ()=>{
     (globalThis as any).harvestGarden(parseInt((b as HTMLElement).dataset.harvestGarden));
   });
+  document.querySelectorAll("[data-water-garden]").forEach(b=> b.onclick = ()=>{
+    (globalThis as any).waterGarden(parseInt((b as HTMLElement).dataset.waterGarden));
+  });
+  document.querySelectorAll("[data-fertilise-garden]").forEach(b=> b.onclick = ()=>{
+    (globalThis as any).fertiliseGarden(parseInt((b as HTMLElement).dataset.fertiliseGarden));
+  });
   // daily reward
   document.querySelectorAll("[data-daily-claim]").forEach(b=> b.onclick = ()=>{
     if (S.dailyReward.lastDate === new Date().toDateString()){ toast("Already collected today."); return; }
@@ -10896,7 +10940,7 @@ if (!hadSave){
 }
 
 /* ---- Garden ---- */
-const _gardenToasted = [false, false, false, false];
+const _gardenToasted = [false, false, false, false, false, false];
 function updateGarden(now: number){
   if (!Array.isArray(S.garden)) return;
   const slots = plotsUnlocked(S.homeTier||0);

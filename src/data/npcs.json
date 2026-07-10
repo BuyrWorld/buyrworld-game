@@ -99,7 +99,13 @@
     "stock": [
       "mushroom",
       "berries",
-      "wild_herb"
+      "wild_herb",
+      "carrot",
+      "tomato",
+      "sweetcorn",
+      "pumpkin",
+      "strawberry",
+      "sunflower"
     ]
   }
 ]
