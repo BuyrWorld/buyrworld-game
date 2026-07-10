@@ -27,6 +27,7 @@ import { PRESTIGE_MIN_TOTAL, prestigeEligible, legacyXpMult, legacySellMult, leg
 import { VILLAGE_EVENTS, todaysEvent, marketDayActive, merchantActive, fairActive } from './data/events.ts';
 import { VOYAGE_DESTINATIONS, MAX_VOYAGES, voyageById, voyageDurationMs, voyageProgress, voyageReady } from './data/voyages.ts';
 import { STORY, chapterComplete, chapterProgress, currentChapterIndex, currentChapter, isStoryComplete } from './data/story.ts';
+import { RENOWN_UPGRADES, renownForAch, upgradeById as renownUpgradeById, isBought as renownBought, renownSpent, renownAvailable, canBuy as renownCanBuy, locked as renownLocked, renownXpMult, renownSellMult, renownSpeedMult, renownContractBonus, renownOfflineHours } from './data/renown.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -152,7 +153,7 @@ function sellPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
   const _mkt = marketDayActive(_eventDay()) ? 1.20 : 1;   // Market Day: +20% on every sale
-  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell') * legacySellMult(S.legacy) * _mkt);
+  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell') * legacySellMult(S.legacy) * renownSellMult(S.renown?.bought) * _mkt);
   return Math.max(1, Math.min(p, buyPrice(npc, it) - 1));
 }
 function doTrade(npcId, it, qty, mode){
@@ -624,6 +625,10 @@ const ACH = [
   { id:"new_chapter",     ic:"🌟", n:"A New Chapter",    ds:"Begin your first New Chapter — pass the valley to a successor.",       r:1000, c:()=>(S.legacy||0)>=1 },
   { id:"living_legacy",   ic:"✨", n:"Living Legacy",    ds:"Reach Legacy 3 — three New Chapters written.",                        r:5000, c:()=>(S.legacy||0)>=3 },
 ];
+// Renown earned = one point per completed achievement, +1 for the meatier ones.
+function renownEarned(){
+  return ACH.reduce((a, x) => a + (S.ach && S.ach[x.id] ? renownForAch(x.r||0) : 0), 0);
+}
 const ACH_PROG = {
   ore_100:     ()=>({ cur:Math.min(100,  prodSum(ORES)),                              max:100   }),
   ore_1000:    ()=>({ cur:Math.min(1000, prodSum(ORES)),                              max:1000  }),
@@ -659,8 +664,15 @@ function achCheck(){
     if (a.c()){
       S.ach[a.id] = 1;
       S.coins += a.r;
-      toast(`🏆 AWARD: ${a.n}! +${a.r} COINS`);
-      log(`🏆 Award unlocked: <b>${a.n}</b> — ${a.ds} (+${a.r} coins)`, "rare");
+      const _rp = renownForAch(a.r||0);
+      toast(`🏆 AWARD: ${a.n}! +${a.r} COINS · +${_rp} 🎖️`);
+      log(`🏆 Award unlocked: <b>${a.n}</b> — ${a.ds} (+${a.r} coins, +${_rp} Renown)`, "rare");
+      // One-time pointer to the Hall of Renown the first time Renown is spendable.
+      if (!S.seenTips) S.seenTips = {};
+      if (!S.seenTips.renownIntro && renownAvailable(renownEarned(), S.renown?.bought||{}) >= (RENOWN_UPGRADES[0]?.cost||3)){
+        S.seenTips.renownIntro = 1;
+        setTimeout(()=>{ toast("🎖️ You've earned enough Renown to buy a permanent boost — see the 📖 Ledger → Hall of Renown."); }, 1600);
+      }
     }
   }
 }
@@ -2639,6 +2651,9 @@ function openLedger(){
     ${row('⚡ Power grid', gt.tier>0?`${gt.ic} ${gt.name}`:'off-grid')}
     ${row('💎 Net worth', `${fmt(netWorth())}`, 'coins')}
     ${row('🏅 Achievements', `${achDone}/${ACH.length}`)}
+    ${(()=>{ const av=renownAvailable(renownEarned(), S.renown?.bought||{}); return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px">
+      <span style="color:var(--dim)">🎖️ Hall of Renown</span>
+      <button id="ledger-renown" style="background:${av>0?'#b07a2a':'#5a5040'};color:#160f08;border:none;padding:4px 11px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:800">${av>0?`Spend ${av} 🎖️`:'Open'}</button></div>`; })()}
     ${row('💖 Best friends', `${bff}/${VILLAGERS.length}`)}
     ${row('📊 Market', `${ph.ic} ${ph.name}`)}
     ${(S.legacy||0) > 0 ? row('🌟 Legacy', `${"⭐".repeat(legacyStars(S.legacy))} ${legacyRank(S.legacy)}`, legacyBonusText(S.legacy)) : ''}
@@ -2657,6 +2672,7 @@ function openLedger(){
   </div>`;
   document.body.appendChild(el);
   el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
+  const _rn = document.getElementById("ledger-renown"); if (_rn) _rn.onclick = ()=>{ el.remove(); openRenown(); };
   const _sb = document.getElementById("ledger-story"); if (_sb) _sb.onclick = ()=>{ el.remove(); openStory(); };
   const _pb = document.getElementById("ledger-prestige"); if (_pb) _pb.onclick = ()=>{ el.remove(); openPrestige(); };
 }
@@ -2884,6 +2900,64 @@ function openStory(){
   }
   const nb = el.querySelector("[data-story-next]");
   if (nb) nb.onclick = () => advanceStory();
+}
+// ---- Hall of Renown — spend achievement-earned Renown on small permanent boosts ----
+function buyRenown(id){
+  if (!S.renown) S.renown = { bought:{} };
+  const earned = renownEarned();
+  if (!renownCanBuy(earned, S.renown.bought, id)){ toast("Not enough Renown yet."); return; }
+  const u = renownUpgradeById(id);
+  S.renown.bought[id] = true;
+  if (u.effect.type === 'contract') fillContracts();   // Deep Pockets opens a slot immediately
+  try{ SFX.fanfare(); }catch(e){}
+  toast(`🎖️ ${u.ic} ${u.name} unlocked!`);
+  log(`🎖️ <b>Hall of Renown</b> — ${u.name}: ${u.desc}`, "rare");
+  updateHud(); save(); openRenown();
+}
+function openRenown(){
+  if (!S.renown) S.renown = { bought:{} };
+  const earned = renownEarned();
+  const bought = S.renown.bought;
+  const avail = renownAvailable(earned, bought);
+  const spent = renownSpent(bought);
+  const achDone = ACH.filter(a=>S.ach && S.ach[a.id]).length;
+  const cards = RENOWN_UPGRADES.map(u=>{
+    const owned = renownBought(bought, u.id);
+    const lock = renownLocked(bought, u.id);
+    const can = renownCanBuy(earned, bought, u.id);
+    const btn = owned
+      ? `<span style="font-size:11px;font-weight:800;color:#4aa86a">✓ Owned</span>`
+      : lock
+        ? `<span style="font-size:11px;color:var(--dim)">🔒 needs ${renownUpgradeById(u.req)?.name||'prior'}</span>`
+        : `<button data-renown="${u.id}" ${can?'':'disabled'} style="background:${can?'#b07a2a':'#6a5a3a'};color:#160f08;border:none;padding:6px 12px;border-radius:5px;cursor:${can?'pointer':'default'};font-size:12px;font-weight:800">🎖️ ${u.cost}</button>`;
+    return `<div style="display:flex;gap:10px;align-items:center;padding:9px 2px;border-top:1px solid rgba(0,0,0,.08);opacity:${owned?.7:lock?.6:1}">
+      <div style="font-size:24px;width:28px;text-align:center;flex-shrink:0">${u.ic}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13px">${u.name}</div>
+        <div style="font-size:11px;color:var(--dim);line-height:1.4">${u.desc}</div></div>
+      <div style="flex-shrink:0">${btn}</div>
+    </div>`;
+  }).join("");
+  const inner = `<div class="dd-card" style="max-width:520px">
+    <button class="vp-close" onclick="document.getElementById('renown-modal').remove()">✕</button>
+    <div class="dd-title">🎖️ Hall of Renown</div>
+    <div class="dd-sub">Earn Renown by completing achievements, then spend it on permanent boosts.</div>
+    <div style="background:rgba(176,122,42,.14);border:1px solid rgba(176,122,42,.4);border-radius:6px;padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:13px">🎖️ Renown to spend</span>
+      <span style="font-size:22px;font-weight:800;color:#d89a3a">${avail}</span>
+    </div>
+    <div style="font-size:11px;color:var(--dim);margin-bottom:2px">${achDone}/${ACH.length} achievements · ${earned} earned · ${spent} spent</div>
+    <div style="max-height:52vh;overflow-y:auto">${cards}</div>
+  </div>`;
+  let el = document.getElementById("renown-modal");
+  if (el){ el.innerHTML = inner; }
+  else {
+    el = document.createElement("div");
+    el.id = "renown-modal"; el.className = "dd-modal";
+    el.innerHTML = inner;
+    document.body.appendChild(el);
+    el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+  }
+  el.querySelectorAll("[data-renown]").forEach(b => b.onclick = () => buyRenown(b.getAttribute("data-renown")));
 }
 // ---- Valley Journal (Task 9): a gentle first-session checklist of "firsts" ----
 const VALLEY_JOURNAL = [
@@ -7041,7 +7115,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" },
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -7136,6 +7210,7 @@ function load(){
       if (typeof S.legacy !== "number") S.legacy = 0;
       if (!Array.isArray(S.voyages)) S.voyages = [];
       if (!S.story || typeof S.story.done !== "number") S.story = { done:0, seen:0, title:"" };
+      if (!S.renown || typeof S.renown.bought !== "object") S.renown = { bought:{} };
       if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
@@ -7246,6 +7321,7 @@ function speedMult(skill){
   if (_sb > 0) m *= (1 - _sb);
   const _kb = keepsakeSpeedBonus(skill);
   if (_kb > 0) m *= (1 - _kb);
+  m *= renownSpeedMult(S.renown?.bought);   // Hall of Renown: Well Rested
   return Math.max(0.20, m);
 }
 function updateBeachBirds(){
@@ -7971,6 +8047,7 @@ function grantXp(skill, xp){
   { const _mb = mealBuffMult('xp'); if (_mb !== 1) xp = Math.round(xp * _mb); }   // cooking: a meal that sharpens the mind
   const _pxm = prestigeXpMult(); if (_pxm > 1) xp = Math.round(xp * _pxm);
   const _lxm = legacyXpMult(S.legacy); if (_lxm > 1) xp = Math.round(xp * _lxm);   // permanent Legacy bonus
+  { const _rxm = renownXpMult(S.renown?.bought); if (_rxm > 1) xp = Math.round(xp * _rxm); }   // Hall of Renown: Diligent Hands
   const _xpBonus = skillXpBonus(skill); if (_xpBonus > 0) xp = Math.round(xp * (1 + _xpBonus));
   const _kxp = keepsakeXpBonus(skill); if (_kxp > 0) xp = Math.round(xp * (1 + _kxp));
   const before = skillLvl(skill);
@@ -8144,7 +8221,8 @@ function swing(){
 
 function applyOffline(){
   const now = Date.now();
-  const elapsed = Math.min(now - (S.lastSeen || now), OFFLINE_CAP_MS);
+  const _cap = OFFLINE_CAP_MS + renownOfflineHours(S.renown?.bought) * 3600 * 1000;   // Hall of Renown: Night Owl
+  const elapsed = Math.min(now - (S.lastSeen || now), _cap);
   if (elapsed < 60*1000) return;
   const passiveLines = [];
   let passiveCoins = 0;
@@ -8238,7 +8316,7 @@ function applyOffline(){
   }
 }
 
-function contractSlots(){ return 2 + (skillLvl("logistics") >= 20 ? 1 : 0); }
+function contractSlots(){ return 2 + (skillLvl("logistics") >= 20 ? 1 : 0) + renownContractBonus(S.renown?.bought); }
 function genContract(){
   const mLvl = skillLvl("manufacturing");
   const opts = CONTRACT_POOL.filter(c => c.minLvl <= Math.max(mLvl, skillLvl("steelworks")));
