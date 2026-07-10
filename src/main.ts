@@ -203,7 +203,7 @@ function frostSvg(size){
 const TUT = [
   { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>5 Iron Ore</b>.`,
     obj:"Mine 5 Iron Ore", cond:()=> (S.prod.iron_ore||0) >= 5, reward:60,
-    target:"rock_iron", where:"Quarry (far west)", cur:()=>(S.prod.iron_ore||0), max:5 },
+    target:"rock_iron4", where:"Quarry (far west)", cur:()=>(S.prod.iron_ore||0), max:5 },
   { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk to the <b>Furnace</b> (the building with the chimney, west of the quarry) and smelt <b>2 Iron Bars</b>.`,
     obj:"Smelt 2 Iron Bars", cond:()=> (S.prod.iron_bar||0) >= 2, reward:90,
     target:"furnace", where:"The Furnace", cur:()=>(S.prod.iron_bar||0), max:2 },
@@ -262,6 +262,7 @@ function firstRunHintHtml(){
 // a floating label when it's on screen, or an edge arrow pointing toward it when not.
 const QUEST_TARGET_LABEL = {
   rock_iron: "⛏️ Iron Rock — tap to mine!",
+  rock_iron4: "⛏️ Iron Rock — tap to mine!",
   furnace:   "🔥 Furnace — smelt here",
   workshop:  "🏭 Workshop — craft here",
   depot:     "📦 Depot — deliver here",
