@@ -19,6 +19,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='8' width='24' height='20' rx='2' fill='%23d9a86a'/%3E%3Crect x='14' y='8' width='4' height='20' fill='%23f6ecd2'/%3E%3Ccircle cx='16' cy='19' r='6' fill='%235db3d8'/%3E%3Crect x='12' y='16' width='4' height='3' fill='%233aa66a'/%3E%3Crect x='17' y='19' width='4' height='3' fill='%233aa66a'/%3E%3Crect x='3' y='4' width='11' height='5' fill='%23c9955a'/%3E%3Crect x='18' y='4' width='11' height='5' fill='%23c9955a'/%3E%3C/svg%3E">
+<!-- Installable PWA -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#5aa54a">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BuyrWorld">
 <style>
 :root{
   --bg:#9fd6a8;      /* meadow green */
@@ -707,6 +715,24 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 (function(){ const b = document.getElementById('ld-bar'); if (b) b.style.width = '60%'; })();
 /* game logic lives in src/main.ts — loaded via the module script above */
 
+/* PWA: register the service worker for offline play + installability */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('/sw.js').catch(function(){}); });
+}
+
+/* PWA: native "Install app" prompt via a small floating button */
+(function(){
+  var deferred = null;
+  var btn = document.createElement('button');
+  btn.id = 'pwa-install';
+  btn.type = 'button';
+  btn.textContent = '📲 Install BuyrWorld';
+  btn.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9999;display:none;background:#5aa54a;color:#fff;border:none;padding:9px 14px;border-radius:8px;font:600 13px system-ui,sans-serif;box-shadow:0 3px 10px rgba(0,0,0,.35);cursor:pointer';
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferred = e; if (document.body.contains(btn)) btn.style.display = 'block'; });
+  window.addEventListener('appinstalled', function(){ btn.style.display = 'none'; deferred = null; });
+  btn.addEventListener('click', function(){ if (!deferred) { btn.style.display='none'; return; } deferred.prompt(); deferred.userChoice.finally(function(){ deferred = null; btn.style.display = 'none'; }); });
+  window.addEventListener('load', function(){ document.body.appendChild(btn); if (deferred) btn.style.display = 'block'; });
+})();
 </script>
 </body>
 </html>
