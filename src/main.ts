@@ -34,6 +34,7 @@ import { POOL, POCKETS, BALL_COLORS, ballGroup, isStripe, rackBalls, allStopped,
 import { FARM_CROPS, MAX_PLOTS, cropsForLevel, plotsUnlocked as farmPlotsUnlocked, waterReductionMs, fertilisedYield, WATER_COST, FERTILISE_COST } from './data/farming.ts';
 import { BR, BOT_NAMES, BOT_COLORS, spawnFighters, stormRadius, outsideStorm, applyDamage, aliveCount, aliveEnemies, player as brPlayer, playerWon, playerLost, nearestEnemy, aimAngle, bulletHits, clampToArena, STORM_CX, STORM_CY } from './data/battle.ts';
 import { CUES, cueById, cuePower, cueAim, cueOwned, canBuyCue } from './data/cues.ts';
+import { DART_SECTORS, DART_RINGS, scoreAt as dartScoreAt, aimPointFor, DART_DIFFICULTIES, difficultyById, DARTS_START, dartOutcome, botTarget } from './data/darts.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -630,6 +631,8 @@ const ACH = [
   { id:"market_mover",    ic:"📊", n:"Market Mover",     ds:"Move prices — cause 5 market gluts or shortages by trading in bulk.", r:400, c:()=>(S.counters?.econShocks||0)>=5 },
   { id:"new_chapter",     ic:"🌟", n:"A New Chapter",    ds:"Begin your first New Chapter — pass the valley to a successor.",       r:1000, c:()=>(S.legacy||0)>=1 },
   { id:"living_legacy",   ic:"✨", n:"Living Legacy",    ds:"Reach Legacy 3 — three New Chapters written.",                        r:5000, c:()=>(S.legacy||0)>=3 },
+  { id:"game_shot",       ic:"🎯", n:"Game Shot!",        ds:"Win a game of 301 darts at The Rose & Pallet.",                       r:200,  c:()=>(S.darts?.wins||0)>=1 },
+  { id:"ton_eighty",      ic:"🎯", n:"Ringer Beater",     ds:"Beat the Ringer at darts — the toughest opponent.",                   r:900,  c:()=>!!(S.darts?.beatRinger) },
   { id:"victory_medal",   ic:"🏅", n:"Victory Medal",     ds:"Win a game of Battle Royale on your cottage console.",                 r:300,  c:()=>(S.arcade?.medals||0)>=1 },
   { id:"battle_champion", ic:"👑", n:"Battle Champion",   ds:"Win Battle Royale five times.",                                       r:1500, c:()=>(S.arcade?.medals||0)>=5 },
   { id:"shipwright",      ic:"🛥️", n:"Shipwright",       ds:"Upgrade your boat to the Coastal Cutter at the Shipyard.",             r:600,  c:()=>(S.fleet?.tier||0)>=2 },
@@ -6314,6 +6317,16 @@ function drawInterior(t){
     ctx.fillStyle="#ffd666";
     fitText(ctx, "THE ROSE", W-46, 9,  64, 9, { weight:"bold" });
     fitText(ctx, "& PALLET", W-46, 20, 64, 9, { weight:"bold" });
+    // dartboard on the back wall (tap to play darts)
+    { const _dbx=46, _dby=22, _dbr=15;
+      _pubDartsRect = { x:_dbx-_dbr-4, y:_dby-_dbr-4, w:_dbr*2+8, h:_dbr*2+14 };
+      ctx.fillStyle="#141210"; ctx.beginPath(); ctx.arc(_dbx,_dby,_dbr+2,0,7); ctx.fill();
+      for(let i=0;i<20;i++){ const t1=(i-0.5)*Math.PI/10, t2=(i+0.5)*Math.PI/10; ctx.fillStyle=i%2?'#e8dcc0':'#2a2620'; ctx.beginPath(); ctx.moveTo(_dbx,_dby); ctx.arc(_dbx,_dby,_dbr,t1,t2); ctx.closePath(); ctx.fill(); }
+      ctx.strokeStyle="#c02828"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(_dbx,_dby,_dbr*0.6,0,7); ctx.stroke();
+      ctx.strokeStyle="#1a9a4a"; ctx.beginPath(); ctx.arc(_dbx,_dby,_dbr*0.92,0,7); ctx.stroke();
+      ctx.fillStyle="#1a9a4a"; ctx.beginPath(); ctx.arc(_dbx,_dby,3,0,7); ctx.fill(); ctx.fillStyle="#c02828"; ctx.beginPath(); ctx.arc(_dbx,_dby,1.5,0,7); ctx.fill();
+      ctx.fillStyle="#ffe27a"; fitText(ctx,"🎯 DARTS",_dbx,_dby+_dbr+5,36,6,{weight:"bold",family:"'Arial',sans-serif"});
+    }
   }
   if (S.tab==="police_station"){
     room("#1a2a5a","#c0c8d8","#d8e0ec","#ccd8e8","#2a3a5a");
@@ -7035,10 +7048,14 @@ function interiorClick(e){
       if (_intChat){ _intChat = null; }   // tapped away — dismiss, then allow the move below
     }
   }
-  // pub: tap the pool table to play a frame
+  // pub: tap the pool table to play a frame, or the dartboard for darts
   if (S.tab === "pub" && _pubTableRect){
     const r = _pubTableRect;
     if (cx>=r.x && cx<=r.x+r.w && cy>=r.y && cy<=r.y+r.h){ openPool(); return; }
+  }
+  if (S.tab === "pub" && _pubDartsRect){
+    const r = _pubDartsRect;
+    if (cx>=r.x && cx<=r.x+r.w && cy>=r.y && cy<=r.y+r.h){ openDarts(); return; }
   }
   // cottage: tap the games console to play Battle Royale
   if (S.tab === "myhome" && _homeConsoleRect){
@@ -7360,7 +7377,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"],
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -7462,6 +7479,7 @@ function load(){
       if (!S.arcade || typeof S.arcade.medals !== "number") S.arcade = { medals:0, plays:0 };
       if (typeof S.poolCue !== "string") S.poolCue = "house";
       if (!Array.isArray(S.poolCues)) S.poolCues = ["house"];
+      if (!S.darts || typeof S.darts.wins !== "number") S.darts = { wins:0, beatRinger:false };
       if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null, null, null];
@@ -9487,12 +9505,18 @@ function renderPub(): string {
       <p style="margin:0 0 6px"><b>🎱 The Pool Table</b></p>
       <p style="color:var(--dim);font-size:12px;margin:0 0 8px">Rex chalks a cue and grins. "Fancy a frame? First to clear their set and sink the 8."</p>
       <button data-play-pool="1" style="background:#1a6a2a;color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:700">🎱 Play a Frame</button>
+    </div>
+    <div class="panel" style="padding:10px;margin-top:8px">
+      <p style="margin:0 0 6px"><b>🎯 The Dartboard</b></p>
+      <p style="color:var(--dim);font-size:12px;margin:0 0 8px">A well-worn oche by the fire. "301, best of one — pick your poison." Face a Rookie, Regular, Sharp or Ringer.</p>
+      <button data-play-darts="1" style="background:#7a2a2a;color:#fff;border:none;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:700">🎯 Play Darts</button>
     </div>`;
 }
 // ===== Playable 8-Ball Pool (The Rose & Pallet) =====
 let _pool = null;
 let _pubTableRect = null;   // clickable bounds of the pub's decorative table
 let _homeConsoleRect = null; // clickable bounds of the games console in the cottage
+let _pubDartsRect = null;    // clickable bounds of the pub dartboard
 const POOL_SHOT_TIME = 30000;   // shot clock (ms) for each player
 function openPool(){
   if (document.getElementById("pool-modal")) return;
@@ -9954,6 +9978,148 @@ function _brDraw(){
     else { g.fillStyle="#ff7a6a"; g.font="bold 22px sans-serif"; g.fillText("KNOCKED OUT",W/2,H/2); }
     g.textAlign="left"; g.textBaseline="alphabetic";
   }
+}
+// ===== Darts — 301 vs an opponent, at your chosen difficulty (The Rose & Pallet) =====
+let _darts = null;
+const DARTS_W=340, DARTS_H=300, DARTS_CX=170, DARTS_CY=142, DARTS_R=116;
+function _gauss(s){ let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)*s; }
+function openDarts(diffId){
+  if(document.getElementById("darts-modal")) return;
+  _darts=null;
+  const el=document.createElement("div"); el.id="darts-modal"; el.className="dd-modal";
+  el.innerHTML=`<div class="dd-card" style="max-width:520px">
+    <button class="vp-close" id="darts-close">✕</button>
+    <div class="dd-title">🎯 Darts — 301</div>
+    <div id="darts-body"></div>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click",e=>{ if(e.target===el) _dartsClose(); });
+  document.getElementById("darts-close").onclick=_dartsClose;
+  _dartsPickDifficulty();
+}
+function _dartsClose(){ if(_darts&&_darts.raf) cancelAnimationFrame(_darts.raf); const e=document.getElementById("darts-modal"); if(e) e.remove(); _darts=null; }
+function _dartsPickDifficulty(){
+  const body=document.getElementById("darts-body"); if(!body) return;
+  const btns=DART_DIFFICULTIES.map(d=>`<button data-darts-diff="${d.id}" style="display:block;width:100%;text-align:left;background:#2a3a4a;color:#fff;border:1px solid #3a5a7a;padding:9px 12px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:7px"><b>${d.n}</b> <span style="color:var(--dim);font-size:11px;float:right">win: ${fmt(d.reward)}c</span><br><span style="color:var(--dim);font-size:11px">${d.id==='rookie'?'Wild aim — a gentle warm-up.':d.id==='regular'?'A steady hand.':d.id==='sharp'?'Rarely misses the treble.':'A tungsten machine — good luck.'}</span></button>`).join('');
+  body.innerHTML=`<p style="color:var(--dim);font-size:12px;margin:0 0 10px">First to bring 301 down to exactly zero wins. Pick your opponent:</p>${btns}`;
+  body.querySelectorAll("[data-darts-diff]").forEach(b=> b.onclick=()=> _dartsStart(b.getAttribute("data-darts-diff")));
+}
+function _dartsStart(diffId){
+  const diff=difficultyById(diffId);
+  _darts={ diff, you:DARTS_START, opp:DARTS_START, turn:'you', dartsLeft:3, turnStart:DARTS_START,
+    marks:[], aim:{ x:DARTS_CX, y:DARTS_CY }, over:false, result:null, nextThrow:0, msg:'Your throw — tap the board!', raf:0 };
+  const body=document.getElementById("darts-body");
+  body.innerHTML=`<div id="darts-msg" style="min-height:20px;font-size:12px;margin-bottom:6px">${_darts.msg}</div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;margin-bottom:6px">
+      <span style="color:#68cc68">You: <span id="darts-you">301</span></span>
+      <span id="darts-darts" style="color:var(--dim);font-weight:400"></span>
+      <span style="color:#e0a060">${diff.n}: <span id="darts-opp">301</span></span>
+    </div>
+    <div style="background:#0b0f14;border-radius:10px;padding:8px"><canvas id="darts-cv" width="${DARTS_W}" height="${DARTS_H}" style="width:100%;height:auto;display:block;touch-action:none;cursor:crosshair"></canvas></div>
+    <div id="darts-again" style="text-align:center;margin-top:8px"></div>`;
+  const cv=document.getElementById("darts-cv");
+  const _loc=(e)=>{ const r=cv.getBoundingClientRect(); const p=(e.touches&&e.touches[0])||e; return { x:(p.clientX-r.left)*(cv.width/r.width), y:(p.clientY-r.top)*(cv.height/r.height) }; };
+  cv.addEventListener("mousemove",(e)=>{ if(_darts) _darts.aim=_loc(e); });
+  cv.addEventListener("mousedown",(e)=>{ if(!_darts) return; e.preventDefault(); _darts.aim=_loc(e); _dartsPlayerThrow(); });
+  cv.addEventListener("touchstart",(e)=>{ if(!_darts) return; e.preventDefault(); _darts.aim=_loc(e); _dartsPlayerThrow(); },{passive:false});
+  cv.addEventListener("touchmove",(e)=>{ if(!_darts) return; e.preventDefault(); _darts.aim=_loc(e); },{passive:false});
+  _dartsLoop();
+}
+function _dartsSetMsg(m){ if(_darts) _darts.msg=m; const e=document.getElementById("darts-msg"); if(e) e.textContent=m; }
+function _dartsSync(){
+  const y=document.getElementById("darts-you"), o=document.getElementById("darts-opp"), d=document.getElementById("darts-darts");
+  if(y) y.textContent=_darts.you; if(o) o.textContent=_darts.opp;
+  if(d) d.textContent=_darts.over?'':(_darts.turn==='you'?`🎯 ${_darts.dartsLeft} left`:`${_darts.diff.n} throwing…`);
+}
+function _dartsThrow(who, landX, landY){
+  const sc=dartScoreAt(landX-DARTS_CX, landY-DARTS_CY, DARTS_R).score;
+  _darts.marks.push({ x:landX, y:landY, who });
+  const cur = who==='you' ? _darts.you : _darts.opp;
+  const out = dartOutcome(cur, sc);
+  if(out.win){ if(who==='you'){ _darts.you=0; _dartsEnd('win'); } else { _darts.opp=0; _dartsEnd('lose'); } return; }
+  if(out.bust){ _dartsSetMsg(`${who==='you'?'You':_darts.diff.n} BUST on ${sc}! Score stays.`); if(who==='you') _darts.you=_darts.turnStart; else _darts.opp=_darts.turnStart; _darts.dartsLeft=0; return; }
+  if(who==='you') _darts.you=out.remaining; else _darts.opp=out.remaining;
+  _darts.dartsLeft--;
+  _dartsSetMsg(`${who==='you'?'You':_darts.diff.n} scored ${sc}.`);
+}
+function _dartsPlayerThrow(){
+  if(!_darts||_darts.over||_darts.turn!=='you'||_darts.dartsLeft<=0) return;
+  const s=DARTS_R*0.028;   // your steady hand (small scatter)
+  _dartsThrow('you', _darts.aim.x+_gauss(s), _darts.aim.y+_gauss(s));
+  if(_darts.over) return;
+  if(_darts.dartsLeft<=0){ _dartsSwitch(); }
+}
+function _dartsBotThrow(){
+  const t=botTarget(_darts.opp); const pt=aimPointFor(t.number,t.ring,DARTS_R);
+  const s=DARTS_R*_darts.diff.scatter;
+  _dartsThrow('opp', DARTS_CX+pt.x+_gauss(s), DARTS_CY+pt.y+_gauss(s));
+  if(_darts.over) return;
+  if(_darts.dartsLeft<=0) _dartsSwitch();
+}
+function _dartsSwitch(){
+  _darts.turn = _darts.turn==='you' ? 'opp' : 'you';
+  _darts.dartsLeft=3; _darts.marks=[];
+  _darts.turnStart = _darts.turn==='you' ? _darts.you : _darts.opp;
+  _darts.nextThrow = Date.now()+700;
+  _dartsSetMsg(_darts.turn==='you' ? 'Your throw — tap the board!' : `${_darts.diff.n} steps up…`);
+}
+function _dartsEnd(result){
+  if(_darts.over) return; _darts.over=true; _darts.result=result;
+  const again=document.getElementById("darts-again");
+  if(result==='win'){
+    if(!S.darts) S.darts={ wins:0, beatRinger:false };
+    S.darts.wins=(S.darts.wins||0)+1; if(_darts.diff.id==='ringer') S.darts.beatRinger=true;
+    S.coins+=_darts.diff.reward; S.counters.coinsEarned=(S.counters.coinsEarned||0)+_darts.diff.reward;
+    grantXp('trading', 25);
+    try{ SFX.fanfare&&SFX.fanfare(); }catch(e){}
+    toast(`🎯 Game shot! You beat ${_darts.diff.n} at darts. +${fmt(_darts.diff.reward)}c`);
+    log(`🎯 <b>Darts</b> — checked out 301 to beat <b>${_darts.diff.n}</b>. +${fmt(_darts.diff.reward)} coins.`,"rare");
+    achCheck(); updateHud(); save();
+    _dartsSetMsg(`🏆 Game shot! You beat ${_darts.diff.n}. +${fmt(_darts.diff.reward)}c`);
+  } else {
+    _dartsSetMsg(`💥 ${_darts.diff.n} checks out. Better luck next leg!`); save();
+  }
+  if(again) again.innerHTML=`<button id="darts-rematch" style="background:#2a7a2a;color:#fff;border:none;padding:6px 16px;border-radius:5px;cursor:pointer;font-weight:700;margin-right:6px">🎯 Rematch</button><button id="darts-newdiff" style="background:#3a4a5a;color:#fff;border:none;padding:6px 16px;border-radius:5px;cursor:pointer;font-weight:700">Change opponent</button>`;
+  const rb=document.getElementById("darts-rematch"); if(rb) rb.onclick=()=>_dartsStart(_darts.diff.id);
+  const nb=document.getElementById("darts-newdiff"); if(nb) nb.onclick=()=>{ _darts=null; _dartsPickDifficulty(); };
+}
+function _dartsLoop(){
+  if(!_darts) return;
+  if(!_darts.over && _darts.turn==='opp' && _darts.dartsLeft>0 && Date.now()>_darts.nextThrow){
+    _dartsBotThrow(); _darts.nextThrow=Date.now()+800;
+  }
+  _dartsDraw(); _dartsSync();
+  _darts.raf=requestAnimationFrame(_dartsLoop);
+}
+function _dartsDraw(){
+  const cv=document.getElementById("darts-cv"); if(!cv||!_darts) return;
+  const g=cv.getContext("2d"), CX=DARTS_CX, CY=DARTS_CY, R=DARTS_R;
+  g.fillStyle="#0b0f14"; g.fillRect(0,0,DARTS_W,DARTS_H);
+  // number ring backing
+  g.fillStyle="#161310"; g.beginPath(); g.arc(CX,CY,R*1.18,0,7); g.fill();
+  g.fillStyle="#26221c"; g.beginPath(); g.arc(CX,CY,R*1.02,0,7); g.fill();
+  const wedge=(rIn,rOut,i,color)=>{ const t1=(i-0.5)*Math.PI/10-Math.PI/2, t2=(i+0.5)*Math.PI/10-Math.PI/2;
+    g.beginPath(); g.arc(CX,CY,rOut,t1,t2); g.arc(CX,CY,rIn,t2,t1,true); g.closePath(); g.fillStyle=color; g.fill(); };
+  for(let i=0;i<20;i++){ const light=i%2===0;
+    wedge(R*DART_RINGS.outer,R*DART_RINGS.trebleIn,i, light?'#e8dcc0':'#1a1712');
+    wedge(R*DART_RINGS.trebleIn,R*DART_RINGS.trebleOut,i, light?'#c02828':'#1a9a4a');
+    wedge(R*DART_RINGS.trebleOut,R*DART_RINGS.doubleIn,i, light?'#e8dcc0':'#1a1712');
+    wedge(R*DART_RINGS.doubleIn,R*DART_RINGS.doubleOut,i, light?'#c02828':'#1a9a4a');
+  }
+  g.fillStyle="#1a9a4a"; g.beginPath(); g.arc(CX,CY,R*DART_RINGS.outer,0,7); g.fill();
+  g.fillStyle="#c02828"; g.beginPath(); g.arc(CX,CY,R*DART_RINGS.bull,0,7); g.fill();
+  // numbers
+  g.fillStyle="#f0e8d0"; g.font="bold 11px sans-serif"; g.textAlign="center"; g.textBaseline="middle";
+  for(let i=0;i<20;i++){ const A=i*Math.PI/10; g.fillText(String(DART_SECTORS[i]), CX+Math.sin(A)*R*1.1, CY-Math.cos(A)*R*1.1); }
+  g.textAlign="left"; g.textBaseline="alphabetic";
+  // dart marks
+  for(const m of _darts.marks){ g.fillStyle=m.who==='you'?"#ffe27a":"#7ad0ff"; g.beginPath(); g.arc(m.x,m.y,2.6,0,7); g.fill();
+    g.strokeStyle=m.who==='you'?"#c89020":"#3a80b0"; g.lineWidth=1; g.beginPath(); g.moveTo(m.x,m.y); g.lineTo(m.x+4,m.y-6); g.stroke(); }
+  // player reticle
+  if(!_darts.over && _darts.turn==='you'){ const a=_darts.aim;
+    g.strokeStyle="rgba(255,255,255,.8)"; g.lineWidth=1;
+    g.beginPath(); g.arc(a.x,a.y,7,0,7); g.stroke();
+    g.beginPath(); g.moveTo(a.x-11,a.y); g.lineTo(a.x+11,a.y); g.moveTo(a.x,a.y-11); g.lineTo(a.x,a.y+11); g.stroke(); }
 }
 function renderFurnitureShop(): string {
   const _owned = S.ownedFurniture || {};
@@ -10893,6 +11059,7 @@ function bindMain(){
     achCheck(); renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-play-pool]").forEach(b=> (b as HTMLElement).onclick = ()=> openPool());
+  document.querySelectorAll("[data-play-darts]").forEach(b=> (b as HTMLElement).onclick = ()=> openDarts());
   // M10 — mischief handlers
   document.querySelectorAll("[data-steal]").forEach(b=> (b as HTMLElement).onclick = ()=>{
     if (S.stolen){ toast("You've already taken something — leave!"); return; }
