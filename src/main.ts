@@ -25,6 +25,7 @@ import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } 
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
 import { PRESTIGE_MIN_TOTAL, prestigeEligible, legacyXpMult, legacySellMult, legacyStars, legacyRank, legacyBonusText } from './data/legacy.ts';
 import { VILLAGE_EVENTS, todaysEvent, marketDayActive, merchantActive, fairActive } from './data/events.ts';
+import { VOYAGE_DESTINATIONS, MAX_VOYAGES, voyageById, voyageDurationMs, voyageProgress, voyageReady } from './data/voyages.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -688,6 +689,7 @@ let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-
 let _fishCastT = 0;          // timestamp of the last cast (new fishing station), for the cast animation
 let _fishActiveId = null;    // which fishing station is currently being fished
 let _fishRodTip = { x:0, y:0 };  // world position of the player's rod tip (so the line connects to the character)
+let _voyageRenderAt = 0;        // throttle for live-refreshing the harbour voyages panel
 let _intVfx = [];               // interior completion rewards (floating +item pops)
 let _comboCount = 0, _comboAt = 0, _comboSkill = null;   // consecutive-action streak (addictive feedback)
 let _fishSpot = null;            // where the bobber has been cast (interior coords) — click the water to set it
@@ -6901,7 +6903,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0,
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[],
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -6994,6 +6996,7 @@ function load(){
       if (typeof S.npcMet !== "boolean") S.npcMet = false;
       if (!S.school) S.school = { raised:0, notifiedTier:0 };
       if (typeof S.legacy !== "number") S.legacy = 0;
+      if (!Array.isArray(S.voyages)) S.voyages = [];
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
       if (!Array.isArray(S.keepsakes)) S.keepsakes = [];
@@ -8601,6 +8604,38 @@ function renderNoticeBoard(){
   html += `</div>`;
   return html;
 }
+// ---- Ocean voyages: dispatch boats on timed idle expeditions ----
+function dispatchVoyage(id){
+  const v = voyageById(id); if (!v) return;
+  if (!S.voyages) S.voyages = [];
+  if (S.voyages.length >= MAX_VOYAGES){ toast("All your boats are already at sea."); return; }
+  if (S.coins < v.cost){ toast("Not enough coins to charter."); return; }
+  S.coins -= v.cost;
+  const now = Date.now();
+  S.voyages.push({ id, startedAt: now, returnsAt: now + voyageDurationMs(v) });
+  toast(`${v.ic} ${v.name} sets sail — back in ${v.mins} min.`);
+  log(`${v.ic} Chartered <b>${v.name}</b> (−${fmt(v.cost)}c) — returns in ${v.mins} min.`);
+  updateHud(); save();
+  if (S.tab === "harbour_office") renderMain();
+}
+// Grant the cargo of any voyages that have returned. Silent for the offline batch.
+function checkVoyages(silent){
+  if (!Array.isArray(S.voyages) || !S.voyages.length) return false;
+  const now = Date.now(); let changed = false;
+  for (let i = S.voyages.length-1; i>=0; i--){
+    if (voyageReady(S.voyages[i].returnsAt, now)){
+      const v = voyageById(S.voyages[i].id);
+      S.voyages.splice(i,1); changed = true;
+      if (!v) continue;
+      S.coins += v.coins; S.counters.coinsEarned = (S.counters.coinsEarned||0) + v.coins;
+      const parts = [`${fmt(v.coins)}c`];
+      for (const [id,q] of Object.entries(v.items)){ addItem(id,q); S.prod[id]=(S.prod[id]||0)+q; parts.push(`${q}× ${ITEMS[id]?.n||id}`); }
+      if (!silent){ toast(`${v.ic} ${v.name} home with ${parts.join(", ")}!`); log(`${v.ic} <b>${v.name}</b> returned with ${parts.join(", ")}.`, "good"); }
+    }
+  }
+  if (changed){ updateHud(); save(); if (!silent && S.tab === "harbour_office") renderMain(); }
+  return changed;
+}
 function renderHarbourOffice(){
   if (!isHarbourUnlocked()) return `<div class="panel" style="padding:12px;text-align:center">
     <p style="font-size:28px;margin:0 0 8px">⚓</p>
@@ -8608,23 +8643,35 @@ function renderHarbourOffice(){
     <p style="color:var(--dim);font-size:12px;margin:0 0 10px">The Harbour District opens when your total level reaches <b>100</b>.</p>
     <p style="color:var(--dim);font-size:11px;margin:0">Current total level: <b>${totalLvl()}</b> / 100</p>
   </div>`;
-  const _trips = S.harbour?.boatTrips||0;
+  const now = Date.now();
+  const activeHtml = (S.voyages||[]).map(vg=>{
+    const v = voyageById(vg.id); if (!v) return '';
+    const p = voyageProgress(vg.startedAt, vg.returnsAt, now), ready = voyageReady(vg.returnsAt, now);
+    const _left = Math.max(0, Math.ceil((vg.returnsAt-now)/60000));
+    return `<div style="padding:6px 2px;border-top:1px solid rgba(0,0,0,.06)">
+      <div style="display:flex;justify-content:space-between;font-size:12px"><span>${v.ic} ${v.name}</span><span style="color:${ready?'#4aa86a':'var(--dim)'};font-weight:700">${ready?'⚓ docking…':`~${_left} min`}</span></div>
+      <div style="background:rgba(0,0,0,.12);border-radius:4px;height:7px;overflow:hidden;margin-top:4px"><div style="width:${Math.round(p*100)}%;height:100%;background:${ready?'#4aa86a':'#4a8ac0'};transition:width .3s"></div></div>
+    </div>`;
+  }).join('');
+  const destHtml = VOYAGE_DESTINATIONS.map(v=>{
+    const cargo = Object.entries(v.items).map(([id,q])=>`${q}${ITEMS[id].ic}`).join(' ');
+    const canGo = (S.voyages||[]).length < MAX_VOYAGES && S.coins >= v.cost;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-top:1px solid rgba(0,0,0,.06)">
+      <div style="font-size:22px;width:26px;text-align:center">${v.ic}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">${v.name} <span style="color:var(--dim);font-weight:400">· ${v.mins} min</span></div>
+        <div style="font-size:11px;color:var(--dim)">Returns ${fmt(v.coins)}c + ${cargo}</div></div>
+      <button data-voyage="${v.id}" style="background:${canGo?'#3a6a8a':'#5a5a5a'};color:#fff;border:none;padding:6px 11px;border-radius:5px;cursor:${canGo?'pointer':'default'};font-size:12px;font-weight:700"${canGo?'':' disabled'}>${fmt(v.cost)}c</button>
+    </div>`;
+  }).join('');
   return `<div class="panel" style="padding:10px">
     <h3 style="margin:0 0 6px;font-size:13px">⚓ Harbourmaster's Office</h3>
-    <p style="color:var(--dim);font-size:11px;margin:0 0 10px">"Welcome to Port Salvo — or as the locals call it, Featherstone Harbour. Good seas today." — Reg</p>
-    <div class="card" style="margin-bottom:8px">
-      <span class="ic">⚓</span>
-      <div class="body">
-        <div class="nm">Harbour District</div>
-        <div class="ds">Boat Hire offers fast travel to the Pier. The Fish Warehouse buys bulk catch at a 30% premium.</div>
-      </div>
-    </div>
-    <div class="card">
-      <span class="ic">🗺️</span>
-      <div class="body">
-        <div class="nm">Boat Trips Taken</div>
-        <div class="ds">You've made ${_trips} trip${_trips===1?'':'s'} across the bay.</div>
-      </div>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">"Welcome to Port Salvo. Charter a boat and I'll send her out for cargo — she'll be back before you know it." — Reg</p>
+    <div class="card" style="margin-bottom:8px"><span class="ic">⚓</span><div class="body"><div class="nm">Harbour District</div><div class="ds">Boat Hire fast-travels to the Pier. The Fish Warehouse buys bulk catch at a 30% premium.</div></div></div>
+    <div class="panel" style="padding:10px;margin-bottom:0">
+      <h3 style="margin:0 0 4px;font-size:13px">🚢 Ocean Voyages <small style="font-weight:400;color:var(--dim)">${(S.voyages||[]).length}/${MAX_VOYAGES} boats at sea</small></h3>
+      ${activeHtml ? `<div style="margin-bottom:6px">${activeHtml}</div>` : `<p style="font-size:11px;color:var(--dim);margin:2px 0 6px">No boats out. Charter one below — it returns with cargo even while you're away.</p>`}
+      <div style="font-weight:700;font-size:12px;color:#4a8ac0;margin-top:4px">Charter a boat</div>
+      ${destHtml}
     </div>
   </div>`;
 }
@@ -9609,6 +9656,7 @@ function bindMain(){
   });
   // kitchen (cooking) handlers
   document.querySelectorAll("[data-cook]").forEach(b=> b.onclick = ()=> cookRecipe((b as HTMLElement).dataset.cook));
+  document.querySelectorAll("[data-voyage]").forEach(b=> b.onclick = ()=> dispatchVoyage((b as HTMLElement).dataset.voyage));
   document.querySelectorAll("[data-eat]").forEach(b=> b.onclick = ()=> eatMeal((b as HTMLElement).dataset.eat));
   document.querySelectorAll("[data-serve]").forEach(b=> b.onclick = ()=> serveMeal((b as HTMLElement).dataset.serve));
   // retail stall handlers
@@ -10163,6 +10211,7 @@ function updateProgressBar(){
 const hadSave = load();
 applyOffline();
 syncTabUnlocks(true);   // back-fill tab unlocks for existing saves (never lose earned tabs)
+checkVoyages(true);     // land voyages that returned while away (offline)
 ensureMarket(); rollMarket(false);
 fillContracts();
 if (!TABS.some(t=>t.id===S.tab)) S.tab = "village";
@@ -10328,6 +10377,8 @@ setInterval(()=>{
   checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
   syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
   checkJournal();           // auto-grant Valley Journal "firsts" rewards
+  checkVoyages(false);      // land any returned ocean voyages
+  if (S.tab==="harbour_office" && (S.voyages||[]).length && Date.now()-_voyageRenderAt > 4000){ _voyageRenderAt = Date.now(); renderMain(); }
   if (rollMarket(false) && S.tab === "trade") renderMain();
   const _itemsChanged = JSON.stringify(S.items) !== beforeItems;
   if (_itemsChanged && (S.tab in SKILLS || S.tab==="contracts")) {
