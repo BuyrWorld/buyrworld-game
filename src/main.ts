@@ -33,6 +33,7 @@ import { LORE, loreById, loreFound, isLoreComplete } from './data/lore.ts';
 import { POOL, POCKETS, BALL_COLORS, ballGroup, isStripe, rackBalls, allStopped, stepBalls, shootCue, remaining, resolveShot } from './data/pool.ts';
 import { FARM_CROPS, MAX_PLOTS, cropsForLevel, plotsUnlocked as farmPlotsUnlocked, waterReductionMs, fertilisedYield, WATER_COST, FERTILISE_COST } from './data/farming.ts';
 import { BR, BOT_NAMES, BOT_COLORS, spawnFighters, stormRadius, outsideStorm, applyDamage, aliveCount, aliveEnemies, player as brPlayer, playerWon, playerLost, nearestEnemy, aimAngle, bulletHits, clampToArena, STORM_CX, STORM_CY } from './data/battle.ts';
+import { CUES, cueById, cuePower, cueAim, cueOwned, canBuyCue } from './data/cues.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -7359,7 +7360,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 },
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"],
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -7459,6 +7460,8 @@ function load(){
       if (!S.lore || typeof S.lore !== "object") S.lore = {};
       if (!S.fleet || typeof S.fleet.tier !== "number") S.fleet = { tier:0 };
       if (!S.arcade || typeof S.arcade.medals !== "number") S.arcade = { medals:0, plays:0 };
+      if (typeof S.poolCue !== "string") S.poolCue = "house";
+      if (!Array.isArray(S.poolCues)) S.poolCues = ["house"];
       if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null, null, null];
@@ -9490,6 +9493,7 @@ function renderPub(): string {
 let _pool = null;
 let _pubTableRect = null;   // clickable bounds of the pub's decorative table
 let _homeConsoleRect = null; // clickable bounds of the games console in the cottage
+const POOL_SHOT_TIME = 30000;   // shot clock (ms) for each player
 function openPool(){
   if (document.getElementById("pool-modal")) return;
   _pool = {
@@ -9498,20 +9502,24 @@ function openPool(){
     msg:'Your break! Drag back from the white ball and release to shoot.',
     aiming:false, aimAngle:Math.PI*0.02, aimPower:0,
     shotFirstHit:null, shotPotted:[], breakDone:false,
+    turnStartAt: Date.now(),
     raf:0, over:false,
   };
+  const _mobile = (typeof window!=="undefined") && (window.matchMedia?.("(max-width: 860px)").matches || ('ontouchstart' in window));
   const el = document.createElement("div");
-  el.id = "pool-modal"; el.className = "dd-modal";
+  el.id = "pool-modal"; el.className = "dd-modal" + (_mobile ? " pool-fs" : "");
   el.innerHTML = `<div class="dd-card" style="max-width:660px">
     <button class="vp-close" id="pool-close">✕</button>
-    <div class="dd-title">🎱 8-Ball Pool</div>
-    <div id="pool-msg" class="dd-sub" style="min-height:32px">${_pool.msg}</div>
+    <div class="dd-title">🎱 8-Ball Pool <button id="pool-cues" style="float:right;background:#5a3a1a;color:#ffd666;border:none;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700">${cueById(S.poolCue).ic} Cue Rack</button></div>
+    <div id="pool-msg" class="dd-sub" style="min-height:28px">${_pool.msg}</div>
+    <div id="pool-tray" style="font-size:11px;margin:2px 0 6px"></div>
     <div style="position:relative;width:100%;background:#3a2410;border-radius:10px;padding:10px">
       <canvas id="pool-cv" width="${POOL.W}" height="${POOL.H}" style="width:100%;height:auto;display:block;border-radius:6px;touch-action:none;cursor:crosshair"></canvas>
     </div>
     <div id="pool-hud" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;font-size:12px;flex-wrap:wrap"></div>
   </div>`;
   document.body.appendChild(el);
+  if (_mobile){ try{ el.requestFullscreen?.(); }catch(e){} }
   const cv = document.getElementById("pool-cv");
   const _loc = (e)=>{ const r=cv.getBoundingClientRect(); const p=(e.touches&&e.touches[0])||e; return { x:(p.clientX-r.left)*(cv.width/r.width), y:(p.clientY-r.top)*(cv.height/r.height) }; };
   const cue = ()=> _pool.balls.find(b=>b.n===0);
@@ -9523,25 +9531,79 @@ function openPool(){
     // only fire on your own turn while the table is still (never while balls move)
     if(_pool.phase==='aim' && _pool.turn==='you' && !_pool.over && _pool.aimPower>0.06){
       shootCue(_pool.balls, _pool.aimAngle, _pool.aimPower);
+      const _cp = cuePower(S.poolCue); const c=cue(); if(c){ c.vx*=_cp; c.vy*=_cp; }   // cue upgrade: a firmer hit
       _pool.phase='sim'; _pool.shotFirstHit=null; _pool.shotPotted=[]; _pool.shotFrom='you'; }
     _pool.aimPower=0; };
   cv.addEventListener("mousedown",_down); cv.addEventListener("mousemove",_aim); window.addEventListener("mouseup",_up);
   cv.addEventListener("touchstart",_down,{passive:false}); cv.addEventListener("touchmove",(e)=>{e.preventDefault();_aim(e);},{passive:false}); window.addEventListener("touchend",_up);
-  const close = ()=>{ cancelAnimationFrame(_pool.raf); window.removeEventListener("mouseup",_up); window.removeEventListener("touchend",_up); el.remove(); _pool=null; };
+  const close = ()=>{ cancelAnimationFrame(_pool.raf); window.removeEventListener("mouseup",_up); window.removeEventListener("touchend",_up); try{ if(document.fullscreenElement) document.exitFullscreen?.(); }catch(e){} el.remove(); _pool=null; };
   document.getElementById("pool-close").onclick = close;
+  document.getElementById("pool-cues").onclick = ()=> openCueShop();
   el.addEventListener("click", e=>{ if(e.target===el) close(); });
   _poolLoop();
 }
+// Buy / equip pool cues — slight advantages (power + aim projection).
+function openCueShop(){
+  if(document.getElementById("cue-modal")) return;
+  const el=document.createElement("div"); el.id="cue-modal"; el.className="dd-modal";
+  const rows=CUES.map(c=>{
+    const owned=cueOwned(S.poolCues,c.id), equipped=S.poolCue===c.id, can=canBuyCue(S.coins,S.poolCues,c.id);
+    const btn = equipped ? `<span style="font-size:11px;font-weight:800;color:#4aa86a">✓ Equipped</span>`
+      : owned ? `<button data-cue-equip="${c.id}" style="background:#3a5a8a;color:#fff;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700">Equip</button>`
+      : `<button data-cue-buy="${c.id}" ${can?'':'disabled'} style="background:${can?'#b07a2a':'#5a5040'};color:#160f08;border:none;padding:5px 12px;border-radius:5px;cursor:${can?'pointer':'default'};font-size:12px;font-weight:800">${fmt(c.cost)}c</button>`;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-top:1px solid rgba(0,0,0,.08)">
+      <div style="font-size:24px;width:28px;text-align:center">${c.ic}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13px">${c.n}${equipped?' <span style="color:#4aa86a;font-weight:400">· in hand</span>':''}</div>
+        <div style="font-size:11px;color:var(--dim)">${c.ds}</div>
+        <div style="font-size:10px;color:var(--dim)">Power +${Math.round((c.power-1)*100)}% · Aim ×${c.aim.toFixed(1)}</div></div>
+      <div style="flex-shrink:0">${btn}</div>
+    </div>`;
+  }).join("");
+  el.innerHTML=`<div class="dd-card" style="max-width:480px">
+    <button class="vp-close" onclick="document.getElementById('cue-modal').remove()">✕</button>
+    <div class="dd-title">🎱 The Cue Rack</div>
+    <div class="dd-sub">Better cues hit a touch harder and show a longer aim line.</div>
+    <div style="max-height:56vh;overflow-y:auto">${rows}</div></div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click",e=>{ if(e.target===el) el.remove(); });
+  el.querySelectorAll("[data-cue-buy]").forEach(b=> b.onclick=()=>{ const id=b.getAttribute("data-cue-buy"); const c=cueById(id);
+    if(!canBuyCue(S.coins,S.poolCues,id)) return; S.coins-=c.cost; S.poolCues.push(id); S.poolCue=id;
+    try{ SFX.fanfare&&SFX.fanfare(); }catch(e){} toast(`${c.ic} ${c.n} — bought & equipped!`); updateHud(); save(); el.remove(); openCueShop(); });
+  el.querySelectorAll("[data-cue-equip]").forEach(b=> b.onclick=()=>{ S.poolCue=b.getAttribute("data-cue-equip"); save(); toast(`${cueById(S.poolCue).ic} ${cueById(S.poolCue).n} equipped.`); el.remove(); openCueShop();
+    const cb=document.getElementById("pool-cues"); if(cb) cb.innerHTML=`${cueById(S.poolCue).ic} Cue Rack`; });
+}
+function _poolChip(n){
+  const col = BALL_COLORS[n] || '#ccc';
+  const bg = isStripe(n) ? `background:#f4f0e6;box-shadow:inset 0 0 0 4px ${col}` : `background:${col}`;
+  return `<span style="display:inline-block;width:15px;height:15px;border-radius:50%;${bg};color:#111;font:700 8px sans-serif;text-align:center;line-height:15px;margin:0 1px;border:1px solid rgba(0,0,0,.35);vertical-align:middle">${n}</span>`;
+}
 function _poolHud(){
   const h = document.getElementById("pool-hud"); if(!h||!_pool) return;
-  const yg = _pool.groups.you;
+  const yg = _pool.groups.you, rg = _pool.groups.rex;
   const label = yg ? (yg==='solid'?'🔴 Solids':'⚪ Stripes') : '— open table —';
   const yn = yg ? remaining(_pool.balls, yg) : 7;
+  // potted tray
+  const tray = document.getElementById("pool-tray");
+  if(tray){
+    if(yg){
+      const yp=_pool.balls.filter(b=>b.potted&&b.n!==0&&b.n!==8&&ballGroup(b.n)===yg).map(b=>b.n).sort((a,b)=>a-b);
+      const rp=_pool.balls.filter(b=>b.potted&&b.n!==0&&b.n!==8&&ballGroup(b.n)===rg).map(b=>b.n).sort((a,b)=>a-b);
+      tray.innerHTML = `<span><b style="color:#68cc68">You:</b> ${yp.length?yp.map(_poolChip).join(''):'<span style="color:var(--dim)">—</span>'}</span>
+        &nbsp;&nbsp;<span><b style="color:#e0a060">Rex:</b> ${rp.length?rp.map(_poolChip).join(''):'<span style="color:var(--dim)">—</span>'}</span>`;
+    } else {
+      const ap=_pool.balls.filter(b=>b.potted&&b.n!==0&&b.n!==8).map(b=>b.n).sort((a,b)=>a-b);
+      tray.innerHTML = `<b>Potted:</b> ${ap.length?ap.map(_poolChip).join(''):'<span style="color:var(--dim)">open table — pot one to claim your set</span>'}`;
+    }
+  }
+  // shot clock
+  const _rem = _pool.over ? 0 : Math.max(0, POOL_SHOT_TIME - (Date.now()-_pool.turnStartAt));
+  const _sec = Math.ceil(_rem/1000);
+  const timer = _pool.over ? '' : `<span style="font-weight:800;color:${_sec<=5?'#e85040':'var(--dim)'};font-variant-numeric:tabular-nums">⏱ ${_sec}s</span>`;
   const btns = _pool.over ? `<button id="pool-again" style="background:#2a7a2a;color:#fff;border:none;padding:6px 14px;border-radius:5px;cursor:pointer;font-weight:700">🎱 Rack again</button>` : '';
   h.innerHTML = `<span><b>You:</b> ${label}${yg?` · ${yn} left`:''}</span>
     <span style="color:${_pool.turn==='you'?'#68cc68':'#c89040'};font-weight:700">${_pool.over?'':(_pool.turn==='you'?'● Your shot':'○ Rex is thinking…')}</span>
-    ${btns}`;
-  const ag = document.getElementById("pool-again"); if(ag) ag.onclick = ()=>{ Object.assign(_pool,{ balls:rackBalls(), turn:'you', phase:'aim', groups:{you:null,rex:null}, over:false, breakDone:false, shotPotted:[], shotFirstHit:null, msg:'Fresh rack — your break!' }); _poolSetMsg(_pool.msg); };
+    ${timer}${btns}`;
+  const ag = document.getElementById("pool-again"); if(ag) ag.onclick = ()=>{ Object.assign(_pool,{ balls:rackBalls(), turn:'you', phase:'aim', groups:{you:null,rex:null}, over:false, breakDone:false, shotPotted:[], shotFirstHit:null, turnStartAt:Date.now(), msg:'Fresh rack — your break!' }); _poolSetMsg(_pool.msg); };
 }
 function _poolSetMsg(m){ _pool.msg=m; const e=document.getElementById("pool-msg"); if(e) e.textContent=m; }
 function _poolLoop(){
@@ -9552,6 +9614,16 @@ function _poolLoop(){
       if(ev.potted.length) _pool.shotPotted.push(...ev.potted);
     }
     if(allStopped(_pool.balls)) _poolResolve();
+  } else if(_pool.phase==='aim' && !_pool.over){
+    // shot clock — running out forfeits the shot
+    if(Date.now()-_pool.turnStartAt > POOL_SHOT_TIME){
+      if(_pool.turn==='you'){
+        _pool.aiming=false; _pool.aimPower=0;
+        _pool.turn='rex'; _pool.turnStartAt=Date.now();
+        _poolSetMsg("⏰ Out of time — Rex is up.");
+        setTimeout(()=>{ if(_pool&&_pool.turn==='rex'&&!_pool.over&&_pool.phase==='aim') _poolAIShoot(); }, 500);
+      } else { _poolAIShoot(); }   // nudge the AI if it somehow stalled
+    }
   }
   _poolDraw();
   _poolHud();
@@ -9575,6 +9647,7 @@ function _poolResolve(){
   }
   _pool.turn = r.nextTurn;
   _pool.phase='aim';
+  _pool.turnStartAt = Date.now();   // reset the shot clock for the new turn
   if(r.keepTurn){
     _poolSetMsg(shooter==='you' ? 'Nice pot — go again!' : 'Rex pots one and lines up the next…');
   } else {
@@ -9646,6 +9719,23 @@ function _poolDraw(){
       g.strokeStyle="rgba(255,255,255,.55)"; g.lineWidth=1.5; g.setLineDash([6,6]);
       g.beginPath(); g.moveTo(c.x,c.y); g.lineTo(hit.x,hit.y); g.stroke(); g.setLineDash([]);
       g.strokeStyle="rgba(255,255,255,.7)"; g.beginPath(); g.arc(hit.x,hit.y,POOL.R,0,7); g.stroke();
+      // physics projection: where the OBJECT ball will travel (line of centres from
+      // the ghost contact through the ball) + the cue's tangent deflection.
+      if(hit.ball){
+        const ox=hit.ball.x-hit.x, oy=hit.ball.y-hit.y, od=Math.hypot(ox,oy)||1;
+        const ux=ox/od, uy=oy/od, len=44*cueAim(S.poolCue);
+        const ex=hit.ball.x+ux*len, ey=hit.ball.y+uy*len;
+        g.strokeStyle="rgba(255,220,90,.9)"; g.lineWidth=2;
+        g.beginPath(); g.moveTo(hit.ball.x,hit.ball.y); g.lineTo(ex,ey); g.stroke();
+        const ah=Math.atan2(uy,ux);   // arrowhead
+        g.fillStyle="rgba(255,220,90,.95)"; g.beginPath();
+        g.moveTo(ex,ey); g.lineTo(ex-Math.cos(ah-0.4)*7,ey-Math.sin(ah-0.4)*7); g.lineTo(ex-Math.cos(ah+0.4)*7,ey-Math.sin(ah+0.4)*7);
+        g.closePath(); g.fill();
+        // cue ball deflects along the tangent (perpendicular to the object line)
+        const px=-uy, py=ux;
+        g.strokeStyle="rgba(160,220,255,.5)"; g.lineWidth=1.5; g.setLineDash([3,4]);
+        g.beginPath(); g.moveTo(hit.x,hit.y); g.lineTo(hit.x+px*22,hit.y+py*22); g.moveTo(hit.x,hit.y); g.lineTo(hit.x-px*22,hit.y-py*22); g.stroke(); g.setLineDash([]);
+      }
       if(_pool.aiming){
         // cue stick behind the ball + power bar
         const bx=c.x-Math.cos(ang)*(16+_pool.aimPower*70), by=c.y-Math.sin(ang)*(16+_pool.aimPower*70);
@@ -9668,20 +9758,30 @@ function _poolDraw(){
       g.fillStyle="#111"; g.font="bold 8px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(String(b.n),b.x,b.y+0.5); g.textAlign="left"; g.textBaseline="alphabetic"; }
     g.fillStyle="rgba(255,255,255,.4)"; g.beginPath(); g.arc(b.x-POOL.R*0.35,b.y-POOL.R*0.35,POOL.R*0.28,0,7); g.fill();
   }
+  // shot-clock ring (top-right of the table)
+  if(!_pool.over && _pool.phase==='aim'){
+    const rem=Math.max(0,POOL_SHOT_TIME-(Date.now()-_pool.turnStartAt)), frac=rem/POOL_SHOT_TIME;
+    const cx2=W-20, cy2=20, rr=12;
+    g.strokeStyle="rgba(0,0,0,.45)"; g.lineWidth=3; g.beginPath(); g.arc(cx2,cy2,rr,0,7); g.stroke();
+    g.strokeStyle=rem<=5000?"#e85040":(_pool.turn==='you'?"#68cc68":"#e0a060"); g.lineWidth=3;
+    g.beginPath(); g.arc(cx2,cy2,rr,-Math.PI/2,-Math.PI/2+Math.max(0.001,frac)*Math.PI*2); g.stroke();
+    g.fillStyle="#fff"; g.font="bold 10px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(String(Math.ceil(rem/1000)),cx2,cy2); g.textAlign="left"; g.textBaseline="alphabetic";
+  }
 }
-// Trace the aim line to the first ball or cushion it would meet (for the guide).
+// Trace the aim line to the first ball or cushion it would meet, and return the
+// ball that would be struck (if any) so we can project its travel direction.
 function _poolAimTrace(c, ang){
   const dx=Math.cos(ang), dy=Math.sin(ang);
-  let best=Infinity, hx=c.x+dx*700, hy=c.y+dy*700;
+  let best=Infinity, hx=c.x+dx*900, hy=c.y+dy*900, hitBall=null;
   for(const b of _pool.balls){ if(b.potted||b.n===0) continue;
     const ex=b.x-c.x, ey=b.y-c.y; const proj=ex*dx+ey*dy; if(proj<=0) continue;
-    const perp=Math.abs(ex*dy-ey*dx); if(perp<POOL.R*2){ const t=proj-Math.sqrt(Math.max(0,(POOL.R*2)**2-perp*perp)); if(t<best){ best=t; hx=c.x+dx*t; hy=c.y+dy*t; } } }
+    const perp=Math.abs(ex*dy-ey*dx); if(perp<POOL.R*2){ const t=proj-Math.sqrt(Math.max(0,(POOL.R*2)**2-perp*perp)); if(t<best){ best=t; hx=c.x+dx*t; hy=c.y+dy*t; hitBall=b; } } }
   // cushions — nearest wall intersection ahead of the cue
   const tx = dx>0?(POOL.W-POOL.R-c.x)/dx : dx<0?(POOL.R-c.x)/dx : Infinity;
   const ty = dy>0?(POOL.H-POOL.R-c.y)/dy : dy<0?(POOL.R-c.y)/dy : Infinity;
   const tw=Math.min(tx<0?Infinity:tx, ty<0?Infinity:ty);
-  if(tw<best){ hx=c.x+dx*tw; hy=c.y+dy*tw; }
-  return { x:hx, y:hy };
+  if(tw<best){ hx=c.x+dx*tw; hy=c.y+dy*tw; hitBall=null; }
+  return { x:hx, y:hy, ball:hitBall };
 }
 // ===== Battle Royale — the console mini game in the player's cottage =====
 let _br = null;
