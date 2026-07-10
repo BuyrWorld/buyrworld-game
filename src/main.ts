@@ -10321,7 +10321,8 @@ function updateHud(){
   if (titleEl){
     const lg = S.legacy||0;
     const t = earnedTitle((S.journey && S.journey.claimed) || []);
-    const txt = lg > 0 ? `${"⭐".repeat(legacyStars(lg))} ${legacyRank(lg)}` : (t ? `“${t}”` : "");
+    const st = S.story?.title || "";
+    const txt = lg > 0 ? `${"⭐".repeat(legacyStars(lg))} ${legacyRank(lg)}` : (t ? `“${t}”` : (st ? `“${st}”` : ""));
     titleEl.textContent = txt;
     titleEl.style.display = txt ? "block" : "none";
   }
