@@ -30,7 +30,7 @@ import { FLEET_TIERS, boatTier, nextBoatTier, fleetSpeedMult, fleetCargoMult, fl
 import { STORY, chapterComplete, chapterProgress, currentChapterIndex, currentChapter, isStoryComplete } from './data/story.ts';
 import { RENOWN_UPGRADES, renownForAch, upgradeById as renownUpgradeById, isBought as renownBought, renownSpent, renownAvailable, canBuy as renownCanBuy, locked as renownLocked, renownXpMult, renownSellMult, renownSpeedMult, renownContractBonus, renownOfflineHours } from './data/renown.ts';
 import { LORE, loreById, loreFound, isLoreComplete } from './data/lore.ts';
-import { POOL, POCKETS, BALL_COLORS, ballGroup, isStripe, rackBalls, allStopped, stepBalls, shootCue, remaining } from './data/pool.ts';
+import { POOL, POCKETS, BALL_COLORS, ballGroup, isStripe, rackBalls, allStopped, stepBalls, shootCue, remaining, resolveShot } from './data/pool.ts';
 import { FARM_CROPS, MAX_PLOTS, cropsForLevel, plotsUnlocked as farmPlotsUnlocked, waterReductionMs, fertilisedYield, WATER_COST, FERTILISE_COST } from './data/farming.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
@@ -9492,8 +9492,10 @@ function openPool(){
   const _aim = (e)=>{ if(!_pool.aiming) return; const c=cue(); const m=_loc(e);
     _pool.aimAngle = Math.atan2(c.y-m.y, c.x-m.x);            // pull back to aim (mobile style)
     _pool.aimPower = Math.max(0, Math.min(1, Math.hypot(m.x-c.x, m.y-c.y)/240)); };
-  const _up = (e)=>{ if(!_pool.aiming) return; _pool.aiming=false;
-    if(_pool.aimPower>0.06){ shootCue(_pool.balls, _pool.aimAngle, _pool.aimPower);
+  const _up = (e)=>{ if(!_pool||!_pool.aiming) return; _pool.aiming=false;
+    // only fire on your own turn while the table is still (never while balls move)
+    if(_pool.phase==='aim' && _pool.turn==='you' && !_pool.over && _pool.aimPower>0.06){
+      shootCue(_pool.balls, _pool.aimAngle, _pool.aimPower);
       _pool.phase='sim'; _pool.shotFirstHit=null; _pool.shotPotted=[]; _pool.shotFrom='you'; }
     _pool.aimPower=0; };
   cv.addEventListener("mousedown",_down); cv.addEventListener("mousemove",_aim); window.addEventListener("mouseup",_up);
@@ -9529,45 +9531,30 @@ function _poolLoop(){
   _pool.raf = requestAnimationFrame(_poolLoop);
 }
 function _poolResolve(){
-  const shooter=_pool.shotFrom, potted=_pool.shotPotted;
-  const cuePotted=potted.includes(0), eightPotted=potted.includes(8);
-  const objPotted=potted.filter(n=>n!==0&&n!==8);
-  const gStart=_pool.groups[shooter];      // group BEFORE this shot (null = open table)
-  let g=gStart;
-  // assign groups on the first legally potted object ball (open table)
-  if(!g && objPotted.length && !eightPotted){
-    const grp=ballGroup(objPotted[0]);
-    _pool.groups[shooter]=grp; _pool.groups[shooter==='you'?'rex':'you']= grp==='solid'?'stripe':'solid';
-    g=grp;
-  }
-  // foul: scratch, no ball contacted, or (table already assigned) hitting the wrong group first
-  // (striking the 8 first is allowed — needed once your own group is cleared)
-  const foul = cuePotted || _pool.shotFirstHit==null
-    || (gStart && _pool.shotFirstHit!==8 && ballGroup(_pool.shotFirstHit)!==gStart);
-  // 8-ball end conditions
-  if(eightPotted){
-    const clearedBefore = g ? (remaining(_pool.balls, g)===0) : false; // 8 already potted → remaining excludes it
-    const won = g && clearedBefore && !cuePotted && !foul;
-    _poolEnd(shooter==='you' ? (won?'win':'lose') : (won?'lose':'win'),
-      won ? (shooter==='you'?'You sink the 8 — game!':'Rex clears the table. He wins this one.')
-          : (shooter==='you'?'You potted the 8 too early — that\'s the game to Rex.':'Rex pockets the 8 early — you win!'));
+  if(!_pool || _pool.phase!=='sim') return;   // re-entrancy guard: resolve a shot exactly once
+  _pool.phase='resolving';
+  const shooter=_pool.shotFrom;
+  const potted=[...new Set(_pool.shotPotted)]; // dedupe defensively (a ball is never scored twice)
+  const r = resolveShot(_pool.balls, shooter, _pool.groups, potted, _pool.shotFirstHit);
+  _pool.groups = r.groups;
+  if(r.respotCue){ const c=_pool.balls.find(b=>b.n===0); if(c){ c.potted=false; c.x=POOL.W*0.26; c.y=POOL.H/2; c.vx=c.vy=0; } }
+  _pool.breakDone=true;
+  if(r.over){
+    const youWon = (shooter==='you') === (r.result==='win');
+    _poolEnd(youWon?'win':'lose',
+      youWon ? (shooter==='you'?'You sink the 8 — game!':'Rex pockets the 8 early — you win!')
+             : (shooter==='you'?"You potted the 8 too early — that's the game to Rex.":'Rex clears the table. He wins this one.'));
     return;
   }
-  if(cuePotted){ const c=_pool.balls.find(b=>b.n===0); c.potted=false; c.x=POOL.W*0.26; c.y=POOL.H/2; c.vx=c.vy=0; }
-  _pool.breakDone=true;
-  const pottedOwn = g ? objPotted.some(n=>ballGroup(n)===g) : objPotted.length>0;
-  const keep = !foul && pottedOwn && !_pool.over;
-  if(keep){
-    _pool.phase='aim';
+  _pool.turn = r.nextTurn;
+  _pool.phase='aim';
+  if(r.keepTurn){
     _poolSetMsg(shooter==='you' ? 'Nice pot — go again!' : 'Rex pots one and lines up the next…');
-    if(shooter==='rex') setTimeout(()=>{ if(_pool&&_pool.turn==='rex'&&!_pool.over) _poolAIShoot(); }, 700);
   } else {
-    _pool.turn = shooter==='you'?'rex':'you';
-    _pool.phase='aim';
-    _poolSetMsg(foul ? (shooter==='you'?'Foul — Rex is up.':'Rex fouls — your shot, and take your time.')
-                     : (shooter==='you'?'No pot — Rex steps up.':'Rex misses — your shot.'));
-    if(_pool.turn==='rex') setTimeout(()=>{ if(_pool&&_pool.turn==='rex'&&!_pool.over) _poolAIShoot(); }, 800);
+    _poolSetMsg(r.foul ? (shooter==='you'?'Foul — Rex is up.':'Rex fouls — your shot, and take your time.')
+                       : (shooter==='you'?'No pot — Rex steps up.':'Rex misses — your shot.'));
   }
+  if(_pool.turn==='rex') setTimeout(()=>{ if(_pool&&_pool.turn==='rex'&&!_pool.over&&_pool.phase==='aim') _poolAIShoot(); }, r.keepTurn?700:800);
 }
 function _poolEnd(result, msg){
   _pool.over=true; _pool.phase='over'; _poolSetMsg(msg);
@@ -9586,7 +9573,7 @@ function _poolEnd(result, msg){
 }
 // A modest AI: pick the easiest own-group ball→pocket, aim at the ghost ball with a little error.
 function _poolAIShoot(){
-  if(!_pool||_pool.over) return;
+  if(!_pool||_pool.over||_pool.phase!=='aim'||_pool.turn!=='rex') return;   // AI shoots only on its own, still turn
   const c=_pool.balls.find(b=>b.n===0); if(!c) return;
   const g=_pool.groups.rex;
   let cands=_pool.balls.filter(b=>!b.potted&&b.n!==0&&(g?ballGroup(b.n)===g:b.n!==8));
