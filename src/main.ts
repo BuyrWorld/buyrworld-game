@@ -28,6 +28,7 @@ import { VILLAGE_EVENTS, todaysEvent, marketDayActive, merchantActive, fairActiv
 import { VOYAGE_DESTINATIONS, MAX_VOYAGES, voyageById, voyageDurationMs, voyageProgress, voyageReady } from './data/voyages.ts';
 import { STORY, chapterComplete, chapterProgress, currentChapterIndex, currentChapter, isStoryComplete } from './data/story.ts';
 import { RENOWN_UPGRADES, renownForAch, upgradeById as renownUpgradeById, isBought as renownBought, renownSpent, renownAvailable, canBuy as renownCanBuy, locked as renownLocked, renownXpMult, renownSellMult, renownSpeedMult, renownContractBonus, renownOfflineHours } from './data/renown.ts';
+import { LORE, loreById, loreFound, isLoreComplete } from './data/lore.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -2061,6 +2062,16 @@ function villageClick(e){
     const _fx = (FAIR_POS.tx+0.6)*TILE, _fy = FAIR_POS.ty*TILE;
     if (Math.abs(wx-_fx) < TILE*1.3 && wy > _fy-TILE*1.2 && wy < _fy+TILE*1.4){ openFair(); return; }
   }
+  // Valley Lore waystones — tap one to read it (or to walk over and uncover it)
+  for (const id in LORE_STONES){
+    const s = loreStoneAt(id); if (!s) continue;
+    if (Math.abs(wx-s.x) < TILE*0.9 && Math.abs(wy-s.y) < TILE*1.1){
+      if (S.lore && S.lore[id]) openLoreEntry(id);
+      else if (Math.hypot(VP.x-s.x, VP.y-s.y) < TILE*1.6) discoverLore(id, true);
+      else { VP.tx = s.x; VP.ty = s.y + TILE; VP.pending = null; }   // walk over to uncover it
+      return;
+    }
+  }
   for (const o of V_OBJECTS){
     const r = objRect(o), pad=6;
     if (wx>=r.x-pad && wx<=r.x+r.w+pad && wy>=r.y-pad && wy<=r.y+r.h+pad){
@@ -2654,6 +2665,9 @@ function openLedger(){
     ${(()=>{ const av=renownAvailable(renownEarned(), S.renown?.bought||{}); return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px">
       <span style="color:var(--dim)">🎖️ Hall of Renown</span>
       <button id="ledger-renown" style="background:${av>0?'#b07a2a':'#5a5040'};color:#160f08;border:none;padding:4px 11px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:800">${av>0?`Spend ${av} 🎖️`:'Open'}</button></div>`; })()}
+    ${(()=>{ const lf=loreFound(S.lore||{}); return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px">
+      <span style="color:var(--dim)">📖 Valley Lore</span>
+      <button id="ledger-lore" style="background:#6a5a3a;color:#160f08;border:none;padding:4px 11px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:800">${lf}/${LORE.length} found</button></div>`; })()}
     ${row('💖 Best friends', `${bff}/${VILLAGERS.length}`)}
     ${row('📊 Market', `${ph.ic} ${ph.name}`)}
     ${(S.legacy||0) > 0 ? row('🌟 Legacy', `${"⭐".repeat(legacyStars(S.legacy))} ${legacyRank(S.legacy)}`, legacyBonusText(S.legacy)) : ''}
@@ -2673,6 +2687,7 @@ function openLedger(){
   document.body.appendChild(el);
   el.addEventListener("click", e=>{ if(e.target===el) el.remove(); });
   const _rn = document.getElementById("ledger-renown"); if (_rn) _rn.onclick = ()=>{ el.remove(); openRenown(); };
+  const _lr = document.getElementById("ledger-lore"); if (_lr) _lr.onclick = ()=>{ el.remove(); openLore(); };
   const _sb = document.getElementById("ledger-story"); if (_sb) _sb.onclick = ()=>{ el.remove(); openStory(); };
   const _pb = document.getElementById("ledger-prestige"); if (_pb) _pb.onclick = ()=>{ el.remove(); openPrestige(); };
 }
@@ -2958,6 +2973,82 @@ function openRenown(){
     el.addEventListener("click", e => { if (e.target === el) el.remove(); });
   }
   el.querySelectorAll("[data-renown]").forEach(b => b.onclick = () => buyRenown(b.getAttribute("data-renown")));
+}
+// ---- Valley Lore — weathered waystones discovered by exploring the village ----
+// Absolute world-tile positions, placed near each landmark on walkable ground.
+const LORE_STONES = {
+  founding: { tx:28, ty:6  },   // the village green
+  seam:     { tx:9,  ty:24 },   // the quarry
+  forge:    { tx:18, ty:23 },   // by the furnace/workshop
+  wood:     { tx:33, ty:11 },   // the north forest path
+  tide:     { tx:26, ty:36 },   // the pier
+  hearth:   { tx:73, ty:28 },   // your cottage doorstep
+};
+function loreStoneAt(id){ const p = LORE_STONES[id]; return p ? { x:(p.tx+0.5)*TILE, y:(p.ty+0.5)*TILE } : null; }
+// Discover a stone (once): bank it, celebrate, and reveal the fragment.
+function discoverLore(id, reveal){
+  if (!S.lore) S.lore = {};
+  if (S.lore[id]) { if (reveal) openLoreEntry(id); return; }
+  const l = loreById(id); if (!l) return;
+  S.lore[id] = 1;
+  try{ SFX.chime ? SFX.chime() : SFX.fanfare(); }catch(e){}
+  toast(`📖 Lore uncovered — “${l.title}” (${loreFound(S.lore)}/${LORE.length})`);
+  log(`📖 <b>Valley Lore</b> — you uncovered “${l.title}”. Read it any time in your 📖 Ledger.`, "rare");
+  if (isLoreComplete(S.lore)){
+    setTimeout(()=>{ toast("📖 Every waystone found — you know the whole story of the valley."); }, 1400);
+  }
+  save();
+  if (reveal) openLoreEntry(id);
+}
+// Called from the tick while in the village: reveal a stone the moment you reach it.
+function checkLore(){
+  if (S.tab !== "village" || !S.lore) return;
+  for (const id in LORE_STONES){
+    if (S.lore[id]) continue;
+    const s = loreStoneAt(id);
+    if (s && Math.hypot(VP.x - s.x, VP.y - s.y) < TILE*1.4){ discoverLore(id, true); break; }
+  }
+}
+function openLoreEntry(id){
+  const l = loreById(id); if (!l) return;
+  const el = document.createElement("div");
+  el.id = "lore-entry-modal"; el.className = "dd-modal";
+  el.innerHTML = `<div class="dd-card" style="max-width:460px;text-align:center">
+    <button class="vp-close" onclick="document.getElementById('lore-entry-modal').remove()">✕</button>
+    <div style="font-size:40px;margin:4px 0">${l.ic}</div>
+    <div class="dd-title" style="text-align:center">${l.title}</div>
+    <div style="font-size:13px;line-height:1.7;color:var(--text);font-style:italic;margin:8px 4px 4px">${l.text}</div>
+    <div style="font-size:11px;color:var(--dim);margin-top:10px">Valley Lore · ${loreFound(S.lore)}/${LORE.length} waystones found</div>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+}
+function openLore(){
+  const found = S.lore || {};
+  const rows = LORE.map(l => {
+    const got = !!found[l.id];
+    return `<div style="display:flex;gap:10px;padding:10px 2px;border-top:1px solid rgba(0,0,0,.08);opacity:${got?1:.72}">
+      <div style="font-size:22px;width:26px;text-align:center;flex-shrink:0">${got?l.ic:'❓'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:13px">${got?l.title:'A hidden waystone'}</div>
+        <div style="font-size:12px;color:${got?'var(--text)':'var(--dim)'};line-height:1.6;margin-top:2px${got?';font-style:italic':''}">${got?l.text:`Somewhere yet unexplored — ${l.hint}`}</div>
+      </div>
+    </div>`;
+  }).join("");
+  const n = loreFound(found);
+  const el = document.createElement("div");
+  el.id = "lore-modal"; el.className = "dd-modal";
+  el.innerHTML = `<div class="dd-card" style="max-width:540px">
+    <button class="vp-close" onclick="document.getElementById('lore-modal').remove()">✕</button>
+    <div class="dd-title">📖 Valley Lore</div>
+    <div class="dd-sub">Waystones scattered across Featherstone Valley — walk the whole map to find them all.</div>
+    <div style="background:rgba(120,100,60,.14);border:1px solid rgba(120,100,60,.35);border-radius:6px;padding:8px 10px;margin-bottom:4px;font-size:12px;font-weight:700">
+      ${n}/${LORE.length} waystones uncovered${isLoreComplete(found)?" · 🏆 the whole valley's story is yours":''}
+    </div>
+    <div style="max-height:56vh;overflow-y:auto">${rows}</div>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
 }
 // ---- Valley Journal (Task 9): a gentle first-session checklist of "firsts" ----
 const VALLEY_JOURNAL = [
@@ -3807,6 +3898,28 @@ function drawSeasonalBillboard(ctx, t){
 }
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
+  // Valley Lore waystones — a mossy standing stone at each spot; undiscovered
+  // ones give off a soft glow + sparkle to reward exploration.
+  for (const id in LORE_STONES){
+    const p = LORE_STONES[id]; const sx = p.tx*TILE, sy = p.ty*TILE;
+    const got = !!(S.lore && S.lore[id]);
+    ctx.fillStyle = "rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(sx+TILE/2, sy+TILE-3, 11, 4, 0, 0, 7); ctx.fill();
+    if (!got){
+      const _g = 0.18 + 0.12*Math.abs(Math.sin(t*1.6));
+      ctx.fillStyle = "rgba(255,236,150,"+_g+")"; ctx.beginPath(); ctx.arc(sx+TILE/2, sy+TILE/2, 15, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = "#8f8a7c"; ctx.fillRect(sx+4, sy+3, 15, 19);              // stone body
+    ctx.fillStyle = "#9d988a"; ctx.fillRect(sx+4, sy+3, 5, 19);              // lit edge
+    ctx.fillStyle = "#6f6a5d"; ctx.fillRect(sx+15, sy+3, 4, 19);            // shade edge
+    ctx.beginPath(); ctx.moveTo(sx+4, sy+3); ctx.lineTo(sx+11, sy-3); ctx.lineTo(sx+19, sy+3); ctx.closePath(); ctx.fill(); // rounded top
+    ctx.fillStyle = "#5f7a3a"; ctx.fillRect(sx+5, sy+3, 13, 3);             // moss cap
+    ctx.fillStyle = "#4d6630"; ctx.fillRect(sx+6, sy+17, 4, 3); ctx.fillRect(sx+13, sy+14, 3, 3); // moss patches
+    if (got){ ctx.fillStyle = "#b8ae92"; ctx.fillRect(sx+8, sy+9, 7, 1); ctx.fillRect(sx+8, sy+12, 7, 1); } // carved lines
+    else {
+      const _tw = (t*2.2) % 3; const _ty = sy - 4 - _tw*3;
+      ctx.fillStyle = "rgba(255,246,190,"+(1-_tw/3)+")"; ctx.fillRect(sx+TILE/2-1, _ty, 2, 2);   // rising sparkle
+    }
+  }
   // helper: draw picket fence strip at given x-offset, rows 2-16, with gate rows skipped
   const _drawFence = (fxBase, gateRows) => {
     const _fx = fxBase - 4;
@@ -7115,7 +7228,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} },
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{},
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -7211,6 +7324,7 @@ function load(){
       if (!Array.isArray(S.voyages)) S.voyages = [];
       if (!S.story || typeof S.story.done !== "number") S.story = { done:0, seen:0, title:"" };
       if (!S.renown || typeof S.renown.bought !== "object") S.renown = { bought:{} };
+      if (!S.lore || typeof S.lore !== "object") S.lore = {};
       if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null];
@@ -10596,6 +10710,7 @@ setInterval(()=>{
   checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
   checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
   checkStory();             // nudge when a Founder's Trail chapter becomes readable
+  checkLore();              // reveal a Valley Lore waystone when the player reaches it
   syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
   checkJournal();           // auto-grant Valley Journal "firsts" rewards
   checkVoyages(false);      // land any returned ocean voyages
