@@ -720,8 +720,9 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){ navigator.serviceWorker.register('/sw.js').catch(function(){}); });
 }
 
-/* PWA: native "Install app" prompt via a small floating button */
+/* PWA: native "Install app" prompt via a small floating button (not in the desktop app) */
 (function(){
+  if (window.buyrworld && window.buyrworld.isDesktop) return;   // already installed as a desktop app
   var deferred = null;
   var btn = document.createElement('button');
   btn.id = 'pwa-install';

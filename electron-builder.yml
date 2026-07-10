@@ -1,0 +1,47 @@
+appId: com.buyrworld.game
+productName: BuyrWorld
+copyright: © BuyrWorld — Featherstone Valley
+
+directories:
+  output: release
+  buildResources: build
+
+# The packaged app is the built web bundle + the Electron wrapper.
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+extraMetadata:
+  main: electron/main.cjs
+
+# steam_appid.txt sits next to the executable so the Steam client can
+# associate the process (needed for the overlay + achievements).
+extraResources:
+  - from: build/steam_appid.txt
+    to: steam_appid.txt
+
+win:
+  target:
+    - nsis        # installer
+    - portable    # single-exe, no install
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: BuyrWorld
+  createDesktopShortcut: true
+
+mac:
+  target: dmg
+  category: public.app-category.games
+  icon: build/icon.png
+
+linux:
+  target:
+    - AppImage
+    - tar.gz
+  category: Game
+  icon: build/icon.png
