@@ -132,6 +132,8 @@ export function spawnLoot(){
     { x:250, y:180, kind:'health', taken:false },
     { x:118, y:250, kind:'health', taken:false },
     { x:240, y:300, kind:'weapon', weapon:'rifle',    taken:false },
+    { x:376, y:220, kind:'dash',   taken:false },      // utility: temporary movement boost
+    { x:150, y:120, kind:'dash',   taken:false },
   ];
 }
 

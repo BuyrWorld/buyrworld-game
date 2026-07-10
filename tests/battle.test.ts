@@ -167,11 +167,12 @@ describe('Battle Royale — cover & terrain (P3)', () => {
 });
 
 describe('Battle Royale — loot, personalities, medals', () => {
-  it('spawnLoot places weapons, shields and health', () => {
+  it('spawnLoot places weapons, shields, health and a utility item', () => {
     const loot = spawnLoot();
     expect(loot.some(l => l.kind === 'weapon')).toBe(true);
     expect(loot.some(l => l.kind === 'shield')).toBe(true);
     expect(loot.some(l => l.kind === 'health')).toBe(true);
+    expect(loot.some(l => l.kind === 'dash')).toBe(true);   // utility (movement item)
     expect(loot.every(l => l.taken === false)).toBe(true);
   });
   it('bots get personalities + weapons; player starts with a pistol', () => {

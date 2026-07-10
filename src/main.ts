@@ -477,6 +477,28 @@ const SFX = (() => {
       osc("triangle",1568,1568, 0.42, 0.07*mv, 0.50);   // G6 (held)
       hit(0.05*mv, 0.20, 0.50);                         // shimmer
     }catch(e){}
+  },
+  // Battle Royale — distinct weapon/event sounds. `vol` (0..1) enables
+  // distance-based volume for far-off gunfire. All synthesised (no samples).
+  br(kind, vol=1){
+    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    try{ ensure(); const mv = (volLevel()/0.75) * Math.max(0, Math.min(1, vol));
+      if (mv < 0.02) return;
+      switch(kind){
+        case 'pistol':   hit(0.06*mv,0.04); osc('square',720,300,0.06,0.05*mv); break;
+        case 'shotgun':  hit(0.16*mv,0.13); osc('square',260,90,0.14,0.06*mv); break;
+        case 'rifle':    hit(0.045*mv,0.03); osc('square',900,520,0.04,0.045*mv); break;
+        case 'marksman': hit(0.10*mv,0.05); osc('square',1500,300,0.10,0.06*mv); break;
+        case 'reload':   hit(0.05*mv,0.03); hit(0.05*mv,0.03,0.10); break;
+        case 'empty':    osc('square',210,150,0.05,0.05*mv); break;
+        case 'hit':      hit(0.09*mv,0.06); break;
+        case 'shieldbreak': osc('sine',1300,420,0.16,0.06*mv); hit(0.05*mv,0.07); break;
+        case 'pickup':   osc('sine',660,990,0.10,0.045*mv); osc('sine',990,1320,0.12,0.04*mv,0.06); break;
+        case 'elim':     hit(0.12*mv,0.10); osc('square',180,70,0.16,0.06*mv); break;
+        case 'stormwarn':osc('sine',150,90,0.5,0.05*mv); break;
+        case 'foot':     hit(0.02*mv,0.02); break;
+      }
+    }catch(e){}
   }};
 })();
 // celebratory "LEVEL N!" burst over the screen when a skill levels up
@@ -9825,10 +9847,15 @@ function _poolAimTrace(c, ang){
 let _br = null;
 const BR_SPAWN_PROTECT = 90;   // ticks of spawn immunity (ends for you on first shot)
 function _brFreshState(){
-  return { fighters:spawnFighters(), bullets:[], loot:spawnLoot(),
+  const fighters = spawnFighters();
+  const p = fighters.find(x=>x.isPlayer);
+  // player inventory (P4): two weapon slots, a heal slot and a utility slot
+  p.weapons = [p.weapon]; p.ammos = [p.ammo]; p.active = 0; p.heal = null; p.utility = null;
+  p.boost = 0; p.mvx = 0; p.mvy = 0;
+  return { fighters, bullets:[], loot:spawnLoot(),
     muzzles:[], tracers:[], particles:[], dmgNums:[], markers:[], elimFx:[], pickups:[],
-    tick:0, over:false, result:null, phase:'play', bannerLife:0,
-    keys:{}, aim:{ x:BR.W/2, y:120 }, firing:false, recoil:0, shake:0, stamina:100, hurtDir:null,
+    tick:0, over:false, result:null, phase:'play', bannerLife:0, debug:false, telemetry:[], fps:60, lastFrame:0, swapPrompt:null,
+    keys:{}, aim:{ x:BR.W/2, y:120 }, firing:false, recoil:0, shake:0, stamina:100, hurtDir:null, footT:0, warnedClose:false,
     feed:[], stormR:stormRadius(0), raf:0,
     stats:{ shots:0, hits:0, damageDealt:0, damageTaken:0, elims:0, firstElim:false, minHp:100, wasLowHp:false, stormTicks:0, byWeapon:{}, startTick:0 } };
 }
@@ -9836,6 +9863,7 @@ function openArcade(){
   if (document.getElementById("arcade-modal")) return;
   S.arcade = S.arcade || { medals:0, plays:0 };
   _br = _brFreshState();
+  _brTelem('match_start',{});
   const el = document.createElement("div"); el.id="arcade-modal"; el.className="dd-modal";
   el.innerHTML = `<div class="dd-card" style="max-width:660px">
     <button class="vp-close" id="arcade-close">✕</button>
@@ -9845,7 +9873,7 @@ function openArcade(){
       <canvas id="arcade-cv" width="${BR.W}" height="${BR.H}" tabindex="0" style="width:100%;height:auto;display:block;border-radius:6px;touch-action:none;cursor:crosshair;outline:none"></canvas>
     </div>
     <div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:11px;color:var(--dim);flex-wrap:wrap">
-      <span>⌨️ <b>WASD</b> move · <b>Mouse</b> aim · <b>Click/Space</b> fire · <b>R</b> reload · <b>Shift</b> sprint · walk over loot to pick up</span>
+      <span>⌨️ <b>WASD</b> move · <b>Mouse</b> aim · <b>Click/Space</b> fire · <b>R</b> reload · <b>1/2</b> weapons · <b>F</b> heal · <b>G</b> utility · <b>E</b> swap · <b>Shift</b> sprint</span>
       <span id="arcade-again"></span>
     </div>
   </div>`;
@@ -9854,7 +9882,13 @@ function openArcade(){
   const _loc = (e)=>{ const r=cv.getBoundingClientRect(); const p=(e.touches&&e.touches[0])||e; return { x:(p.clientX-r.left)*(cv.width/r.width), y:(p.clientY-r.top)*(cv.height/r.height) }; };
   const kd = (e)=>{ if(!_br) return; const k=(e.key||"").toLowerCase();
     if(k===' '||k==='r'||['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
-    _br.keys[k]=true; if(k===' ') _brShoot(); if(k==='r') _brReload(brPlayer(_br.fighters)); };
+    _br.keys[k]=true;
+    if(k===' ') _brShoot();
+    if(k==='r') _brReload(brPlayer(_br.fighters));
+    if(k==='1') _brSwap(0); if(k==='2') _brSwap(1);
+    if(k==='f') _brUseHeal(); if(k==='g') _brUseUtility();
+    if(k==='`') { _br.debug=!_br.debug; }
+  };
   const ku = (e)=>{ if(_br) _br.keys[(e.key||"").toLowerCase()]=false; };
   const mm = (e)=>{ if(_br) _br.aim=_loc(e); };
   const md = (e)=>{ if(!_br) return; e.preventDefault(); cv.focus(); _br.aim=_loc(e); _br.firing=true; _brShoot(); };
@@ -9870,13 +9904,18 @@ function openArcade(){
   el.addEventListener("click",e=>{ if(e.target===el) close(); });
   _brLoop();
 }
-function _brSfx(kind){ try{
-  if(kind==='reload'){ SFX.blip&&SFX.blip(); }
-  else if(kind==='empty'){ SFX.snap&&SFX.snap(); }
-  else if(kind==='elim'){ SFX.thud?SFX.thud():(SFX.snap&&SFX.snap()); }
-  else if(kind==='pickup'){ SFX.chime?SFX.chime():(SFX.blip&&SFX.blip()); }
-  else { SFX.blip?SFX.blip():(SFX.snap&&SFX.snap()); }   // generic shot
-}catch(e){} }
+function _brSfx(kind, vol=1){ try{ SFX.br && SFX.br(kind, vol); }catch(e){} }
+// Distance-based volume for a fighter's sound, relative to the player.
+function _brDistVol(f){ const p=brPlayer(_br.fighters); if(!p) return 0.5; const d=Math.hypot(f.x-p.x,f.y-p.y); return Math.max(0.05, Math.min(1, 1 - d/420)); }
+// Lightweight, non-personal match telemetry (surfaced only in debug mode).
+function _brTelem(ev, data){ if(!_br) return; (_br.telemetry||(_br.telemetry=[])).push({ t:_br.tick, ev, data }); if(_br.debug) try{ console.log('[BR]', ev, data||''); }catch(e){} }
+function _brSwap(slot){ const p=brPlayer(_br.fighters); if(!p||!p.alive||_br.phase!=='play') return; if(slot>=p.weapons.length||slot===p.active) return; p.ammos[p.active]=p.ammo; p.active=slot; p.weapon=p.weapons[slot]; p.ammo=p.ammos[slot]; p.reloadT=0; }
+function _brUseHeal(){ const p=brPlayer(_br.fighters); if(!p||!p.alive||!p.heal||_br.phase!=='play') return;
+  if(p.heal.kind==='health') p.hp=Math.min(BR.MAX_HP,p.hp+40); else p.shield=Math.min(BR_SHIELD_MAX,(p.shield||0)+50);
+  _br.pickups.push({ text:'Used '+p.heal.n, life:70 }); _brSfx('pickup'); p.heal=null; }
+function _brUseUtility(){ const p=brPlayer(_br.fighters); if(!p||!p.alive||!p.utility||_br.phase!=='play') return;
+  if(p.utility.kind==='dash'){ p.boost=110; _br.pickups.push({ text:'⚡ Adrenaline!', life:70 }); _brSfx('pickup'); }
+  p.utility=null; }
 // Fire a fighter's weapon toward (tx,ty). Handles pellets, spread, ammo, muzzle flash, recoil.
 function _brFire(f, tx, ty){
   const w = weaponById(f.weapon);
@@ -9893,8 +9932,8 @@ function _brFire(f, tx, ty){
   f.ammo = Math.max(0, f.ammo-1);          // never negative
   f.fireCd = w.fireCd;
   f.spawnProtect = 0;                        // firing drops spawn protection
-  if(f.isPlayer){ _br.recoil = Math.min(0.18, _br.recoil + w.recoil*0.02); _br.shake = Math.min(6, _br.shake + w.recoil*1.6); _br.stats.shots += w.pellets; }
-  _brSfx('shot');
+  if(f.isPlayer){ _br.recoil = Math.min(0.18, _br.recoil + w.recoil*0.02); _br.shake = Math.min(6, _br.shake + w.recoil*1.6); _br.stats.shots += w.pellets; if(f.ammos) f.ammos[f.active]=f.ammo; }
+  _brSfx(w.sfx, f.isPlayer?1:_brDistVol(f));
   if(f.ammo<=0) _brReload(f);
   return true;
 }
@@ -9910,7 +9949,8 @@ function _brElim(f, byId){
   if(_br.feed.length>5) _br.feed.pop();
   _br.elimFx.push({ x:f.x, y:f.y, life:26 });
   if(by){ by.elims=(by.elims||0)+1; if(by.isPlayer){ _br.stats.elims++; if(!_br.stats.firstElim){ _br.stats.firstElim=true; } } }
-  _brSfx('elim');
+  _brSfx('elim', by&&by.isPlayer?1:0.8);
+  _brTelem('elimination',{ by:byId, victim:f.id }); if(f.isPlayer) _brTelem('player_eliminated',{});
 }
 // Nearest solid-cover point to duck behind, roughly between b and its threat.
 function _brNearestCover(b){
@@ -9955,13 +9995,35 @@ function _brBotAI(b, F, r){
   }
 }
 function _brPickup(f){
-  for(const l of _br.loot){ if(l.taken) continue;
-    if(Math.hypot(l.x-f.x, l.y-f.y) < BR.FIGHTER_R+6){
+  if(f.isPlayer){
+    _br.swapPrompt=null;
+    for(const l of _br.loot){ if(l.taken) continue;
+      if(Math.hypot(l.x-f.x,l.y-f.y) >= BR.FIGHTER_R+8) continue;
+      if(l.kind==='weapon'){
+        const w=weaponById(l.weapon);
+        if(f.weapons.includes(l.weapon)){ /* already carrying — top up nothing */ }
+        else if(f.weapons.length<2){                                    // empty slot → auto pick up
+          f.weapons.push(l.weapon); f.ammos.push(w.mag); f.active=f.weapons.length-1; f.weapon=l.weapon; f.ammo=w.mag; f.reloadT=0;
+          l.taken=true; _br.pickups.push({text:'Picked up '+w.n,life:90}); _brSfx('pickup'); _brTelem('weapon_pickup',{w:l.weapon});
+        } else {                                                        // both slots full → hold E to swap active
+          _br.swapPrompt={ w, active:weaponById(f.weapon) };
+          if(_br.keys['e']){ f.weapons[f.active]=l.weapon; f.ammos[f.active]=w.mag; f.weapon=l.weapon; f.ammo=w.mag; f.reloadT=0;
+            l.taken=true; _br.pickups.push({text:'Swapped to '+w.n,life:90}); _brSfx('pickup'); _brTelem('weapon_pickup',{w:l.weapon}); _br.keys['e']=false; }
+        }
+      }
+      else if(l.kind==='shield'){ if(!f.heal){ f.heal={kind:'shield',n:'Shield Potion',ic:'🛡️'}; l.taken=true; _br.pickups.push({text:'Grabbed a Shield Potion — press F',life:90}); _brSfx('pickup'); } }
+      else if(l.kind==='health'){ if(!f.heal){ f.heal={kind:'health',n:'Medkit',ic:'❤️'}; l.taken=true; _br.pickups.push({text:'Grabbed a Medkit — press F',life:90}); _brSfx('pickup'); } }
+      else if(l.kind==='dash'){ if(!f.utility){ f.utility={kind:'dash',n:'Adrenaline',ic:'⚡'}; l.taken=true; _br.pickups.push({text:'Grabbed Adrenaline — press G',life:90}); _brSfx('pickup'); } }
+    }
+    return;
+  }
+  // bots — simple auto-pickup (they ignore utility items)
+  for(const l of _br.loot){ if(l.taken||l.kind==='dash') continue;
+    if(Math.hypot(l.x-f.x,l.y-f.y) < BR.FIGHTER_R+6){
       if(l.kind==='weapon'){ f.weapon=l.weapon; f.ammo=weaponById(l.weapon).mag; f.reloadT=0; }
-      else if(l.kind==='shield'){ f.shield=Math.min(BR_SHIELD_MAX, (f.shield||0)+50); }
-      else if(l.kind==='health'){ f.hp=Math.min(BR.MAX_HP, f.hp+40); }
+      else if(l.kind==='shield'){ f.shield=Math.min(BR_SHIELD_MAX,(f.shield||0)+50); }
+      else if(l.kind==='health'){ f.hp=Math.min(BR.MAX_HP,f.hp+40); }
       l.taken=true;
-      if(f.isPlayer){ _br.pickups.push({ text:l.kind==='weapon'?('Picked up '+weaponById(l.weapon).n):(l.kind==='shield'?'+50 Shield':'+40 Health'), life:90 }); _brSfx('pickup'); }
     }
   }
 }
@@ -9969,18 +10031,26 @@ function _brUpdate(){
   _br.tick++;
   const F=_br.fighters, r=stormRadius(_br.tick), sdmg=stormDamage(_br.tick); _br.stormR=r;
   const p=brPlayer(F);
+  { const cl=stormClosing(_br.tick); if(cl&&!_br.warnedClose){ _br.warnedClose=true; _brSfx('stormwarn',1); } if(!cl) _br.warnedClose=false; }
   // decay effects & timers
   if(_br.recoil>0) _br.recoil=Math.max(0,_br.recoil-0.01);
   if(_br.shake>0) _br.shake=Math.max(0,_br.shake-0.4);
-  for(const f of F){ if(f.fireCd>0)f.fireCd--; if(f.reloadT>0){ f.reloadT--; if(f.reloadT<=0) f.ammo=weaponById(f.weapon).mag; } if(f.spawnProtect>0)f.spawnProtect--; if(f.hitFlash>0)f.hitFlash--; }
+  for(const f of F){ if(f.fireCd>0)f.fireCd--; if(f.reloadT>0){ f.reloadT--; if(f.reloadT<=0){ f.ammo=weaponById(f.weapon).mag; if(f.isPlayer&&f.ammos) f.ammos[f.active]=f.ammo; } } if(f.spawnProtect>0)f.spawnProtect--; if(f.hitFlash>0)f.hitFlash--; }
   // player control (only while actually playing, not spectating)
   if(_br.phase==='play' && p.alive){
     let dx=0,dy=0; const K=_br.keys;
     if(K['w']||K['arrowup'])dy-=1; if(K['s']||K['arrowdown'])dy+=1;
     if(K['a']||K['arrowleft'])dx-=1; if(K['d']||K['arrowright'])dx+=1;
     const sprinting = (K['shift']||K['shiftleft']) && _br.stamina>4 && (dx||dy);
-    if(dx||dy){ const m=Math.hypot(dx,dy), sp=(sprinting?BR.SPRINT:BR.SPEED); const _pv={x:p.x,y:p.y}; moveFighter(p, dx/m*sp, dy/m*sp); p._vx=p.x-_pv.x; p._vy=p.y-_pv.y; } else { p._vx=0; p._vy=0; }
+    const m=Math.hypot(dx,dy)||1, sp=(sprinting?BR.SPRINT:BR.SPEED)*(p.boost>0?1.5:1);
+    const tvx = dx?dx/m*sp:0, tvy = dy?dy/m*sp:0, ACC=0.24;   // accel/decel so movement has weight
+    p.mvx += (tvx-p.mvx)*ACC; p.mvy += (tvy-p.mvy)*ACC;
+    if(Math.abs(p.mvx)<0.03&&!tvx) p.mvx=0; if(Math.abs(p.mvy)<0.03&&!tvy) p.mvy=0;
+    const _bx=p.x,_by=p.y; moveFighter(p,p.mvx,p.mvy); p._vx=p.x-_bx; p._vy=p.y-_by;
+    const moved=Math.hypot(p._vx,p._vy);
+    if(p.boost>0) p.boost--;
     _br.stamina = sprinting ? Math.max(0,_br.stamina-0.9) : Math.min(100,_br.stamina+0.55);
+    if(moved>0.6){ if(--_br.footT<=0){ _brSfx('foot',0.55); _br.footT=sprinting?9:14; } } else _br.footT=0;
     if(_br.firing) _brShoot();
     _brPickup(p);
     _br.stats.minHp=Math.min(_br.stats.minHp,p.hp); if(p.hp<=25) _br.stats.wasLowHp=true;
@@ -10002,6 +10072,8 @@ function _brUpdate(){
         const res=applyHit(hit,dmg); hit.hitFlash=4;
         _br.dmgNums.push({ x:hit.x, y:hit.y-BR.FIGHTER_R-4, val:res.dmg, life:34, shield:res.shieldHit });
         for(let k=0;k<3;k++)_br.particles.push({x:hit.x,y:hit.y,vx:(Math.random()-0.5)*2.4,vy:(Math.random()-0.5)*2.4,life:10,col:res.shieldHit?'#7ad0ff':'#ff6a5a'});
+        if(bl.owner===0||hit.isPlayer) _brSfx('hit', hit.isPlayer?0.9:0.7);
+        if(res.shieldHit && hit.shield<=0) _brSfx('shieldbreak', hit.isPlayer?1:_brDistVol(hit)*0.8);
         if(bl.owner===0){ _br.markers.push({life:8}); _br.stats.hits++; _br.stats.damageDealt+=res.dmg; _br.stats.byWeapon[bl.wid]=(_br.stats.byWeapon[bl.wid]||0)+res.dmg; }
         if(hit.isPlayer){ _br.stats.damageTaken+=res.dmg; _br.shake=Math.min(7,_br.shake+2); _br.hurtDir={ ang:Math.atan2(hit.y-bl.y,hit.x-bl.x)+Math.PI, life:26 }; }
         if(res.elim) _brElim(hit,bl.owner);
@@ -10047,6 +10119,7 @@ function _brFinish(){
   const survival=Math.round(_br.tick/60);
   const bestW=Object.keys(st.byWeapon).sort((a,b)=>st.byWeapon[b]-st.byWeapon[a])[0];
   const medals=evaluateMedals(st);
+  _brTelem('match_end',{ placement:_br.stats.placement, duration:_br.tick, elims:st.elims });
   if(won){ S.arcade.medals=(S.arcade.medals||0)+1; toast('🏅 VICTORY! You earned a Victory Medal!'); log('🎮 <b>Battle Royale</b> — you were the last one standing and claimed a <b>Victory Medal</b>! 🏅','rare'); }
   S.arcade.plays=(S.arcade.plays||0)+1; achCheck(); updateHud(); save();
   const msg=document.getElementById("arcade-msg");
@@ -10066,10 +10139,13 @@ function _brFinish(){
       <button id="arcade-rematch" style="background:#2a7a2a;color:#fff;border:none;padding:5px 14px;border-radius:5px;cursor:pointer;font-weight:700;margin:2px">🎮 Rematch</button>
       <button id="arcade-pub" style="background:#5a3a1a;color:#fff;border:none;padding:5px 14px;border-radius:5px;cursor:pointer;font-weight:700;margin:2px">🍺 Return to Pub</button>
     </div></div>`;
-  const rb=document.getElementById("arcade-rematch"); if(rb) rb.onclick=()=>{ Object.assign(_br,_brFreshState(), {raf:_br.raf,_close:_br._close}); const m=document.getElementById("arcade-msg"); if(m) m.textContent='Loot up and fight — last one standing wins!'; box.innerHTML=''; document.getElementById("arcade-cv").focus(); };
+  const rb=document.getElementById("arcade-rematch"); if(rb) rb.onclick=()=>{ Object.assign(_br,_brFreshState(), {raf:_br.raf,_close:_br._close}); _brTelem('rematch',{}); _brTelem('match_start',{}); const m=document.getElementById("arcade-msg"); if(m) m.textContent='Loot up and fight — last one standing wins!'; box.innerHTML=''; document.getElementById("arcade-cv").focus(); };
   const pb=document.getElementById("arcade-pub"); if(pb) pb.onclick=()=>{ if(_br&&_br._close) _br._close(); };
 }
-function _brLoop(){ if(!_br) return; if(_br.phase==='play'||_br.phase==='spectate') _brUpdate(); _brDraw(); _br.raf=requestAnimationFrame(_brLoop); }
+function _brLoop(){ if(!_br) return;
+  const now=(typeof performance!=='undefined'?performance.now():Date.now());
+  if(_br.lastFrame){ const dt=now-_br.lastFrame; if(dt>0) _br.fps=_br.fps*0.9+(1000/dt)*0.1; } _br.lastFrame=now;
+  if(_br.phase==='play'||_br.phase==='spectate') _brUpdate(); _brDraw(); _br.raf=requestAnimationFrame(_brLoop); }
 function _brDraw(){
   const cv=document.getElementById("arcade-cv"); if(!cv||!_br) return;
   const g=cv.getContext("2d"), W=BR.W, H=BR.H, P=brPlayer(_br.fighters);
@@ -10093,7 +10169,7 @@ function _brDraw(){
   // loot
   for(const l of _br.loot){ if(l.taken) continue; const bob=Math.sin(_br.tick*0.1+l.x)*1.5;
     g.fillStyle="rgba(255,255,255,.14)"; g.beginPath(); g.arc(l.x,l.y+bob,8,0,7); g.fill();
-    const ic=l.kind==='weapon'?weaponById(l.weapon).ic:(l.kind==='shield'?'🛡️':'❤️');
+    const ic=l.kind==='weapon'?weaponById(l.weapon).ic:(l.kind==='shield'?'🛡️':l.kind==='dash'?'⚡':'❤️');
     g.font="12px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(ic,l.x,l.y+bob); g.textAlign="left"; g.textBaseline="alphabetic"; }
   // storm: darken outside + edge + next-zone preview
   const r=_br.stormR||stormRadius(_br.tick), nr=stormNextRadius(_br.tick);
@@ -10161,13 +10237,31 @@ function _brDraw(){
     g.fillStyle="#fff"; g.font="bold 11px sans-serif"; g.textAlign="left";
     g.fillText(w.ic+" "+w.n,12,H-40);
     g.fillStyle=P.reloadT>0?"#ffb03a":"#fff"; g.font="bold 12px sans-serif";
-    g.fillText(P.reloadT>0?("⟳ reloading "+Math.ceil(P.reloadT/w.reload*100)+"%"):("🔫 "+P.ammo+" / "+w.mag),12,H-26);
+    g.fillText(P.reloadT>0?("⟳ reloading "+Math.ceil((1-P.reloadT/w.reload)*100)+"%"):("🔫 "+P.ammo+" / "+w.mag),12,H-26);
     // health + shield bars
     g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(12,H-16,150,5);
     g.fillStyle="#e05a4a"; g.fillRect(12,H-16,150*(Math.max(0,P.hp)/BR.MAX_HP),5);
     if(P.shield>0){ g.fillStyle="rgba(0,0,0,.5)"; g.fillRect(12,H-22,150,4); g.fillStyle="#5ab0ff"; g.fillRect(12,H-22,150*(P.shield/BR_SHIELD_MAX),4); }
     // stamina pip
     g.fillStyle="rgba(0,0,0,.4)"; g.fillRect(12,H-9,150,2); g.fillStyle="#e8d060"; g.fillRect(12,H-9,150*(_br.stamina/100),2);
+    // inventory slots (bottom-right): weapon 1 · weapon 2 · heal (F) · utility (G)
+    const _slots=[
+      { k:'1', ic:P.weapons[0]?weaponById(P.weapons[0]).ic:'·', on:P.active===0 },
+      { k:'2', ic:P.weapons[1]?weaponById(P.weapons[1]).ic:'·', on:P.active===1 },
+      { k:'F', ic:P.heal?P.heal.ic:'·', on:false },
+      { k:'G', ic:P.utility?P.utility.ic:'·', on:false },
+    ];
+    const _sx0=W-6-_slots.length*36, _sy=H-30;
+    _slots.forEach((s,i)=>{ const x=_sx0+i*36;
+      g.fillStyle=s.on?"rgba(255,214,102,.28)":"rgba(0,0,0,.55)"; g.fillRect(x,_sy,32,24);
+      g.strokeStyle=s.on?"#ffd666":"rgba(255,255,255,.25)"; g.lineWidth=1; g.strokeRect(x,_sy,32,24);
+      g.font="13px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillStyle="#fff"; g.fillText(s.ic,x+16,_sy+10);
+      g.font="7px sans-serif"; g.fillStyle="rgba(255,255,255,.6)"; g.fillText(s.k,x+16,_sy+20);
+      g.textAlign="left"; g.textBaseline="alphabetic"; });
+    // swap prompt when both weapon slots are full and a weapon is underfoot
+    if(_br.swapPrompt && P.alive){ const sp=_br.swapPrompt, txt=`${sp.w.ic} ${sp.w.n} · Dmg ${sp.w.dmg} — hold E to swap ${sp.active.ic}`;
+      g.font="bold 10px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; const tw=g.measureText(txt).width+16;
+      g.fillStyle="rgba(0,0,0,.72)"; g.fillRect(W/2-tw/2,H-92,tw,18); g.fillStyle="#ffe27a"; g.fillText(txt,W/2,H-83); g.textAlign="left"; g.textBaseline="alphabetic"; }
   }
   g.textBaseline="alphabetic";
   // knockout / victory banner (fades, doesn't block the whole arena)
@@ -10180,6 +10274,17 @@ function _brDraw(){
     g.textAlign="left"; g.textBaseline="alphabetic"; g.globalAlpha=1;
   }
   if(_br.phase==='spectate'){ g.fillStyle="rgba(255,255,255,.6)"; g.font="9px sans-serif"; g.textAlign="center"; g.fillText("👁 spectating",W/2,14); g.textAlign="left"; }
+  // ---- debug overlay (P14, default off — press ` to toggle) ----
+  if(_br.debug){
+    g.strokeStyle="rgba(255,80,80,.7)"; g.lineWidth=1; for(const c of COVER) g.strokeRect(c.x,c.y,c.w,c.h);        // cover boxes
+    g.fillStyle="rgba(80,200,255,.8)"; for(const s of [[60,40],[420,50],[40,180],[420,320],[240,40],[BR.W/2,BR.H-30]]){ g.beginPath(); g.arc(s[0],s[1],3,0,7); g.fill(); }  // spawn pts
+    g.strokeStyle="rgba(255,255,0,.5)"; g.beginPath(); g.arc(STORM_CX,STORM_CY,stormNextRadius(_br.tick),0,7); g.stroke();   // storm target
+    for(const f of _br.fighters){ if(!f.alive||f.isPlayer) continue;
+      g.fillStyle="#0ff"; g.font="7px monospace"; g.textAlign="center"; g.fillText((f.personality||'')+"·"+(f.state||''),f.x,f.y+BR.FIGHTER_R+9); g.textAlign="left";
+      const tg=nearestEnemy(f,_br.fighters); if(tg){ g.strokeStyle="rgba(0,255,255,.25)"; g.beginPath(); g.moveTo(f.x,f.y); g.lineTo(tg.x,tg.y); g.stroke(); } }
+    if(P&&P.alive){ g.strokeStyle="rgba(0,255,120,.22)"; g.beginPath(); g.arc(P.x,P.y,weaponById(P.weapon).range,0,7); g.stroke(); }   // weapon range
+    g.fillStyle="#0f0"; g.font="8px monospace"; g.textAlign="right"; g.fillText(`FPS ${Math.round(_br.fps)}  ${(_br.tick/60).toFixed(1)}s  bul ${_br.bullets.length}  alive ${aliveCount(_br.fighters)}`,W-6,H-6); g.textAlign="left";
+  }
 }
 // ===== Darts — 301 vs an opponent, at your chosen difficulty (The Rose & Pallet) =====
 let _darts = null;
