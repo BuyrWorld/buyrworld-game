@@ -11,15 +11,18 @@ export interface Voyage {
   cost: number;                       // coins to charter
   coins: number;                      // coins brought back
   items: Record<string, number>;      // goods brought back
+  minTier?: number;                   // boat tier required to sail this route (Shipyard)
 }
 
-export const MAX_VOYAGES = 3;         // boats you can have at sea at once
+export const MAX_VOYAGES = 3;         // base boats at sea (the Shipyard raises this)
 
 export const VOYAGE_DESTINATIONS: Voyage[] = [
-  { id: 'coast', name: 'Coastal Run',  ic: '🛶', mins: 5,  cost: 50,   coins: 120,  items: { sardine: 5 } },
-  { id: 'isles', name: 'The Isles',    ic: '⛵', mins: 15, cost: 150,  coins: 420,  items: { bass: 4, salmon: 1 } },
-  { id: 'deep',  name: 'Deep Waters',  ic: '🚤', mins: 30, cost: 400,  coins: 1150, items: { tuna: 2, rare_wood: 2 } },
-  { id: 'trade', name: 'Trade Convoy', ic: '🚢', mins: 60, cost: 1000, coins: 3000, items: { tech_alloy: 1, plank: 6 } },
+  { id: 'coast',   name: 'Coastal Run',    ic: '🛶', mins: 5,   cost: 50,   coins: 120,  items: { sardine: 5 } },
+  { id: 'isles',   name: 'The Isles',      ic: '⛵', mins: 15,  cost: 150,  coins: 420,  items: { bass: 4, salmon: 1 } },
+  { id: 'deep',    name: 'Deep Waters',    ic: '🚤', mins: 30,  cost: 400,  coins: 1150, items: { tuna: 2, rare_wood: 2 } },
+  { id: 'trade',   name: 'Trade Convoy',   ic: '🚢', mins: 60,  cost: 1000, coins: 3000, items: { tech_alloy: 1, plank: 6 } },
+  { id: 'reef',    name: 'Coral Reef',     ic: '🐠', mins: 90,  cost: 1800, coins: 5200, items: { salmon: 6, strawberry: 4 }, minTier: 2 },
+  { id: 'horizon', name: 'The Far Horizon', ic: '🌅', mins: 120, cost: 3500, coins: 9000, items: { tech_alloy: 2, diamond: 1 }, minTier: 3 },
 ];
 
 export function voyageById(id: string): Voyage | undefined {

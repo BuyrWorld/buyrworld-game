@@ -26,6 +26,7 @@ import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './da
 import { PRESTIGE_MIN_TOTAL, prestigeEligible, legacyXpMult, legacySellMult, legacyStars, legacyRank, legacyBonusText } from './data/legacy.ts';
 import { VILLAGE_EVENTS, todaysEvent, marketDayActive, merchantActive, fairActive } from './data/events.ts';
 import { VOYAGE_DESTINATIONS, MAX_VOYAGES, voyageById, voyageDurationMs, voyageProgress, voyageReady } from './data/voyages.ts';
+import { FLEET_TIERS, boatTier, nextBoatTier, fleetSpeedMult, fleetCargoMult, fleetMaxBoats, fleetUpgradeCost, canUpgradeFleet, routeUnlocked } from './data/fleet.ts';
 import { STORY, chapterComplete, chapterProgress, currentChapterIndex, currentChapter, isStoryComplete } from './data/story.ts';
 import { RENOWN_UPGRADES, renownForAch, upgradeById as renownUpgradeById, isBought as renownBought, renownSpent, renownAvailable, canBuy as renownCanBuy, locked as renownLocked, renownXpMult, renownSellMult, renownSpeedMult, renownContractBonus, renownOfflineHours } from './data/renown.ts';
 import { LORE, loreById, loreFound, isLoreComplete } from './data/lore.ts';
@@ -627,6 +628,8 @@ const ACH = [
   { id:"market_mover",    ic:"📊", n:"Market Mover",     ds:"Move prices — cause 5 market gluts or shortages by trading in bulk.", r:400, c:()=>(S.counters?.econShocks||0)>=5 },
   { id:"new_chapter",     ic:"🌟", n:"A New Chapter",    ds:"Begin your first New Chapter — pass the valley to a successor.",       r:1000, c:()=>(S.legacy||0)>=1 },
   { id:"living_legacy",   ic:"✨", n:"Living Legacy",    ds:"Reach Legacy 3 — three New Chapters written.",                        r:5000, c:()=>(S.legacy||0)>=3 },
+  { id:"shipwright",      ic:"🛥️", n:"Shipwright",       ds:"Upgrade your boat to the Coastal Cutter at the Shipyard.",             r:600,  c:()=>(S.fleet?.tier||0)>=2 },
+  { id:"port_admiral",    ic:"⛴️", n:"Port Admiral",     ds:"Commission the Merchant Clipper — the finest boat in Port Salvo.",     r:3000, c:()=>(S.fleet?.tier||0)>=4 },
 ];
 // Renown earned = one point per completed achievement, +1 for the meatier ones.
 function renownEarned(){
@@ -7315,7 +7318,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{},
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -7413,6 +7416,7 @@ function load(){
       if (!S.story || typeof S.story.done !== "number") S.story = { done:0, seen:0, title:"" };
       if (!S.renown || typeof S.renown.bought !== "object") S.renown = { bought:{} };
       if (!S.lore || typeof S.lore !== "object") S.lore = {};
+      if (!S.fleet || typeof S.fleet.tier !== "number") S.fleet = { tier:0 };
       if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null, null, null];
@@ -9069,13 +9073,16 @@ function renderNoticeBoard(){
 function dispatchVoyage(id){
   const v = voyageById(id); if (!v) return;
   if (!S.voyages) S.voyages = [];
-  if (S.voyages.length >= MAX_VOYAGES){ toast("All your boats are already at sea."); return; }
+  const _tier = S.fleet?.tier || 0;
+  if (!routeUnlocked(v.minTier, _tier)){ toast(`🚢 Needs a ${boatTier(v.minTier).n} or better for that route.`); return; }
+  if (S.voyages.length >= fleetMaxBoats(_tier)){ toast("All your boats are already at sea."); return; }
   if (S.coins < v.cost){ toast("Not enough coins to charter."); return; }
   S.coins -= v.cost;
   const now = Date.now();
-  S.voyages.push({ id, startedAt: now, returnsAt: now + voyageDurationMs(v) });
-  toast(`${v.ic} ${v.name} sets sail — back in ${v.mins} min.`);
-  log(`${v.ic} Chartered <b>${v.name}</b> (−${fmt(v.cost)}c) — returns in ${v.mins} min.`);
+  const _dur = Math.round(voyageDurationMs(v) * fleetSpeedMult(_tier));
+  S.voyages.push({ id, startedAt: now, returnsAt: now + _dur });
+  toast(`${v.ic} ${v.name} sets sail — back in ${Math.round(_dur/60000)} min.`);
+  log(`${v.ic} Chartered <b>${v.name}</b> (−${fmt(v.cost)}c) — returns in ${Math.round(_dur/60000)} min.`);
   updateHud(); save();
   if (S.tab === "harbour_office") renderMain();
 }
@@ -9088,10 +9095,12 @@ function checkVoyages(silent){
       const v = voyageById(S.voyages[i].id);
       S.voyages.splice(i,1); changed = true;
       if (!v) continue;
-      S.coins += v.coins; S.counters.coinsEarned = (S.counters.coinsEarned||0) + v.coins;
+      const _cargo = fleetCargoMult(S.fleet?.tier || 0);   // Shipyard: bigger holds pay more
+      const _coins = Math.round(v.coins * _cargo);
+      S.coins += _coins; S.counters.coinsEarned = (S.counters.coinsEarned||0) + _coins;
       S.counters.voyages = (S.counters.voyages||0) + 1;
-      const parts = [`${fmt(v.coins)}c`];
-      for (const [id,q] of Object.entries(v.items)){ addItem(id,q); S.prod[id]=(S.prod[id]||0)+q; parts.push(`${q}× ${ITEMS[id]?.n||id}`); }
+      const parts = [`${fmt(_coins)}c`];
+      for (const [id,q] of Object.entries(v.items)){ const _q = Math.max(q, Math.round(q * _cargo)); addItem(id,_q); S.prod[id]=(S.prod[id]||0)+_q; parts.push(`${_q}× ${ITEMS[id]?.n||id}`); }
       if (!silent){ toast(`${v.ic} ${v.name} home with ${parts.join(", ")}!`); log(`${v.ic} <b>${v.name}</b> returned with ${parts.join(", ")}.`, "good"); checkStory(); }
     }
   }
@@ -9115,27 +9124,73 @@ function renderHarbourOffice(){
       <div style="background:rgba(0,0,0,.12);border-radius:4px;height:7px;overflow:hidden;margin-top:4px"><div style="width:${Math.round(p*100)}%;height:100%;background:${ready?'#4aa86a':'#4a8ac0'};transition:width .3s"></div></div>
     </div>`;
   }).join('');
+  const _tier = S.fleet?.tier || 0;
+  const _spd = fleetSpeedMult(_tier), _cargo = fleetCargoMult(_tier), _maxBoats = fleetMaxBoats(_tier);
   const destHtml = VOYAGE_DESTINATIONS.map(v=>{
-    const cargo = Object.entries(v.items).map(([id,q])=>`${q}${ITEMS[id].ic}`).join(' ');
-    const canGo = (S.voyages||[]).length < MAX_VOYAGES && S.coins >= v.cost;
+    const unlocked = routeUnlocked(v.minTier, _tier);
+    const _mins = Math.max(1, Math.round(v.mins * _spd));
+    const _coins = Math.round(v.coins * _cargo);
+    const cargo = Object.entries(v.items).map(([id,q])=>`${Math.max(q,Math.round(q*_cargo))}${ITEMS[id].ic}`).join(' ');
+    if (!unlocked){
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-top:1px solid rgba(0,0,0,.06);opacity:.55">
+        <div style="font-size:22px;width:26px;text-align:center">🔒</div>
+        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">${v.name}</div>
+          <div style="font-size:11px;color:var(--dim)">Needs a ${boatTier(v.minTier).ic} ${boatTier(v.minTier).n}</div></div>
+      </div>`;
+    }
+    const canGo = (S.voyages||[]).length < _maxBoats && S.coins >= v.cost;
     return `<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-top:1px solid rgba(0,0,0,.06)">
       <div style="font-size:22px;width:26px;text-align:center">${v.ic}</div>
-      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">${v.name} <span style="color:var(--dim);font-weight:400">· ${v.mins} min</span></div>
-        <div style="font-size:11px;color:var(--dim)">Returns ${fmt(v.coins)}c + ${cargo}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">${v.name} <span style="color:var(--dim);font-weight:400">· ${_mins} min</span></div>
+        <div style="font-size:11px;color:var(--dim)">Returns ${fmt(_coins)}c + ${cargo}</div></div>
       <button data-voyage="${v.id}" style="background:${canGo?'#3a6a8a':'#5a5a5a'};color:#fff;border:none;padding:6px 11px;border-radius:5px;cursor:${canGo?'pointer':'default'};font-size:12px;font-weight:700"${canGo?'':' disabled'}>${fmt(v.cost)}c</button>
     </div>`;
   }).join('');
+  const _boat = boatTier(_tier), _next = nextBoatTier(_tier);
+  const _canUp = _next && canUpgradeFleet(_tier, S.coins);
+  const shipyardHtml = `<div class="panel" style="padding:10px;margin-bottom:8px">
+    <h3 style="margin:0 0 4px;font-size:13px">🛠️ The Shipyard</h3>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="font-size:30px">${_boat.ic}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:13px">${_boat.n}</div>
+        <div style="font-size:11px;color:var(--dim)">${Math.round((1-_spd)*100)}% faster · ×${_cargo.toFixed(2)} cargo · ${_maxBoats} boats at sea</div>
+      </div>
+    </div>
+    ${_next
+      ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08);display:flex;align-items:center;gap:10px">
+          <div style="font-size:24px">${_next.ic}</div>
+          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">Upgrade to ${_next.n}</div>
+            <div style="font-size:11px;color:var(--dim)">${_next.ds}</div></div>
+          <button data-fleet-upgrade="1" ${_canUp?'':'disabled'} style="background:${_canUp?'#2a7a4a':'#5a5a5a'};color:#fff;border:none;padding:6px 12px;border-radius:5px;cursor:${_canUp?'pointer':'default'};font-size:12px;font-weight:800">${fmt(_next.cost)}c</button>
+        </div>`
+      : `<div style="margin-top:6px;font-size:11px;color:#4aa86a;font-weight:700">🏆 Merchant Clipper — the finest boat in Port Salvo.</div>`}
+  </div>`;
   return `<div class="panel" style="padding:10px">
     <h3 style="margin:0 0 6px;font-size:13px">⚓ Harbourmaster's Office</h3>
     <p style="color:var(--dim);font-size:11px;margin:0 0 8px">"Welcome to Port Salvo. Charter a boat and I'll send her out for cargo — she'll be back before you know it." — Reg</p>
     <div class="card" style="margin-bottom:8px"><span class="ic">⚓</span><div class="body"><div class="nm">Harbour District</div><div class="ds">Boat Hire fast-travels to the Pier. The Fish Warehouse buys bulk catch at a 30% premium.</div></div></div>
+    ${shipyardHtml}
     <div class="panel" style="padding:10px;margin-bottom:0">
-      <h3 style="margin:0 0 4px;font-size:13px">🚢 Ocean Voyages <small style="font-weight:400;color:var(--dim)">${(S.voyages||[]).length}/${MAX_VOYAGES} boats at sea</small></h3>
+      <h3 style="margin:0 0 4px;font-size:13px">🚢 Ocean Voyages <small style="font-weight:400;color:var(--dim)">${(S.voyages||[]).length}/${_maxBoats} boats at sea</small></h3>
       ${activeHtml ? `<div style="margin-bottom:6px">${activeHtml}</div>` : `<p style="font-size:11px;color:var(--dim);margin:2px 0 6px">No boats out. Charter one below — it returns with cargo even while you're away.</p>`}
       <div style="font-weight:700;font-size:12px;color:#4a8ac0;margin-top:4px">Charter a boat</div>
       ${destHtml}
     </div>
   </div>`;
+}
+function upgradeFleet(){
+  const _tier = S.fleet?.tier || 0;
+  const nx = nextBoatTier(_tier);
+  if (!nx){ toast("Your fleet is already the finest in Port Salvo."); return; }
+  if (S.coins < nx.cost){ toast("Not enough coins for that boat."); return; }
+  S.coins -= nx.cost;
+  S.fleet = { tier: _tier + 1 };
+  try{ SFX.fanfare(); }catch(e){}
+  toast(`${nx.ic} New boat! You've upgraded to the ${nx.n}.`);
+  log(`🛠️ <b>Shipyard</b> — commissioned the ${nx.ic} <b>${nx.n}</b>: faster voyages, bigger holds.`, "rare");
+  achCheck(); updateHud(); save();
+  if (S.tab === "harbour_office") renderMain();
 }
 function renderBoatHire(){
   if (!isHarbourUnlocked()) return `<div class="panel" style="padding:12px;text-align:center">
@@ -10333,6 +10388,7 @@ function bindMain(){
   // kitchen (cooking) handlers
   document.querySelectorAll("[data-cook]").forEach(b=> b.onclick = ()=> cookRecipe((b as HTMLElement).dataset.cook));
   document.querySelectorAll("[data-voyage]").forEach(b=> b.onclick = ()=> dispatchVoyage((b as HTMLElement).dataset.voyage));
+  document.querySelectorAll("[data-fleet-upgrade]").forEach(b=> b.onclick = ()=> upgradeFleet());
   document.querySelectorAll("[data-eat]").forEach(b=> b.onclick = ()=> eatMeal((b as HTMLElement).dataset.eat));
   document.querySelectorAll("[data-serve]").forEach(b=> b.onclick = ()=> serveMeal((b as HTMLElement).dataset.serve));
   // retail stall handlers
