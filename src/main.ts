@@ -729,6 +729,9 @@ let _homeVilLbl = null;      // {x,y,name} for the crisp home-villager label thi
 let _homeAwayName = null;    // name of the home's occupant when they're away at work (crisp HTML note)
 let _homeVilBubble = null;   // {x,y,text} terrified shout from the occupant when trespassing
 const TRESPASS_CRIES = ["Who's there?! GET OUT!","AAAH! Intruder!","Get out of my house!!","Help! A burglar!","You?! OUT — now!"];
+// Daytime intrusion (they're awake): curious if you're a stranger, annoyed if they know you.
+const TRESPASS_CURIOUS = ["Oh — hello? Can I help you?","Who are you? This is my house…","Do I know you? You shouldn't be in here.","Er… who let you in?","Hello? Are you lost?"];
+const TRESPASS_ANNOYED = ["{p}?! What are you doing in my house?","{p}, we're friends, but — out, please.","Oi {p}, you can't just wander in!","Really, {p}? In my kitchen?","{p}… why are you in here?"];
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
   { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
@@ -5870,7 +5873,7 @@ function drawInterior(t){
           // startled awake — bolt upright, terrified
           for (const s of _sleepers) drawPerson(ctx, s.x, _bY-3, s.hair, s.shirt, t, false, IP.x>=s.x?1:-1, null, "down", null, s.tr, null, s.fem);
           ctx.fillStyle="#ff5040"; ctx.font="bold 12px monospace"; ctx.textAlign="center"; ctx.fillText("!", _bX+_bW/2, _bY-18); ctx.textAlign="left";
-          _homeVilBubble = { x:_bX+_bW/2, y:_bY-16, text: TRESPASS_CRIES[Math.floor(Date.now()/1500)%TRESPASS_CRIES.length], name:_v.n };
+          _homeVilBubble = { x:_bX+_bW/2, y:_bY-16, text: TRESPASS_CRIES[Math.floor(Date.now()/1500)%TRESPASS_CRIES.length], name:_v.n, mood:'scared' };
         } else {
           // peaceful sleep — pillow, breathing duvet, head resting, Zzz
           const _breathe = 1 + Math.max(0, Math.sin(t*1.5))*1.4;
@@ -5899,13 +5902,15 @@ function drawInterior(t){
         if (!_homeVil || _homeVil.roomId !== S.roomObjId)
           _homeVil = { roomId:S.roomObjId, x:112, y:150, tx:112, ty:150, moving:false, facing:1, pauseT:0 };
         if (_tres){
-          // someone's broken in! freeze, back into the corner, face the intruder, terrified
-          const _cornerX = _bX>W/2 ? W-24 : 24;
-          _homeVil.x += (_cornerX-_homeVil.x)*0.12; _homeVil.y += (70-_homeVil.y)*0.12;
-          const _shake = Math.sin(t*22)*0.8;
-          drawPerson(ctx,Math.round(_homeVil.x+_shake),Math.round(_homeVil.y),_v.hair,_v.shirt,t,false,IP.x>=_homeVil.x?1:-1,null,"down",null,_v.trouser,null,_v.female||false);
-          ctx.fillStyle="#ff5040"; ctx.font="bold 12px monospace"; ctx.textAlign="center"; ctx.fillText("!",_homeVil.x,_homeVil.y-16); ctx.textAlign="left";
-          _homeVilBubble = { x:_homeVil.x, y:_homeVil.y-14, text: TRESPASS_CRIES[Math.floor(Date.now()/1500)%TRESPASS_CRIES.length], name:_v.n };
+          // daytime intrusion — they're awake, so NOT scared: curious about a
+          // stranger, or (if they know you) annoyed you've turned up uninvited.
+          _homeVil.moving=false; _homeVil.facing = IP.x>=_homeVil.x?1:-1;
+          drawPerson(ctx,Math.round(_homeVil.x),Math.round(_homeVil.y),_v.hair,_v.shirt,t,false,_homeVil.facing,null,"down",null,_v.trouser,null,_v.female||false);
+          const _known = friendLvl(_v.id) >= 2;
+          ctx.fillStyle=_known?"#e8a020":"#8ab0d8"; ctx.font="bold 12px monospace"; ctx.textAlign="center"; ctx.fillText(_known?"!":"?",_homeVil.x,_homeVil.y-16); ctx.textAlign="left";
+          const _pool = _known ? TRESPASS_ANNOYED : TRESPASS_CURIOUS;
+          const _line = _pool[Math.floor(Date.now()/2400)%_pool.length].replace(/\{p\}/g, pName());
+          _homeVilBubble = { x:_homeVil.x, y:_homeVil.y-14, text:_line, name:_v.n, mood:_known?'annoyed':'curious' };
           _homeVilLbl = { x:_homeVil.x, y:_homeVil.y, name:_v.n };
         } else {
           // wander between rooms doing chores
@@ -6810,9 +6815,10 @@ function drawInterior(t){
         }
       }
     }
-    // home occupant terrified by an intruder — an urgent crisp shout takes priority
+    // home occupant reacting to an intruder — takes priority over the name tag
     if (S.tab==="home" && _homeVilBubble){
-      _iHtml += speechBubbleHtml(_homeVilBubble.name || 'Resident', '😱 '+_homeVilBubble.text, _homeVilBubble.x/W*100, (_homeVilBubble.y-4)/H*100);
+      const _mo = _homeVilBubble.mood, _emo = _mo==='scared'?'😱 ':_mo==='annoyed'?'😠 ':'🤔 ';
+      _iHtml += speechBubbleHtml(_homeVilBubble.name || 'Resident', _emo+_homeVilBubble.text, _homeVilBubble.x/W*100, (_homeVilBubble.y-4)/H*100);
     }
     // home occupant: a legible speech bubble when they're chatting, else a name tag
     else if (S.tab==="home" && _homeVilLbl){
