@@ -2239,9 +2239,11 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     else if (p < 0.64){ const u=(p-0.50)/0.14; ang = UP + (HIT-UP)*easeIn(u); dip = u*1.4; }  // downswing (fast)
     else { const u=(p-0.64)/0.36; ang = HIT + (REST-HIT)*easeIO(u); dip = 1.4*(1-u); }         // recover
     const impact = (p>=0.60 && p<0.75) ? 1-(p-0.60)/0.15 : 0;
-    // rear arm braces the body
-    ctx.fillStyle=shirt; ctx.fillRect(facing*-8,-4,3,7);
-    ctx.fillStyle=skin;  ctx.fillRect(facing*-8,2,3,3);
+    // rear (non-tool) arm — drawn flush at the base-arm shoulder so it reads as
+    // attached to the body (matching the normal arm position exactly)
+    { const _oaX = facing>=0 ? -9 : 6;
+      ctx.fillStyle=shirt; ctx.fillRect(_oaX,-5,3,8);
+      ctx.fillStyle=skin;  ctx.fillRect(_oaX,2,3,3); }
     // swinging arm + tool, pivoted at the shoulder, with a small impact dip
     ctx.save();
     ctx.translate(facing*5, -6 + dip);
@@ -2262,8 +2264,8 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   } else if (tool === "🌿"){
     // foraging: a hand reaches to the ground, then gathered specks pop up when picked
     const reach = _fBend;
-    // support arm braced on the knee
-    ctx.fillStyle=shirt; ctx.fillRect(facing*-8, -3, 3, 7); ctx.fillStyle=skin; ctx.fillRect(facing*-8, 3, 3, 3);
+    // support (non-tool) arm, flush at the base-arm shoulder so it stays attached
+    { const _oaX = facing>=0 ? -9 : 6; ctx.fillStyle=shirt; ctx.fillRect(_oaX,-5,3,8); ctx.fillStyle=skin; ctx.fillRect(_oaX,2,3,3); }
     ctx.save(); ctx.translate(facing*6, -3); ctx.rotate(facing*(0.5 + reach*0.8));
     ctx.fillStyle=shirt; ctx.fillRect(-1.5, 0, 3, 6+reach*3);
     ctx.fillStyle=skin;  ctx.fillRect(-1.5, 6+reach*3, 3, 3);
@@ -2285,7 +2287,7 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     const gripX = facing*4, gripY = -4;
     const tipX = facing*7 + sway + jerk*0.4, tipY = -26 - jerk*0.5;
     // lower support hand on the rod butt + raised arm gripping higher up
-    ctx.fillStyle=shirt; ctx.fillRect(facing*-6, -3, 3, 6); ctx.fillStyle=skin; ctx.fillRect(facing*-6, 3, 3, 3);   // support arm
+    { const _oaX = facing>=0 ? -9 : 6; ctx.fillStyle=shirt; ctx.fillRect(_oaX,-5,3,8); ctx.fillStyle=skin; ctx.fillRect(_oaX,2,3,3); }   // support arm, flush to the body
     ctx.fillStyle=shirt; ctx.fillRect(facing*3-1, -7, 3, 6);   // upper arm reaching up
     ctx.fillStyle=skin;  ctx.fillRect(gripX-1, gripY-1, 3, 3); // hand on the grip
     // the rod
