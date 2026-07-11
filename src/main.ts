@@ -35,6 +35,7 @@ import { FARM_CROPS, MAX_PLOTS, cropsForLevel, plotsUnlocked as farmPlotsUnlocke
 import { BR, BOT_NAMES, BOT_COLORS, spawnFighters, stormRadius, outsideStorm, applyDamage, aliveCount, aliveEnemies, player as brPlayer, playerWon, playerLost, nearestEnemy, aimAngle, bulletHits, clampToArena, STORM_CX, STORM_CY, WEAPONS, weaponById, weaponDamage, applyHit, BR_SHIELD_MAX, PERSONALITIES, COVER, POIS, pointBlocked, segmentBlocked, moveFighter, spawnLoot, evaluateMedals, stormClosing, stormNextRadius, stormTicksToClose, stormDamage } from './data/battle.ts';
 import { CUES, cueById, cuePower, cueAim, cueOwned, canBuyCue } from './data/cues.ts';
 import { DART_SECTORS, DART_RINGS, scoreAt as dartScoreAt, aimPointFor, DART_DIFFICULTIES, difficultyById, DARTS_START, dartOutcome, botTarget } from './data/darts.ts';
+import { COMMISSION_DEFS, commissionById, commissionCoins, commissionXp, commissionRep, repTierUnlocked, repTitle, availableCommissions, rollCommissionBoard, commissionProgress, commissionDone } from './data/commissions.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -653,6 +654,8 @@ const ACH = [
   { id:"market_mover",    ic:"📊", n:"Market Mover",     ds:"Move prices — cause 5 market gluts or shortages by trading in bulk.", r:400, c:()=>(S.counters?.econShocks||0)>=5 },
   { id:"new_chapter",     ic:"🌟", n:"A New Chapter",    ds:"Begin your first New Chapter — pass the valley to a successor.",       r:1000, c:()=>(S.legacy||0)>=1 },
   { id:"living_legacy",   ic:"✨", n:"Living Legacy",    ds:"Reach Legacy 3 — three New Chapters written.",                        r:5000, c:()=>(S.legacy||0)>=3 },
+  { id:"first_order",     ic:"📋", n:"On Commission",     ds:"Complete your first Artisan Commission.",                             r:150,  c:()=>(S.commissions?.done||0)>=1 },
+  { id:"master_artisan",  ic:"🏵️", n:"Master Artisan",    ds:"Reach 30 Artisan reputation from commissions.",                       r:2000, c:()=>(S.commissions?.rep||0)>=30 },
   { id:"game_shot",       ic:"🎯", n:"Game Shot!",        ds:"Win a game of 301 darts at The Rose & Pallet.",                       r:200,  c:()=>(S.darts?.wins||0)>=1 },
   { id:"ton_eighty",      ic:"🎯", n:"Ringer Beater",     ds:"Beat the Ringer at darts — the toughest opponent.",                   r:900,  c:()=>!!(S.darts?.beatRinger) },
   { id:"victory_medal",   ic:"🏅", n:"Victory Medal",     ds:"Win a game of Battle Royale on your cottage console.",                 r:300,  c:()=>(S.arcade?.medals||0)>=1 },
@@ -7413,7 +7416,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false },
+    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -7516,6 +7519,7 @@ function load(){
       if (typeof S.poolCue !== "string") S.poolCue = "house";
       if (!Array.isArray(S.poolCues)) S.poolCues = ["house"];
       if (!S.darts || typeof S.darts.wins !== "number") S.darts = { wins:0, beatRinger:false };
+      if (!S.commissions || typeof S.commissions.rep !== "number") S.commissions = { rep:0, board:[], boardDay:"", active:[], done:0 };
       if (S.counters && typeof S.counters.voyages !== "number") S.counters.voyages = 0;
       if (S.dailyChallenge === undefined) S.dailyChallenge = null;
       if (!Array.isArray(S.garden)) S.garden = [null, null, null, null, null, null];
@@ -9055,6 +9059,65 @@ function renderUpgrades(){
   });
   html += `</div>`;
   return html;
+}
+// ---- Artisan Commissions — crafting orders at the Artisan's Shed ----
+function checkCommissions(){
+  if(!S.commissions) S.commissions={ rep:0, board:[], boardDay:"", active:[], done:0 };
+  const C=S.commissions, today=getTodayStr();
+  if(C.boardDay!==today){ C.boardDay=today; C.board=rollCommissionBoard(dailySeed(today), C.rep, 3).filter(id=>!C.active.some(a=>a.id===id)); }
+  for(let i=C.active.length-1;i>=0;i--){ const a=C.active[i];
+    if(((S.prod[a.item]||0)-a.baseline) >= a.qty){
+      S.coins+=a.coins; S.counters.coinsEarned=(S.counters.coinsEarned||0)+a.coins;
+      grantXp('crafting', a.xp); C.rep=(C.rep||0)+a.rep; C.done=(C.done||0)+1;
+      C.active.splice(i,1);
+      try{ SFX.fanfare&&SFX.fanfare(); }catch(e){}
+      toast(`📋 Commission complete: ${a.n} — +${fmt(a.coins)}c · +${a.rep} rep!`);
+      log(`📋 <b>Commission handed in:</b> ${a.n} — +${fmt(a.coins)} coins, +${a.xp} Crafting XP, +${a.rep} Artisan reputation.`,"good");
+      achCheck(); updateHud(); save();
+      if(S.tab==="crafting") renderMain();
+    }
+  }
+}
+(globalThis as any).acceptCommission=function(id){
+  const C=S.commissions, def=commissionById(id); if(!def) return;
+  if(C.active.length>=2){ toast("You can only take on 2 commissions at once."); return; }
+  if(C.active.some(a=>a.id===id)){ return; }
+  const coins=commissionCoins(def, ITEMS[def.item]?.v||1);
+  C.active.push({ id, item:def.item, qty:def.qty, n:def.n, coins, xp:commissionXp(def), rep:commissionRep(def), baseline:(S.prod[def.item]||0) });
+  C.board=(C.board||[]).filter(b=>b!==id);
+  toast(`📋 Accepted: ${def.n} — craft ${def.qty}× ${ITEMS[def.item]?.n||def.item}.`);
+  renderMain(); save();
+};
+(globalThis as any).dropCommission=function(id){
+  const C=S.commissions; C.active=(C.active||[]).filter(a=>a.id!==id);
+  if(!(C.board||[]).includes(id) && commissionById(id)?.tier<=repTierUnlocked(C.rep)) C.board.push(id);
+  renderMain(); save();
+};
+function renderCommissions(){
+  const C=S.commissions||{ rep:0, board:[], active:[], done:0 };
+  const title=repTitle(C.rep);
+  const nextRepAt = C.rep>=30?null : C.rep>=15?30 : C.rep>=5?15 : 5;
+  const activeHtml=(C.active||[]).map(a=>{ const made=commissionProgress(a.qty,(S.prod[a.item]||0)-a.baseline), done=made>=a.qty;
+    return `<div style="border:1px solid ${done?'#40d040':'#5a6a3a'};border-radius:6px;padding:7px;margin-bottom:6px;background:${done?'rgba(40,200,40,.06)':'transparent'}">
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700"><span>${ITEMS[a.item]?.ic||'📦'} ${a.n}</span><span style="color:${done?'#40d040':'var(--dim)'}">${made}/${a.qty}</span></div>
+      <div style="background:#1a2a0a;border-radius:3px;height:4px;margin:4px 0;overflow:hidden"><div style="width:${Math.round(made/a.qty*100)}%;height:100%;background:${done?'#40d040':'#2a8a1a'}"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--dim)"><span>${fmt(a.coins)}c · +${a.xp} XP · +${a.rep} rep${done?' · ✅ hands in automatically':''}</span>${done?'':`<button data-commission-drop="${a.id}" style="background:#5a3030;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px">Drop</button>`}</div>
+    </div>`; }).join('');
+  const boardHtml=(C.board||[]).map(id=>{ const def=commissionById(id); if(!def) return '';
+    const coins=commissionCoins(def, ITEMS[def.item]?.v||1), can=(C.active||[]).length<2;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-top:1px solid rgba(0,0,0,.06)">
+      <div style="font-size:20px;width:24px;text-align:center">${ITEMS[def.item]?.ic||'📦'}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">${def.n} <span style="color:var(--dim);font-weight:400">· T${def.tier}</span></div>
+        <div style="font-size:11px;color:var(--dim)">Craft ${def.qty}× ${ITEMS[def.item]?.n||def.item} → ${fmt(coins)}c · +${def.tier} rep</div></div>
+      <button data-commission-accept="${id}" ${can?'':'disabled'} style="background:${can?'#2a6a8a':'#5a5a5a'};color:#fff;border:none;padding:5px 11px;border-radius:5px;cursor:${can?'pointer':'default'};font-size:11px;font-weight:700">Accept</button>
+    </div>`; }).join('');
+  return `<div class="panel" style="padding:10px;margin-top:8px">
+    <h3 style="margin:0 0 2px;font-size:13px">📋 Artisan Commissions <span style="color:var(--dim);font-weight:400;font-size:11px">· ${title} (${C.rep} rep)</span></h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Craft goods to fill orders — they hand in automatically for coins, Crafting XP and reputation.${nextRepAt?` Next tier of orders at ${nextRepAt} rep.`:' Every tier unlocked!'}</p>
+    ${(C.active||[]).length?`<div style="font-weight:700;font-size:12px;margin-bottom:4px">In progress (${C.active.length}/2)</div>${activeHtml}`:''}
+    <div style="font-weight:700;font-size:12px;color:#4a8ac0;margin-top:4px">Today's board</div>
+    ${boardHtml||'<p style="font-size:11px;color:var(--dim);margin:4px 0 0">All of today\'s orders are taken — a fresh board arrives tomorrow.</p>'}
+  </div>`;
 }
 function renderGarden(){
   const _ht = S.homeTier||0;
@@ -10781,7 +10844,7 @@ function renderMain(){
     else if (S.tab==="woodcutting") m.innerHTML = _withRoom("🪓 Inside the Sawmill", renderSkillPanel(S.tab));
     else if (S.tab==="fishing") m.innerHTML = _withRoom("🎣 Down at the Pier", renderSkillPanel(S.tab));
     else if (S.tab==="foraging") m.innerHTML = _withRoom("🌿 Wren's Forager Hut", renderSkillPanel(S.tab));
-    else if (S.tab==="crafting") m.innerHTML = _withRoom("🧺 The Artisan's Shed", renderSkillPanel(S.tab));
+    else if (S.tab==="crafting") m.innerHTML = _withRoom("🧺 The Artisan's Shed", renderSkillPanel(S.tab) + renderCommissions());
     else if (S.tab==="village_fund") m.innerHTML = _withRoom("🌸 The Village Fund", renderBeautification());
     else if (S.tab==="seasonal_market"){ m.innerHTML = _withRoom("🎪 Seasonal Market", renderSeasonalMarket()); }
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Featherstone Cycle Shop", renderBikeShop());
@@ -11565,6 +11628,8 @@ function bindMain(){
   document.querySelectorAll("[data-water-garden]").forEach(b=> b.onclick = ()=>{
     (globalThis as any).waterGarden(parseInt((b as HTMLElement).dataset.waterGarden));
   });
+  document.querySelectorAll("[data-commission-accept]").forEach(b=> b.onclick = ()=> (globalThis as any).acceptCommission((b as HTMLElement).dataset.commissionAccept));
+  document.querySelectorAll("[data-commission-drop]").forEach(b=> b.onclick = ()=> (globalThis as any).dropCommission((b as HTMLElement).dataset.commissionDrop));
   document.querySelectorAll("[data-fertilise-garden]").forEach(b=> b.onclick = ()=>{
     (globalThis as any).fertiliseGarden(parseInt((b as HTMLElement).dataset.fertiliseGarden));
   });
@@ -11909,6 +11974,7 @@ setInterval(()=>{
   checkLore();              // reveal a Valley Lore waystone when the player reaches it
   syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
   checkJournal();           // auto-grant Valley Journal "firsts" rewards
+  checkCommissions();       // refresh the board daily + auto-hand-in completed orders
   checkVoyages(false);      // land any returned ocean voyages
   if (S.tab==="harbour_office" && (S.voyages||[]).length && Date.now()-_voyageRenderAt > 4000){ _voyageRenderAt = Date.now(); renderMain(); }
   if (S.tab==="police_cell" && Date.now()-_cellRenderAt > 1000){ _cellRenderAt = Date.now(); renderMain(); }   // tick the countdown / reveal the walk-out
