@@ -7858,7 +7858,8 @@ function _drawTitlePreview(){
   const cv = document.getElementById("title-preview") as HTMLCanvasElement;
   if (!cv || document.getElementById("title")?.style.display === "none") return;
   const ctx2 = cv.getContext("2d");
-  const W2 = cv.width, H2 = cv.height, t2 = performance.now()/1000;
+  const _rmPrev = (typeof _reducedMotion==='function') ? _reducedMotion() : false;   // M4: respect reduced-motion
+  const W2 = cv.width, H2 = cv.height, t2 = _rmPrev ? 0 : performance.now()/1000;
   // sky-grass background
   ctx2.fillStyle="#9fd6a8"; ctx2.fillRect(0,0,W2,H2);
   ctx2.fillStyle="#7cbf86"; ctx2.fillRect(0,H2*0.68,W2,H2*0.32);
@@ -7872,7 +7873,7 @@ function _drawTitlePreview(){
   const _scale = _face ? 6.6 : 3.2;
   const _cx = W2/2;
   const _cy = _face ? Math.round(H2*0.42 + 11*_scale) : H2*0.72;
-  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, !_face, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), {...plOpts(), stride:2.4});
+  drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, _rmPrev ? false : !_face, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), {...plOpts(), stride:2.4});
   _titlePreviewRaf = requestAnimationFrame(_drawTitlePreview);
 }
 // Build a fully random appearance for Quick Start (fields match the wizard).
@@ -7935,53 +7936,55 @@ function showTitle(){
   const _swHtml  = (arr, field, ap) => `<div class="cust-swatches">${arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" style="background:${c.v||'rgba(120,90,60,.25)'}" data-cf="${field}" data-cv="${c.v}" title="${c.label}"></button>`).join('')}</div>`;
   const _txtHtml = (arr, field, ap) => `<div class="cust-swatches" style="flex-wrap:wrap;gap:5px">${arr.map(c=>`<button class="swatch-txt${ap[field]==c.v?' sel':''}" data-cf="${field}" data-cv="${c.v}">${c.label}</button>`).join('')}</div>`;
 
-  const _steps: any[] = [
-    { label:"Choose your character", focus:'body', kind:'gender', hint:"Pick a body type — you can change everything next." },
-    { label:"Skin tone",   focus:'face', kind:'swatch', arr:SKIN_TONES,        field:'skin' },
-    { label:"Hair colour", focus:'face', kind:'swatch', arr:HAIR_COLOURS,      field:'hair' },
-    { label:"Hair style",  focus:'face', kind:'text',   arr:HAIR_STYLE_LABELS, field:'hairStyle' },
-    { label:"Eye colour",  focus:'face', kind:'swatch', arr:EYE_COLOURS,       field:'eyeColor' },
-    { label:"Facial hair", focus:'face', kind:'text',   arr:FACIAL_HAIR_STYLES,field:'facialHair', showIf:(ap)=>ap.gender!=='female' },
-    { label:"Shirt",       focus:'body', kind:'swatch', arr:SHIRT_COLOURS,     field:'shirt' },
-    { label:"Jacket",      focus:'body', kind:'swatch', arr:JACKET_COLOURS,    field:'jacket' },
-    { label:"Trousers",    focus:'body', kind:'swatch', arr:TROUSER_COLOURS,   field:'trousers' },
-    { label:"Shoes",       focus:'body', kind:'swatch', arr:SHOE_COLOURS,      field:'shoes' },
-    { label:"Accessory",   focus:'body', kind:'text',   arr:ACCESSORY_STYLES,  field:'accessory',
-      extra:(ap)=> ap.accessory==='scarf' ? `<div class="cust-sub">Scarf colour</div>`+_swHtml(SCARF_COLOURS,'scarfColor',ap) : '' },
-    { label:"Hat",         focus:'body', kind:'text',   arr:HAT_STYLES,        field:'hat',
-      extra:(ap)=> (ap.hat && ap.hat!=='none') ? `<div class="cust-sub">Hat colour</div>`+_swHtml(HAT_COLOURS,'hatColor',ap) : '' },
-    { label:"Your name",   focus:'body', kind:'name' },
+  // Three screens instead of 13 one-field steps. Each screen shows a group of
+  // fields at once; selections live in S.appearance so nothing is lost between
+  // screens. Screen 3 is a confirm/summary with a large preview.
+  const _grp = (label, inner) => `<div class="cust-sub" style="margin-top:8px">${label}</div>${inner}`;
+  const _screens: any[] = [
+    { id:'identity', label:'Identity', focus:'face', build:(ap)=>
+        _grp('Body type', `<div class="cust-swatches"><button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cf="gender" data-cv="male" aria-label="Male body">♂ Male</button><button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cf="gender" data-cv="female" aria-label="Female body">♀ Female</button></div>`)
+      + _grp('Skin tone',   _swHtml(SKIN_TONES,'skin',ap))
+      + _grp('Hair style',  _txtHtml(HAIR_STYLE_LABELS,'hairStyle',ap))
+      + _grp('Hair colour', _swHtml(HAIR_COLOURS,'hair',ap))
+      + (ap.gender!=='female' ? _grp('Facial hair', _txtHtml(FACIAL_HAIR_STYLES,'facialHair',ap)) : '')
+      + _grp('Eye colour',  _swHtml(EYE_COLOURS,'eyeColor',ap)) },
+    { id:'outfit', label:'Outfit', focus:'body', build:(ap)=>
+        _grp('Shirt',    _swHtml(SHIRT_COLOURS,'shirt',ap))
+      + _grp('Jacket',   _swHtml(JACKET_COLOURS,'jacket',ap))
+      + _grp('Trousers', _swHtml(TROUSER_COLOURS,'trousers',ap))
+      + _grp('Shoes',    _swHtml(SHOE_COLOURS,'shoes',ap))
+      + _grp('Accessory',_txtHtml(ACCESSORY_STYLES,'accessory',ap) + (ap.accessory==='scarf' ? _grp('Scarf colour', _swHtml(SCARF_COLOURS,'scarfColor',ap)) : ''))
+      + _grp('Hat',      _txtHtml(HAT_STYLES,'hat',ap) + ((ap.hat&&ap.hat!=='none') ? _grp('Hat colour', _swHtml(HAT_COLOURS,'hatColor',ap)) : '')) },
+    { id:'confirm', label:'Confirm', focus:'body', confirm:true },
   ];
-
   let _wizStep = 0;
-  const _visibleSteps = () => _steps.filter(s => !s.showIf || s.showIf(S.appearance));
 
   function _renderWizard(){
-    const steps = _visibleSteps();
-    _wizStep = Math.max(0, Math.min(_wizStep, steps.length-1));
-    const step = steps[_wizStep];
+    _wizStep = Math.max(0, Math.min(_wizStep, _screens.length-1));
+    const scr = _screens[_wizStep];
     const ap = S.appearance;
-    _wizFocus = step.focus;
-    _stepLbl.textContent = step.label;
-    _stepCnt.textContent = `${_wizStep+1} / ${steps.length}`;
-    let html = "";
-    if (step.kind==='gender'){
-      html = `<div class="cust-swatches">`
-        + `<button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cf="gender" data-cv="male">♂ Male</button>`
-        + `<button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cf="gender" data-cv="female">♀ Female</button></div>`;
-    } else if (step.kind==='swatch'){ html = _swHtml(step.arr, step.field, ap); }
-    else if (step.kind==='text'){ html = _txtHtml(step.arr, step.field, ap); }
-    if (step.extra) html += step.extra(ap);
-    if (step.hint) html += `<div class="wiz-hint">${step.hint}</div>`;
-    _optsEl.innerHTML = html;
-    _optsEl.style.display  = step.kind==='name' ? 'none' : '';
-    _nameBlk.style.display = step.kind==='name' ? ''     : 'none';
-    _dotsEl.innerHTML = steps.map((_,i)=>`<span class="wiz-dot${i===_wizStep?' on':''}${i<_wizStep?' done':''}"></span>`).join('');
+    _wizFocus = scr.focus;
+    _stepLbl.textContent = scr.label;
+    _stepCnt.textContent = `${_wizStep+1} / ${_screens.length}`;
+    const _tools = `<div class="cust-swatches" style="gap:6px;margin-bottom:2px"><button class="swatch-txt" data-wiz-random aria-label="Randomise appearance">🎲 Randomise</button><button class="swatch-txt" data-wiz-reset aria-label="Reset to default">↺ Reset</button></div>`;
+    if (scr.confirm){
+      const _sum = `<div style="font-size:11px;color:var(--dim);line-height:1.7;margin-top:4px">
+        Body: <b>${ap.gender==='female'?'Female':'Male'}</b> · Hair: <b>${(HAIR_STYLE_LABELS.find(h=>h.v==ap.hairStyle)||{label:'—'}).label}</b><br>
+        Outfit set · Accessory: <b>${(ACCESSORY_STYLES.find(a=>a.v===ap.accessory)||{label:'None'}).label}</b> · Hat: <b>${(HAT_STYLES.find(h=>h.v===ap.hat)||{label:'None'}).label}</b>
+      </div>`;
+      _optsEl.innerHTML = `<p style="font-size:12px;margin:2px 0 4px">Looking good, <b>${esc(_input.value.trim()||'Founder')}</b>! Ready to begin?</p>${_sum}${_tools}`;
+      _optsEl.style.display=''; _nameBlk.style.display='none';
+    } else {
+      _optsEl.innerHTML = _tools + scr.build(ap) + (scr.id==='identity' ? '' : '');
+      _optsEl.style.display=''; _nameBlk.style.display = scr.id==='identity' ? '' : 'none';
+    }
+    _dotsEl.innerHTML = _screens.map((s,i)=>`<span class="wiz-dot${i===_wizStep?' on':''}${i<_wizStep?' done':''}" title="${s.label}"></span>`).join('');
     _backBtn.style.visibility = _wizStep===0 ? 'hidden' : 'visible';
-    const _last = _wizStep === steps.length-1;
+    const _last = _wizStep === _screens.length-1;
     _nextBtn.style.display = _last ? 'none' : '';
     _btnStart.style.display = _last ? '' : 'none';
-    if (_last) setTimeout(()=>{ try{ _input.focus(); }catch(e){} }, 30);
+    _btnStart.textContent = 'Start New Life ▶';
+    if (scr.id==='identity') setTimeout(()=>{ try{ if(!_input.value) _input.focus(); }catch(e){} }, 30);
     _optsEl.querySelectorAll("[data-cf]").forEach(b=>{
       (b as HTMLElement).onclick = ()=>{
         const _f=(b as HTMLElement).dataset.cf!, _v=(b as HTMLElement).dataset.cv!;
@@ -7989,9 +7992,15 @@ function showTitle(){
         _renderWizard();
       };
     });
+    const _rnd=_optsEl.querySelector('[data-wiz-random]'); if(_rnd)(_rnd as HTMLElement).onclick=()=>{ const _nm=S.playerName; S.appearance=randomAppearance(); _renderWizard(); };
+    const _rst=_optsEl.querySelector('[data-wiz-reset]'); if(_rst)(_rst as HTMLElement).onclick=()=>{ S.appearance=Object.assign({},DEFAULT_APPEARANCE); _renderWizard(); };
   }
   _backBtn.onclick = ()=>{ if(_wizStep>0){ _wizStep--; _renderWizard(); } };
-  _nextBtn.onclick = ()=>{ if(_wizStep < _visibleSteps().length-1){ _wizStep++; _renderWizard(); } };
+  _nextBtn.onclick = ()=>{
+    // moving off the Identity screen validates the name so Confirm can trust it
+    if (_wizStep===0){ const _r=cleanName(_input.value); if(!_r.ok){ _errEl.style.display='block'; _input.focus(); return; } _errEl.style.display='none'; }
+    if(_wizStep < _screens.length-1){ _wizStep++; _renderWizard(); }
+  };
   _renderWizard();
 
   document.getElementById("btn-preview").onclick = () => { MUSIC.unlocked = true; MUSIC.play("valley"); };

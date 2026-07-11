@@ -212,6 +212,9 @@ main{ flex:1; width:100%; max-width:1400px; margin:0 auto; padding:14px; }
 #play-hint button{ width:100%; margin-top:14px; background:var(--mint,#5cc98a); color:#0c1a10; border:none; padding:11px; border-radius:8px; font-size:15px; font-weight:800; cursor:pointer; }
 #play-hint button:hover{ filter:brightness(1.08); }
 .btn:disabled{ opacity:.4; cursor:not-allowed; }
+/* M4: 3-screen character creator — scrollable option groups + visible keyboard focus */
+#wiz-options{ max-height:250px; overflow-y:auto; padding-right:4px; }
+.swatch:focus-visible, .swatch-txt:focus-visible, #wiz-back:focus-visible, #wiz-next:focus-visible, #name-input:focus-visible, #btn-start:focus-visible, #btn-quick:focus-visible{ outline:2px solid #ffd666; outline-offset:2px; }
 /* M4: text-size accessibility setting */
 body.text-large .panel, body.text-large .log, body.text-large .obj-tracker, body.text-large .vhint, body.text-large .say p{ font-size:1.13em; }
 body.text-small .panel, body.text-small .log, body.text-small .obj-tracker, body.text-small .vhint, body.text-small .say p{ font-size:0.9em; }
