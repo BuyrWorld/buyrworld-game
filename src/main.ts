@@ -617,6 +617,14 @@ const plAccessory = () => (S.appearance && S.appearance.accessory)|| 'none';
 const plScarfColor= () => (S.appearance && S.appearance.scarfColor)|| '#c04040';
 const plOpts      = () => ({ hairStyle:plHairStyle(), eyeColor:plEyeColor(), facialHair:plFacialHair(), jacket:plJacket(), shoes:plShoes(), accessory:plAccessory(), scarfColor:plScarfColor() });
 
+// E: after dark Frost is home at the lodge — warm and helpful rather than patrolling.
+const FROST_NIGHT_LINES = [
+  "Evening, {p}! Come in out of the cold — what do you need a hand with?",
+  "Ah, {p}. The kettle's on at the lodge. What can I help you with tonight?",
+  "Never too late for a chat, {p}. What's on your mind?",
+  "Working late again? Tell me what you're stuck on and I'll point you right.",
+  "Welcome, {p}. Ask me anything — mining, trade, contracts, I've done the lot.",
+];
 const FROST_TIPS = [
   "Rocks respawn instantly round here. Union rules.",
   "Sell when the arrow's green. Buy when it's red. That's the whole MBA.",
@@ -834,7 +842,10 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
     ? { x: (homeObj.tx + (homeObj.w||2)/2)*TILE, y: (homeObj.ty + (homeObj.h||2))*TILE + 10 }
     : { x: 52*TILE, y: 5*TILE };
   const workPos = workObj
-    ? { x: (workObj.tx + (workObj.w||2)/2)*TILE, y: (workObj.ty + (workObj.h||2))*TILE + 10 }
+    ? (workObj.kind === "stall"
+        // stall vendors stand BEHIND the counter (north side of the stall) facing south
+        ? { x: (workObj.tx + (workObj.w||2)/2)*TILE, y: (workObj.ty + 0.55)*TILE }
+        : { x: (workObj.tx + (workObj.w||2)/2)*TILE, y: (workObj.ty + (workObj.h||2))*TILE + 10 })
     : homePos;
   return { id:v.id, n:v.n, hair:v.hair, shirt:v.shirt, trouser:v.trouser, female:!!v.female,
            shoes: v.shoes || '#3a2a1a',   // every ordinary villager gets footwear (deliberate v.shoes wins)
@@ -2105,7 +2116,11 @@ function interactObj(o){
     return;
   }
   if (o.kind==="npc"){
-    toast(`${o.w.id==="frost"?"❄️":"💬"} ${o.w.n.toUpperCase()}: ` + o.w.tips[Math.floor(Math.random()*o.w.tips.length)]);
+    // Frost is welcoming and help-oriented after dark (home at the lodge)
+    const _line = (o.w.id==="frost" && isNight())
+      ? FROST_NIGHT_LINES[Math.floor(Math.random()*FROST_NIGHT_LINES.length)].replace(/\{p\}/g, pName())
+      : o.w.tips[Math.floor(Math.random()*o.w.tips.length)];
+    toast(`${o.w.id==="frost"?"❄️":"💬"} ${o.w.n.toUpperCase()}: ` + _line);
     return;
   }
   if (o.id==="town_directory"){ openDistricts(); return; }
@@ -6085,7 +6100,8 @@ function drawInterior(t){
           const _known = friendLvl(_v.id) >= 2;
           ctx.fillStyle=_known?"#e8a020":"#8ab0d8"; ctx.font="bold 12px monospace"; ctx.textAlign="center"; ctx.fillText(_known?"!":"?",_homeVil.x,_homeVil.y-16); ctx.textAlign="left";
           const _pool = _known ? TRESPASS_ANNOYED : TRESPASS_CURIOUS;
-          const _line = _pool[Math.floor(Date.now()/2400)%_pool.length].replace(/\{p\}/g, pName());
+          // offset by the occupant's id so neighbours don't all say the same line in sync
+          const _line = _pool[(_idHash(_v.id) + Math.floor(Date.now()/3200)) % _pool.length].replace(/\{p\}/g, pName());
           _homeVilBubble = { x:_homeVil.x, y:_homeVil.y-14, text:_line, name:_v.n, mood:_known?'annoyed':'curious' };
           _homeVilLbl = { x:_homeVil.x, y:_homeVil.y, name:_v.n };
         } else {
@@ -8622,6 +8638,13 @@ function updateVillagers(dt){
     const newPhase = isSleep ? "sleep" : isWork ? "work" : "leisure";
     if (newPhase !== v.phase){ v.phase = newPhase; v.wTarget = null; v.wanderTimer = 0; v.indoor = false; }
     if (v.phase === "sleep"){ v.indoor = true; v.moving = false; continue; }
+    // C: as the evening gets late, villagers head home and go indoors for the night,
+    // so night reads as "everyone's in" rather than loitering outside their houses.
+    if (v.phase === "leisure" && gameHour() >= 20.5){
+      const _dHome = Math.hypot(v.homePos.x - v.x, v.homePos.y - v.y);
+      if (_dHome < 2*TILE){ v.indoor = true; v.moving = false; continue; }
+      v.wTarget = v.homePos; v.wanderTimer = 1;   // make a beeline home
+    }
     // Bld workers go indoor when they reach work; stall workers stay outdoors
     const goesIndoor = v.phase === "work" && v.workKind === "bld";
     if (goesIndoor){
@@ -8661,6 +8684,7 @@ function updateVillagers(dt){
         v.wTarget = mainDest; v.wanderTimer = 0.5;
       } else {
         v.moving = false; v.wTarget = null; v.wanderTimer = 99;
+        v.dir = "down";   // face out over the counter toward customers (south)
         if (VP.x !== undefined){ v.facing = VP.x >= v.x ? 1 : -1; }
       }
       // skip wide-wander logic for stall workers at work
