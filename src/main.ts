@@ -22,6 +22,7 @@ import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMu
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBeat, allWelcomeDone, welcomeTopLevel } from './data/welcome.ts';
 import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, reliabilityLabel, reliabilityStars } from './data/suppliers.ts';
+import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
@@ -164,9 +165,12 @@ function sellPrice(npc, it){
   ensureMarket();
   const d = S.market.drift[npc.id][it];
   const _mkt = marketDayActive(_eventDay()) ? 1.20 : 1;   // Market Day: +20% on every sale
-  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell') * legacySellMult(S.legacy) * renownSellMult(S.renown?.bought) * _mkt);
+  const p = Math.round(ITEMS[it].v * d * 0.80 * eventMult(it) * seasonMult(it) * (1 + tradeBonus()) * mealBuffMult('sell') * legacySellMult(S.legacy) * renownSellMult(S.renown?.bought) * qcSellMult() * _mkt);
   return Math.max(1, Math.min(p, buyPrice(npc, it) - 1));
 }
+// M18 — Quality Rating → revenue multipliers (neutral ×1.0 at the default 50).
+function qcSellMult(){ return ratingSellMult(S.qc?.rating ?? 50); }
+function qcContractMult(){ return ratingContractMult(S.qc?.rating ?? 50); }
 function doTrade(npcId, it, qty, mode){
   const npc = NPCS.find(n=>n.id===npcId);
   if (!npc || skillLvl("trading") < npc.lvl) return;
@@ -587,6 +591,8 @@ const ACH = [
   { id:"first_run",   ic:"🚚", n:"First Delivery",    ds:"Deliver your first contract.",      r:50,   c:()=>S.counters.contracts>=1 },
   { id:"first_po",    ic:"📝", n:"On Order",          ds:"Place your first purchase order.",  r:60,   c:()=>(S.counters?.ordersPlaced||0)>=1 },
   { id:"procurement_pro", ic:"🛒", n:"Procurement Pro", ds:"Place 25 purchase orders.",       r:400,  c:()=>(S.counters?.ordersPlaced||0)>=25 },
+  { id:"first_qc",    ic:"🔬", n:"Under Inspection",  ds:"Run your first quality inspection.", r:60,   c:()=>(S.qc?.inspected||0)>=1 },
+  { id:"quality_champ", ic:"🏅", n:"Quality Champion", ds:"Reach a Quality Rating of 90.",     r:600,  c:()=>(S.qc?.rating||0)>=90 },
   { id:"runs_10",     ic:"📦", n:"Reliable Supplier", ds:"Deliver 10 contracts.",             r:100,  c:()=>S.counters.contracts>=10 },
   { id:"runs_50",     ic:"🚛", n:"Logistics Legend",  ds:"Deliver 50 contracts.",             r:500,  c:()=>S.counters.contracts>=50 },
   { id:"first_deal",  ic:"⚖️", n:"Deal!",             ds:"Make your first trade.",            r:25,   c:()=>S.counters.trades>=1 },
@@ -7484,7 +7490,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -7668,6 +7674,10 @@ function load(){
       if (!("procurement" in parsed) || !S.procurement || !Array.isArray(S.procurement.orders)) S.procurement = { orders:[] };
       if (!("ordersPlaced" in S.counters)) S.counters.ordersPlaced = 0;
       if (!("ordersShort" in S.counters)) S.counters.ordersShort = 0;
+      // M18 — Quality Control: default a neutral rating so existing economies are unchanged
+      if (!("qc" in parsed) || !S.qc || typeof S.qc.rating !== "number"){
+        S.qc = { rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 };
+      }
       // Contracts 2.0 — per-client reputation + tier/deadline on in-flight orders
       if (!("contractRep" in parsed) || !S.contractRep || typeof S.contractRep !== "object") S.contractRep = {};
       if (!("contractsExpired" in S.counters)) S.counters.contractsExpired = 0;
@@ -7785,6 +7795,104 @@ function renderPurchasingDesk(){
     ${cards}${lockedNote}
     <h4 style="margin:12px 0 2px;font-size:12px">🚚 Incoming Deliveries</h4>
     ${incoming}
+  </div>`;
+}
+
+/* ---------- M18: Quality Control bench (Manufacturing panel) ---------- */
+function qcState(){
+  if (!S.qc) S.qc = { rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 };
+  return S.qc;
+}
+function qcInspect(item, qty){
+  const st = qcState();
+  if (st.pending){ toast("Resolve the current inspection first."); return; }
+  if (!GOODS.includes(item)){ toast("Only finished goods can be inspected."); return; }
+  const have = itemCount(item);
+  if (have < 1){ toast("You have none of that to inspect."); return; }
+  const now = Date.now();
+  if (now < (st.nextInspect||0)){ toast("The QC bench needs a moment."); return; }
+  qty = Math.max(1, Math.min(have, Math.floor(+qty || 0)));
+  const rate = baseDefectRate(skillLvl("manufacturing"), st.tier);
+  const res = inspectBatch(qty, rate, Math.random);
+  st.pending = { item, ...res };
+  st.nextInspect = now + 10000;
+  st.inspected = (st.inspected||0) + 1;
+  const g = gradeById(res.grade);
+  log(`🔬 Inspected ${qty}× ${ITEMS[item].n} → ${g.ic} ${g.label}, ${res.defects} defective.`);
+  achCheck(); renderMain(); updateHud(); save();
+}
+function qcResolve(action){
+  const st = qcState();
+  const p = st.pending; if (!p) return;
+  const v = ITEMS[p.item]?.v || 1;
+  if (action === "rework" && p.defects > 0){
+    const cost = reworkCost(p.defects, v);
+    if (S.coins < cost){ toast(`Need ${fmt(cost)} coins to rework.`); return; }
+    S.coins -= cost; st.reworked = (st.reworked||0) + p.defects;
+    log(`🔧 Reworked ${p.defects}× ${ITEMS[p.item].n} (−${fmt(cost)}c) — batch saved.`, "good");
+  } else if (action === "scrap" && p.defects > 0){
+    S.items[p.item] = Math.max(0, (S.items[p.item]||0) - p.defects);
+    const refund = scrapRefund(p.defects, v);
+    S.coins += refund; st.scrapped = (st.scrapped||0) + p.defects;
+    log(`♻️ Scrapped ${p.defects}× ${ITEMS[p.item].n} (+${fmt(refund)}c salvage).`, "dim");
+  }
+  const before = st.rating;
+  st.rating = updateRating(st.rating, p.grade);
+  const delta = st.rating - before;
+  if (delta) toast(`Quality Rating ${delta>0?'+':''}${delta} → ${st.rating}/100`);
+  st.pending = null;
+  achCheck(); renderMain(); updateHud(); save();
+}
+function qcUpgrade(){
+  const st = qcState();
+  const nx = nextQCTier(st.tier);
+  if (!nx){ toast("The bench is fully calibrated."); return; }
+  if (S.coins < nx.cost){ toast(`Need ${fmt(nx.cost)} coins to calibrate.`); return; }
+  S.coins -= nx.cost; st.tier++;
+  log(`🔬 QC bench upgraded to <b>${nx.n}</b> — fewer defects from here on.`, "good");
+  achCheck(); renderMain(); updateHud(); save();
+}
+function renderQCPanel(){
+  const st = qcState();
+  const held = GOODS.filter(g => itemCount(g) > 0);
+  const rate = baseDefectRate(skillLvl("manufacturing"), st.tier);
+  const nx = nextQCTier(st.tier);
+  const ratePct = (rate*100).toFixed(1);
+  let body;
+  if (st.pending){
+    const p = st.pending, g = gradeById(p.grade), v = ITEMS[p.item]?.v || 1;
+    const clean = p.defects === 0;
+    body = `<div style="background:rgba(255,255,255,.03);border-radius:6px;padding:8px 10px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:2px">${g.ic} ${g.label} — ${ITEMS[p.item].ic} ${ITEMS[p.item].n}</div>
+      <div style="font-size:11px;color:var(--dim);margin-bottom:8px">Inspected ${p.inspected} · ${p.defects} defective (${Math.round(p.defectFrac*100)}%)</div>
+      ${clean
+        ? `<button data-qc-accept="1" style="background:#2a6a3a;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">✔ Accept clean batch</button>`
+        : `<button data-qc-rework="1" style="background:#2a5a8a;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700;margin-right:6px">🔧 Rework ${p.defects} (−${fmt(reworkCost(p.defects,v))}c)</button>
+           <button data-qc-scrap="1" style="background:#6a4020;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">♻️ Scrap ${p.defects} (+${fmt(scrapRefund(p.defects,v))}c)</button>`}
+    </div>`;
+  } else if (held.length){
+    const opts = held.map(g => `<option value="${g}">${ITEMS[g].ic} ${ITEMS[g].n} (${fmt(itemCount(g))})</option>`).join("");
+    body = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <select data-qc-item style="flex:1;min-width:130px;background:#20242c;color:#e8e8e8;border:1px solid #3a4048;border-radius:4px;padding:4px 6px;font-size:12px">${opts}</select>
+      <input data-qc-qty type="number" min="1" value="10" style="width:60px;background:#20242c;color:#e8e8e8;border:1px solid #3a4048;border-radius:4px;padding:4px 6px;font-size:12px">
+      <button data-qc-inspect="1" style="background:#5a3a8a;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">🔬 Inspect</button>
+    </div>`;
+  } else {
+    body = `<div style="font-size:11px;color:var(--dim)">Manufacture some finished goods, then inspect a batch here.</div>`;
+  }
+  const upBtn = nx
+    ? `<button data-qc-upgrade="1" style="background:${S.coins>=nx.cost?'#3a6a3a':'#444'};color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:${S.coins>=nx.cost?'pointer':'default'};font-size:11px;font-weight:700">Calibrate → ${nx.n} (${fmt(nx.cost)}c)</button>`
+    : `<span style="font-size:10px;color:var(--mint)">✔ Fully calibrated</span>`;
+  return `<div class="panel" style="padding:10px;margin-top:8px">
+    <h3 style="margin:0 0 6px;font-size:14px">🔬 Quality Control</h3>
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
+      <span>Quality Rating: <b>${st.rating}/100</b> <span style="color:var(--dim)">(${ratingLabel(st.rating)})</span></span>
+      <span style="color:var(--dim)">Defect rate ~${ratePct}%</span>
+    </div>
+    <div class="obj-bar" style="margin-bottom:8px"><div class="obj-fill" style="width:${st.rating}%"></div></div>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Inspect a batch, then rework or scrap defects. A higher rating lifts your sale prices and contract pay — the ${qcTierDef(st.tier).n} bench and your Manufacturing skill both cut defects.</p>
+    ${body}
+    <div style="margin-top:8px;text-align:right">${upBtn}</div>
   </div>`;
 }
 
@@ -8878,7 +8986,7 @@ function deliverContract(i){
   const c = S.contracts[i];
   if (!c || itemCount(c.item) < c.qty) return;
   S.items[c.item] -= c.qty;
-  const payout = Math.round(c.coins * payMult());
+  const payout = Math.round(c.coins * payMult() * qcContractMult());
   S.coins += payout;
   S.counters.coinsEarned = (S.counters.coinsEarned||0) + payout;
   grantXp("logistics", c.xp);
@@ -9138,6 +9246,7 @@ function renderSkillPanel(skill){
     </button>`;
   });
   html += `</div></div>`;
+  if (skill === "manufacturing") html += renderQCPanel();
   html += renderInventoryPanel();
   return html;
 }
@@ -9173,7 +9282,7 @@ function renderContracts(){
   S.contracts.forEach((c,i)=>{
     const have = itemCount(c.item);
     const ok = have >= c.qty;
-    const payout = Math.round(c.coins * payMult());
+    const payout = Math.round(c.coins * payMult() * qcContractMult());
     const t = tierById(c.tier);
     const rank = repRank(clientRep(c.client));
     const stars = rank.stars>0 ? "★".repeat(rank.stars)+"☆".repeat(4-rank.stars) : "☆☆☆☆";
@@ -11960,6 +12069,18 @@ function bindMain(){
     if (!sel || !qin) return;
     placeOrder(sid, sel.value, qin.value);
   });
+  // M18 — Quality Control bench
+  const _qcInspect = document.querySelector("[data-qc-inspect]");
+  if (_qcInspect) _qcInspect.onclick = ()=>{
+    const sel = document.querySelector("[data-qc-item]");
+    const qin = document.querySelector("[data-qc-qty]");
+    if (!sel || !qin) return;
+    qcInspect(sel.value, qin.value);
+  };
+  const _qcRework = document.querySelector("[data-qc-rework]"); if (_qcRework) _qcRework.onclick = ()=>qcResolve("rework");
+  const _qcScrap  = document.querySelector("[data-qc-scrap]");  if (_qcScrap)  _qcScrap.onclick  = ()=>qcResolve("scrap");
+  const _qcAccept = document.querySelector("[data-qc-accept]"); if (_qcAccept) _qcAccept.onclick = ()=>qcResolve("accept");
+  const _qcUp     = document.querySelector("[data-qc-upgrade]");if (_qcUp)     _qcUp.onclick     = ()=>qcUpgrade();
   // property purchase
   document.querySelectorAll("[data-buy-prop]").forEach(b=> b.onclick = ()=>{
     const _pid = b.dataset.buyProp;
