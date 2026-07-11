@@ -10,6 +10,9 @@ Audit/
 Exec Summary/
 Market Analysis/
 Metadata/
+# Source music drop — the shipped copy lives in public/music/ (root-anchored so it
+# does NOT also match public/music/ under Windows' case-insensitive ignore matching)
+/Music/
 
 # Local backups and superseded source snapshots
 src/upDATES/

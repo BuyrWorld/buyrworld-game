@@ -21,6 +21,7 @@ import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, foot
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
+import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -211,7 +212,7 @@ function doTrade(npcId, it, qty, mode){
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function pName(){ return S.playerName ? esc(S.playerName) : "boss"; }
 function frostSvg(size){
-  return `<svg width="${size}" height="${size}" viewBox="0 0 32 40" style="image-rendering:pixelated" role="img" aria-label="Frost, your guide">
+  return `<svg width="${size}" height="${size}" viewBox="0 0 32 40" style="image-rendering:pixelated" role="img" aria-label="Frosty, your guide">
     <rect x="7" y="2" width="18" height="7" fill="#17161a"/>
     <rect x="5" y="4" width="4" height="9" fill="#17161a"/><rect x="23" y="4" width="4" height="9" fill="#17161a"/>
     <rect x="9" y="7" width="14" height="9" fill="#f2c49a"/>
@@ -230,7 +231,7 @@ function frostSvg(size){
 // production) so each stage guarantees exactly the right amount: 6 ore → 3 bars →
 // 3 brackets → deliver 3 brackets via the guaranteed Tutorial Order.
 const TUT = [
-  { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>6 Iron Ore</b>. It'll stop on its own when you've got enough.`,
+  { say:()=>`Hey ${pName()}! Frosty here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>6 Iron Ore</b>. It'll stop on its own when you've got enough.`,
     obj:"Mine 6 Iron Ore", cond:()=> itemCount("iron_ore") >= 6, reward:TUTORIAL_REWARDS.mine,
     target:"rock_iron4", where:"Quarry (far west)", cur:()=>itemCount("iron_ore"), max:6 },
   { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk to the <b>Furnace</b> (the building with the chimney, west of the quarry) and smelt <b>3 Iron Bars</b> — exactly what your 6 ore makes.`,
@@ -262,8 +263,8 @@ function tutCheck(){
     const st = TUT[S.tut.step];
     S.coins += st.reward;
     endLogGroup();   // an objective completion breaks the grouped-production run
-    notify(`❄️ Frost: nice one! +${st.reward} coins`, 'tutorial_step');
-    log(`❄️ Frost approves — objective complete (<b>+${st.reward} coins</b>).`, "good");
+    notify(`❄️ Frosty: nice one! +${st.reward} coins`, 'tutorial_step');
+    log(`❄️ Frosty approves — objective complete (<b>+${st.reward} coins</b>).`, "good");
     // M2: make the win land — a burst + a chime on every tutorial step
     try{ SFX.levelUp(); }catch(e){}
     showJourneyBurst({ ic:"✅", title:"Objective complete!", reward:{} });
@@ -274,7 +275,7 @@ function tutCheck(){
     S.action = null;                 // stop any manual tutorial job
     S.coins += TUTORIAL_REWARDS.completeBonus;   // one-time completion bonus (audited budget)
     endLogGroup();
-    log(`❄️ Frost: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
+    log(`❄️ Frosty: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
     try{ SFX.fanfare(); }catch(e){}
     try{ syncOnboardingUI(); }catch(e){}
     try{ showTutorialSummary(); }catch(e){}   // the single "Your First Supply Chain" summary
@@ -317,7 +318,7 @@ function tutBannerHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
   const st = TUT[S.tut.step];
   return `<div class="frost">${frostSvg(64)}
-    <div class="say"><div class="who">FROST — YOUR GUIDE (${S.tut.step+1}/${TUT.length})</div>
+    <div class="say"><div class="who">FROSTY — YOUR GUIDE (${S.tut.step+1}/${TUT.length})</div>
     <p>${st.say()}</p><div class="obj">▸ Objective: ${st.obj} · Reward: ${st.reward} coins</div></div>
   </div>`;
 }
@@ -382,7 +383,8 @@ function zoneForTab(tab){
   if (tab==="nightclub") return "club_" + clubTheme().track;
   return "valley";
 }
-const MUSIC = (() => {
+// Chiptune engine (procedural) — kept as a fallback for any scenario without a real MP3.
+const CHIP = (() => {
   let ctx = null, timer = null, master = null, cur = null, loopStart = 0, noiseBuf = null, volMult = 1.0;
   const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
   function ensureCtx(){
@@ -459,19 +461,109 @@ const MUSIC = (() => {
     },
     setVol(v){ if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, 0.08); },
     setVolMult(m){ volMult = m; },
-    start(){ this.unlocked = true; this.play(zoneForTab(S.tab)); },
+    start(){ this.play(zoneForTab(S.tab)); },
   };
 })();
-function updateMusicZone(){
-  if (MUSIC.unlocked && S.settings && S.settings.music){
-    // Holding cell: slow, restrained ambience at a hushed volume (its own hook),
-    // fading in on arrival and back out to the town on release via the track change.
-    if (S.tab === "police_cell"){ MUSIC.setVolMult(0.18); MUSIC.play("home"); return; }
-    const isHome = S.tab === "home";
-    const isInterior = INTERIOR_TABS.has(S.tab) && S.tab !== "village";
-    MUSIC.setVolMult(isHome ? 0.28 : isInterior ? 0.42 : 1.0);
-    MUSIC.play(zoneForTab(S.tab));
+
+/* ---------- real MP3 soundtrack (player-loaded, served from public/music/) ---------- */
+// Scenario buckets → the actual MP3s the player dropped into Music/Frosty/*.
+// The global engine only ever selects from these; the "Frosty Exclusive" folder is
+// deliberately absent — those tracks are radio-only (see src/data/radio.ts).
+const MUSIC_FILES = {
+  title:            ['music/title/Frosty - Dead Inside (Game Music).mp3'],
+  nightclub_strip:  ['music/nightclub_strip/Frosty - Dark Passenger.mp3','music/nightclub_strip/Frosty - Mistakes.mp3','music/nightclub_strip/Frosty - Unapologetic (Explicit).mp3'],
+  nightclub_normal: ['music/nightclub_normal/Frosty - Deja Vu (Club).mp3','music/nightclub_normal/Frosty - Hit Back (Club).mp3','music/nightclub_normal/Frosty - Insatiable (Dance).mp3','music/nightclub_normal/Frosty - Too Far Gone (Dance).mp3','music/nightclub_normal/Frosty - Unsociable (Club).mp3'],
+  forest:           ['music/forest/Frosty - Departure [Instrumental].mp3'],
+  general:          ['music/general/Frosty - It is What it is (General Game).mp3'],
+  holding:          ['music/holding/Frosty - Unhinged [Instrumental].mp3'],
+};
+// Player-facing "Con" venue: the strip-club set plays for players with a criminal
+// record (any logged justice incident); civilians get the normal club set.
+function _isCon(){ return !!(S.justice && Array.isArray(S.justice.incidents) && S.justice.incidents.length > 0); }
+// Map the current tab to one of the scenario buckets above (global engine only).
+function scenarioForTab(tab){
+  if (tab === "police_cell") return "holding";
+  if (tab === "nightclub") return _isCon() ? "nightclub_strip" : "nightclub_normal";
+  if (tab === "woodcutting" || tab === "foraging") return "forest";
+  return "general";
+}
+// A file-based playlist engine (HTMLAudioElement). Loops a shuffled bucket; the
+// exclusive radio drives it directly with a single-track playlist.
+const FILEMUSIC = (() => {
+  let el = null, key = null, list = [], idx = 0, volMult = 1.0, base = 0.75, fadeTimer = null;
+  function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+  function target(){ return Math.max(0, Math.min(1, base * volMult)); }
+  function make(src){
+    const a = new Audio(encodeURI('./' + src));
+    a.preload = 'auto'; a.loop = (list.length <= 1);
+    a.volume = 0;
+    a.addEventListener('ended', () => { if (list.length > 1 && el === a) advance(); });
+    return a;
   }
+  function fadeTo(a, to, done){
+    if (fadeTimer){ clearInterval(fadeTimer); fadeTimer = null; }
+    const step = (to - a.volume) / 12;
+    fadeTimer = setInterval(() => {
+      try{ a.volume = Math.max(0, Math.min(1, a.volume + step)); }catch(e){}
+      if ((step >= 0 && a.volume >= to - 0.01) || (step < 0 && a.volume <= to + 0.01)){
+        try{ a.volume = to; }catch(e){}
+        clearInterval(fadeTimer); fadeTimer = null; if (done) done();
+      }
+    }, 45);
+  }
+  function swapTo(src){
+    const old = el;
+    if (old){ fadeTo(old, 0, () => { try{ old.pause(); }catch(e){} }); }
+    el = make(src);
+    const a = el;
+    a.play().then(() => fadeTo(a, target())).catch(() => {});
+  }
+  function advance(){ if (!list.length) return; idx = (idx + 1) % list.length; swapTo(list[idx]); }
+  return {
+    // Start (or keep) a scenario playlist. key guards against needless restarts.
+    playList(newKey, srcs){
+      if (!srcs || !srcs.length){ this.stop(); return; }
+      if (key === newKey && el){ if (el.volume < target() - 0.02 && !fadeTimer) fadeTo(el, target()); return; }
+      key = newKey; list = shuffle(srcs.slice()); idx = 0; swapTo(list[0]);
+    },
+    stop(){ if (fadeTimer){ clearInterval(fadeTimer); fadeTimer = null; } if (el){ const old = el; fadeTo(old, 0, () => { try{ old.pause(); }catch(e){} }); } el = null; key = null; },
+    setVol(v){ base = v; if (el && !fadeTimer) { try{ el.volume = target(); }catch(e){} } },
+    setVolMult(m){ volMult = m; if (el && !fadeTimer) { try{ el.volume = target(); }catch(e){} } },
+    playing(k){ return key === k && !!el; },
+  };
+})();
+
+// Public facade: real MP3s when a scenario/file exists, chiptune as a safety net.
+const MUSIC = {
+  unlocked: false,
+  // scenario bucket (title/nightclub_*/forest/general/holding) → its MP3 playlist
+  playScenario(scn){ const files = MUSIC_FILES[scn]; if (files){ CHIP.stop(); FILEMUSIC.playList(scn, files); } else { FILEMUSIC.stop(); CHIP.play(zoneForTab(S.tab)); } },
+  // a specific file (used by the diegetic radio) under a caller-chosen key
+  playFile(key, src){ CHIP.stop(); FILEMUSIC.playList(key, [src]); },
+  // legacy chiptune-key callers (e.g. title preview) still work
+  play(id){ if (MUSIC_FILES[id]){ this.playScenario(id); } else if (typeof TRACKS !== 'undefined' && TRACKS[id]){ FILEMUSIC.stop(); CHIP.play(id); } else { this.playScenario('general'); } },
+  stop(){ FILEMUSIC.stop(); CHIP.stop(); },
+  setVol(v){ FILEMUSIC.setVol(v); CHIP.setVol(v); },
+  setVolMult(m){ FILEMUSIC.setVolMult(m); CHIP.setVolMult(m); },
+  start(){ this.unlocked = true; updateMusicZone(); },
+};
+function updateMusicZone(){
+  // The radio is house-only and never auto-resumes: leaving Frosty's House switches it off.
+  if (S.tab !== "frost_lodge" && _radioOn) _radioOn = false;
+  if (!(MUSIC.unlocked && S.settings && S.settings.music)) return;
+  // Diegetic radio takes over while inside Frosty's House and switched on.
+  if (S.tab === "frost_lodge" && _radioOn && _radioSelectedTrack()){
+    MUSIC.setVolMult(_radioVolMult());
+    MUSIC.playFile('radio:' + _radioSelectedTrack().id, _radioSelectedTrack().file);
+    return;
+  }
+  // Title / character-creation screen → the Title theme (top of the global priority).
+  if (typeof _titleUp === "function" && _titleUp()){ MUSIC.setVolMult(1.0); MUSIC.playScenario("title"); return; }
+  const scn = scenarioForTab(S.tab);
+  const isHome = S.tab === "home" || S.tab === "myhome" || S.tab === "frost_lodge";
+  const isInterior = INTERIOR_TABS.has(S.tab) && S.tab !== "village";
+  MUSIC.setVolMult(scn === "holding" ? 0.55 : isHome ? 0.6 : isInterior ? 0.82 : 1.0);
+  MUSIC.playScenario(scn);
 }
 /* ---------- action sound effects ---------- */
 const VOL_LEVELS = { low: 0.45, med: 0.75, loud: 1.05 };
@@ -604,7 +696,7 @@ function showPlayHint(){
   ov.id = "play-hint-overlay";
   ov.innerHTML = `<div id="play-hint" role="dialog" aria-modal="true" aria-labelledby="ph-title">
     <h2 id="ph-title">Welcome to Featherstone Valley! ❄️</h2>
-    <p class="ph-sub">You've arrived with big dreams and a handful of coins. Frost will show you the ropes — here's how to get around:</p>
+    <p class="ph-sub">You've arrived with big dreams and a handful of coins. Frosty will show you the ropes — here's how to get around:</p>
     <div class="ph-row"><span class="ph-ic">🕹️</span><span><b>Move</b> — tap or click where you want to go, or use <b>WASD</b> / arrow keys / a gamepad.</span></div>
     <div class="ph-row"><span class="ph-ic">👆</span><span><b>Interact</b> — click a person, building or resource to use it.</span></div>
     <div class="ph-row"><span class="ph-ic">🪓</span><span><b>Swing</b> — while mining or chopping, tap the resource (or press Space) to speed it up.</span></div>
@@ -619,7 +711,7 @@ function showPlayHint(){
   ov.addEventListener("keydown", e=>{ if (e.key==="Enter" || e.key==="Escape"){ e.preventDefault(); close(); } });
 }
 function maybeShowPlayHint(){ if (!S.seenControls && S.tut && !S.tut.done) showPlayHint(); }
-// Hide advanced HUD buttons until Frost's tutorial is done, to declutter the opening.
+// Hide advanced HUD buttons until Frosty's tutorial is done, to declutter the opening.
 function syncOnboardingUI(){
   const done = !!(S.tut && S.tut.done);
   ["btn-journey","btn-ledger","btn-districts"].forEach(id=>{
@@ -681,6 +773,96 @@ function openSettings(){
     save(); el.remove(); openSettings();
   });
 }
+// ================= Frosty's Radio (diegetic, house-only) =================
+let _radioOn = false;   // runtime only — never persisted playing (no autoplay on re-entry)
+function _radio(){ if (!S.frostyRadio) S.frostyRadio = { announced:[], selected:null, volume:'med' }; return S.frostyRadio; }
+// "Frosty quests" = Frosty-guided milestones: his tutorial + Founder's Journey stages.
+function _frostyQuests(){ return (S.tut && S.tut.done ? 1 : 0) + (S.journey?.claimed?.length || 0); }
+function _radioIsUnlocked(){ return radioUnlocked(_frostyQuests()); }
+// Fixed clickable rect for the radio inside Frosty's House (interior canvas coords).
+function _radioHotspot(){ const W=icanvasW(), H=icanvasH(); return { x: Math.round(W*0.30), y: Math.round(H-60), w: 28, h: 18 }; }
+function _radioSelectedTrack(){ const r=_radio(); const list=unlockedTracks(_frostyQuests()); return list.find(t=>t.id===r.selected) || list[0] || null; }
+// Announce newly-unlocked tracks once each (no autoplay, no duplicate rewards).
+function checkRadioUnlocks(){
+  const r=_radio(); const q=_frostyQuests();
+  for (const t of unlockedTracks(q)){
+    if (!r.announced.includes(t.id)){
+      r.announced.push(t.id);
+      if (r.announced.length === 1){
+        notify(`📻 Frosty's invited you in! Radio unlocked — new track: ${t.title}`, 'award');
+        log(`📻 <b>Frosty's Radio unlocked</b> — visit Frosty's House and try the radio. First track: <b>${t.title}</b>.`, "good");
+      } else {
+        notify(`📻 New Frosty Radio track unlocked: ${t.title}`, 'award');
+        log(`📻 New track for Frosty's Radio: <b>${t.title}</b> (${t.source}). Play it on the radio in Frosty's House.`, "good");
+      }
+      save();
+    }
+  }
+}
+function _radioVolMult(){ return ({ low:0.35, med:0.6, loud:0.9 })[_radio().volume] || 0.6; }
+function _radioApply(){
+  // updateMusicZone handles the radio takeover (and restoring zone music when off).
+  updateMusicZone();
+}
+function _radioSetOn(on){ _radioOn = on; _radioApply(); renderRadioPanel(); }
+function _radioSelect(id){ const r=_radio(); if (!isTrackUnlocked(id, _frostyQuests())) { toast('That track is still locked.'); return; } r.selected=id; if(_radioOn) _radioApply(); renderRadioPanel(); save(); }
+function _radioStep(dir){ const list=unlockedTracks(_frostyQuests()); if(!list.length) return; const cur=Math.max(0, list.findIndex(t=>t.id===_radioSelectedTrack()?.id)); _radioSelect(list[(cur+dir+list.length)%list.length].id); }
+function _radioSetVol(v){ _radio().volume=v; if(_radioOn) _radioApply(); renderRadioPanel(); save(); }
+// Called when leaving Frosty's House — stop the radio, restore normal music.
+function _radioOnLeaveHouse(){ if (_radioOn){ _radioOn=false; } }
+function renderRadioPanel(){
+  const body=document.getElementById('radio-body'); if(!body) return;
+  const q=_frostyQuests();
+  if (!radioUnlocked(q)){
+    const nx=nextTrackToUnlock(q);
+    body.innerHTML=`<div class="panel" style="padding:14px;max-width:340px;text-align:center">
+      <h2 style="margin:0 0 6px">📻 Frosty's Radio <span style="font-size:11px;color:var(--dim)">🔒 Locked</span></h2>
+      <p style="font-size:12px;color:var(--dim);margin:0 0 10px">Frosty keeps this radio locked. Help him around the valley and he might let you use it.</p>
+      <button id="radio-close" style="background:#333;color:#fff;border:none;border-radius:5px;padding:6px 16px;cursor:pointer">Close</button></div>`;
+    (document.getElementById('radio-close') as HTMLElement).onclick=closeRadio; return;
+  }
+  const list=unlockedTracks(q), sel=_radioSelectedTrack();
+  const allRows=FROSTY_TRACKS.map(t=>{ const ok=isTrackUnlocked(t.id,q); const active=ok&&sel&&sel.id===t.id;
+    return `<button ${ok?`data-radio-track="${t.id}"`:'disabled'} style="display:block;width:100%;text-align:left;background:${active?'#3a5a6a':ok?'#33333c':'#2a2a30'};color:${ok?'#e8e8ee':'#6a6a72'};border:1px solid ${active?'#8ac0ff':'#44444e'};border-radius:5px;padding:6px 9px;font-size:11px;margin-bottom:4px;cursor:${ok?'pointer':'default'}">${ok?(active&&_radioOn?'▶ ':'♪ '):'🔒 '}${ok?t.title:'Unknown Track'}${ok?'':` — <span style="font-size:9px">${t.source}</span>`}</button>`;
+  }).join('');
+  const vol=_radio().volume;
+  body.innerHTML=`<div class="panel" style="padding:14px;max-width:360px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0;font-size:16px">📻 Frosty's Radio</h2><button id="radio-close" aria-label="Close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
+    <div style="background:${_radioOn?'rgba(90,140,90,.15)':'rgba(255,255,255,.04)'};border-radius:6px;padding:8px 11px;margin-bottom:8px;font-size:12px">
+      ${_radioOn?`<b>Playing on Frosty's Radio</b><br>${sel?esc(sel.title):'—'} <span style="color:var(--dim)">· ${sel?esc(sel.composer):''}</span>`:'Radio is off.'}</div>
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">
+      <button data-radio="power" style="background:${_radioOn?'#6a2a2a':'#2a6a3a'};color:#fff;border:none;border-radius:5px;padding:6px 10px;cursor:pointer" title="Power (Y)">⏻ ${_radioOn?'Off':'On'}</button>
+      <button data-radio="prev" style="background:#3a4a5a;color:#fff;border:none;border-radius:5px;padding:6px 10px;cursor:pointer" title="Previous (←)">⏮</button>
+      <button data-radio="play" style="background:#3a4a5a;color:#fff;border:none;border-radius:5px;padding:6px 10px;cursor:pointer" title="Play/Pause (X)">${_radioOn?'⏸':'▶'}</button>
+      <button data-radio="next" style="background:#3a4a5a;color:#fff;border:none;border-radius:5px;padding:6px 10px;cursor:pointer" title="Next (→)">⏭</button>
+    </div>
+    <div style="display:flex;gap:5px;align-items:center;margin-bottom:8px;font-size:11px"><span>Volume:</span>${['low','med','loud'].map(v=>`<button data-radio-vol="${v}" style="background:${vol===v?'#3a6a8a':'#33333c'};color:#fff;border:none;border-radius:4px;padding:3px 9px;font-size:10px;cursor:pointer">${v}</button>`).join('')}</div>
+    <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Track list — ${unlockedTracks(q).length}/${FROSTY_TRACKS.length} unlocked (${collectionPct(q)}%)</div>
+    ${allRows}
+    <p style="font-size:9px;color:var(--dim);margin:8px 0 0">Controller — Ⓐ select · Ⓑ close · ←/→ track · Ⓧ play/pause · Ⓨ power. Music plays only here in Frosty's House.</p>
+  </div>`;
+  (document.getElementById('radio-close') as HTMLElement).onclick=closeRadio;
+  body.querySelectorAll('[data-radio-track]').forEach(b=>(b as HTMLElement).onclick=()=>_radioSelect((b as HTMLElement).dataset.radioTrack!));
+  body.querySelectorAll('[data-radio-vol]').forEach(b=>(b as HTMLElement).onclick=()=>_radioSetVol((b as HTMLElement).dataset.radioVol!));
+  body.querySelectorAll('[data-radio]').forEach(b=>(b as HTMLElement).onclick=()=>{ const a=(b as HTMLElement).dataset.radio;
+    if(a==='power') _radioSetOn(!_radioOn); else if(a==='play') _radioSetOn(!_radioOn); else if(a==='prev') _radioStep(-1); else if(a==='next') _radioStep(1); });
+}
+function openRadio(){
+  if (document.getElementById('radio-modal')){ renderRadioPanel(); return; }
+  const el=document.createElement('div'); el.id='radio-modal';
+  el.style.cssText='position:fixed;inset:0;z-index:66;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:16px';
+  el.innerHTML='<div id="radio-body"></div>'; document.body.appendChild(el);
+  el.addEventListener('click',e=>{ if(e.target===el) closeRadio(); });
+  _radioKey=(e:any)=>{ if(!document.getElementById('radio-modal')) return;
+    if(e.key==='Escape'){ closeRadio(); } else if(!radioUnlocked(_frostyQuests())) return;
+    else if(e.key==='ArrowLeft'){ _radioStep(-1); } else if(e.key==='ArrowRight'){ _radioStep(1); }
+    else if(e.key==='x'||e.key==='X'||e.key===' '){ e.preventDefault(); _radioSetOn(!_radioOn); } };
+  window.addEventListener('keydown', _radioKey);
+  renderRadioPanel();
+}
+let _radioKey:any=null;
+function closeRadio(){ if(_radioKey){ window.removeEventListener('keydown',_radioKey); _radioKey=null; } const e=document.getElementById('radio-modal'); if(e) e.remove(); }
+(globalThis as any).openRadio = openRadio;
 /* ================= VILLAGE WORLD ================= */
 const CAM = { x:0, y:0 };
 // Derive player colours from S.appearance (falls back to defaults for legacy saves)
@@ -748,7 +930,7 @@ const ACH = [
   { id:"full_barn",   ic:"🐾", n:"Full Barn",         ds:"Recruit all "+PETS.length+" companions.", r:2000, c:()=>S.pets.owned.length>=PETS.length },
   { id:"capex",       ic:"🛒", n:"CapEx Approved",    ds:"Buy your first upgrade.",           r:50,   c:()=>Object.keys(S.upgrades).length>=1 },
   { id:"rail_baron",  ic:"🚆", n:"Rail Baron",        ds:"Sign the Rail Freight Deal.",       r:1000, c:()=>!!S.upgrades.fleet3 },
-  { id:"frosty_grad", ic:"❄️", n:"Stay Frosty",       ds:"Complete Frost's tutorial.",        r:50,   c:()=>S.tut && S.tut.done },
+  { id:"frosty_grad", ic:"❄️", n:"Stay Frosty",       ds:"Complete Frosty's tutorial.",        r:50,   c:()=>S.tut && S.tut.done },
   { id:"first_fish",   ic:"🎣", n:"First Cast",        ds:"Catch your first fish.",             r:25,   c:()=>prodSum(["sardine","mackerel","bass","salmon","tuna"])>=1 },
   { id:"angler_100",   ic:"🐟", n:"Seasoned Angler",   ds:"Catch 100 fish.",                    r:150,  c:()=>prodSum(["sardine","mackerel","bass","salmon","tuna"])>=100 },
   { id:"graduate",     ic:"🏛️", n:"Graduate",           ds:"Complete a university degree.",      r:150,  c:()=>(S.degrees?.length||0)>=1 },
@@ -868,15 +1050,15 @@ function achCheck(){
   }
 }
 const WANDERERS = [
-  { id:"frost", n:"Frost", hair:"#17161a", shirt:"#bfe8f7", x:11*TILE, y:26*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
+  { id:"frost", n:"Frosty", hair:"#17161a", shirt:"#bfe8f7", x:11*TILE, y:26*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
     area:[10,25,25,29], home:[10,29,20,29], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
     // patrols the path by the furnace/quarry (avoids the pond at tx14–17,ty27–28)
     route:[[11,26],[18,26],[24,26],[24,29],[18,29],[11,29]],
-    profile:{ job:"Supply Chain Professional", home:"The Valley Lodge", children:["Harison (6)"] } },
+    profile:{ job:"Supply Chain Professional", home:"Frosty's House", children:["Harison (6)"] } },
   { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:(14+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
     area:[2,12+NORTH_EXT,8,16+NORTH_EXT], home:[2,12+NORTH_EXT,5,13+NORTH_EXT], tips:[
       "Morning! My turnips go by lorry now. Fancy that.",
-      "Frost says you're the new founder. Don't work too hard!",
+      "Frosty says you're the new founder. Don't work too hard!",
       "The market stalls pay best on green-arrow days.",
     ],
     profile:{ job:"Turnip Farmer", home:"Poppy's Farm" } },
@@ -954,7 +1136,7 @@ const INTERIOR_RESIDENTS = {
   village_fund:   { name:"The Committee",x:90,  y:76,  lines:["Every donation makes the valley bloom.","We've grand plans for the village green.","Thank you kindly for your generosity."] },
   contracts:      { name:"Depot Clerk",  x:43,  y:120, lines:["Orders keep piling up — grand for business!","Deliver the goods, collect your coin.","Bigger orders pay the most, mind.","The lorry's due in any minute now."] },
   upgrades:       { name:"The Mayor",    x:160, y:56,  lines:["Welcome to the Town Hall!","Invest your profits — every upgrade pays for itself.","A prosperous founder makes a prosperous valley.","We're always improving Featherstone."] },
-  frost_lodge:    { name:"Frost",        x:160, y:148, lines:["Welcome to the lodge — warm yourself by the fire! What do you need a hand with?","Stuck on something? Mining, trade, contracts — ask away, I've done the lot.","Buy low when the arrow's red, sell high when it's green. That's the whole MBA.","Deliver contracts to level Logistics and open up the Harbour.","Never too late for a chat. Stay frosty."] },
+  frost_lodge:    { name:"Frosty",        x:160, y:148, lines:["Welcome to the lodge — warm yourself by the fire! What do you need a hand with?","Stuck on something? Mining, trade, contracts — ask away, I've done the lot.","Buy low when the arrow's red, sell high when it's green. That's the whole MBA.","Deliver contracts to level Logistics and open up the Harbour.","Never too late for a chat. Stay frosty."] },
 };
 let _intChat = null; // {name, lines, idx} — the resident NPC you're currently chatting with
 // ---- Dialogue system v2: ambient, situational, legible speech bubbles ----
@@ -3007,7 +3189,7 @@ function welcomeCtx(){
 function checkWelcome(){
   if (!S.welcome) S.welcome = { claimed:[], notified:"" };
   if (allWelcomeDone(S.welcome.claimed)) return;
-  if (!S.tut || !S.tut.done) return;                 // finish Frost's tutorial first
+  if (!S.tut || !S.tut.done) return;                 // finish Frosty's tutorial first
   const ctx = welcomeCtx();
   let idx = currentBeatIndex(S.welcome.claimed), granted = 0;
   while (idx < WELCOME_BEATS.length && beatComplete(WELCOME_BEATS[idx], ctx) && granted < 3){
@@ -5787,7 +5969,7 @@ function drawInterior(t){
     const _hwx = W/2-24 + Math.sin(t*0.25)*6;
     drawPerson(ctx, _hwx, 80, "#3a2a1a", "#2a4a6a", t, false, IP.x >= _hwx ? 1 : -1, null, "down");
   } else if (S.tab==="frost_lodge"){
-    // The Valley Lodge — Frost's cosy home: warm timber, a fire, snowy-blue trim
+    // Frosty's House — Frosty's cosy home: warm timber, a fire, snowy-blue trim
     room("#3a4650","#4a5a68","#8a6a44","#7a5a34","#20282e");
     // window with a wintry view
     ctx.fillStyle="#2a3a4a"; ctx.fillRect(W-40,14,26,20); ctx.fillStyle="#bfe8f7"; ctx.fillRect(W-38,16,22,16);
@@ -5799,6 +5981,16 @@ function drawInterior(t){
     // rug, armchair, kettle
     ctx.fillStyle="#8a3a3a"; ctx.fillRect(W/2-30,H-46,60,20); ctx.fillStyle="#6a2a2a"; ctx.fillRect(W/2-30,H-46,60,3);
     drawEmojiC(ctx,"🪑",W-52,H-40,15); drawEmojiC(ctx,"🫖",W-30,H-52,11);
+    // Frosty's diegetic radio on a side table (clickable — see _radioHotspot)
+    const _rh = _radioHotspot();
+    ctx.fillStyle="#3a2a1a"; ctx.fillRect(_rh.x-2, _rh.y+ _rh.h-4, _rh.w+4, 5);   // little table shelf
+    ctx.fillStyle= _radioIsUnlocked() ? "#2a2a34" : "#242430"; ctx.fillRect(_rh.x,_rh.y,_rh.w,_rh.h);
+    ctx.strokeStyle= _radioOn ? "#8ac0ff" : "#55555f"; ctx.lineWidth=1.5; ctx.strokeRect(_rh.x+0.5,_rh.y+0.5,_rh.w-1,_rh.h-1);
+    ctx.fillStyle="#15151a"; ctx.fillRect(_rh.x+3,_rh.y+3,_rh.w-14,_rh.h-6);            // speaker grille
+    ctx.fillStyle= _radioOn ? "#6affa0" : "#454550"; ctx.beginPath(); ctx.arc(_rh.x+_rh.w-5,_rh.y+5,2,0,Math.PI*2); ctx.fill();  // power LED
+    drawEmojiC(ctx,"📻",_rh.x+_rh.w/2,_rh.y-8,11);
+    if (_radioOn){ ctx.globalAlpha=0.4+Math.abs(Math.sin(t*4))*0.4; drawEmojiC(ctx,"🎵",_rh.x+_rh.w+7,_rh.y-6,9); ctx.globalAlpha=1; }
+    else if (_radioIsUnlocked()){ ctx.globalAlpha=0.5+Math.abs(Math.sin(t*2))*0.3; drawEmojiC(ctx,"👆",_rh.x+_rh.w+7,_rh.y+2,9); ctx.globalAlpha=1; }
     // Frost is home in the evenings/at night; out and about by day
     if (isNight() || gameHour() >= 18.5){
       const _fx = W*0.5 + Math.sin(t*0.3)*5;
@@ -7830,6 +8022,11 @@ function interiorClick(e){
     const r = _pubDartsRect;
     if (cx>=r.x && cx<=r.x+r.w && cy>=r.y && cy<=r.y+r.h){ openDarts(); return; }
   }
+  // Frosty's House: tap the radio to open its panel (locked message if not yet earned)
+  if (S.tab === "frost_lodge"){
+    const r = _radioHotspot();
+    if (cx>=r.x-6 && cx<=r.x+r.w+6 && cy>=r.y-14 && cy<=r.y+r.h+6){ openRadio(); return; }
+  }
   // cottage: tap the games console to play Battle Royale
   if (S.tab === "myhome" && _homeConsoleRect){
     const r = _homeConsoleRect;
@@ -8037,7 +8234,7 @@ function showTitle(){
   };
   _renderWizard();
 
-  document.getElementById("btn-preview").onclick = () => { MUSIC.unlocked = true; MUSIC.play("valley"); };
+  document.getElementById("btn-preview").onclick = () => { MUSIC.unlocked = true; MUSIC.play("title"); };
   // shared launch — validated name in, game begins. Used by START and Quick Start.
   const _launch = (name, delay) => {
     _errEl.style.display = "none";
@@ -8051,7 +8248,7 @@ function showTitle(){
       MUSIC.unlocked = true; updateMusicZone();
       const stat = document.getElementById("hud-name-stat");
       if (stat){ stat.classList.add("named","named-anim"); setTimeout(()=>stat.classList.remove("named-anim"),500); }
-      log(`❄️ Frost: "Welcome to Featherstone Valley, <b>${pName()}</b>! Follow my lead and you'll be running this valley by teatime."`, "good");
+      log(`❄️ Frosty: "Welcome to Featherstone Valley, <b>${pName()}</b>! Follow my lead and you'll be running this valley by teatime."`, "good");
       updateHud(); renderNav(); renderMain(); save();
       focusGameInput();   // Task 3: keyboard works the moment you land in the village
       maybeShowPlayHint();   // M1: one-time "How to Play" card for brand-new players
@@ -8217,6 +8414,7 @@ function freshState(){
     justice: { v:2, incidents:[], nextId:1, community:null },
     court: { cases:[], nextId:1 },
     legalKnowledge: 0,
+    frostyRadio: { announced:[] as string[], selected:null as string|null, volume:"med" },
   };
 }
 let S = freshState();
@@ -8380,6 +8578,22 @@ function load(){
       if (!("court" in parsed) || !S.court || !Array.isArray(S.court.cases)) S.court = { cases:[], nextId:1 };
       if (typeof S.court.nextId !== "number") S.court.nextId = (S.court.cases.reduce((m,c)=>Math.max(m,c.id||0),0)||0)+1;
       if (typeof S.legalKnowledge !== "number") S.legalKnowledge = 0;
+      // Frosty's Radio — safe migration. Seed the state, drop any stale/renamed track
+      // ids, and mark already-earned tracks as "announced" so old saves don't spam a
+      // pile of unlock toasts on load (they still count as unlocked — no duplicates).
+      if (!S.frostyRadio || typeof S.frostyRadio !== "object") S.frostyRadio = { announced:[], selected:null, volume:"med" };
+      if (!Array.isArray(S.frostyRadio.announced)) S.frostyRadio.announced = [];
+      if (!("selected" in S.frostyRadio)) S.frostyRadio.selected = null;
+      if (!S.frostyRadio.volume) S.frostyRadio.volume = "med";
+      { const _valid = new Set(FROSTY_TRACKS.map(t=>t.id));
+        S.frostyRadio.announced = S.frostyRadio.announced.filter((id:string)=>_valid.has(id));
+        if (S.frostyRadio.selected && !_valid.has(S.frostyRadio.selected)) S.frostyRadio.selected = null;
+        if (!("frostyRadio" in parsed)){
+          // pre-radio save: already-earned tracks are silently granted (no toast, once)
+          for (const t of unlockedTracks((S.tut&&S.tut.done?1:0) + (S.journey?.claimed?.length||0)))
+            if (!S.frostyRadio.announced.includes(t.id)) S.frostyRadio.announced.push(t.id);
+        }
+      }
       // Milestone 1 — deterministic tutorial: flag + one-time material recovery for
       // saves stranded mid-tutorial under the old (5/2/1) amounts.
       if (!("tutContractDone" in parsed)) S.tutContractDone = false;
@@ -9613,13 +9827,13 @@ function completeAction(act, skill, silent){
     const _oid = Object.keys(_out)[0];
     if (_tutorialActive() && tutorialShouldStop(_oid, itemCount(_oid))){
       S.action = null;
-      if (!silent) toast(`❄️ Frost: that's exactly ${TUTORIAL_TARGETS[_oid]} — job done, no need to overdo it!`);
+      if (!silent) toast(`❄️ Frosty: that's exactly ${TUTORIAL_TARGETS[_oid]} — job done, no need to overdo it!`);
       try{ renderNav(); renderMain(); }catch(e){}
     }
   }
   return true;
 }
-// Frost's tutorial is running (drives auto-stop + bonus suppression).
+// Frosty's tutorial is running (drives auto-stop + bonus suppression).
 function _tutorialActive(){ return !!(S.tut && !S.tut.done); }
 // Remaining tutorial units of an action's output (for the active-job UI), or null.
 function _tutRemain(act){
@@ -9893,13 +10107,13 @@ const TAB_COND = {
 const TAB_UNLOCK_HINT = {
   steelworks:    "Mine some ore to unlock",
   manufacturing: "Smelt a bar to unlock",
-  woodcutting:   "Finish Frost's tutorial to unlock",
-  fishing:       "Finish Frost's tutorial to unlock",
+  woodcutting:   "Finish Frosty's tutorial to unlock",
+  fishing:       "Finish Frosty's tutorial to unlock",
   contracts:     "Manufacture a part to unlock",
   trade:         "Deliver a contract to unlock",
   upgrades:      "Earn 100 coins to unlock",
-  pets:          "Finish Frost's tutorial to unlock",
-  ach:           "Finish Frost's tutorial to unlock",
+  pets:          "Finish Frosty's tutorial to unlock",
+  ach:           "Finish Frosty's tutorial to unlock",
 };
 function tabUnlocked(id){ return TAB_ALWAYS.has(id) || !!(S.unlockedTabs && S.unlockedTabs[id]); }
 // Grant any newly-earned tab unlocks. `silent` skips the toast/log (used on load to
@@ -10166,7 +10380,7 @@ function renderContracts(){
     if (c.tutorial){
       html += `<div class="contract" style="border:2px solid #e8b24a;background:rgba(232,178,74,.1)">
         <div class="who">📘 ${c.client} <span style="font-size:9px;background:#e8b24a;color:#1a0f04;padding:1px 6px;border-radius:3px;font-weight:800">TUTORIAL ORDER</span></div>
-        <div style="font-size:10px;color:var(--dim);margin:1px 0 3px">❄️ Frost lined this up for you — no deadline, no reputation risk. Just deliver.</div>
+        <div style="font-size:10px;color:var(--dim);margin:1px 0 3px">❄️ Frosty lined this up for you — no deadline, no reputation risk. Just deliver.</div>
         <div class="pay">💰 ${fmt(payout)} coins · +${c.xp} Logistics XP</div>
         <div class="req">Needs <span class="${ok?'have':'short'}">${c.qty}× ${ITEMS[c.item].ic} ${ITEMS[c.item].n}</span> — you have ${have}</div>
         <button class="btn deliver" data-deliver="${i}" ${ok?'':'disabled'}>DELIVER</button>
@@ -10893,7 +11107,7 @@ function renderDecorModal(){
 }
 // ================= M3: cottage cleanliness & household routine =================
 function _cottage(){ if(!S.cottage) S.cottage = { clean:START_CLEAN, mess:[], carried:0, bin:{fill:0,lastDay:-1}, intro:0, goals:{}, reminded:-1 }; return S.cottage; }
-// The system only lives once Frost's industrial tutorial is done AND it's been introduced.
+// The system only lives once Frosty's industrial tutorial is done AND it's been introduced.
 function _cottageActive(){ return !!(S.tut && S.tut.done && _cottage().intro > 0); }
 function _cleanTier(){ return 0; }   // upgrade/hired-help hook for later
 function _freeMessCell(){
@@ -10996,7 +11210,7 @@ function _cottageIntro(){
   if(!trigger) return;
   c.intro=1; c.clean=START_CLEAN;
   const cell=_freeMessCell(); c.mess = cell? [{kind:'wrapper',gx:cell.gx,gy:cell.gy}] : [];
-  toast('❄️ Frost: "A proper first shift leaves its mark. Pick up that wrapper, then pop it in the bin outside."');
+  toast('❄️ Frosty: "A proper first shift leaves its mark. Pick up that wrapper, then pop it in the bin outside."');
   log('🧹 <b>Keeping house</b> — living in your cottage makes a little mess. Open 🛋️ Decorate to pick it up, then bin it outside. A tidy home keeps visitors happy — no nagging, just cosy.',"good");
   save();
 }
@@ -12503,7 +12717,7 @@ function renderMain(){
     else if (S.tab==="police_cell") m.innerHTML = _withRoom("🚔 Holding Cell — Featherstone Constabulary", renderPoliceCellPanel());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
-    else if (S.tab==="frost_lodge") m.innerHTML = _withRoom("🏡 The Valley Lodge", `<div class="panel" style="padding:10px"><h3 style="margin:0 0 6px;font-size:14px">🏡 The Valley Lodge</h3><p style="color:var(--dim);font-size:12px;margin:0">Frost's cosy home. He's here in the evenings and after dark — pop in for a warm welcome and a hand with anything you're stuck on. By day he's out and about the valley.</p></div>`);
+    else if (S.tab==="frost_lodge") m.innerHTML = _withRoom("🏡 Frosty's House", `<div class="panel" style="padding:10px"><h3 style="margin:0 0 6px;font-size:14px">🏡 Frosty's House</h3><p style="color:var(--dim);font-size:12px;margin:0">Frosty's cosy home. He's here in the evenings and after dark — pop in for a warm welcome and a hand with anything you're stuck on. By day he's out and about the valley.</p></div>`);
     else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Featherstone Boat Hire", renderBoatHire());
     else if (S.tab==="fishmonger_wh") m.innerHTML = _withRoom("🐟 Pearl's Fish Warehouse", renderFishmongerWH());
     else if (S.tab==="home"){
@@ -13543,8 +13757,8 @@ if (window._offlineSummary){
   window._offlineSummary = null;
 }
 if (window._tutRecoveryMsg){
-  toast(`❄️ Frost: "Here — a few materials to get you back on track."`);
-  log(`❄️ Frost topped up your tutorial supplies (${window._tutRecoveryMsg}) so you can carry on from where you left off.`, "good");
+  toast(`❄️ Frosty: "Here — a few materials to get you back on track."`);
+  log(`❄️ Frosty topped up your tutorial supplies (${window._tutRecoveryMsg}) so you can carry on from where you left off.`, "good");
   window._tutRecoveryMsg = null;
 }
 if (!hadSave){
@@ -13680,6 +13894,7 @@ setInterval(()=>{
   updateProcurement(now);   // M17: land any supplier deliveries whose ETA has passed
   collectBinIfDue();        // M3: weekly bin collection + evening reminder
   updateGarden(now);
+  checkRadioUnlocks();      // Frosty's Radio — announce newly-earned exclusive tracks
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
     const _cands = HEARTBEAT_POOL.filter(e => now > (_heartbeatCD[e.id]||0));
