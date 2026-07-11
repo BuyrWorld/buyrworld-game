@@ -35,5 +35,61 @@
 - [x] **M13 — The Founder's Journey** · an ordered, narrative quest chain (`data/journey.ts`) spanning the whole game — 11 milestones from "A New Beginning" to "Legend of Featherstone", each with a coin reward and an earned **Title** shown on the HUD "My name is…" badge. 🧭 HUD button (J key / gamepad X) opens the track (✓ done / current-with-progress-bar / locked + Claim); the button pulses when a milestone is ready. Auto-detected from live state; guarded by `tests/journey.test.ts`.
 - [x] **M12 — Active Swing Mode (design-gated)** · Optional click-to-swing on rocks/trees (fewer clicks per resource at higher tool tiers) layered ON TOP of idle mode. Approved additive-only design: swings add progress to the current gathering action, route through completeAction (no bonus yield), never touch tick()/applyOffline (idle & offline moat intact), and are cooldown-capped vs autoclickers. Click an active tree/rock in the village, or the 🪓 SWING button in the quarry/sawmill/forager panels. Logic in `data/swing.ts`, guarded by `tests/swing.test.ts`.
 
+## NEXT VALUE-BUILDING MILESTONES
+Added after a code-verified implementation audit (see NEXT_SAFE_CLAUDE_PROMPT.md).
+These are the depth/value milestones that turn BuyrWorld from "a cosy sim with many
+features" into "a unique supply-chain life-sim with a defensible moat". The living
+economy is already moat-grade and tested; the supply-chain *middle* (procure → QC →
+warehouse → logistics) and the commercial layer (companies, careers, analytics) are
+the real gaps. Build in order, one at a time, additive-only. **None is complete until
+it is genuinely in code AND fun in gameplay — not when the checkbox is ticked.**
+
+- [ ] **M16 — Contracts 2.0** *(recommended next)*
+  - **Why:** completes the game's #1 named moat ("living economy + procedural contracts") — the economy half is done, contracts are the shallow half.
+  - **Exists:** `genContract` → `{client,item,qty,coins,xp}` + 25-coin reroll.
+  - **Missing:** deadlines, per-client reputation, contract tiers (standard/rush/bulk), economy-linked pay, expiry penalty.
+  - **Scope:** pure `rollContract()` in `contracts.ts`; deadline countdown; `S.contractRep` map; tier selection; coin value scaled by live macro demand/drift; richer Contracts tab.
+  - **Files:** `src/data/contracts.ts`, contract fns + Contracts-tab renderer in `src/main.ts`, `freshState()`/`load()` migration, new `tests/contracts.test.ts`.
+  - **Acceptance:** live countdown + expiry; visible client rep rising/falling; tiered offers; pay moves with the economy; old saves load clean and still deliver; pure fns unit-tested; test/check/build green.
+  - **Don't touch:** `tick()`/`applyOffline()`, economy internals, exported symbols other systems use.
+  - **Risk:** Low-Med. **Visible:** countdown timers + client-rep badges in the Contracts tab.
+- [ ] **M15 — First 30-Minute Fun Pass**
+  - **Why:** retention — huge content exists but the opening under-showcases it.
+  - **Exists:** heartbeat scheduler + daily challenge. **Missing:** curated escalating first-session arc; heartbeat needs agency, not just flavour.
+  - **Scope:** sequence early unlocks/rewards; reward heartbeat beats. **Files:** `main.ts` (heartbeat/journey), `journey.ts`.
+  - **Acceptance:** a fresh save hits ≥6 distinct "wow" beats in 30 min. **Don't touch:** save/tick. **Risk:** Med. **Visible:** paced unlock cadence.
+- [ ] **M13 — First Impression, Frost Pathing & Map Polish**
+  - **Why:** screenshot-recognisability + first 10 seconds. **Exists:** Frost, title FX. **Missing:** guided first-path, landmark framing.
+  - **Scope:** Frost walks you to the first action; camera intro. **Files:** `main.ts` (intro/Frost). **Acceptance:** new player reaches first gather in <30s guided. **Don't touch:** save/tick. **Risk:** Low. **Visible:** cinematic open.
+- [ ] **M14 — Steam/Xbox Usability Foundation**
+  - **Why:** platform reach. **Exists:** electron + electron-builder scripts + gamepad hooks. **Missing:** full controller nav of every panel, safe-area, pause.
+  - **Scope:** audit focus/D-pad nav across all panels. **Files:** `main.ts` input. **Acceptance:** whole game playable on gamepad. **Don't touch:** unrelated systems. **Risk:** Med. **Visible:** on-screen button prompts.
+- [ ] **M17 — Procurement & Supplier System**
+  - **Why:** the unfakeable "real buyer (MCIPS)" moat — currently absent. **Exists:** instant buy from trader stalls. **Missing:** suppliers with reliability, lead time, MOQ; sourcing choices.
+  - **Scope:** `data/suppliers.ts` + purchase-order flow feeding existing crafting inputs. **Files:** new `data/suppliers.ts`, `main.ts` trade tab, migration, test. **Acceptance:** supplier choice changes cost/speed/risk. **Don't touch:** economy internals. **Risk:** Med. **Visible:** supplier picker + PO tracker.
+- [ ] **M18 — Quality Control**
+  - **Why:** named bible supply-chain stage, currently only an XP-perk name. **Missing:** inspection/defect/reject loop.
+  - **Scope:** `data/qc.ts` — post-manufacture inspection roll/minigame; defects → rework/scrap; quality tiers affect sale price + contract acceptance. **Files:** new `data/qc.ts`, `main.ts` manufacturing, migration, test. **Acceptance:** quality visibly affects revenue. **Risk:** Med. **Visible:** QC lab + grade stamps.
+- [ ] **M19 — Warehouse Management**
+  - **Why:** makes storage a decision (today `S.items` is uncapped). **Scope:** capacity tiers, category slotting, upgrade sink. **Files:** new `data/warehouse.ts`, migration (careful — touches inventory), test. **Acceptance:** capacity constrains + rewards planning; old saves migrate safely. **Risk:** Med. **Visible:** fill gauge + racks.
+- [ ] **M20 — Logistics Decisions**
+  - **Why:** routing trade-offs. **Scope:** delivery method (speed vs cost vs risk) on contracts, tie to `fleet.ts`. **Files:** `contracts.ts`, `main.ts`. **Acceptance:** method changes payout/time. **Risk:** Med. **Visible:** route picker.
+- [ ] **M21 — Business Licence & Company Ownership**
+  - **Why:** delivers the "build businesses/industries" promise. **Scope:** buy a licence → own a shop/factory with P&L, hire passive NPC staff. **Files:** new `data/company.ts`, migration, test. **Acceptance:** a company produces a visible P&L. **Risk:** High. **Visible:** company dashboard.
+- [ ] **M22 — Career Paths**
+  - **Why:** structure + seat for AI mentors later. **Scope:** data-driven paths (Buyer/Engineer/Trader/Roboticist) over existing skills, perks per rank. **Files:** new `data/careers.ts`, migration, test. **Risk:** Med. **Visible:** career track UI.
+- [ ] **M23 — Daily Newspaper / Business News Network**
+  - **Why:** surfaces the living economy + seeds moat #2. **Scope:** newspaper compiling macro news + player events (reuse `economy.ts` strings). **Files:** new `data/news.ts`, `main.ts`. **Risk:** Low. **Visible:** readable daily paper.
+- [ ] **M24 — Town Evolution**
+  - **Why:** "player success visibly changes the world." **Scope:** net-worth/renown thresholds that add buildings/props systemically. **Files:** `districts.ts`, `main.ts`. **Risk:** Med. **Visible:** town visibly grows with you.
+- [ ] **M25 — Analytics & Retention Tracking**
+  - **Why:** acquisition-readiness; currently building retention blind. **Scope:** local session/day tracking → D1/D7/D30 + funnel counters (privacy-safe, no PII). **Files:** new `data/analytics.ts`. **Risk:** Low. **Visible:** dev stats panel.
+
+### Depth passes to reopen (foundation complete, not deep)
+- **M13 Founder's Journey** — titles don't yet gate or change systems (tie into M22 careers).
+- **Districts v1** — several districts gate shallow loops; give each an exclusive loop per TOWN_DESIGN.
+- **Robotics & Automation** — passive boost only; bible endgame is automated *production lines*.
+- **Energy & Data Centre** — passive boost only; no real grid/energy management.
+
 ## Parking lot
 Weather/seasons · districts rollout (TOWN_DESIGN.md) · Bank/net-worth · living economy · analytics + cloud saves gate · AI Phase B (AI_SYSTEMS.md) · commissioned art pack drop-in (pipeline ready).
