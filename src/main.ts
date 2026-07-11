@@ -312,6 +312,16 @@ function questMarkerHtml(){
   return `<div class="quest-arrow" style="left:${ex.toFixed(1)}%;top:${ey.toFixed(1)}%;transform:translate(-50%,-50%) rotate(${ang.toFixed(3)}rad)">➤</div>`
        + `<div class="quest-arrow-lbl" style="left:${ex.toFixed(1)}%;top:${(ey+8).toFixed(1)}%">${esc(st.where)}</div>`;
 }
+// Onboarding M3 — surface Active Swing to new players: a pulsing prompt above the
+// player while a swing-eligible action runs, retiring once they've got the hang of it.
+function swingHintHtml(){
+  if (S.tab !== "village" || !S.action || !SWING_SKILLS.has(S.action.skill)) return "";
+  if ((S.counters?.swings || 0) >= 6) return "";
+  const sx = (VP.x + TILE/2 - CAM.x) / VIEW_W * 100;
+  const sy = (VP.y - TILE*0.4 - CAM.y) / VIEW_H * 100;
+  const x = Math.max(8, Math.min(92, sx)), y = Math.max(12, Math.min(86, sy));
+  return `<div class="swing-hint" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">🪓 Tap it (or press Space) to swing — faster than the timer!</div>`;
+}
 /* ---------- original soundtrack (Web Audio chiptune, per-location) ---------- */
 function zoneForTab(tab){
   if (tab==="mining") return "quarry";
@@ -548,6 +558,7 @@ function showPlayHint(){
     <p class="ph-sub">You've arrived with big dreams and a handful of coins. Frost will show you the ropes — here's how to get around:</p>
     <div class="ph-row"><span class="ph-ic">🕹️</span><span><b>Move</b> — tap or click where you want to go, or use <b>WASD</b> / arrow keys / a gamepad.</span></div>
     <div class="ph-row"><span class="ph-ic">👆</span><span><b>Interact</b> — click a person, building or resource to use it.</span></div>
+    <div class="ph-row"><span class="ph-ic">🪓</span><span><b>Swing</b> — while mining or chopping, tap the resource (or press Space) to speed it up.</span></div>
     <div class="ph-row"><span class="ph-ic">🎒</span><span><b>Tabs & bag</b> — your skills and inventory sit along the bottom; more unlock as you play.</span></div>
     <div class="ph-goal">🎯 <b>First job:</b> head <b>west</b> to the Quarry and mine <b>5 Iron Ore</b>. Follow Frost and watch the objective tracker.</div>
     <button id="ph-go" type="button">Let's go! ▶</button>
@@ -4795,6 +4806,7 @@ function drawVillage(t){
     }
     html += firstRunHintHtml();   // Task 3/4: opening movement + direction guidance
     html += questMarkerHtml();    // Task 4: marker/arrow to the first Iron Rock
+  html += swingHintHtml();      // M3: teach Active Swing at the moment it's relevant
     if (_comboCount >= 3 && (Date.now()-_comboAt) < 3200){ html += `<div class="combo-badge">🔥 ${_comboCount} in a row!</div>`; }
     { const _ev = currentEvent(); if (_ev) html += `<div class="event-chip">${_ev.ic} Today: ${_ev.name}${_ev.id==='market_day'?' · +20% sales!':''}</div>`; }
     // a gentle marker so YOUR cottage is easy to pick out from the neighbours
@@ -7477,7 +7489,9 @@ if (typeof document !== 'undefined'){
   @keyframes qaPulse{0%,100%{opacity:.65}50%{opacity:1}}
   .quest-arrow-lbl{position:absolute;transform:translate(-50%,0);color:#ffd666;font:700 10px 'IBM Plex Mono',monospace;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;white-space:nowrap}
   .fullscreen-mode .quest-rock{font-size:14px}.fullscreen-mode .quest-arrow{font-size:32px}
-  @media (prefers-reduced-motion: reduce){.firstrun-hint,.int-canvas-wrap .ilbl-exit,.quest-rock,.quest-arrow{animation:none}}
+  .swing-hint{position:absolute;transform:translate(-50%,-120%);background:rgba(58,90,26,.96);color:#eaffd0;border:2px solid #8adf4a;border-radius:8px;padding:4px 10px;font:700 12px 'IBM Plex Mono',monospace;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.5);animation:qaPulse 1s ease-in-out infinite;z-index:5}
+  .fullscreen-mode .swing-hint{font-size:14px}
+  @media (prefers-reduced-motion: reduce){.firstrun-hint,.int-canvas-wrap .ilbl-exit,.quest-rock,.quest-arrow,.swing-hint{animation:none}}
   .vhint{text-align:center}
   .btn.quickstart{background:#2a6a3a;color:#fff8e6;border:2px solid #1a4a28;font-size:13px;padding:9px 18px}
   .btn.quickstart:hover{background:#348046}
@@ -7533,7 +7547,7 @@ function freshState(){
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
-    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0, voyages:0, contractsExpired:0 },
+    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0, voyages:0, contractsExpired:0, swings:0 },
     action:null,
     contracts:[],
     contractRep:{},
@@ -7718,6 +7732,8 @@ function load(){
       }
       // Onboarding M1: existing players already know the controls — never show them the card
       if (!("seenControls" in parsed)) S.seenControls = true;
+      // Onboarding M3: existing players already know swinging — retire the hint for them
+      if (!("swings" in S.counters)) S.counters.swings = 6;
       // Contracts 2.0 — per-client reputation + tier/deadline on in-flight orders
       if (!("contractRep" in parsed) || !S.contractRep || typeof S.contractRep !== "object") S.contractRep = {};
       if (!("contractsExpired" in S.counters)) S.counters.contractsExpired = 0;
@@ -8875,6 +8891,7 @@ function swing(){
   const act = findAction(S.action.skill, S.action.id);
   if (!act) return false;
   _lastSwingMs = now;
+  S.counters.swings = (S.counters.swings || 0) + 1;   // M3: retires the "tap to swing" hint once learned
   const dur = act.ms * speedMult(S.action.skill);
   S.action.progress += dur * (SWING_FRAC[toolTier()] || SWING_FRAC[0]); // frac < 1: never a one-click resource
   if (typeof SFX !== "undefined") SFX.play(S.action.skill);
@@ -12304,6 +12321,10 @@ syncJourneyBtn(); syncJournalBtn();
 window.addEventListener("keydown", e => {
   if ((e.key==="j"||e.key==="J") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ openJourney(); return; }
   if ((e.key==="i"||e.key==="I") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ toggleInventory(); return; }
+  // M3: Space swings the current gathering action (keyboard/accessibility for Active Swing)
+  if (e.key===" " && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){
+    if (S.action && SWING_SKILLS.has(S.action.skill)){ e.preventDefault(); swing(); return; }
+  }
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){
     VKEYS[e.key] = true;
