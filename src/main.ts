@@ -17,6 +17,7 @@ import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery } from './data/tutorial.ts';
+import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -1027,6 +1028,8 @@ const FURN_SPOTS = [
 function addFurniture(id: string, qty: number){
   if (!S.ownedFurniture) S.ownedFurniture = {};
   S.ownedFurniture[id] = (S.ownedFurniture[id]||0) + qty;
+  if (!S.furnNew) S.furnNew = {};
+  S.furnNew[id] = true;   // M2: NEW badge / sparkle until previewed or placed
 }
 // ---- END FURNITURE SYSTEM ----
 const WORLD_EVENTS = [
@@ -6380,14 +6383,16 @@ function drawInterior(t){
     if (S.items && S.items["bookcase"]  > 0) _ft(8,  4, 8, 116, 1, 2, "#5a3a20");
     if (S.items && S.items["painting"]  > 0 && _ht < 3) _ft(16, 0, W/2-24, 10, 3, 1, "#5a3a20");
     if (S.items && S.items["vase"]      > 0) _ft(18, 0, W/2+8, 10, 1, 1, "#9a8060");
-    // placed furniture from the furniture system
+    // placed furniture — grid-based, proportional to the character (M2)
     for (const _pf of (S.placedFurniture||[])){
-      const _fd = FURNITURE_DEFS[_pf.id];
-      const _sp = FURN_SPOTS[_pf.slot];
-      if (!_fd || !_sp) continue;
-      ctx.fillStyle = _fd.col + "cc"; ctx.fillRect(_sp.px, _sp.py, _fd.w, _fd.h);
-      ctx.strokeStyle="rgba(0,0,0,.18)"; ctx.lineWidth=1; ctx.strokeRect(_sp.px, _sp.py, _fd.w, _fd.h);
-      drawEmojiC(ctx, _fd.ic, _sp.px + _fd.w/2, _sp.py + _fd.h/2, 14);
+      const _fd = FURNITURE[_pf.id];
+      if (!_fd || _pf.gx == null) continue;
+      const _sz = rotatedSize(_fd.fw, _fd.fd, _pf.rot||0);
+      const _px = FGRID.originX + _pf.gx*FGRID.cellW, _py = FGRID.originY + _pf.gy*FGRID.cellH;
+      const _pw = _sz.w*FGRID.cellW, _ph = _sz.d*FGRID.cellH;
+      ctx.fillStyle = (_pf.color||_fd.colors[0]) + "cc"; ctx.fillRect(_px+1, _py+1, _pw-2, _ph-2);
+      ctx.strokeStyle="rgba(0,0,0,.20)"; ctx.lineWidth=1; ctx.strokeRect(_px+1, _py+1, _pw-2, _ph-2);
+      drawEmojiC(ctx, _fd.ic, _px + _pw/2, _py + _ph/2, Math.round(Math.min(_pw,_ph)*_fd.scale*0.62));
     }
   }
   if (S.tab==="bank"){
@@ -8098,7 +8103,8 @@ function freshState(){
     keepsakes: [],
     festival: { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[] as string[], notified:"" },
     ownedFurniture: {} as Record<string,number>,
-    placedFurniture: [] as {id:string; slot:number}[],
+    placedFurniture: [] as any[],
+    furnNew: {} as Record<string,boolean>,
     pintBuff: 0,
     pintsTonight: 0,
     drunkUntil: 0,
@@ -8178,6 +8184,20 @@ function load(){
       if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
       if (!S.ownedFurniture) S.ownedFurniture = {};
       if (!Array.isArray(S.placedFurniture)) S.placedFurniture = [];
+      if (!S.furnNew || typeof S.furnNew !== "object") S.furnNew = {};
+      // M2: migrate old text-slot placements → grid positions (relocating on conflict,
+      // returning to storage if impossible — never deleting purchased furniture).
+      if (S.placedFurniture.some((p:any)=>p && p.slot != null && p.gx == null)){
+        const _migrated:any[] = [];
+        for (const _old of S.placedFurniture){
+          if (_old.gx != null){ _migrated.push(_old); continue; }   // already grid
+          const _opts = { placed:_migrated.map((m:any)=>({id:m.id,gx:m.gx,gy:m.gy,rot:m.rot})), exitCells:_decorExitCells(), spawnCells:_decorSpawnCells() };
+          const _g = migratePlacement({ id:_old.id, slot:_old.slot||0 }, _opts.placed, _opts);
+          if (_g) _migrated.push(_g);
+          else { S.ownedFurniture[_old.id] = (S.ownedFurniture[_old.id]||0) + 1; }   // no room → back to storage
+        }
+        S.placedFurniture = _migrated;
+      }
       if (S.appearance && !S.appearance.hat) S.appearance.hat = 'none';
       if (S.appearance && !S.appearance.hatColor) S.appearance.hatColor = '#2a1a0a';
       if (S.appearance && !S.appearance.gender) S.appearance.gender = 'male';
@@ -10516,42 +10536,190 @@ function renderPets(){
 function renderFurniturePlacement(): string {
   const _placed = S.placedFurniture || [];
   const _owned = S.ownedFurniture || {};
-  const _occupiedSlots = _placed.map(p=>p.slot);
-  const _freeSpots = FURN_SPOTS.filter(sp=>!_occupiedSlots.includes(sp.slot));
-  const _placedHtml = _placed.length === 0
-    ? `<p style="color:var(--dim);font-size:11px;margin:0 0 4px">Nothing placed yet. Buy furniture from 🛋️ Nell's Home Store on the high street.</p>`
-    : _placed.map(pf=>{
-        const fd=FURNITURE_DEFS[pf.id], sp=FURN_SPOTS[pf.slot];
-        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-          <span style="font-size:16px">${fd?.ic||'?'}</span>
-          <span style="font-size:11px;flex:1"><b>${fd?.n||pf.id}</b> <span style="color:var(--dim)">${sp?.label||''}</span></span>
-          <button data-pickup-furn="${pf.id}|${pf.slot}" style="background:#555;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px">Pick Up</button>
-        </div>`;
-      }).join('');
-  const _ownedEntries = Object.entries(_owned).filter(([,qty])=>(qty as number)>0);
-  const _ownedHtml = _ownedEntries.length === 0 ? ''
-    : `<p style="font-size:10px;color:var(--dim);margin:8px 0 4px;font-weight:700">OWNED (unplaced):</p>` +
-      _ownedEntries.map(([id,qty])=>{
-        const fd=FURNITURE_DEFS[id];
-        if(!fd) return '';
-        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap">
-          <span style="font-size:16px">${fd.ic}</span>
-          <span style="font-size:11px;min-width:60px"><b>${fd.n}</b> ×${qty}</span>
-          ${_freeSpots.length===0
-            ? `<span style="font-size:10px;color:var(--warn)">Room full (9/9)</span>`
-            : `<select id="spot-sel-${id}" style="font-size:10px;padding:2px 4px;border-radius:3px;background:#333;color:#fff;border:1px solid #555">
-                ${_freeSpots.map(sp=>`<option value="${sp.slot}">${sp.label}</option>`).join('')}
-              </select>
-              <button data-place-furn="${id}" style="background:#3a5a3a;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px">Place</button>`
-          }
-        </div>`;
-      }).join('');
+  const _ownedCount = Object.values(_owned).reduce((a,b)=>a+(b as number),0);
+  const _newCount = Object.keys(S.furnNew||{}).length;
   return `<div class="panel" style="padding:10px;margin-top:8px">
-    <h3 style="margin:0 0 8px;font-size:13px">🛋️ Room Furniture
-      <span style="color:var(--dim);font-weight:normal;font-size:10px">— ${_placed.length}/9 spots filled</span>
-    </h3>
-    ${_placedHtml}${_ownedHtml}
+    <h3 style="margin:0 0 6px;font-size:13px">🛋️ Cottage Furniture</h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">${_placed.length} placed · ${_ownedCount} in storage${_newCount?` · <span style="color:#ffd666;font-weight:700">${_newCount} NEW</span>`:''}. Buy pieces from 🛋️ Nell's Home Store on the high street.</p>
+    <button onclick="openDecorate()" style="background:#5a3a6a;color:#f0e0ff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:800;width:100%">🛋️ Decorate Cottage${_newCount?' ✨':''}</button>
   </div>`;
+}
+// ================= M2: visual furniture decoration mode =================
+let _decor: any = null;      // { itemId, gx, gy, rot, color, editIdx }  (transient — never saved)
+let _decorKey: any = null;
+function _decorExitCells(){ return [{x:3,y:FGRID.rows-1},{x:4,y:FGRID.rows-1}]; }
+function _decorSpawnCells(){ return [{x:4,y:FGRID.rows-1}]; }
+function _decorOpts(excludeIdx = -1){
+  const placed = (S.placedFurniture||[]).filter((_,i)=>i!==excludeIdx).map((p:any)=>({id:p.id,gx:p.gx,gy:p.gy,rot:p.rot}));
+  return { placed, exitCells:_decorExitCells(), spawnCells:_decorSpawnCells() };
+}
+function _reducedMotion(){ try{ return (S.settings && S.settings.motion===false) || window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } }
+function _clearFurnNew(id: string){ if (S.furnNew && S.furnNew[id]){ delete S.furnNew[id]; } }
+(globalThis as any).openDecorate = openDecorate;
+function openDecorate(){
+  if (S.tab !== 'myhome'){ toast('Go to your cottage to decorate.'); return; }
+  _decor = { itemId:null, gx:1, gy:1, rot:0, color:null, editIdx:-1 };
+  if (!document.getElementById('decor-modal')){
+    const el = document.createElement('div'); el.id='decor-modal';
+    el.style.cssText='position:fixed;inset:0;z-index:64;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);padding:12px;overflow:auto';
+    el.innerHTML='<div id="decor-body" style="width:100%;max-width:600px"></div>';
+    document.body.appendChild(el);
+    el.addEventListener('contextmenu', (e)=>{ e.preventDefault(); _decorCancelSel(); });
+  }
+  _decorKey = (e:any)=>_decorKeydown(e);
+  window.addEventListener('keydown', _decorKey);
+  renderDecorModal();
+}
+function closeDecorate(){
+  if (_decorKey){ window.removeEventListener('keydown', _decorKey); _decorKey=null; }
+  const e=document.getElementById('decor-modal'); if(e) e.remove(); _decor=null;
+  renderMain(); save();
+}
+(globalThis as any).closeDecorate = closeDecorate;
+function _decorCancelSel(){ if(!_decor) return; _decor.itemId=null; _decor.editIdx=-1; _decor.color=null; renderDecorModal(); }
+function _decorSelectItem(id: string){
+  if(!_decor) return;
+  const d = furnitureDef(id); if(!d) return;
+  _clearFurnNew(id);
+  _decor.itemId = id; _decor.editIdx = -1; _decor.rot = 0; _decor.color = defaultColor(id);
+  // start the cursor somewhere valid if possible
+  _decor.gx = d.wall ? 1 : 1; _decor.gy = d.wall ? 0 : 1;
+  renderDecorModal(); save();
+}
+function _decorEditPlaced(idx: number){
+  if(!_decor) return; const p = (S.placedFurniture||[])[idx]; if(!p) return;
+  _decor.itemId = p.id; _decor.editIdx = idx; _decor.gx = p.gx; _decor.gy = p.gy; _decor.rot = p.rot; _decor.color = p.color || defaultColor(p.id);
+  renderDecorModal();
+}
+function _decorRotate(){ if(!_decor||!_decor.itemId) return; const d=furnitureDef(_decor.itemId); if(!d||!d.rotates){ toast('This piece doesn\'t rotate.'); return; } _decor.rot=(_decor.rot+90)%360; renderDecorModal(); }
+function _decorMove(dx: number, dy: number){ if(!_decor||!_decor.itemId) return; _decor.gx=Math.max(0,Math.min(FGRID.cols-1,_decor.gx+dx)); _decor.gy=Math.max(0,Math.min(FGRID.rows-1,_decor.gy+dy)); renderDecorModal(); }
+function _decorSetCell(gx: number, gy: number){ if(!_decor||!_decor.itemId) return; _decor.gx=gx; _decor.gy=gy; renderDecorModal(); }
+function _decorConfirm(){
+  if(!_decor||!_decor.itemId) return;
+  const chk = canPlaceFurn(_decor.itemId, _decor.gx, _decor.gy, _decor.rot, _decorOpts(_decor.editIdx));
+  if(!chk.ok){ toast(`❌ ${chk.text}`); return; }
+  if(!S.placedFurniture) S.placedFurniture=[];
+  if(_decor.editIdx>=0){
+    // moving/rotating/recolouring an existing piece
+    S.placedFurniture[_decor.editIdx] = { id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color };
+    toast('✔ Moved.');
+  } else {
+    if((S.ownedFurniture?.[_decor.itemId]||0) < 1){ toast('You don\'t own that.'); return; }
+    S.ownedFurniture[_decor.itemId]--;
+    S.placedFurniture.push({ id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color });
+    toast(`✔ Placed the ${furnitureDef(_decor.itemId)?.n}.`);
+  }
+  _clearFurnNew(_decor.itemId); achCheck();
+  _decor.itemId=null; _decor.editIdx=-1; _decor.color=null;
+  renderDecorModal(); save();
+}
+function _decorStore(idx: number){
+  const p=(S.placedFurniture||[])[idx]; if(!p) return;
+  if(!S.ownedFurniture) S.ownedFurniture={};
+  S.ownedFurniture[p.id]=(S.ownedFurniture[p.id]||0)+1;
+  S.placedFurniture.splice(idx,1);
+  toast('📦 Stored in your furniture inventory.');
+  _decor.itemId=null; _decor.editIdx=-1; renderDecorModal(); save();
+}
+function _decorSell(idx: number){
+  const p=(S.placedFurniture||[])[idx]; if(!p) return;
+  const price=furnitureDef(p.id)?.price||0, refund=Math.round(price*0.5);
+  S.coins+=refund; S.placedFurniture.splice(idx,1);
+  toast(`💰 Sold for ${fmt(refund)} coins.`);
+  _decor.itemId=null; _decor.editIdx=-1; renderDecorModal(); updateHud(); save();
+}
+function _decorKeydown(e: any){
+  if(!_decor) return;
+  if(e.key==='Escape'){ e.preventDefault(); if(_decor.itemId) _decorCancelSel(); else closeDecorate(); return; }
+  if(!_decor.itemId) return;
+  if(e.key==='ArrowLeft'){ e.preventDefault(); _decorMove(-1,0); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); _decorMove(1,0); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); _decorMove(0,-1); }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); _decorMove(0,1); }
+  else if(e.key==='Enter'){ e.preventDefault(); _decorConfirm(); }
+  else if(e.key==='r'||e.key==='R'){ e.preventDefault(); _decorRotate(); }
+}
+function renderDecorModal(){
+  const body=document.getElementById('decor-body'); if(!body||!_decor) return;
+  const CELL=56, W=FGRID.cols*CELL, H=FGRID.rows*CELL;
+  const placed=S.placedFurniture||[];
+  const exit=_decorExitCells(), spawn=_decorSpawnCells();
+  // grid backdrop cells (click targets when placing)
+  let cells='';
+  for(let y=0;y<FGRID.rows;y++) for(let x=0;x<FGRID.cols;x++){
+    const isExit=exit.some(c=>c.x===x&&c.y===y), isSpawn=spawn.some(c=>c.x===x&&c.y===y), isWall=y===0;
+    const bg=isExit?'rgba(120,80,40,.5)':isSpawn?'rgba(80,110,150,.35)':isWall?'rgba(150,120,90,.25)':'transparent';
+    cells+=`<div data-decor-cell="${x},${y}" style="position:absolute;left:${x*CELL}px;top:${y*CELL}px;width:${CELL}px;height:${CELL}px;box-sizing:border-box;border:1px solid rgba(255,255,255,.08);background:${bg};cursor:${_decor.itemId?'pointer':'default'}"></div>`;
+  }
+  // placed furniture
+  let items='';
+  placed.forEach((p:any,idx:number)=>{
+    if(_decor.editIdx===idx && _decor.itemId) return;   // being moved → shown as ghost
+    const d=furnitureDef(p.id); if(!d) return;
+    const sz=rotatedSize(d.fw,d.fd,p.rot);
+    const sel=_decor.editIdx===idx;
+    items+=`<div data-decor-placed="${idx}" title="${d.n}" style="position:absolute;left:${p.gx*CELL}px;top:${p.gy*CELL}px;width:${sz.w*CELL}px;height:${sz.d*CELL}px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:${(p.color||d.colors[0])}bb;border:2px solid ${sel?'#ffd666':'rgba(0,0,0,.3)'};border-radius:6px;cursor:pointer;font-size:${Math.round(Math.min(sz.w,sz.d)*CELL*d.scale*0.6)}px">${d.ic}</div>`;
+  });
+  // ghost preview
+  let ghost='';
+  if(_decor.itemId){
+    const d=furnitureDef(_decor.itemId)!; const sz=rotatedSize(d.fw,d.fd,_decor.rot);
+    const chk=canPlaceFurn(_decor.itemId,_decor.gx,_decor.gy,_decor.rot,_decorOpts(_decor.editIdx));
+    const col=chk.ok?'#5cc98a':'#e8604a';
+    ghost=`<div style="position:absolute;left:${_decor.gx*CELL}px;top:${_decor.gy*CELL}px;width:${sz.w*CELL}px;height:${sz.d*CELL}px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:${col}44;border:2px dashed ${col};border-radius:6px;pointer-events:none;font-size:${Math.round(Math.min(sz.w,sz.d)*CELL*d.scale*0.6)}px">${d.ic}</div>
+      <div style="position:absolute;left:${_decor.gx*CELL}px;top:${_decor.gy*CELL - 20}px;font-size:10px;color:${col};font-weight:700;white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px #000">${chk.ok?'✔ '+chk.text:'✖ '+chk.text}</div>`;
+  }
+  // inventory (owned, unplaced) with NEW badges
+  const owned=Object.entries(S.ownedFurniture||{}).filter(([,q])=>(q as number)>0);
+  const spark=_reducedMotion()?'':'animation:furnShimmer 1.4s ease-in-out infinite';
+  const inv=owned.length? owned.map(([id,q])=>{
+    const d=furnitureDef(id); if(!d) return '';
+    const isNew=!!(S.furnNew&&S.furnNew[id]);
+    const active=_decor.itemId===id&&_decor.editIdx<0;
+    return `<button data-decor-item="${id}" style="position:relative;background:${active?'#4a3a5a':'#33333c'};color:#e8e8ee;border:1px solid ${active?'#c8a0ff':'#44444e'};border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer">
+      <span style="font-size:16px;${isNew?spark:''}">${d.ic}</span> ${d.n} ×${q}
+      ${isNew?`<span style="position:absolute;top:-6px;right:-6px;background:#ffcf33;color:#3a2a00;font-size:8px;font-weight:800;padding:1px 4px;border-radius:6px">NEW</span>`:''}
+    </button>`;
+  }).join('') : '<p style="font-size:11px;color:var(--dim);margin:0">No furniture in storage — buy some at Nell\'s Home Store.</p>';
+  // controls / customisation
+  let controls='';
+  if(_decor.itemId){
+    const d=furnitureDef(_decor.itemId)!;
+    const swatches=d.colors.map(c=>`<button data-decor-color="${c}" style="width:22px;height:22px;border-radius:50%;background:${c};border:2px solid ${_decor.color===c?'#fff':'rgba(255,255,255,.3)'};cursor:pointer" title="colour"></button>`).join('');
+    controls=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      ${d.rotates?`<button data-decor-rotate style="background:#3a4a6a;color:#fff;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px">↻ Rotate (R)</button>`:''}
+      ${d.colors.length>1?`<span style="font-size:11px;color:var(--dim)">Style:</span> ${swatches}`:''}
+      <button data-decor-confirm style="background:#2a6a3a;color:#fff;border:none;padding:6px 14px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700">✔ Confirm (Enter)</button>
+      <button data-decor-cancel style="background:#5a3a3a;color:#fff;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px">✖ Cancel (Esc)</button>
+      ${_decor.editIdx>=0?`<button data-decor-store="${_decor.editIdx}" style="background:#4a4a2a;color:#fff;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px">📦 Store</button>
+        <button data-decor-sell="${_decor.editIdx}" style="background:#6a2a2a;color:#fff;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px">💰 Sell</button>`:''}
+    </div>`;
+  }
+  body.innerHTML=`<style>@keyframes furnShimmer{0%,100%{filter:brightness(1)}50%{filter:brightness(1.6) drop-shadow(0 0 3px #ffd)}}</style>
+  <div class="panel" style="padding:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0;font-size:16px">🛋️ Decorate Cottage</h2>
+      <button data-decor-done style="background:#333;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">Done</button>
+    </div>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_decor.itemId?'Move the piece (click a square, arrows, or D-pad), rotate, pick a style, then Confirm. It shows green where it fits, red where it doesn\'t.':'Pick a piece from storage below, or click a placed item to move/store/sell it.'}</p>
+    <div style="position:relative;width:${W}px;max-width:100%;height:${H}px;margin:0 auto;background:linear-gradient(#c9a877,#b8946a);border:3px solid #6a4a2a;border-radius:6px;overflow:hidden">
+      <div style="position:absolute;inset:0;height:${CELL*0.9}px;background:linear-gradient(#8a6a4a,#7a5a3a)"></div>
+      ${cells}${items}${ghost}
+    </div>
+    ${controls}
+    <div style="margin-top:10px"><div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:5px">🗄️ Furniture storage</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${inv}</div></div>
+    <p style="font-size:9px;color:var(--dim);margin:8px 0 0">Mouse: click a square then Confirm · Keys: arrows move, Enter place, R rotate, Esc cancel · Controller: D-pad move, Ⓐ place, Ⓑ cancel, Ⓧ rotate, Ⓨ style</p>
+  </div>`;
+  // wire buttons
+  body.querySelectorAll('[data-decor-item]').forEach(b=>(b as HTMLElement).onclick=()=>_decorSelectItem((b as HTMLElement).dataset.decorItem!));
+  body.querySelectorAll('[data-decor-cell]').forEach(b=>(b as HTMLElement).onclick=()=>{ const [x,y]=(b as HTMLElement).dataset.decorCell!.split(',').map(Number); _decorSetCell(x,y); });
+  body.querySelectorAll('[data-decor-placed]').forEach(b=>(b as HTMLElement).onclick=()=>_decorEditPlaced(+(b as HTMLElement).dataset.decorPlaced!));
+  body.querySelectorAll('[data-decor-color]').forEach(b=>(b as HTMLElement).onclick=()=>{ _decor.color=(b as HTMLElement).dataset.decorColor; renderDecorModal(); });
+  const _q=(s:string,f:any)=>{ const e=body.querySelector(s); if(e)(e as HTMLElement).onclick=f; };
+  _q('[data-decor-rotate]',_decorRotate); _q('[data-decor-confirm]',_decorConfirm); _q('[data-decor-cancel]',_decorCancelSel); _q('[data-decor-done]',closeDecorate);
+  const _st=body.querySelector('[data-decor-store]'); if(_st)(_st as HTMLElement).onclick=()=>_decorStore(+(_st as HTMLElement).dataset.decorStore!);
+  const _se=body.querySelector('[data-decor-sell]'); if(_se)(_se as HTMLElement).onclick=()=>{ if(confirm('Sell this piece for half price?')) _decorSell(+(_se as HTMLElement).dataset.decorSell!); };
 }
 const REX_BANTER = [
   "What'll it be then?",
@@ -13127,6 +13295,23 @@ function pollGamepad(){
   if (ly < -dead || pad.buttons[12]?.pressed) GPKEYS.ArrowUp    = true;
   if (ly >  dead || pad.buttons[13]?.pressed) GPKEYS.ArrowDown  = true;
   const prev = _gpLastBtns;
+  // M2: while decorating, the controller drives the placement cursor (A place / B
+  // cancel / X rotate / Y style) instead of the world — no pointer needed.
+  if (_decor){
+    const rep = (i:number)=> pad.buttons[i]?.pressed && !prev[i];
+    if (_decor.itemId){
+      if (rep(14)||(pad.axes[0]||0)<-dead && !prev[14]) _decorMove(-1,0);
+      if (rep(15)||(pad.axes[0]||0)> dead && !prev[15]) _decorMove(1,0);
+      if (rep(12)||(pad.axes[1]||0)<-dead && !prev[12]) _decorMove(0,-1);
+      if (rep(13)||(pad.axes[1]||0)> dead && !prev[13]) _decorMove(0,1);
+      if (rep(0)) _decorConfirm();          // A
+      if (rep(2)) _decorRotate();           // X
+      if (rep(3)){ const d=furnitureDef(_decor.itemId); if(d){ const i=d.colors.indexOf(_decor.color); _decor.color=d.colors[(i+1)%d.colors.length]; renderDecorModal(); } }  // Y — cycle style
+    }
+    if (rep(1)){ if(_decor.itemId) _decorCancelSel(); else closeDecorate(); }   // B
+    for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
+    return;
+  }
   if (pad.buttons[0]?.pressed  && !prev[0])  gpInteract();
   if (pad.buttons[1]?.pressed  && !prev[1])  gpBack();
   if (pad.buttons[3]?.pressed  && !prev[3])  toggleInventory();   // Y — inventory
