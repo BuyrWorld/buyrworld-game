@@ -4,6 +4,8 @@ import {
   shouldEscalate, legalStatus, consequenceFor, spentDaysFor, isSpent,
   daysUntilSpent, debtCleared, roleEligibility, COMMUNITY_TASKS,
   communityTaskById, communityRehabDays,
+  CRIMINAL_RANKS, criminalNotoriety, criminalRank, criminalRankIndex,
+  atTopOfCriminalPath, nextCriminalRank, TOP_CRIMINAL_RANK_INDEX,
 } from '../src/data/justice.ts';
 
 describe('Justice — offence definitions', () => {
@@ -138,5 +140,43 @@ describe('Justice — community service (no farming)', () => {
     expect(communityTaskById('nope')).toBeNull();
     expect(communityRehabDays(100)).toBeLessThanOrEqual(4);   // capped, can't grind
     expect(communityRehabDays(0)).toBe(0);
+  });
+});
+
+describe('Justice — criminal career ladder (Con-venue gate)', () => {
+  const inc = (level, n = 1) => Array.from({ length: n }, () => ({ level }));
+
+  it('warnings and a single minor slip never make someone a career criminal', () => {
+    expect(criminalNotoriety(inc(1, 5))).toBe(0);           // level-1 warnings don't count
+    expect(criminalRank([]).id).toBe('clean');
+    expect(criminalRankIndex(inc(2))).toBeLessThan(TOP_CRIMINAL_RANK_INDEX);
+    expect(atTopOfCriminalPath(inc(2))).toBe(false);        // one minor offence: still a civilian
+    expect(atTopOfCriminalPath(inc(4))).toBe(false);        // even one serious offence isn't the top
+  });
+
+  it('notoriety accumulates by severity and ranks climb monotonically', () => {
+    expect(criminalNotoriety([{ level: 2 }, { level: 4 }, { level: 5 }])).toBe(1 + 6 + 10);
+    let last = -1;
+    for (const n of [0, 5, 15, 30, 50, 100]) {
+      const idx = criminalRankIndex(inc(5, Math.ceil(n / 10)));
+      expect(idx).toBeGreaterThanOrEqual(last);
+      last = idx;
+    }
+  });
+
+  it('only sustained serious offending reaches the top rank / Con venue', () => {
+    expect(atTopOfCriminalPath(inc(5, 6))).toBe(false);     // 60 notoriety — Underworld fixer, not yet
+    expect(atTopOfCriminalPath(inc(5, 7))).toBe(true);      // 70 — Kingpin: the Con venue unlocks
+    expect(criminalRank(inc(5, 7)).id).toBe('kingpin');
+    expect(nextCriminalRank(inc(5, 7))).toBeNull();         // nothing above the top
+    // a persistent petty criminal can also get there, but it takes a LOT of offences
+    expect(atTopOfCriminalPath(inc(2, 69))).toBe(false);
+    expect(atTopOfCriminalPath(inc(2, 70))).toBe(true);
+  });
+
+  it('the ladder is ordered low→high with the top index consistent', () => {
+    for (let i = 1; i < CRIMINAL_RANKS.length; i++) expect(CRIMINAL_RANKS[i].min).toBeGreaterThan(CRIMINAL_RANKS[i - 1].min);
+    expect(TOP_CRIMINAL_RANK_INDEX).toBe(CRIMINAL_RANKS.length - 1);
+    expect(CRIMINAL_RANKS[TOP_CRIMINAL_RANK_INDEX].id).toBe('kingpin');
   });
 });

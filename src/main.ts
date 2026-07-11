@@ -31,7 +31,7 @@ import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, rel
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
-import { OFFENCES, offenceDef, computeSeverity, severityLabel, strikePointsFor, shouldEscalate, legalStatus, consequenceFor, spentDaysFor, isSpent as incidentSpent, daysUntilSpent, roleEligibility, COMMUNITY_TASKS, communityTaskById, communityRehabDays } from './data/justice.ts';
+import { OFFENCES, offenceDef, computeSeverity, severityLabel, strikePointsFor, shouldEscalate, legalStatus, consequenceFor, spentDaysFor, isSpent as incidentSpent, daysUntilSpent, roleEligibility, COMMUNITY_TASKS, communityTaskById, communityRehabDays, CRIMINAL_RANKS, criminalNotoriety, criminalRank, criminalRankIndex, atTopOfCriminalPath, nextCriminalRank, TOP_CRIMINAL_RANK_INDEX } from './data/justice.ts';
 import { caseTrigger, triggerLabel, buildEvidence, evidenceStrength, EVIDENCE_BANDS, PLEAS, REPRESENTATION, repById, repCompetence, outcomeFloorRaised, PREP_ACTIONS, prepCompleteness, prepFactor, computeVerdict, seededWobble, computeSentence, factorsFor, OUTCOME_LABELS, suspendedOrder, custodyData, HEARING_PHASES } from './data/court.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
@@ -477,9 +477,11 @@ const MUSIC_FILES = {
   general:          ['music/general/Frosty - It is What it is (General Game).mp3'],
   holding:          ['music/holding/Frosty - Unhinged [Instrumental].mp3'],
 };
-// Player-facing "Con" venue: the strip-club set plays for players with a criminal
-// record (any logged justice incident); civilians get the normal club set.
-function _isCon(){ return !!(S.justice && Array.isArray(S.justice.incidents) && S.justice.incidents.length > 0); }
+// Player-facing "Con" venue: the strip-club set is reserved for a player who has
+// worked to the TOP of the criminal career ladder (Kingpin) — sustained, serious
+// unethical behaviour, not a one-off slip. Civilians (and lesser offenders) get the
+// normal club set.
+function _isCon(){ return !!(S.justice && Array.isArray(S.justice.incidents) && atTopOfCriminalPath(S.justice.incidents)); }
 // Map the current tab to one of the scenario buckets above (global engine only).
 function scenarioForTab(tab){
   if (tab === "police_cell") return "holding";
@@ -7538,6 +7540,9 @@ function renderLegalStatus(){
   const active = recorded.filter(i => !incidentSpent(i, d));
   const spent = recorded.filter(i => incidentSpent(i, d));
   const fines = outstandingFines(), comp = outstandingCompensation();
+  // Criminal-career standing (cumulative, lifetime) — separate from the active-strike status.
+  const _rankIdx = criminalRankIndex(J.incidents), _rank = CRIMINAL_RANKS[_rankIdx], _notor = criminalNotoriety(J.incidents), _nextR = nextCriminalRank(J.incidents);
+  const _rankColour = _rankIdx === 0 ? '#4aff88' : _rankIdx >= TOP_CRIMINAL_RANK_INDEX ? '#ff6a4a' : _rankIdx >= 3 ? '#e8b24a' : '#c8a0d8';
   const statusColour = asp <= 0 ? '#4aff88' : asp < 3 ? '#e8b24a' : '#ff6a4a';
   const strikePct = Math.min(100, Math.round(asp / 3 * 100));
   const incRow = (i) => {
@@ -7587,6 +7592,9 @@ function renderLegalStatus(){
       <div style="font-size:10px;color:var(--dim);margin:4px 0 2px">Active strike points: <b>${asp}</b> / 3 ${asp>=3?'— case escalated to the magistrate':''}</div>
       <div class="obj-bar"><div class="obj-fill" style="width:${strikePct}%;background:${statusColour}"></div></div>
       ${(fines||comp)?`<div style="font-size:10px;color:#e8b24a;margin-top:5px">Outstanding — fines: ${fmt(fines)}c · compensation: ${fmt(comp)}c</div>`:`<div style="font-size:10px;color:#4aff88;margin-top:5px">No outstanding balance.</div>`}
+      <div style="border-top:1px solid rgba(255,255,255,.08);margin-top:7px;padding-top:6px;font-size:10px;color:var(--dim)">
+        Criminal standing: <b style="color:${_rankColour}">${_rank.name}</b>${_rankIdx>0?` · notoriety ${_notor}`:''}${_nextR?` · ${_nextR.min - _notor} to “${_nextR.name}”`:_rankIdx>=TOP_CRIMINAL_RANK_INDEX?' · top of the ladder':''}
+      </div>
     </div>
     ${restr.length?`<div style="background:rgba(255,106,74,.1);border:1px solid rgba(255,106,74,.3);border-radius:6px;padding:7px 9px;margin-bottom:10px;font-size:10px;color:#ffb0a0">🔒 Current restrictions:<br>${restr.map(r=>'• '+r).join('<br>')}</div>`:''}
     <h3 style="font-size:12px;margin:0 0 5px">Active record</h3>

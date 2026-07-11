@@ -217,6 +217,49 @@ export function roleEligibility(activeIncidents: Array<{ type: string; category?
   return { eligible: true, reason: 'Your record does not affect this role.' };
 }
 
+// ---- Criminal career ladder ----------------------------------------------
+// A cumulative, lifetime measure of how committed a criminal the player is — it
+// rewards SUSTAINED, serious wrongdoing rather than a single slip. Reaching the
+// top rank ("Kingpin") is what marks someone out as underworld, and it gates the
+// "Con" strip-club music. Warnings (level<=1) never count; graver offences count
+// far more, so the top is only reachable through consistent unethical behaviour.
+export interface CriminalRank { id: string; name: string; min: number; }
+// Ordered low → high. `min` is the notoriety needed to hold that rank.
+export const CRIMINAL_RANKS: CriminalRank[] = [
+  { id: 'clean',   name: 'Clean record',    min: 0 },
+  { id: 'petty',   name: 'Petty offender',  min: 1 },
+  { id: 'repeat',  name: 'Repeat offender', min: 8 },
+  { id: 'career',  name: 'Career criminal', min: 20 },
+  { id: 'fixer',   name: 'Underworld fixer', min: 40 },
+  { id: 'kingpin', name: 'Kingpin',         min: 70 },
+];
+// Per-incident notoriety weight by severity level [warning..major]. Warnings = 0.
+const NOTORIETY_WEIGHT = [0, 0, 1, 3, 6, 10];
+export interface RankIncident { level: number; }
+// Lifetime notoriety across ALL recorded incidents (spent or not — a rap sheet is
+// cumulative history, and a reformed kingpin was still a kingpin).
+export function criminalNotoriety(incidents: Array<RankIncident> = []): number {
+  return (incidents || []).reduce((s, i) => s + (NOTORIETY_WEIGHT[clampLevel(i?.level || 0)] || 0), 0);
+}
+export function criminalRankIndex(incidents: Array<RankIncident> = []): number {
+  const n = criminalNotoriety(incidents);
+  let idx = 0;
+  for (let i = 0; i < CRIMINAL_RANKS.length; i++){ if (n >= CRIMINAL_RANKS[i].min) idx = i; }
+  return idx;
+}
+export function criminalRank(incidents: Array<RankIncident> = []): CriminalRank {
+  return CRIMINAL_RANKS[criminalRankIndex(incidents)];
+}
+export const TOP_CRIMINAL_RANK_INDEX = CRIMINAL_RANKS.length - 1;
+// True only at the very top of the ladder — the trigger for the "Con" venue music.
+export function atTopOfCriminalPath(incidents: Array<RankIncident> = []): boolean {
+  return criminalRankIndex(incidents) === TOP_CRIMINAL_RANK_INDEX;
+}
+// How far to the next rank (null at the top) — for a progress readout.
+export function nextCriminalRank(incidents: Array<RankIncident> = []): CriminalRank | null {
+  return CRIMINAL_RANKS[criminalRankIndex(incidents) + 1] || null;
+}
+
 // ---- Community service ----------------------------------------------------
 export interface CommunityTask { id: string; ic: string; label: string; units: number; }
 export const COMMUNITY_TASKS: CommunityTask[] = [
