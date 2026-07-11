@@ -3,6 +3,22 @@ node_modules/
 dist/
 release/
 
+# Local asset/reference libraries (never ship or commit)
+Sprites/
+Downloads/
+Audit/
+Exec Summary/
+Market Analysis/
+Metadata/
+
+# Local backups and superseded source snapshots
+src/upDATES/
+src.zip
+Kenney Game Assets All-in-1*.zip
+
+# Local AI/editor working state
+.claude/
+
 # Logs & OS/editor junk
 *.log
 .DS_Store
