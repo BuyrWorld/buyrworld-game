@@ -23,6 +23,7 @@ import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage,
 import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBeat, allWelcomeDone, welcomeTopLevel } from './data/welcome.ts';
 import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, reliabilityLabel, reliabilityStars } from './data/suppliers.ts';
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
+import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
@@ -641,6 +642,7 @@ const ACH = [
   { id:"procurement_pro", ic:"🛒", n:"Procurement Pro", ds:"Place 25 purchase orders.",       r:400,  c:()=>(S.counters?.ordersPlaced||0)>=25 },
   { id:"first_qc",    ic:"🔬", n:"Under Inspection",  ds:"Run your first quality inspection.", r:60,   c:()=>(S.qc?.inspected||0)>=1 },
   { id:"quality_champ", ic:"🏅", n:"Quality Champion", ds:"Reach a Quality Rating of 90.",     r:600,  c:()=>(S.qc?.rating||0)>=90 },
+  { id:"warehouse_baron", ic:"🏗️", n:"Warehouse Baron", ds:"Expand storage to the Grand Depot.", r:800, c:()=>(S.warehouse?.tier||0)>=WAREHOUSE_TIERS.length-1 },
   { id:"runs_10",     ic:"📦", n:"Reliable Supplier", ds:"Deliver 10 contracts.",             r:100,  c:()=>S.counters.contracts>=10 },
   { id:"runs_50",     ic:"🚛", n:"Logistics Legend",  ds:"Deliver 50 contracts.",             r:500,  c:()=>S.counters.contracts>=50 },
   { id:"first_deal",  ic:"⚖️", n:"Deal!",             ds:"Make your first trade.",            r:25,   c:()=>S.counters.trades>=1 },
@@ -2390,7 +2392,10 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
     // swinging arm + tool, pivoted at the shoulder, with a small impact dip
     ctx.save();
     ctx.translate(facing*5, -6 + dip);
-    ctx.rotate(facing*ang);
+    // Mirror the whole swing arm when facing left so the ASYMMETRIC axe blade (and
+    // any tool) points at the resource, instead of rotating the wrong way.
+    if (facing < 0) ctx.scale(-1, 1);
+    ctx.rotate(ang);
     ctx.fillStyle=shirt; ctx.fillRect(-1.5,0,3,7);        // upper arm
     drawSwingTool(ctx, _swingType, toolColor);            // tool first, so the hand grips OVER the handle
     ctx.fillStyle=skin;  ctx.fillRect(-2.5,5,5,5);        // fist wrapping the handle (visible on top)
@@ -7542,7 +7547,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, seenControls:false,
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false,
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -7729,6 +7734,11 @@ function load(){
       // M18 — Quality Control: default a neutral rating so existing economies are unchanged
       if (!("qc" in parsed) || !S.qc || typeof S.qc.rating !== "number"){
         S.qc = { rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 };
+      }
+      // M19 — Warehouse: grandfather existing saves to a tier that covers their current
+      // stock, so nothing they hold is ever over capacity (they're never worse off).
+      if (!("warehouse" in parsed) || !S.warehouse || typeof S.warehouse.tier !== "number"){
+        S.warehouse = { tier: tierForUsage(warehouseUsed()) };
       }
       // Onboarding M1: existing players already know the controls — never show them the card
       if (!("seenControls" in parsed)) S.seenControls = true;
@@ -7981,7 +7991,21 @@ function speedMult(skill){
   const _kb = keepsakeSpeedBonus(skill);
   if (_kb > 0) m *= (1 - _kb);
   m *= renownSpeedMult(S.renown?.bought);   // Hall of Renown: Well Rested
+  m *= warehouseSpeedFactor();              // M19: a lean/expanded warehouse runs a touch faster
   return Math.max(0.20, m);
+}
+// M19 — Warehouse Management: total stock, capacity, and the "organised" speed bonus.
+function warehouseUsed(){ let s = 0; for (const k in S.items){ const q = S.items[k]; if (q > 0) s += q; } return s; }
+function warehouseSpeedFactor(){ return organisedSpeedFactor(warehouseUsed(), warehouseCap(S.warehouse?.tier || 0)); }
+function expandWarehouse(){
+  if (!S.warehouse) S.warehouse = { tier:0 };
+  const nx = nextWarehouseTier(S.warehouse.tier);
+  if (!nx){ toast("Your warehouse is already the Grand Depot — maxed out."); return; }
+  if (S.coins < nx.cost){ toast(`Need ${fmt(nx.cost)} coins to expand storage.`); return; }
+  S.coins -= nx.cost; S.warehouse.tier++;
+  log(`🏗️ Storage expanded to <b>${nx.n}</b> — capacity now ${fmt(nx.cap)}.`, "good");
+  toast(`🏗️ Warehouse expanded → ${nx.n}`);
+  achCheck(); renderMain(); updateHud(); save();
 }
 function updateBeachBirds(){
   for (const b of BEACH_BIRDS){
@@ -9307,9 +9331,29 @@ function renderSkillPanel(skill){
   html += renderInventoryPanel();
   return html;
 }
+function warehouseGaugeHtml(){
+  const tier = S.warehouse?.tier || 0;
+  const cap = warehouseCap(tier), used = warehouseUsed();
+  const pct = warehouseFillPct(used, cap), shown = Math.min(100, pct);
+  const col = pct >= 100 ? 'var(--red)' : pct >= 80 ? 'var(--amber)' : 'var(--mint)';
+  const bonusPct = Math.round((1 - warehouseSpeedFactor()) * 100);
+  const nx = nextWarehouseTier(tier);
+  const canBuy = nx && S.coins >= nx.cost;
+  const expand = nx
+    ? `<button data-warehouse-expand="1" style="background:${canBuy?'#3a6a3a':'#444'};color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:${canBuy?'pointer':'default'};font-size:11px;font-weight:700">🏗️ Expand → ${nx.n} (${fmt(nx.cap)}) · ${fmt(nx.cost)}c</button>`
+    : `<span style="font-size:10px;color:var(--mint)">✔ Grand Depot — max storage</span>`;
+  return `<div style="margin:2px 0 8px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+      <span>${warehouseTierDef(tier).n} · <b>${fmt(used)}/${fmt(cap)}</b> <span style="color:var(--dim)">(${fillLabel(pct)})</span></span>
+      <span style="color:var(--dim)">${bonusPct>0?`⚡ +${bonusPct}% speed`:'Full — no speed bonus'}</span>
+    </div>
+    <div class="obj-bar"><div class="obj-fill" style="width:${shown}%;background:${col}"></div></div>
+    <div style="text-align:right;margin-top:5px">${expand}</div>
+  </div>`;
+}
 function renderInventoryPanel(){
   const entries = Object.entries(S.items).filter(([,q])=>q>0);
-  let html = `<div class="panel"><h2>📦 Warehouse</h2>${tutObjectiveHtml()}${welcomeObjectiveHtml()}<div class="inv">`;
+  let html = `<div class="panel"><h2>📦 Warehouse</h2>${tutObjectiveHtml()}${welcomeObjectiveHtml()}${warehouseGaugeHtml()}<div class="inv">`;
   if (!entries.length) html += `<span style="color:var(--dim);font-size:12px;">Empty. The auditors would approve. Go mine something.</span>`;
   entries.forEach(([id,q])=>{
     // highlight the item the current objective wants, so progress is obvious
@@ -12138,6 +12182,7 @@ function bindMain(){
   const _qcScrap  = document.querySelector("[data-qc-scrap]");  if (_qcScrap)  _qcScrap.onclick  = ()=>qcResolve("scrap");
   const _qcAccept = document.querySelector("[data-qc-accept]"); if (_qcAccept) _qcAccept.onclick = ()=>qcResolve("accept");
   const _qcUp     = document.querySelector("[data-qc-upgrade]");if (_qcUp)     _qcUp.onclick     = ()=>qcUpgrade();
+  const _whExpand = document.querySelector("[data-warehouse-expand]"); if (_whExpand) _whExpand.onclick = ()=>expandWarehouse();
   // property purchase
   document.querySelectorAll("[data-buy-prop]").forEach(b=> b.onclick = ()=>{
     const _pid = b.dataset.buyProp;

@@ -6,7 +6,9 @@
 // bigger chunk = fewer clicks per resource. A per-swing cooldown caps it at
 // active-play speed so autoclickers can't outrun the design.
 
-export const SWING_SKILLS = new Set<string>(['mining', 'woodcutting', 'foraging']);
+// Only the two "swing a tool at a resource" gathering skills support quick clicks;
+// every other task (foraging, fishing, processing, etc.) stays at standard speed.
+export const SWING_SKILLS = new Set<string>(['mining', 'woodcutting']);
 
 // Progress added per swing, as a fraction of the action's duration, indexed by
 // tool tier (0 wood → 4 diamond). Every value is < 1, so a single click can
