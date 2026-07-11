@@ -530,6 +530,35 @@ function showJourneyBurst(stage){
     setTimeout(()=>el.remove(), 1900);
   }catch(e){}
 }
+// Onboarding M1 — a one-time "How to Play" card for brand-new players.
+function showPlayHint(){
+  if (document.getElementById("play-hint-overlay")) return;
+  const ov = document.createElement("div");
+  ov.id = "play-hint-overlay";
+  ov.innerHTML = `<div id="play-hint" role="dialog" aria-modal="true" aria-labelledby="ph-title">
+    <h2 id="ph-title">Welcome to Featherstone Valley! ❄️</h2>
+    <p class="ph-sub">You've arrived with big dreams and a handful of coins. Frost will show you the ropes — here's how to get around:</p>
+    <div class="ph-row"><span class="ph-ic">🕹️</span><span><b>Move</b> — tap or click where you want to go, or use <b>WASD</b> / arrow keys / a gamepad.</span></div>
+    <div class="ph-row"><span class="ph-ic">👆</span><span><b>Interact</b> — click a person, building or resource to use it.</span></div>
+    <div class="ph-row"><span class="ph-ic">🎒</span><span><b>Tabs & bag</b> — your skills and inventory sit along the bottom; more unlock as you play.</span></div>
+    <div class="ph-goal">🎯 <b>First job:</b> head <b>west</b> to the Quarry and mine <b>5 Iron Ore</b>. Follow Frost and watch the objective tracker.</div>
+    <button id="ph-go" type="button">Let's go! ▶</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const btn = ov.querySelector("#ph-go");
+  const close = ()=>{ ov.remove(); S.seenControls = true; save(); try{ focusGameInput(); }catch(e){} };
+  if (btn){ btn.onclick = close; btn.focus(); }
+  ov.addEventListener("keydown", e=>{ if (e.key==="Enter" || e.key==="Escape"){ e.preventDefault(); close(); } });
+}
+function maybeShowPlayHint(){ if (!S.seenControls && S.tut && !S.tut.done) showPlayHint(); }
+// Hide advanced HUD buttons until Frost's tutorial is done, to declutter the opening.
+function syncOnboardingUI(){
+  const done = !!(S.tut && S.tut.done);
+  ["btn-journey","btn-ledger","btn-districts"].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.style.display = done ? "" : "none";
+  });
+}
 function syncMusicButton(){
   const b = document.getElementById("btn-music");
   if (!b) return;
@@ -7386,6 +7415,7 @@ function showTitle(){
       log(`❄️ Frost: "Welcome to Featherstone Valley, <b>${pName()}</b>! Follow my lead and you'll be running this valley by teatime."`, "good");
       updateHud(); renderNav(); renderMain(); save();
       focusGameInput();   // Task 3: keyboard works the moment you land in the village
+      maybeShowPlayHint();   // M1: one-time "How to Play" card for brand-new players
     }, delay);
   };
   _btnStart.onclick = () => {
@@ -7490,7 +7520,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, seenControls:false,
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -7678,6 +7708,8 @@ function load(){
       if (!("qc" in parsed) || !S.qc || typeof S.qc.rating !== "number"){
         S.qc = { rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 };
       }
+      // Onboarding M1: existing players already know the controls — never show them the card
+      if (!("seenControls" in parsed)) S.seenControls = true;
       // Contracts 2.0 — per-client reputation + tier/deadline on in-flight orders
       if (!("contractRep" in parsed) || !S.contractRep || typeof S.contractRep !== "object") S.contractRep = {};
       if (!("contractsExpired" in S.counters)) S.counters.contractsExpired = 0;
@@ -12204,6 +12236,7 @@ function bindMain(){
 }
 
 function updateHud(){
+  syncOnboardingUI();   // M1: reveal advanced HUD buttons once the tutorial is done
   $("#hud-coins").textContent = fmt(S.coins);
   $("#hud-total").textContent = totalLvl();
   const nameEl = document.getElementById("hud-name");

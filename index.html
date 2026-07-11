@@ -201,6 +201,16 @@ main{ flex:1; width:100%; max-width:1400px; margin:0 auto; padding:14px; }
 #btn-journey.has-claim::after{ content:""; position:absolute; top:-2px; right:-2px; width:8px; height:8px; border-radius:50%; background:var(--red); border:1px solid #fff; }
 @keyframes jClaim{ 0%,100%{ box-shadow:0 0 0 0 rgba(232,150,30,.6); } 50%{ box-shadow:0 0 0 5px rgba(232,150,30,0); } }
 @media (prefers-reduced-motion: reduce){ #btn-journey.has-claim{ animation:none; } }
+/* Onboarding M1 — first-spawn "How to Play" card */
+#play-hint-overlay{ position:fixed; inset:0; z-index:70; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); padding:16px; }
+#play-hint{ background:var(--panel,#1c2029); border:2px solid var(--edge,#3a4048); border-radius:12px; max-width:420px; width:100%; padding:18px 20px; box-shadow:0 12px 40px rgba(0,0,0,.5); }
+#play-hint h2{ margin:0 0 4px; font-size:18px; color:var(--amber,#e8b24a); }
+#play-hint .ph-sub{ font-size:13px; color:var(--dim,#9aa); margin:0 0 12px; line-height:1.45; }
+#play-hint .ph-row{ display:flex; gap:10px; align-items:center; padding:7px 0; border-top:1px solid rgba(255,255,255,.07); font-size:13px; }
+#play-hint .ph-row .ph-ic{ font-size:20px; width:26px; text-align:center; flex-shrink:0; }
+#play-hint .ph-goal{ background:rgba(232,178,74,.12); border:1px solid rgba(232,178,74,.35); border-radius:8px; padding:9px 11px; font-size:13px; margin:12px 0 4px; line-height:1.45; }
+#play-hint button{ width:100%; margin-top:14px; background:var(--mint,#5cc98a); color:#0c1a10; border:none; padding:11px; border-radius:8px; font-size:15px; font-weight:800; cursor:pointer; }
+#play-hint button:hover{ filter:brightness(1.08); }
 .btn:disabled{ opacity:.4; cursor:not-allowed; }
 .btn.deliver{ background:var(--mint); }
 .btn.deliver:hover:not(:disabled){ background:#4aba7a; }
@@ -736,12 +746,13 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
       <div class="bhi">HI, MY NAME IS</div>
       <div class="bnm" id="badge-name-val">FOUNDER</div>
     </div>
-    <div class="row" style="justify-content:center;margin-top:10px;">
-      <button class="btn big" id="btn-start" style="display:none;">START SHIFT ▶</button>
-      <button class="btn alt" id="btn-preview">♪ Theme</button>
+    <div class="row" style="justify-content:center;margin-top:12px;">
+      <button class="btn big quickstart" id="btn-quick" title="Random character, jump straight in">▶ PLAY NOW</button>
     </div>
-    <div class="row" style="justify-content:center;margin-top:8px;">
-      <button class="btn quickstart" id="btn-quick" title="Random character, jump straight in">⚡ Quick Start — skip setup</button>
+    <div style="text-align:center;font-size:11px;color:var(--dim);margin-top:5px;">New here? Jump straight in — you can customise your character any time.</div>
+    <div class="row" style="justify-content:center;margin-top:10px;">
+      <button class="btn" id="btn-start" style="display:none;">Use my custom character ▶</button>
+      <button class="btn alt" id="btn-preview">♪ Theme</button>
     </div>
   </div>
 </div>
