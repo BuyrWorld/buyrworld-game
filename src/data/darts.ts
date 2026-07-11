@@ -58,6 +58,32 @@ export function dartOutcome(remaining, sc){
   return { remaining: remaining - sc };
 }
 
+// ---- Skill-based throw model -------------------------------------------------
+// The aim reticle sways; the player releases (click / Space) to throw. Sway
+// amplitude (as a fraction of the board radius R) shrinks with darts wins (skill)
+// and optional aim-assist, and grows when drunk/tired. Deterministic sway keeps
+// pure randomness to a minimum — consistency comes from the player's timing.
+export function playerSwayAmp(wins, opts = {}){
+  let amp = 0.12;                                                  // base sway
+  amp *= 1 / (1 + Math.min(Math.max(wins || 0, 0), 20) * 0.055);  // skill steadies (up to ~-52%)
+  if (opts.drunk)  amp *= 1.8;                                     // alcohol shakes the hand
+  if (opts.assist) amp *= 0.45;                                    // aim-assist ~halves the sway
+  return Math.max(0.015, amp);
+}
+// Deterministic reticle offset (fraction of R) at time tSec for a given amplitude.
+export function swayOffset(tSec, amp){
+  return { dx: Math.sin(tSec * 3.3) * amp, dy: Math.cos(tSec * 2.1) * amp };
+}
+// Small residual scatter applied on release (also skill/assist-scaled), so even a
+// perfectly-timed release has a hair of spread but is never wildly random.
+export function releaseScatter(wins, opts = {}){
+  let s = 0.028;
+  s *= 1 / (1 + Math.min(Math.max(wins || 0, 0), 20) * 0.05);
+  if (opts.assist) s *= 0.5;
+  if (opts.drunk)  s *= 1.5;
+  return s;
+}
+
 // What the opponent aims at, given its remaining score.
 export function botTarget(remaining){
   if (remaining <= 20) return { number: remaining, ring: 'single' };

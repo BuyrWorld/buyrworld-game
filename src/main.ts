@@ -38,7 +38,7 @@ import { POOL, POCKETS, BALL_COLORS, ballGroup, isStripe, rackBalls, allStopped,
 import { FARM_CROPS, MAX_PLOTS, cropsForLevel, plotsUnlocked as farmPlotsUnlocked, waterReductionMs, fertilisedYield, WATER_COST, FERTILISE_COST } from './data/farming.ts';
 import { BR, BOT_NAMES, BOT_COLORS, spawnFighters, stormRadius, outsideStorm, applyDamage, aliveCount, aliveEnemies, player as brPlayer, playerWon, playerLost, nearestEnemy, aimAngle, bulletHits, clampToArena, STORM_CX, STORM_CY, WEAPONS, weaponById, weaponDamage, applyHit, BR_SHIELD_MAX, PERSONALITIES, COVER, POIS, pointBlocked, segmentBlocked, moveFighter, spawnLoot, evaluateMedals, stormClosing, stormNextRadius, stormTicksToClose, stormDamage } from './data/battle.ts';
 import { CUES, cueById, cuePower, cueAim, cueOwned, canBuyCue } from './data/cues.ts';
-import { DART_SECTORS, DART_RINGS, scoreAt as dartScoreAt, aimPointFor, DART_DIFFICULTIES, difficultyById, DARTS_START, dartOutcome, botTarget } from './data/darts.ts';
+import { DART_SECTORS, DART_RINGS, scoreAt as dartScoreAt, aimPointFor, DART_DIFFICULTIES, difficultyById, DARTS_START, dartOutcome, botTarget, playerSwayAmp, swayOffset, releaseScatter } from './data/darts.ts';
 import { COMMISSION_DEFS, commissionById, commissionCoins, commissionXp, commissionRep, repTierUnlocked, repTitle, availableCommissions, rollCommissionBoard, commissionProgress, commissionDone } from './data/commissions.ts';
 import { STRIKER_FEE, strikerReward } from './data/fairground.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
@@ -837,6 +837,7 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
     ? { x: (workObj.tx + (workObj.w||2)/2)*TILE, y: (workObj.ty + (workObj.h||2))*TILE + 10 }
     : homePos;
   return { id:v.id, n:v.n, hair:v.hair, shirt:v.shirt, trouser:v.trouser, female:!!v.female,
+           shoes: v.shoes || '#3a2a1a',   // every ordinary villager gets footwear (deliberate v.shoes wins)
            homePos, workPos, workTab: workObj?.tab || null,
            homeId: v.homeId, workId: v.workId, workKind: workObj?.kind || null,
            partner: v.partner || null, children: v.children || [],
@@ -2051,6 +2052,24 @@ function villageTip(o){
   }
   return `${o.ic||""} ${o.name}`;
 }
+// M#4 — explicit fishing anchor points on the pier deck. Each has a position, a
+// facing and a cast direction (all "up", into the water). The deck is the lower
+// half of the canvas; anchors sit safely back from the water line on the RIGHT so
+// they never overlap the wandering pier NPCs (kept to the left/deck). Index 0 is
+// the player's spot; a safe deck-centre fallback is returned if sizing is odd.
+function fishingAnchors(){
+  const W = icanvasW(), H = icanvasH();
+  const deckTop = H * 0.50, deckY = Math.min(H - 22, deckTop + (H - deckTop) * 0.30);
+  const mk = (fx) => ({ x: Math.round(W * fx), y: Math.round(deckY), dir: "up", cast: "up" });
+  return [ mk(0.70), mk(0.86), mk(0.54) ];
+}
+function fishingAnchor(i){
+  const A = fishingAnchors();
+  const a = A[Math.max(0, Math.min(A.length - 1, i | 0))];
+  // fallback: dead-centre of the deck if an anchor came out above the water line
+  if (!a || a.y <= icanvasH() * 0.50) return { x: Math.round(icanvasW()/2), y: Math.round(icanvasH()*0.72), dir:"up", cast:"up" };
+  return a;
+}
 function interactObj(o){
   if (o.kind==="lamp" || o.kind==="plant") return;
   if (o.kind==="bench"){ toast("🪑 You rest your legs for a moment. Lovely."); return; }
@@ -2097,6 +2116,9 @@ function interactObj(o){
   S.tab = o.tab;
   S.roomObjId = o.id;
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
+  // M#4: at the pier, stand the angler on an explicit deck anchor facing the water
+  // (not floating at canvas centre). Validated to the deck via _fishingAnchors.
+  if (o.tab === "fishing"){ const a = fishingAnchor(0); IP.x = a.x; IP.y = a.y; IP.dir = a.dir; }
   // set trespass flag when entering someone else's home
   if (o.tab === "home"){
     S.trespass = { active: true, homeId: o.id };
@@ -4635,11 +4657,11 @@ function drawVillage(t){
   }
   const playerTool = drawWorkerAndVfx(ctx, t);
   for (const w of WANDERERS){
-    drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir);
+    drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir, null, w.trouser||null, null, !!w.female, 1.0, 'none', '#2a1a0a', { shoes: w.shoes || '#2a2a30' });
   }
   for (const v of VILLAGER_STATE){
     if (v.phase === "sleep" || v.indoor) continue;
-    drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female);
+    drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female, 1.0, 'none', '#2a1a0a', { shoes: v.shoes });
   }
   for (const c of CHILDREN_STATE){
     if (c.phase==="sleep" || c.phase==="school") continue;
@@ -6548,9 +6570,8 @@ function drawInterior(t){
     ctx.fillStyle="#2a2a30"; ctx.fillRect(16,60,62,10);
     ctx.fillStyle="#5a4a3a"; ctx.fillRect(18,70,58,22);
     ctx.fillStyle="#4a3a2a"; ctx.fillRect(20,72,16,8);
-    // comedy bucket
-    ctx.fillStyle="#6a7a6a"; ctx.fillRect(W-22,H-32,14,20); ctx.fillStyle="#4a5a4a"; ctx.fillRect(W-22,H-32,14,4);
-    drawEmojiC(ctx,"🪣",W-15,H-22,11);
+    // comedy bucket — emoji only, no boxy grey backing (removes the square artefact)
+    drawEmojiC(ctx,"🪣",W-15,H-21,17);
     // graffiti scratched into the wall — legible, hand-scrawled
     ctx.save(); ctx.fillStyle="rgba(230,230,240,.45)";
     ctx.translate(Math.round(W*0.34),28); ctx.rotate(-0.06); fitText(ctx,"I WOZ 'ERE",0,0,64,9,{weight:"bold",family:"'Comic Sans MS',cursive",baseline:"middle"}); ctx.restore();
@@ -8612,7 +8633,13 @@ function updateVillagers(dt){
         if (v.iwTimer <= 0 || !v.iwTarget){
           v.iwTimer = 2 + Math.random()*3;
           const iW = icanvasW(), iH = icanvasH();
-          v.iwTarget = { x: iW*0.15 + Math.random()*iW*0.7, y: iH*0.38 + Math.random()*iH*0.32 };
+          if (v.workTab === "fishing"){
+            // pier: keep NPCs entirely on the deck (lower half) and to the LEFT, so
+            // they never stand out over the water or on the player's anchor.
+            v.iwTarget = { x: iW*0.10 + Math.random()*iW*0.38, y: iH*0.60 + Math.random()*iH*0.26 };
+          } else {
+            v.iwTarget = { x: iW*0.15 + Math.random()*iW*0.7, y: iH*0.38 + Math.random()*iH*0.32 };
+          }
         }
         if (v.iwTarget){
           const idx = v.iwTarget.x - v.iwx, idy = v.iwTarget.y - v.iwy;
@@ -10822,7 +10849,7 @@ function openDarts(diffId){
   document.getElementById("darts-close").onclick=_dartsClose;
   _dartsPickDifficulty();
 }
-function _dartsClose(){ if(_darts&&_darts.raf) cancelAnimationFrame(_darts.raf); const e=document.getElementById("darts-modal"); if(e) e.remove(); _darts=null; }
+function _dartsClose(){ if(_darts&&_darts.raf) cancelAnimationFrame(_darts.raf); if(_darts&&_darts.keyHandler) window.removeEventListener("keydown",_darts.keyHandler); const e=document.getElementById("darts-modal"); if(e) e.remove(); _darts=null; }
 function _dartsPickDifficulty(){
   const body=document.getElementById("darts-body"); if(!body) return;
   const btns=DART_DIFFICULTIES.map(d=>`<button data-darts-diff="${d.id}" style="display:block;width:100%;text-align:left;background:#2a3a4a;color:#fff;border:1px solid #3a5a7a;padding:9px 12px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:7px"><b>${d.n}</b> <span style="color:var(--dim);font-size:11px;float:right">win: ${fmt(d.reward)}c</span><br><span style="color:var(--dim);font-size:11px">${d.id==='rookie'?'Wild aim — a gentle warm-up.':d.id==='regular'?'A steady hand.':d.id==='sharp'?'Rarely misses the treble.':'A tungsten machine — good luck.'}</span></button>`).join('');
@@ -10832,7 +10859,8 @@ function _dartsPickDifficulty(){
 function _dartsStart(diffId){
   const diff=difficultyById(diffId);
   _darts={ diff, you:DARTS_START, opp:DARTS_START, turn:'you', dartsLeft:3, turnStart:DARTS_START,
-    marks:[], aim:{ x:DARTS_CX, y:DARTS_CY }, over:false, result:null, nextThrow:0, msg:'Your throw — tap the board!', raf:0 };
+    marks:[], aim:{ x:DARTS_CX, y:DARTS_CY }, over:false, result:null, nextThrow:0, assist:!!S.dartsAssist,
+    msg:'Aim with the mouse — the tip sways. Click or press Space to release on target.', raf:0 };
   const body=document.getElementById("darts-body");
   body.innerHTML=`<div id="darts-msg" style="min-height:20px;font-size:12px;margin-bottom:6px">${_darts.msg}</div>
     <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;margin-bottom:6px">
@@ -10841,6 +10869,7 @@ function _dartsStart(diffId){
       <span style="color:#e0a060">${diff.n}: <span id="darts-opp">301</span></span>
     </div>
     <div style="background:#0b0f14;border-radius:10px;padding:8px"><canvas id="darts-cv" width="${DARTS_W}" height="${DARTS_H}" style="width:100%;height:auto;display:block;touch-action:none;cursor:crosshair"></canvas></div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);margin-top:7px;cursor:pointer"><input type="checkbox" id="darts-assist" ${_darts.assist?'checked':''}> Aim assist (steadier sway)</label>
     <div id="darts-again" style="text-align:center;margin-top:8px"></div>`;
   const cv=document.getElementById("darts-cv");
   const _loc=(e)=>{ const r=cv.getBoundingClientRect(); const p=(e.touches&&e.touches[0])||e; return { x:(p.clientX-r.left)*(cv.width/r.width), y:(p.clientY-r.top)*(cv.height/r.height) }; };
@@ -10848,6 +10877,11 @@ function _dartsStart(diffId){
   cv.addEventListener("mousedown",(e)=>{ if(!_darts) return; e.preventDefault(); _darts.aim=_loc(e); _dartsPlayerThrow(); });
   cv.addEventListener("touchstart",(e)=>{ if(!_darts) return; e.preventDefault(); _darts.aim=_loc(e); _dartsPlayerThrow(); },{passive:false});
   cv.addEventListener("touchmove",(e)=>{ if(!_darts) return; e.preventDefault(); _darts.aim=_loc(e); },{passive:false});
+  const _ac=document.getElementById("darts-assist");
+  if(_ac) _ac.onchange=()=>{ if(_darts){ _darts.assist=_ac.checked; S.dartsAssist=_ac.checked; save(); } };
+  // keyboard release (accessibility) — Space/Enter throws at the current reticle
+  _darts.keyHandler=(e)=>{ if(!_darts) return; if(e.key===' '||e.key==='Enter'){ if(_darts.turn==='you'&&!_darts.over&&_darts.dartsLeft>0){ e.preventDefault(); _dartsPlayerThrow(); } } };
+  window.addEventListener("keydown", _darts.keyHandler);
   _dartsLoop();
 }
 function _dartsSetMsg(m){ if(_darts) _darts.msg=m; const e=document.getElementById("darts-msg"); if(e) e.textContent=m; }
@@ -10867,10 +10901,22 @@ function _dartsThrow(who, landX, landY){
   _darts.dartsLeft--;
   _dartsSetMsg(`${who==='you'?'You':_darts.diff.n} scored ${sc}.`);
 }
+// The live sway state of the player's reticle: amplitude (px) + the current
+// swayed landing point. Skill (wins) steadies it, drink shakes it, assist calms it.
+function _dartsSwayAmpPx(){
+  const drunk = !!(S.drunkUntil && Date.now() < S.drunkUntil);
+  return playerSwayAmp(S.darts?.wins || 0, { drunk, assist: !!_darts?.assist }) * DARTS_R;
+}
+function _dartsReticle(){
+  const off = swayOffset((typeof performance!=="undefined"?performance.now():Date.now())/1000, _dartsSwayAmpPx());
+  return { x:_darts.aim.x + off.dx, y:_darts.aim.y + off.dy };
+}
 function _dartsPlayerThrow(){
   if(!_darts||_darts.over||_darts.turn!=='you'||_darts.dartsLeft<=0) return;
-  const s=DARTS_R*0.028;   // your steady hand (small scatter)
-  _dartsThrow('you', _darts.aim.x+_gauss(s), _darts.aim.y+_gauss(s));
+  const drunk = !!(S.drunkUntil && Date.now() < S.drunkUntil);
+  const ret = _dartsReticle();                                   // release where the sway currently is
+  const s = releaseScatter(S.darts?.wins || 0, { drunk, assist: !!_darts.assist }) * DARTS_R;
+  _dartsThrow('you', ret.x + _gauss(s), ret.y + _gauss(s));
   if(_darts.over) return;
   if(_darts.dartsLeft<=0){ _dartsSwitch(); }
 }
@@ -10940,11 +10986,17 @@ function _dartsDraw(){
   // dart marks
   for(const m of _darts.marks){ g.fillStyle=m.who==='you'?"#ffe27a":"#7ad0ff"; g.beginPath(); g.arc(m.x,m.y,2.6,0,7); g.fill();
     g.strokeStyle=m.who==='you'?"#c89020":"#3a80b0"; g.lineWidth=1; g.beginPath(); g.moveTo(m.x,m.y); g.lineTo(m.x+4,m.y-6); g.stroke(); }
-  // player reticle
-  if(!_darts.over && _darts.turn==='you'){ const a=_darts.aim;
-    g.strokeStyle="rgba(255,255,255,.8)"; g.lineWidth=1;
-    g.beginPath(); g.arc(a.x,a.y,7,0,7); g.stroke();
-    g.beginPath(); g.moveTo(a.x-11,a.y); g.lineTo(a.x+11,a.y); g.moveTo(a.x,a.y-11); g.lineTo(a.x,a.y+11); g.stroke(); }
+  // player reticle: a faint marker at the raw aim, and the SWAYING tip (where the
+  // dart will actually land) that you time your release against.
+  if(!_darts.over && _darts.turn==='you'){
+    const a=_darts.aim, r=_dartsReticle();
+    g.strokeStyle="rgba(255,255,255,.28)"; g.lineWidth=1;              // raw aim (faint)
+    g.beginPath(); g.moveTo(a.x-8,a.y); g.lineTo(a.x+8,a.y); g.moveTo(a.x,a.y-8); g.lineTo(a.x,a.y+8); g.stroke();
+    g.strokeStyle="#ffe27a"; g.lineWidth=1.4;                          // swaying tip (release here)
+    g.beginPath(); g.arc(r.x,r.y,6,0,7); g.stroke();
+    g.beginPath(); g.moveTo(r.x-10,r.y); g.lineTo(r.x+10,r.y); g.moveTo(r.x,r.y-10); g.lineTo(r.x,r.y+10); g.stroke();
+    g.fillStyle="#ffe27a"; g.beginPath(); g.arc(r.x,r.y,1.6,0,7); g.fill();
+  }
 }
 // ===== The Fairground — festival High Striker (test your strength) =====
 let _fair = null;

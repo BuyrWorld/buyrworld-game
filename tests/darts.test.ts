@@ -2,7 +2,38 @@ import { describe, it, expect } from 'vitest';
 import {
   DART_SECTORS, DART_RINGS, sectorIndexAt, sectorNumberAt, scoreAt, aimPointFor,
   DART_DIFFICULTIES, difficultyById, DARTS_START, dartOutcome, botTarget,
+  playerSwayAmp, swayOffset, releaseScatter,
 } from '../src/data/darts.ts';
+
+describe('Darts — skill-based throw model', () => {
+  it('sway shrinks with wins (skill), grows when drunk, and is calmed by aim-assist', () => {
+    expect(playerSwayAmp(10)).toBeLessThan(playerSwayAmp(0));                 // skill steadies
+    expect(playerSwayAmp(5, { drunk: true })).toBeGreaterThan(playerSwayAmp(5)); // drink shakes
+    expect(playerSwayAmp(5, { assist: true })).toBeLessThan(playerSwayAmp(5));   // assist calms
+    expect(playerSwayAmp(999)).toBeGreaterThanOrEqual(0.015);                 // never zero (a floor)
+  });
+
+  it('sway offset stays within the amplitude envelope', () => {
+    const amp = 0.1;
+    for (const t of [0, 0.3, 1.1, 2.7, 5.5, 9.9]) {
+      const o = swayOffset(t, amp);
+      expect(Math.abs(o.dx)).toBeLessThanOrEqual(amp + 1e-9);
+      expect(Math.abs(o.dy)).toBeLessThanOrEqual(amp + 1e-9);
+    }
+  });
+
+  it('release scatter also rewards skill/assist and is small', () => {
+    expect(releaseScatter(0)).toBeLessThan(0.05);
+    expect(releaseScatter(15)).toBeLessThan(releaseScatter(0));
+    expect(releaseScatter(5, { assist: true })).toBeLessThan(releaseScatter(5));
+    expect(releaseScatter(5, { drunk: true })).toBeGreaterThan(releaseScatter(5));
+  });
+
+  it('NPC difficulty scatter tightens from Rookie to Ringer', () => {
+    const scatters = DART_DIFFICULTIES.map(d => d.scatter);
+    for (let i = 1; i < scatters.length; i++) expect(scatters[i]).toBeLessThan(scatters[i - 1]);
+  });
+});
 
 describe('Darts — board', () => {
   it('has the 20 standard sectors starting at the top', () => {
