@@ -18,6 +18,7 @@ import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/cl
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery } from './data/tutorial.ts';
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
+import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -2098,6 +2099,7 @@ function fishingAnchor(i){
 }
 function interactObj(o){
   if (o.kind==="lamp" || o.kind==="plant") return;
+  if (o.kind==="bin"){ openBin(); return; }
   if (o.kind==="bench"){ toast("🪑 You rest your legs for a moment. Lovely."); return; }
   if (o.kind==="swing"){ toast("🌟 You sway back and forth on the swings. Bliss."); return; }
   if (o.kind==="slide"){ toast("🎉 Wheee! You slide all the way down!"); return; }
@@ -2145,6 +2147,7 @@ function interactObj(o){
   if (!tipOnce(o.tab, SYSTEM_TUTORIAL[o.tab]) && BUILDING_FLAVOUR[o.tab]) toast(BUILDING_FLAVOUR[o.tab]);
   S.tab = o.tab;
   S.roomObjId = o.id;
+  if (o.tab === "myhome"){ try{ _cottageIntro(); _cottageVisitDirty(); }catch(e){} }   // M3: household routine
   IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
   // M#4: at the pier, stand the angler on an explicit deck anchor facing the water
   // (not floating at canvas centre). Validated to the deck via _fishingAnchors.
@@ -3626,6 +3629,7 @@ function cookRecipe(id){
   addItem(r.out, 1);
   S.prod[r.out] = (S.prod[r.out]||0) + 1;
   S.counters.mealsCooked = (S.counters.mealsCooked||0) + 1;
+  if (S.tab === "myhome") dirtyCottage('cook');   // M3: cooking at home makes a little mess
   try{ SFX.cook(); }catch(e){}
   toast(`${r.ic} Cooked ${r.name}! Eat it for a buff, or serve it for coins.`);
   log(`${r.ic} Cooked <b>${r.name}</b>.`, "good");
@@ -3887,6 +3891,13 @@ function drawTiles(ctx, t){
 function drawObjects(ctx, t){
   for (const o of V_OBJECTS){
     const r = objRect(o);
+    if (o.kind==="bin"){
+      ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(r.x+r.w/2, r.y+r.h-1, r.w*0.4, 3, 0, 0, 7); ctx.fill();
+      drawEmojiC(ctx,"🗑️", r.x+r.w/2, r.y+r.h/2, 15);
+      const _bf = S.cottage?.bin?.fill||0;
+      if (_bf>0){ ctx.fillStyle = binLevel(_bf)==='full'?"#e8604a":"#e8c94a"; ctx.fillRect(r.x, r.y-4, Math.round(r.w*(_bf/BIN_CAPACITY)), 2); }
+      continue;
+    }
     if (o.kind==="rock"){
       const locked = skillLvl("mining") < o.lvl;
       ctx.fillStyle="rgba(0,0,0,.15)"; ctx.beginPath(); ctx.ellipse(r.x+12, r.y+20, 10, 3, 0, 0, 7); ctx.fill();
@@ -6393,6 +6404,13 @@ function drawInterior(t){
       ctx.fillStyle = (_pf.color||_fd.colors[0]) + "cc"; ctx.fillRect(_px+1, _py+1, _pw-2, _ph-2);
       ctx.strokeStyle="rgba(0,0,0,.20)"; ctx.lineWidth=1; ctx.strokeRect(_px+1, _py+1, _pw-2, _ph-2);
       drawEmojiC(ctx, _fd.ic, _px + _pw/2, _py + _ph/2, Math.round(Math.min(_pw,_ph)*_fd.scale*0.62));
+      if (isShiny(_pf.placedAt||0, Date.now()) && (!_reducedMotion() ? (Math.floor(Date.now()/500)%2===0) : true)) drawEmojiC(ctx, "✨", _px + _pw - 6, _py + 4, 9);   // M3: new-shine
+    }
+    // M3: loose mess objects on the cottage floor
+    for (const _m of (S.cottage?.mess||[])){
+      const _k = messKindById(_m.kind); if (!_k) continue;
+      const _mx = FGRID.originX + _m.gx*FGRID.cellW + FGRID.cellW/2, _my = FGRID.originY + _m.gy*FGRID.cellH + FGRID.cellH/2;
+      drawEmojiC(ctx, _k.ic, _mx, _my, 12);
     }
   }
   if (S.tab==="bank"){
@@ -8105,6 +8123,7 @@ function freshState(){
     ownedFurniture: {} as Record<string,number>,
     placedFurniture: [] as any[],
     furnNew: {} as Record<string,boolean>,
+    cottage: { clean:START_CLEAN, mess:[] as any[], carried:0, bin:{fill:0,lastDay:-1}, intro:0, goals:{} as Record<string,boolean>, reminded:-1 },
     pintBuff: 0,
     pintsTonight: 0,
     drunkUntil: 0,
@@ -8185,6 +8204,13 @@ function load(){
       if (!S.ownedFurniture) S.ownedFurniture = {};
       if (!Array.isArray(S.placedFurniture)) S.placedFurniture = [];
       if (!S.furnNew || typeof S.furnNew !== "object") S.furnNew = {};
+      // M3: cottage cleanliness — default for saves that predate it (never dirty on load)
+      if (!S.cottage || typeof S.cottage.clean !== "number") S.cottage = { clean:START_CLEAN, mess:[], carried:0, bin:{fill:0,lastDay:-1}, intro:0, goals:{}, reminded:-1 };
+      if (!Array.isArray(S.cottage.mess)) S.cottage.mess = [];
+      if (!S.cottage.bin || typeof S.cottage.bin.fill !== "number") S.cottage.bin = { fill:0, lastDay:-1 };
+      if (!S.cottage.goals) S.cottage.goals = {};
+      // capped offline decline (only when the system is already active) — never a filthy surprise
+      if (S.cottage.intro > 0){ const _hrs = Math.max(0, (Date.now() - (S.lastSeen||Date.now()))/3600000); if (_hrs > 0.5) S.cottage.clean = Math.max(0, S.cottage.clean - cappedOfflineDecline(_hrs)); }
       // M2: migrate old text-slot placements → grid positions (relocating on conflict,
       // returning to storage if impossible — never deleting purchased furniture).
       if (S.placedFurniture.some((p:any)=>p && p.slot != null && p.gx == null)){
@@ -10538,10 +10564,15 @@ function renderFurniturePlacement(): string {
   const _owned = S.ownedFurniture || {};
   const _ownedCount = Object.values(_owned).reduce((a,b)=>a+(b as number),0);
   const _newCount = Object.keys(S.furnNew||{}).length;
+  const _cc = S.cottage; const _band = _cc ? cleanBand(_cc.clean) : null;
+  const _cleanLine = (_cc && _cc.intro>0)
+    ? `<p style="font-size:11px;margin:0 0 8px">🧹 Cleanliness: <b style="color:${_band!.color}">${_band!.label}</b> · 🛋️ Comfort: <b>${_cottageComfort()}</b>${(_cc.carried||0)>0?` · <span style="color:#e8c94a">carrying ${_cc.carried} rubbish</span>`:''}</p>`
+    : '';
   return `<div class="panel" style="padding:10px;margin-top:8px">
     <h3 style="margin:0 0 6px;font-size:13px">🛋️ Cottage Furniture</h3>
-    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">${_placed.length} placed · ${_ownedCount} in storage${_newCount?` · <span style="color:#ffd666;font-weight:700">${_newCount} NEW</span>`:''}. Buy pieces from 🛋️ Nell's Home Store on the high street.</p>
-    <button onclick="openDecorate()" style="background:#5a3a6a;color:#f0e0ff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:800;width:100%">🛋️ Decorate Cottage${_newCount?' ✨':''}</button>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 4px">${_placed.length} placed · ${_ownedCount} in storage${_newCount?` · <span style="color:#ffd666;font-weight:700">${_newCount} NEW</span>`:''}. Buy pieces from 🛋️ Nell's Home Store on the high street.</p>
+    ${_cleanLine}
+    <button onclick="openDecorate()" style="background:#5a3a6a;color:#f0e0ff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:800;width:100%">🛋️ Decorate &amp; Tidy Cottage${_newCount?' ✨':''}</button>
   </div>`;
 }
 // ================= M2: visual furniture decoration mode =================
@@ -10600,13 +10631,14 @@ function _decorConfirm(){
   if(!chk.ok){ toast(`❌ ${chk.text}`); return; }
   if(!S.placedFurniture) S.placedFurniture=[];
   if(_decor.editIdx>=0){
-    // moving/rotating/recolouring an existing piece
-    S.placedFurniture[_decor.editIdx] = { id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color };
+    // moving/rotating/recolouring an existing piece (keep its placed-at for shine)
+    const _pa = S.placedFurniture[_decor.editIdx]?.placedAt || 0;
+    S.placedFurniture[_decor.editIdx] = { id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color, placedAt:_pa };
     toast('✔ Moved.');
   } else {
     if((S.ownedFurniture?.[_decor.itemId]||0) < 1){ toast('You don\'t own that.'); return; }
     S.ownedFurniture[_decor.itemId]--;
-    S.placedFurniture.push({ id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color });
+    S.placedFurniture.push({ id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color, placedAt:Date.now() });   // M3: fresh shine
     toast(`✔ Placed the ${furnitureDef(_decor.itemId)?.n}.`);
   }
   _clearFurnNew(_decor.itemId); achCheck();
@@ -10651,14 +10683,23 @@ function renderDecorModal(){
     const bg=isExit?'rgba(120,80,40,.5)':isSpawn?'rgba(80,110,150,.35)':isWall?'rgba(150,120,90,.25)':'transparent';
     cells+=`<div data-decor-cell="${x},${y}" style="position:absolute;left:${x*CELL}px;top:${y*CELL}px;width:${CELL}px;height:${CELL}px;box-sizing:border-box;border:1px solid rgba(255,255,255,.08);background:${bg};cursor:${_decor.itemId?'pointer':'default'}"></div>`;
   }
-  // placed furniture
+  // placed furniture (with shine on newly-placed pieces, reduced-motion aware)
+  const _now=Date.now(), _rm=_reducedMotion();
   let items='';
   placed.forEach((p:any,idx:number)=>{
     if(_decor.editIdx===idx && _decor.itemId) return;   // being moved → shown as ghost
     const d=furnitureDef(p.id); if(!d) return;
     const sz=rotatedSize(d.fw,d.fd,p.rot);
     const sel=_decor.editIdx===idx;
-    items+=`<div data-decor-placed="${idx}" title="${d.n}" style="position:absolute;left:${p.gx*CELL}px;top:${p.gy*CELL}px;width:${sz.w*CELL}px;height:${sz.d*CELL}px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:${(p.color||d.colors[0])}bb;border:2px solid ${sel?'#ffd666':'rgba(0,0,0,.3)'};border-radius:6px;cursor:pointer;font-size:${Math.round(Math.min(sz.w,sz.d)*CELL*d.scale*0.6)}px">${d.ic}</div>`;
+    const shiny=isShiny(p.placedAt||0,_now);
+    const shineCss=shiny&&!_rm?'animation:furnShimmer 1.4s ease-in-out infinite':'';
+    items+=`<div data-decor-placed="${idx}" title="${d.n}${shiny?' (new)':''}" style="position:absolute;left:${p.gx*CELL}px;top:${p.gy*CELL}px;width:${sz.w*CELL}px;height:${sz.d*CELL}px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:${(p.color||d.colors[0])}bb;border:2px solid ${sel?'#ffd666':shiny?'#fff3b0':'rgba(0,0,0,.3)'};border-radius:6px;cursor:pointer;font-size:${Math.round(Math.min(sz.w,sz.d)*CELL*d.scale*0.6)}px;${shineCss}">${d.ic}${shiny?'<span style="position:absolute;top:-4px;right:-2px;font-size:10px">✨</span>':''}</div>`;
+  });
+  // mess objects (clickable — click to pick up)
+  const _mess=(S.cottage?.mess)||[];
+  _mess.forEach((m:any,mi:number)=>{
+    const k=messKindById(m.kind); if(!k) return;
+    items+=`<div data-decor-mess="${mi}" title="Pick up" style="position:absolute;left:${m.gx*CELL}px;top:${m.gy*CELL}px;width:${CELL}px;height:${CELL}px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:${Math.round(CELL*0.5)}px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))">${k.ic}</div>`;
   });
   // ghost preview
   let ghost='';
@@ -10701,12 +10742,22 @@ function renderDecorModal(){
       <h2 style="margin:0;font-size:16px">🛋️ Decorate Cottage</h2>
       <button data-decor-done style="background:#333;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">Done</button>
     </div>
+    ${(()=>{ const c=_cottage(); const b=cleanBand(c.clean); return `<div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,.04);border-radius:6px;padding:6px 9px;margin-bottom:8px;font-size:11px">
+      <span>🧹 Cleanliness: <b style="color:${b.color}">${b.label}</b> (${Math.round(c.clean)}) · 🛋️ Comfort: <b>${_cottageComfort()}</b></span>
+      <span style="color:var(--dim)">Carrying ${c.carried||0} rubbish</span>
+    </div>`; })()}
     <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_decor.itemId?'Move the piece (click a square, arrows, or D-pad), rotate, pick a style, then Confirm. It shows green where it fits, red where it doesn\'t.':'Pick a piece from storage below, or click a placed item to move/store/sell it.'}</p>
     <div style="position:relative;width:${W}px;max-width:100%;height:${H}px;margin:0 auto;background:linear-gradient(#c9a877,#b8946a);border:3px solid #6a4a2a;border-radius:6px;overflow:hidden">
       <div style="position:absolute;inset:0;height:${CELL*0.9}px;background:linear-gradient(#8a6a4a,#7a5a3a)"></div>
       ${cells}${items}${ghost}
     </div>
     ${controls}
+    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;font-weight:700;color:var(--dim)">Cleaning:</span>
+      <button data-decor-tidy style="background:#3a5a3a;color:#fff;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:11px">🧽 Tidy Room</button>
+      <button data-decor-fullclean style="background:#2a5a6a;color:#fff;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:11px">✨ Full Clean</button>
+      <span style="font-size:10px;color:var(--dim)">Then bin the rubbish outside your cottage.</span>
+    </div>
     <div style="margin-top:10px"><div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:5px">🗄️ Furniture storage</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${inv}</div></div>
     <p style="font-size:9px;color:var(--dim);margin:8px 0 0">Mouse: click a square then Confirm · Keys: arrows move, Enter place, R rotate, Esc cancel · Controller: D-pad move, Ⓐ place, Ⓑ cancel, Ⓧ rotate, Ⓨ style</p>
@@ -10715,11 +10766,122 @@ function renderDecorModal(){
   body.querySelectorAll('[data-decor-item]').forEach(b=>(b as HTMLElement).onclick=()=>_decorSelectItem((b as HTMLElement).dataset.decorItem!));
   body.querySelectorAll('[data-decor-cell]').forEach(b=>(b as HTMLElement).onclick=()=>{ const [x,y]=(b as HTMLElement).dataset.decorCell!.split(',').map(Number); _decorSetCell(x,y); });
   body.querySelectorAll('[data-decor-placed]').forEach(b=>(b as HTMLElement).onclick=()=>_decorEditPlaced(+(b as HTMLElement).dataset.decorPlaced!));
+  body.querySelectorAll('[data-decor-mess]').forEach(b=>(b as HTMLElement).onclick=()=>pickupMess(+(b as HTMLElement).dataset.decorMess!));
   body.querySelectorAll('[data-decor-color]').forEach(b=>(b as HTMLElement).onclick=()=>{ _decor.color=(b as HTMLElement).dataset.decorColor; renderDecorModal(); });
   const _q=(s:string,f:any)=>{ const e=body.querySelector(s); if(e)(e as HTMLElement).onclick=f; };
   _q('[data-decor-rotate]',_decorRotate); _q('[data-decor-confirm]',_decorConfirm); _q('[data-decor-cancel]',_decorCancelSel); _q('[data-decor-done]',closeDecorate);
+  _q('[data-decor-tidy]',tidyRoom); _q('[data-decor-fullclean]',fullClean);
   const _st=body.querySelector('[data-decor-store]'); if(_st)(_st as HTMLElement).onclick=()=>_decorStore(+(_st as HTMLElement).dataset.decorStore!);
   const _se=body.querySelector('[data-decor-sell]'); if(_se)(_se as HTMLElement).onclick=()=>{ if(confirm('Sell this piece for half price?')) _decorSell(+(_se as HTMLElement).dataset.decorSell!); };
+}
+// ================= M3: cottage cleanliness & household routine =================
+function _cottage(){ if(!S.cottage) S.cottage = { clean:START_CLEAN, mess:[], carried:0, bin:{fill:0,lastDay:-1}, intro:0, goals:{}, reminded:-1 }; return S.cottage; }
+// The system only lives once Frost's industrial tutorial is done AND it's been introduced.
+function _cottageActive(){ return !!(S.tut && S.tut.done && _cottage().intro > 0); }
+function _cleanTier(){ return 0; }   // upgrade/hired-help hook for later
+function _freeMessCell(){
+  const c=_cottage(); const occ=new Set<string>();
+  for(const p of (S.placedFurniture||[])) for(const cell of footprintCells(p.id,p.gx,p.gy,p.rot)) occ.add(cell.x+','+cell.y);
+  for(const m of (c.mess||[])) occ.add(m.gx+','+m.gy);
+  for(const e of _decorExitCells()) occ.add(e.x+','+e.y);
+  for(const s of _decorSpawnCells()) occ.add(s.x+','+s.y);
+  const free:any[]=[];
+  for(let y=0;y<FGRID.rows;y++) for(let x=0;x<FGRID.cols;x++) if(!occ.has(x+','+y)) free.push({gx:x,gy:y});
+  return free.length? free[Math.floor(Math.random()*free.length)] : null;
+}
+// Keep the visible mess in step with the cleanliness rating (never covers exits/
+// furniture, capped so the room stays usable).
+function syncCottageMess(){
+  const c=_cottage(); if(!Array.isArray(c.mess)) c.mess=[];
+  const kinds=messKindsFor(c.clean);
+  while(c.mess.length>kinds.length) c.mess.pop();
+  for(let i=c.mess.length;i<kinds.length;i++){ const cell=_freeMessCell(); if(cell) c.mess.push({kind:kinds[i],gx:cell.gx,gy:cell.gy}); else break; }
+  for(let i=0;i<c.mess.length && i<kinds.length;i++) c.mess[i].kind=kinds[i];
+}
+// A household activity leaves a small mark (only when the system is active).
+function dirtyCottage(activity:string){ if(!_cottageActive()) return; const c=_cottage(); c.clean=applyActivity(c.clean, activity); syncCottageMess(); }
+// Coming home from being out leaves a little mess — rate-limited to ~once every 4 game-hours.
+function _cottageVisitDirty(){
+  if(!_cottageActive()) return; const c=_cottage(); const hr=_gameDay()*24+Math.floor(gameHour());
+  if(c.lastVisit!=null && hr-c.lastVisit < 4) return;
+  c.lastVisit=hr; dirtyCottage('mine_return');
+}
+function _cleanGoal(id:string){
+  const c=_cottage(); if(!c.goals) c.goals={}; if(c.goals[id]) return;   // one-off (no farming)
+  c.goals[id]=true; const g=cleanGoalById(id); if(!g) return;
+  S.coins+=g.reward; S.counters.coinsEarned=(S.counters.coinsEarned||0)+g.reward;
+  toast(`🏅 ${g.label}! +${fmt(g.reward)} coins.`); log(`🏅 Household goal: <b>${g.label}</b> — +${fmt(g.reward)} coins.`,"good");
+  updateHud(); save();
+}
+function pickupMess(idx:number){
+  const c=_cottage(); const m=(c.mess||[])[idx]; if(!m) return;
+  c.mess.splice(idx,1); c.carried=(c.carried||0)+1;
+  c.clean=Math.min(100, c.clean + cleanGain('pickup'));   // cleanliness, not coins → no reward farming
+  _cleanGoal('first_tidy');
+  toast(`🧹 Picked it up — carrying ${c.carried}. Take it to the bin outside your cottage.`);
+  renderDecorModal(); save();
+}
+function tidyRoom(){
+  const c=_cottage(); const moved=(c.mess||[]).length; c.carried=(c.carried||0)+moved; c.mess=[];
+  c.clean=Math.min(100, c.clean + cleanGain('tidy', _cleanTier()));
+  _cleanGoal('first_tidy'); if(cleanBand(c.clean).id==='sparkling') _cleanGoal('house_proud');
+  toast(`🧽 Tidied up — carrying ${c.carried} for the bin. Cottage is ${cleanBand(c.clean).label}.`);
+  syncCottageMess(); renderDecorModal(); save();
+}
+function fullClean(){
+  const c=_cottage(); const moved=(c.mess||[]).length; c.carried=(c.carried||0)+moved; c.mess=[];
+  c.clean=Math.min(100, c.clean + cleanGain('full', _cleanTier()));
+  _cleanGoal('spring_clean'); if(cleanBand(c.clean).id==='sparkling') _cleanGoal('house_proud');
+  toast(`✨ A proper spring clean — the cottage is gleaming!`);
+  syncCottageMess(); renderDecorModal(); save();
+}
+function _cottageComfort(){
+  const c=_cottage(); const placed=S.placedFurniture||[];
+  const variety=new Set(placed.map((p:any)=>p.id)).size;
+  return comfortScore({ cleanliness:c.clean, furnitureCount:placed.length, variety, homeTier:S.homeTier||0, totalCells:FGRID.cols*FGRID.rows });
+}
+// ---- outdoor bin ----
+function binPutRubbish(){
+  const c=_cottage();
+  if((c.carried||0)<=0){ toast('No rubbish to bin right now. Tidy your cottage first (🛋️ Decorate).'); return; }
+  if(!binHasRoom(c.bin.fill)){ toast("🗑️ The bin's full — it's emptied on collection day (or use the recycling point). No harm done."); return; }
+  const put=Math.min(BIN_CAPACITY-c.bin.fill, c.carried); c.bin.fill+=put; c.carried-=put;
+  _cleanGoal('bin_day');
+  toast(`🗑️ Put ${put} in the bin.${c.carried>0?` ${c.carried} left over — the bin's full.`:''}`);
+  renderMain(); save();
+}
+function openBin(){
+  const c=_cottage(); const lvl=binLevel(c.bin.fill); const d=_gameDay(); const until=daysUntilCollection(d);
+  const _emoji=lvl==='full'?'🗑️':lvl==='partial'?'🗑️':'🗑️';
+  const html=`<div class="panel" style="padding:12px;max-width:360px">
+    <h3 style="margin:0 0 6px">${_emoji} Household Bin</h3>
+    <p style="font-size:12px;color:var(--dim);margin:0 0 6px">Bin: <b>${c.bin.fill}/${BIN_CAPACITY}</b> (${lvl}). ${isCollectionDay(d)?'Collection is <b>today</b>.':`Collection in <b>${until} day${until!==1?'s':''}</b>.`}</p>
+    <div class="obj-bar" style="margin-bottom:8px"><div class="obj-fill" style="width:${Math.round(c.bin.fill/BIN_CAPACITY*100)}%;background:${lvl==='full'?'#e8604a':'#8ad06a'}"></div></div>
+    <p style="font-size:12px;margin:0 0 10px">You're carrying <b>${c.carried||0}</b> rubbish.</p>
+    <button id="bin-put" style="background:#3a6a3a;color:#fff;border:none;padding:7px 16px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:700;width:100%">🗑️ Put rubbish in bin</button>
+  </div>`;
+  const ov=document.createElement('div'); ov.id='bin-modal'; ov.style.cssText='position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);padding:16px';
+  ov.innerHTML=html; document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('bin-put')!.onclick=()=>{ binPutRubbish(); ov.remove(); };
+}
+function collectBinIfDue(){
+  if(!S.cottage) return; const c=_cottage(); const d=_gameDay();
+  if(isCollectionDay(d) && c.bin.lastDay!==d && c.bin.fill>0){ c.bin.fill=0; c.bin.lastDay=d; log('🚛 Bin collection came round — your bin is empty again.','good'); }
+  const until=daysUntilCollection(d);
+  if(until===1 && gameHour()>=18 && c.reminded!==d){ c.reminded=d; toast("🗑️ Bin collection is tomorrow — make sure yours is out."); }
+}
+// ---- onboarding (after the tutorial, on returning home / placing furniture) ----
+function _cottageIntro(){
+  if(!(S.tut && S.tut.done)) return;                       // never during the industrial tutorial
+  const c=_cottage(); if(c.intro>0) return;
+  const trigger=(S.placedFurniture||[]).length>0 || (S.counters?.contracts>=1 && S.tab==='myhome');
+  if(!trigger) return;
+  c.intro=1; c.clean=START_CLEAN;
+  const cell=_freeMessCell(); c.mess = cell? [{kind:'wrapper',gx:cell.gx,gy:cell.gy}] : [];
+  toast('❄️ Frost: "A proper first shift leaves its mark. Pick up that wrapper, then pop it in the bin outside."');
+  log('🧹 <b>Keeping house</b> — living in your cottage makes a little mess. Open 🛋️ Decorate to pick it up, then bin it outside. A tidy home keeps visitors happy — no nagging, just cosy.',"good");
+  save();
 }
 const REX_BANTER = [
   "What'll it be then?",
@@ -13374,6 +13536,7 @@ setInterval(()=>{
   updateDailyChallenge();
   sweepContracts();         // lapse any contract past its deadline (idle/offline-safe)
   updateProcurement(now);   // M17: land any supplier deliveries whose ETA has passed
+  collectBinIfDue();        // M3: weekly bin collection + evening reminder
   updateGarden(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
