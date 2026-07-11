@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 import { ITEMS }         from '../src/data/items';
 import { SKILLS }        from '../src/data/skills';
 import { NPCS }          from '../src/data/npcs';
@@ -303,5 +305,21 @@ describe('Map constants', () => {
   it('viewport fits within map', () => {
     expect(VIEW_W / TILE).toBeLessThanOrEqual(VCOLS);
     expect(VIEW_H / TILE).toBeLessThanOrEqual(VROWS);
+  });
+});
+
+/* ---- achievements (main.ts) ---- */
+describe('Achievements', () => {
+  const M = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
+  const block = M.slice(M.indexOf('const ACH ='), M.indexOf('const ACH_PROG'));
+  const ids = [...block.matchAll(/\{ id:"([a-z_0-9]+)"/gi)].map(m => m[1]);
+
+  it('parses a sensible number of achievements', () => {
+    expect(ids.length).toBeGreaterThan(50);
+  });
+
+  it('has no duplicate achievement ids', () => {
+    const dups = ids.filter((k, i) => ids.indexOf(k) !== i);
+    expect(dups).toEqual([]);
   });
 });

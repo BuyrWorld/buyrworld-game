@@ -657,7 +657,7 @@ const ACH = [
   { id:"new_chapter",     ic:"🌟", n:"A New Chapter",    ds:"Begin your first New Chapter — pass the valley to a successor.",       r:1000, c:()=>(S.legacy||0)>=1 },
   { id:"living_legacy",   ic:"✨", n:"Living Legacy",    ds:"Reach Legacy 3 — three New Chapters written.",                        r:5000, c:()=>(S.legacy||0)>=3 },
   { id:"first_order",     ic:"📋", n:"On Commission",     ds:"Complete your first Artisan Commission.",                             r:150,  c:()=>(S.commissions?.done||0)>=1 },
-  { id:"master_artisan",  ic:"🏵️", n:"Master Artisan",    ds:"Reach 30 Artisan reputation from commissions.",                       r:2000, c:()=>(S.commissions?.rep||0)>=30 },
+  { id:"commission_master",ic:"🏵️", n:"Commission Master", ds:"Reach 30 Artisan reputation from commissions.",                       r:2000, c:()=>(S.commissions?.rep||0)>=30 },
   { id:"game_shot",       ic:"🎯", n:"Game Shot!",        ds:"Win a game of 301 darts at The Rose & Pallet.",                       r:200,  c:()=>(S.darts?.wins||0)>=1 },
   { id:"ton_eighty",      ic:"🎯", n:"Ringer Beater",     ds:"Beat the Ringer at darts — the toughest opponent.",                   r:900,  c:()=>!!(S.darts?.beatRinger) },
   { id:"victory_medal",   ic:"🏅", n:"Victory Medal",     ds:"Win a game of Battle Royale on your cottage console.",                 r:300,  c:()=>(S.arcade?.medals||0)>=1 },
