@@ -19,6 +19,7 @@ import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data
 import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery } from './data/tutorial.ts';
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
+import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -465,7 +466,7 @@ const SFX = (() => {
     s.connect(g); g.connect(ctx.destination); s.start(t0);
   }
   return { play(skill){
-    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
       ensure();
       const mv = volLevel() / 0.75;
@@ -477,7 +478,7 @@ const SFX = (() => {
     }catch(e){}
   },
   levelUp(){
-    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
       ensure(); const mv = volLevel() / 0.75;
       // rising major arpeggio C-E-G-C
@@ -488,7 +489,7 @@ const SFX = (() => {
     }catch(e){}
   },
   snap(){
-    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
       ensure(); const mv = volLevel() / 0.75;
       hit(0.10*mv, 0.05);                          // the crack
@@ -496,7 +497,7 @@ const SFX = (() => {
     }catch(e){}
   },
   cook(){
-    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
       ensure(); const mv = volLevel() / 0.75;
       hit(0.07*mv, 0.22);                         // sizzle
@@ -506,7 +507,7 @@ const SFX = (() => {
     }catch(e){}
   },
   fanfare(){
-    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
       ensure(); const mv = volLevel() / 0.75;
       // grand two-bar rising fanfare for a Founder's Journey milestone
@@ -521,7 +522,7 @@ const SFX = (() => {
   // Battle Royale — distinct weapon/event sounds. `vol` (0..1) enables
   // distance-based volume for far-off gunfire. All synthesised (no samples).
   br(kind, vol=1){
-    if (!MUSIC.unlocked || !S.settings || !S.settings.music) return;
+    if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{ ensure(); const mv = (volLevel()/0.75) * Math.max(0, Math.min(1, vol));
       if (mv < 0.02) return;
       switch(kind){
@@ -611,6 +612,41 @@ function cycleVolume(){
   MUSIC.setVol(volLevel()); syncMusicButton(); save();
 }
 
+// ---- M4: functional settings panel (title + in-game pause menu) ----
+function applyTextScale(){ const s = S.settings?.textScale || 'normal'; document.body.classList.remove('text-small','text-large'); if (s==='small') document.body.classList.add('text-small'); else if (s==='large') document.body.classList.add('text-large'); }
+(globalThis as any).openSettings = openSettings;
+function openSettings(){
+  if (!S.settings) S.settings = Object.assign({}, DEFAULT_SETTINGS);
+  const st = S.settings;
+  if (document.getElementById('settings-modal')) return;
+  const seg = (label:string, opts:{v:string;l:string}[], cur:string, act:string) =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0"><span style="font-size:12px">${label}</span><span style="display:flex;gap:4px">${opts.map(o=>`<button data-set="${act}:${o.v}" style="background:${cur===o.v?'#3a6a8a':'#33333c'};color:#fff;border:none;border-radius:4px;padding:4px 9px;font-size:11px;cursor:pointer">${o.l}</button>`).join('')}</span></div>`;
+  const el=document.createElement('div'); el.id='settings-modal';
+  el.style.cssText='position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);padding:16px';
+  el.innerHTML=`<div class="panel" style="padding:14px;max-width:380px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 style="margin:0;font-size:16px">⚙️ Settings</h2><button id="set-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
+    ${seg('Music', [{v:'on',l:'On'},{v:'off',l:'Off'}], st.music?'on':'off', 'music')}
+    ${seg('Music volume', [{v:'low',l:'Low'},{v:'med',l:'Med'},{v:'loud',l:'Loud'}], st.vol||'med', 'vol')}
+    ${seg('Sound effects', [{v:'on',l:'On'},{v:'off',l:'Off'}], st.sfx===false?'off':'on', 'sfx')}
+    ${seg('Text size', [{v:'small',l:'A'},{v:'normal',l:'A'},{v:'large',l:'A'}], st.textScale||'normal', 'text')}
+    ${seg('Reduced motion', [{v:'off',l:'On anim'},{v:'on',l:'Reduced'}], st.motion===false?'on':'off', 'motion')}
+    <div style="display:flex;gap:6px;margin-top:10px"><button id="set-full" style="flex:1;background:#3a4a6a;color:#fff;border:none;border-radius:5px;padding:7px;cursor:pointer;font-size:12px">⛶ Fullscreen</button></div>
+    <p style="font-size:10px;color:var(--dim);margin:9px 0 0">Controls — Move: click/tap, WASD, arrows or controller. Interact: click, or Ⓐ. Work faster: Space or interact during a job. All settings save automatically.</p>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click',e=>{ if(e.target===el) el.remove(); });
+  document.getElementById('set-close')!.onclick=()=>el.remove();
+  document.getElementById('set-full')!.onclick=()=>{ try{ toggleFullscreen(); }catch(e){} };
+  el.querySelectorAll('[data-set]').forEach(b=>(b as HTMLElement).onclick=()=>{
+    const [k,v]=(b as HTMLElement).dataset.set!.split(':');
+    if(k==='music') setMusic(v==='on');
+    else if(k==='vol'){ st.vol=v; if(st.music){ MUSIC.setVol(volLevel()); } syncMusicButton(); }
+    else if(k==='sfx') st.sfx=(v==='on');
+    else if(k==='text'){ st.textScale=v; applyTextScale(); }
+    else if(k==='motion'){ st.motion=(v==='off'); }   // 'on' = reduced → motion:false
+    save(); el.remove(); openSettings();
+  });
+}
 /* ================= VILLAGE WORLD ================= */
 const CAM = { x:0, y:0 };
 // Derive player colours from S.appearance (falls back to defaults for legacy saves)
@@ -7979,8 +8015,8 @@ function showTitle(){
     }, delay);
   };
   _btnStart.onclick = () => {
-    const _n = _input.value.trim().replace(/[<>"'&]/g,"").slice(0,16);
-    if (!_n){
+    const _r = cleanName(_input.value);
+    if (!_r.ok){
       _errEl.style.display = "block";
       _input.classList.remove("input-shake");
       void _input.offsetWidth; // reflow to restart animation
@@ -7988,13 +8024,14 @@ function showTitle(){
       setTimeout(()=>_input.classList.remove("input-shake"), 450);
       return;
     }
-    _launch(_n, 1100);
+    _launch(_r.name, 1100);
   };
   // Quick Start — a random character and a default name, straight into the game.
   const _btnQuick = document.getElementById("btn-quick") as HTMLButtonElement;
   if (_btnQuick) _btnQuick.onclick = () => {
     S.appearance = randomAppearance();
-    const _n = _input.value.trim().replace(/[<>"'&]/g,"").slice(0,16) || "Founder";
+    const _r = cleanName(_input.value);
+    const _n = _r.ok ? _r.name : "Founder";   // Quick Start: a sensible default if blank
     toast(`⚡ Quick start! Welcome, ${_n}.`);
     _launch(_n, 500);
   };
@@ -8241,6 +8278,11 @@ function load(){
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
       else if (S.upgrades.pick1){ S.upgrades.tool_stone = true; delete S.upgrades.pick1; }
       if (!("settings" in parsed)) S.settings = { music:true };
+      // M4: settings defaults (volume, sfx, reduced-motion, text size)
+      if (!S.settings.vol) S.settings.vol = 'med';
+      if (!("sfx" in S.settings)) S.settings.sfx = true;
+      if (!("motion" in S.settings)) S.settings.motion = true;
+      if (!("textScale" in S.settings)) S.settings.textScale = 'normal';
       if (!("prod" in parsed)) S.prod = {};
       if (!("tut" in parsed)) S.tut = { step:99, done:true };
       if (!("ach" in parsed)) S.ach = {};
@@ -13374,6 +13416,21 @@ document.getElementById("btn-inv")?.addEventListener("click", () => toggleInvent
 document.getElementById("btn-journey")?.addEventListener("click", () => openJourney());
 document.getElementById("btn-journal")?.addEventListener("click", () => openJournalPanel());
 document.getElementById("version-label")?.addEventListener("click", () => openRoadmap());
+// M4: settings + title menu wiring
+applyTextScale();
+document.getElementById("btn-settings")?.addEventListener("click", () => openSettings());
+document.getElementById("btn-settings-hud")?.addEventListener("click", () => openSettings());
+document.getElementById("btn-about")?.addEventListener("click", () => openRoadmap());
+// Continue (save summary) — shown on the title when a valid save exists
+(()=>{
+  const sum = S.playerName ? saveSummary({ name:S.playerName, totalLevel:totalLvl(), coins:S.coins, lastSeen:S.lastSeen, legacy:S.legacy }) : null;
+  const row = document.getElementById("continue-row"), info = document.getElementById("continue-info");
+  if (sum && row && info){
+    row.style.display=""; info.style.display="";
+    info.innerHTML = `<b>${esc(sum.name)}</b> · Total Lv ${sum.totalLevel} · ${fmt(sum.coins)} coins${sum.chapter?` · ${sum.chapter}`:''}${sum.date?` · saved ${sum.date}`:''}`;
+    document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; focusGameInput(); };
+  }
+})();
 document.getElementById("version-label")?.addEventListener("keydown", (e:any) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openRoadmap(); } });
 syncJourneyBtn(); syncJournalBtn();
 window.addEventListener("keydown", e => {
@@ -13514,10 +13571,14 @@ window.addEventListener('gamepaddisconnected', ()=>{
   if (!pads.length){ const el=document.getElementById('gp-indicator'); if (el) el.style.display='none'; }
 });
 
+function _titleUp(){ const tl = document.getElementById("title"); return !!(tl && tl.style.display !== "none"); }
 let lastTick = Date.now();
 setInterval(()=>{
   const now = Date.now();
   const dt = now - lastTick; lastTick = now;
+  // M4: no world simulation runs behind the title screen — clock, contracts,
+  // cleanliness, production, automation, deliveries and NPC schedules all pause.
+  if (!simulationActive(_titleUp())) return;
   const beforeItems = JSON.stringify(S.items);
   tick(dt);
   updateWorldEvents();
