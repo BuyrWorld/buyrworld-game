@@ -16,6 +16,7 @@ import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRe
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
+import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery } from './data/tutorial.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -221,19 +222,22 @@ function frostSvg(size){
     <rect x="9" y="38" width="6" height="2" fill="#17161a"/><rect x="17" y="38" width="6" height="2" fill="#17161a"/>
   </svg>`;
 }
+// Deterministic tutorial chain — conditions read live INVENTORY (not cumulative
+// production) so each stage guarantees exactly the right amount: 6 ore → 3 bars →
+// 3 brackets → deliver 3 brackets via the guaranteed Tutorial Order.
 const TUT = [
-  { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>5 Iron Ore</b>.`,
-    obj:"Mine 5 Iron Ore", cond:()=> (S.prod.iron_ore||0) >= 5, reward:60,
-    target:"rock_iron4", where:"Quarry (far west)", cur:()=>(S.prod.iron_ore||0), max:5 },
-  { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk to the <b>Furnace</b> (the building with the chimney, west of the quarry) and smelt <b>2 Iron Bars</b>.`,
-    obj:"Smelt 2 Iron Bars", cond:()=> (S.prod.iron_bar||0) >= 2, reward:90,
-    target:"furnace", where:"The Furnace", cur:()=>(S.prod.iron_bar||0), max:2 },
-  { say:()=>`Toasty! Now make something someone will pay for — pop into the <b>Workshop</b> next door and press <b>1 Bracket</b>.`,
-    obj:"Press 1 Bracket", cond:()=> (S.prod.bracket||0) >= 1, reward:120,
-    target:"workshop", where:"The Workshop", cur:()=>(S.prod.bracket||0), max:1 },
-  { say:()=>`Last step: head to the <b>Depot</b> and deliver an order. Clients round here love punctuality almost as much as I love this t-shirt.`,
-    obj:"Deliver 1 contract", cond:()=> S.counters.contracts >= 1, reward:200,
-    target:"depot", where:"The Depot", cur:()=>S.counters.contracts, max:1 },
+  { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>6 Iron Ore</b>. It'll stop on its own when you've got enough.`,
+    obj:"Mine 6 Iron Ore", cond:()=> itemCount("iron_ore") >= 6, reward:60,
+    target:"rock_iron4", where:"Quarry (far west)", cur:()=>itemCount("iron_ore"), max:6 },
+  { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk to the <b>Furnace</b> (the building with the chimney, west of the quarry) and smelt <b>3 Iron Bars</b> — exactly what your 6 ore makes.`,
+    obj:"Smelt 3 Iron Bars", cond:()=> itemCount("iron_bar") >= 3, reward:90,
+    target:"furnace", where:"The Furnace", cur:()=>itemCount("iron_bar"), max:3 },
+  { say:()=>`Toasty! Now make something someone will pay for — pop into the <b>Workshop</b> next door and press <b>3 Brackets</b> from your 3 bars.`,
+    obj:"Press 3 Brackets", cond:()=> itemCount("bracket") >= 3, reward:120,
+    target:"workshop", where:"The Workshop", cur:()=>itemCount("bracket"), max:3 },
+  { say:()=>`Last step: head to the <b>Depot</b> and deliver the <b>Tutorial Order</b> — it wants exactly your 3 Brackets, pinned to the top of your contracts.`,
+    obj:"Deliver the Tutorial Order", cond:()=> !!S.tutContractDone, reward:200,
+    target:"depot", where:"The Depot", cur:()=>(S.tutContractDone?1:0), max:1 },
 ];
 // Current tutorial objective + live progress (for the Warehouse panel & banner).
 function tutObjectiveHtml(){
@@ -269,6 +273,7 @@ function tutCheck(){
     log(`🌟 <b>Getting Started</b> — your next goals are ready. Watch the tracker in your Warehouse panel and keep the coins rolling in.`, "good");
     try{ syncOnboardingUI(); }catch(e){}
   }
+  try{ ensureTutorialContract(); }catch(e){}   // pin/remove the guaranteed Tutorial Order as the stage changes
   if (advanced){ updateHud(); save(); }
 }
 function tutBannerHtml(){
@@ -1282,7 +1287,7 @@ const DAILY_CHALLENGE_POOL = [
   { id:'ch_smelt_iron',    type:'prod',    items:{iron_bar:8},                   reward:160, ic:'🔩', ds:'Smelt 8 Iron Bars.' },
   { id:'ch_smelt_steel',   type:'prod',    items:{steel_bar:5},                  reward:220, ic:'⛓️', ds:'Smelt 5 Steel Bars.' },
   { id:'ch_forge_alloy',   type:'prod',    items:{tech_alloy:2},                 reward:320, ic:'✨', ds:'Forge 2 Tech Alloys.' },
-  { id:'ch_make_bracket',  type:'prod',    items:{bracket:8},                    reward:130, ic:'🧱', ds:'Press 8 Brackets.' },
+  { id:'ch_make_bracket',  type:'prod',    items:{bracket:8},                    reward:130, ic:'🔧', ds:'Press 8 Brackets.' },
   { id:'ch_make_gearbox',  type:'prod',    items:{gearbox:3},                    reward:200, ic:'⚙️', ds:'Assemble 3 Gearboxes.' },
   { id:'ch_make_sensor',   type:'prod',    items:{sensor:2},                     reward:300, ic:'📡', ds:'Assemble 2 Sensors.' },
   { id:'ch_deliver_3',     type:'counter', counter:'contracts',         qty:3,   reward:220, ic:'🚚', ds:'Complete 3 contracts.' },
@@ -1404,7 +1409,7 @@ const EXCHANGE_COMMODITIES = [
   { id:"iron_ore",    n:"Iron Ore",    ic:"🪨", unit:50  },
   { id:"steel_bar",   n:"Steel Bar",   ic:"⛓️", unit:120 },
   { id:"sardine",     n:"Sardine",     ic:"🐟", unit:40  },
-  { id:"bracket",     n:"Bracket",     ic:"🧱", unit:100 },
+  { id:"bracket",     n:"Bracket",     ic:"🔧", unit:100 },
   { id:"wiring_loom", n:"Wiring Loom", ic:"🔌", unit:160 },
 ];
 const COURSES = [
@@ -1433,7 +1438,7 @@ const STATION_DEFS = {
     { fx:0.64, fy:0.55, sk:'prop_machine',  skill:'steelworks',    id:'steel_bar',  ic:'⛓️', lbl:'Steel Bar' },
   ],
   manufacturing: [
-    { fx:0.20, fy:0.53, sk:'prop_conveyor', skill:'manufacturing', id:'bracket',    ic:'🧱', lbl:'Brackets' },
+    { fx:0.20, fy:0.53, sk:'prop_conveyor', skill:'manufacturing', id:'bracket',    ic:'🔧', lbl:'Brackets' },
     { fx:0.55, fy:0.53, sk:'prop_machine',  skill:'manufacturing', id:'gearbox',    ic:'⚙️', lbl:'Gearbox' },
     { fx:0.82, fy:0.53, sk:'prop_machine',  skill:'manufacturing', id:'wiring_loom',ic:'🔌', lbl:'Wiring Loom' },
   ],
@@ -5251,7 +5256,7 @@ function drawInterior(t){
       if(Math.floor(t*2)%2){ ctx.fillStyle="#ffd666"; ctx.fillRect(x+3,y+4,Math.floor((w-6)/2),3); }
     });
     // a working bench at each station with the component taking shape (+ assembly sparks)
-    const _partIc = { bracket:"🧱", gearbox:"⚙️", wiring_loom:"🔌", chassis:"🛠️", sensor:"📡", servo_unit:"🤖", pallet_jack:"🛺", diamond_drill:"🛠️" };
+    const _partIc = { bracket:"🔧", gearbox:"⚙️", wiring_loom:"🔌", chassis:"🛠️", sensor:"📡", servo_unit:"🤖", pallet_jack:"🛺", diamond_drill:"🛠️" };
     const _making = S.action?.skill === "manufacturing";
     STATION_DEFS.manufacturing.forEach(st=>{
       const sx = st.fx*W, sy = st.fy*H;
@@ -8103,6 +8108,7 @@ function freshState(){
     fleeUntil: 0,
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
+    tutContractDone: false,
     justice: { v:2, incidents:[], nextId:1, community:null },
     court: { cases:[], nextId:1 },
     legalKnowledge: 0,
@@ -8243,6 +8249,18 @@ function load(){
       if (!("court" in parsed) || !S.court || !Array.isArray(S.court.cases)) S.court = { cases:[], nextId:1 };
       if (typeof S.court.nextId !== "number") S.court.nextId = (S.court.cases.reduce((m,c)=>Math.max(m,c.id||0),0)||0)+1;
       if (typeof S.legalKnowledge !== "number") S.legalKnowledge = 0;
+      // Milestone 1 — deterministic tutorial: flag + one-time material recovery for
+      // saves stranded mid-tutorial under the old (5/2/1) amounts.
+      if (!("tutContractDone" in parsed)) S.tutContractDone = false;
+      if (S.tut && !S.tut.done && !S.tut.recovered){
+        const _need = tutorialRecovery(S.tut.step|0, { iron_ore:itemCount("iron_ore"), iron_bar:itemCount("iron_bar"), bracket:itemCount("bracket") });
+        const _keys = Object.keys(_need);
+        if (_keys.length){
+          for (const k of _keys) S.items[k] = (S.items[k]||0) + _need[k];
+          window._tutRecoveryMsg = _keys.map(k => `${_need[k]}× ${ITEMS[k]?.n||k}`).join(", ");
+        }
+        S.tut.recovered = true;   // stored so recovery is applied at most once
+      }
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
@@ -9350,15 +9368,17 @@ function completeAction(act, skill, silent){
     _out = { [_fishCaught]: 1 };
   }
   for (const [id,q] of Object.entries(_out)){ addItem(id, q); S.prod[id] = (S.prod[id]||0) + q; }
+  // Tutorial: never let a yield/pet/automaton bonus overshoot the exact tutorial amount.
+  const _tutSuppress = _tutorialActive() && isTutorialItem(Object.keys(_out)[0]);
   // Occy: 20% chance to yield a bonus crafted item
-  if (S.pets.active === "occy" && skill === "crafting" && Math.random() < 0.20){
+  if (!_tutSuppress && S.pets.active === "occy" && skill === "crafting" && Math.random() < 0.20){
     const _bonusId = Object.keys(_out)[0];
     addItem(_bonusId, 1);
     S.prod[_bonusId] = (S.prod[_bonusId]||0) + 1;
     if (!silent) toast(`🐙 Occy lends a tentacle — bonus ${ITEMS[_bonusId].n}!`);
   }
   // Yield perks: each chosen perk rolls independently
-  if (S.perks){
+  if (!_tutSuppress && S.perks){
     for (const t of [10,25,40]){
       const _pid = S.perks[skill+'_'+t];
       if (!_pid) continue;
@@ -9374,7 +9394,7 @@ function completeAction(act, skill, silent){
     }
   }
   // robotics: assigned yield automaton rolls for a bonus of the primary output
-  {
+  if (!_tutSuppress){
     const _ay = autoYieldChance(skill, S.automatons?.[skill]);
     if (_ay > 0 && Math.random() < _ay){
       const _bid = Object.keys(_out)[0];
@@ -9424,7 +9444,26 @@ function completeAction(act, skill, silent){
     S.treeRespawn[S.action.objId] = { choppedAt: Date.now() };
     S.action = null;
   }
+  // Tutorial auto-stop: the moment the exact tutorial amount is in hand, stop the
+  // job so no delayed/idle/swing cycle produces a surplus.
+  if (S.action){
+    const _oid = Object.keys(_out)[0];
+    if (_tutorialActive() && tutorialShouldStop(_oid, itemCount(_oid))){
+      S.action = null;
+      if (!silent) toast(`❄️ Frost: that's exactly ${TUTORIAL_TARGETS[_oid]} — job done, no need to overdo it!`);
+      try{ renderNav(); renderMain(); }catch(e){}
+    }
+  }
   return true;
+}
+// Frost's tutorial is running (drives auto-stop + bonus suppression).
+function _tutorialActive(){ return !!(S.tut && !S.tut.done); }
+// Remaining tutorial units of an action's output (for the active-job UI), or null.
+function _tutRemain(act){
+  if (!_tutorialActive()) return null;
+  const oid = Object.keys(act.out || {})[0];
+  const t = TUTORIAL_TARGETS[oid];
+  return t == null ? null : Math.max(0, t - itemCount(oid));
 }
 
 function tick(dt){
@@ -9586,7 +9625,24 @@ function genContract(){
     now: Date.now(),
   });
 }
-function fillContracts(){ while (S.contracts.length < contractSlots()) S.contracts.push(genContract()); }
+function fillContracts(){ while (S.contracts.length < contractSlots()) S.contracts.push(genContract()); ensureTutorialContract(); }
+// Guaranteed tutorial contract: pinned to the top from the delivery stage until it
+// is delivered. Never rotates, never expires, never duplicates.
+function ensureTutorialContract(){
+  if (!Array.isArray(S.contracts)) S.contracts = [];
+  const idx = S.contracts.findIndex(c => c.tutorial);
+  // remove it once the tutorial is over or its order has been delivered
+  if (S.tutContractDone || !S.tut || S.tut.done){ if (idx >= 0) S.contracts.splice(idx, 1); return; }
+  // it appears the moment manufacturing is done (delivery stage), first in the list
+  const atDeliver = S.tut && !S.tut.done && S.tut.step >= 3;
+  if (atDeliver && idx < 0){
+    S.contracts.unshift({ client: TUTORIAL_CONTRACT.client, item: TUTORIAL_CONTRACT.item, qty: TUTORIAL_CONTRACT.qty,
+      coins: TUTORIAL_CONTRACT.coins, xp: TUTORIAL_CONTRACT.xp, tier: 'standard', repAtOffer: 0,
+      deadline: Date.now() + 30*24*3600*1000, tutorial: true });
+  } else if (atDeliver && idx > 0){ // keep it pinned first
+    const [tc] = S.contracts.splice(idx, 1); S.contracts.unshift(tc);
+  }
+}
 // Age the board: any contract past its deadline lapses, denting that client's
 // reputation (never coins — kept forgiving/child-safe). Idle & offline-safe.
 function sweepContracts(){
@@ -9595,6 +9651,7 @@ function sweepContracts(){
   let changed = false;
   for (let i = S.contracts.length - 1; i >= 0; i--){
     const c = S.contracts[i];
+    if (c.tutorial) continue;   // the tutorial order never lapses
     if (isExpired(c, now)){
       if (S.contractRep) S.contractRep[c.client] = Math.max(0, clientRep(c.client) + repDeltaOnExpire(c.tier));
       S.counters.contractsExpired = (S.counters.contractsExpired||0) + 1;
@@ -9614,8 +9671,9 @@ function deliverContract(i){
   S.counters.coinsEarned = (S.counters.coinsEarned||0) + payout;
   grantXp("logistics", c.xp);
   S.counters.contracts++;
-  // Reward the relationship: on-time delivery builds standing with this client.
-  if (S.contractRep){
+  if (c.tutorial) S.tutContractDone = true;   // completes the tutorial delivery stage (guaranteed, no dup)
+  // Reward the relationship: on-time delivery builds standing with this client (skip the tutorial order).
+  if (S.contractRep && !c.tutorial){
     const before = repRank(clientRep(c.client)).name;
     S.contractRep[c.client] = clientRep(c.client) + repDeltaOnDeliver(c.tier);
     const after = repRank(clientRep(c.client)).name;
@@ -9629,6 +9687,7 @@ function deliverContract(i){
   fillContracts(); renderMain(); updateHud(); save();
 }
 function rerollContract(i){
+  if (S.contracts[i]?.tutorial){ toast("The Tutorial Order can't be re-tendered — just deliver it."); return; }
   const cost = 25;
   if (S.coins < cost) { toast("Need 25 coins to re-tender."); return; }
   S.coins -= cost;
@@ -9861,12 +9920,21 @@ function renderSkillPanel(skill){
     const _sDef = act.season ? SEASON_DEFS[act.season] : null;
     const seasonBadge = _sDef ? ` <span style="font-size:9px;opacity:.65">${_sDef.ic}</span>` : '';
     const metaText = lvl < act.lvl ? `Requires level ${act.lvl}` : seasonLocked ? `${_sDef.ic} ${_sDef.n} only` : `${dur}s · ${act.xp} XP`;
+    const _rem = running ? _tutRemain(act) : null;
     html += `<button class="action ${running?'running':''}" data-skill="${skill}" data-act="${act.id}" ${locked?'disabled':''}>
-      <div class="nm"><span class="ic">${ITEMS[Object.keys(act.out)[0]].ic}</span>${act.n}${seasonBadge}</div>
+      <div class="nm"><span class="ic">${ITEMS[Object.keys(act.out)[0]].ic}</span>${act.n}${seasonBadge}${running?` <span style="font-size:9px;color:#8adf4a;font-weight:800">▶ ACTIVE</span>`:''}</div>
       <div class="meta">${metaText}</div>
       <div class="io">${ioHtml(act)}</div>
-      ${running ? `<div class="prog"><div class="fill" id="prog-${act.id}"></div></div>${SWING_SKILLS.has(skill)?`<span class="stopbtn" data-swing="1" style="background:#3a5a1a;border-color:#6aaa2a;color:#cfeeb0" title="Swing! ~${swingClicks(toolTier())} clicks per resource at your tool tier">🪓 SWING</span> `:""}<span class="stopbtn" data-stop="1">STOP</span>` : ""}
+      ${running ? `<div class="prog"><div class="fill" id="prog-${act.id}"></div></div>` : ""}
     </button>`;
+    if (running){
+      // Separate job controls — the Stop button is NOT inside the recipe button.
+      html += `<div class="job-controls" style="display:flex;gap:6px;align-items:center;margin:3px 0 9px">
+        <span style="font-size:10px;color:#8adf4a;font-weight:700">▶ Working…${_rem!=null?` <span style="color:#e8b24a">${_rem} more to go</span>`:''}</span>
+        ${SWING_SKILLS.has(skill)?`<button type="button" class="job-btn" data-jobswing="1" style="background:#3a5a1a;border:1px solid #6aaa2a;color:#cfeeb0;border-radius:4px;padding:3px 11px;font-size:11px;cursor:pointer" title="Swing! ~${swingClicks(toolTier())} clicks per resource at your tool tier">🪓 SWING</button>`:""}
+        <button type="button" class="job-btn" data-jobstop="1" style="background:#5a2a2a;border:1px solid #aa4a4a;color:#ffd0d0;border-radius:4px;padding:3px 11px;font-size:11px;cursor:pointer">⏹ Stop job</button>
+      </div>`;
+    }
   });
   html += `</div></div>`;
   if (skill === "manufacturing") html += renderQCPanel();
@@ -9932,6 +10000,16 @@ function renderContracts(){
     const left = (c.deadline||0) - now;
     const urgent = left > 0 && left < 60*1000;
     const tierCol = c.tier==='rush' ? 'var(--red)' : c.tier==='bulk' ? 'var(--gold,#e8c94e)' : 'var(--dim)';
+    if (c.tutorial){
+      html += `<div class="contract" style="border:2px solid #e8b24a;background:rgba(232,178,74,.1)">
+        <div class="who">📘 ${c.client} <span style="font-size:9px;background:#e8b24a;color:#1a0f04;padding:1px 6px;border-radius:3px;font-weight:800">TUTORIAL ORDER</span></div>
+        <div style="font-size:10px;color:var(--dim);margin:1px 0 3px">❄️ Frost lined this up for you — no deadline, no reputation risk. Just deliver.</div>
+        <div class="pay">💰 ${fmt(payout)} coins · +${c.xp} Logistics XP</div>
+        <div class="req">Needs <span class="${ok?'have':'short'}">${c.qty}× ${ITEMS[c.item].ic} ${ITEMS[c.item].n}</span> — you have ${have}</div>
+        <button class="btn deliver" data-deliver="${i}" ${ok?'':'disabled'}>DELIVER</button>
+      </div>`;
+      return;
+    }
     html += `<div class="contract">
       <div class="who">🏢 ${c.client} <span style="font-size:9px;color:var(--dim)">${stars} ${rank.name}</span></div>
       <div style="font-size:10px;margin:1px 0 3px">
@@ -12327,6 +12405,9 @@ function bindMain(){
       renderMain(); renderNav(); save();
     };
   });
+  // separate job-control buttons (Stop is its own button, not inside the recipe)
+  document.querySelectorAll(".job-btn[data-jobswing]").forEach(b=> (b as HTMLElement).onclick = ()=> swing());
+  document.querySelectorAll(".job-btn[data-jobstop]").forEach(b=> (b as HTMLElement).onclick = ()=>{ S.action = null; renderMain(); renderNav(); save(); });
   document.querySelectorAll("[data-trade]").forEach(b=> b.onclick = ()=>{
     const [npc, it, q, mode] = b.dataset.trade.split("|");
     doTrade(npc, it, q==="max" ? "max" : +q, mode);
@@ -12992,6 +13073,11 @@ if (window._offlineSummary){
   _os.lines.forEach(l => log(`&nbsp;&nbsp;${l}`, "dim"));
   if (_os.passiveCoins > 0) toast(`🌙 Welcome back! +${fmt(_os.passiveCoins)} coins earned while away.`);
   window._offlineSummary = null;
+}
+if (window._tutRecoveryMsg){
+  toast(`❄️ Frost: "Here — a few materials to get you back on track."`);
+  log(`❄️ Frost topped up your tutorial supplies (${window._tutRecoveryMsg}) so you can carry on from where you left off.`, "good");
+  window._tutRecoveryMsg = null;
 }
 if (!hadSave){
   log("Mine Iron Ore, smelt it in the Steelworks, press Brackets, then deliver Contracts — or haggle with Marge in the Trade tab.");
