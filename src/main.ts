@@ -251,11 +251,19 @@ function tutCheck(){
     S.coins += st.reward;
     toast(`❄️ FROST: NICE ONE! +${st.reward} COINS`);
     log(`❄️ Frost approves — objective complete (<b>+${st.reward} coins</b>).`, "good");
+    // M2: make the win land — a burst + a chime on every tutorial step
+    try{ SFX.levelUp(); }catch(e){}
+    showJourneyBurst({ ic:"✅", title:"Objective complete!", reward:{} });
     S.tut.step++; advanced = true;
   }
   if (S.tut.step >= TUT.length && !S.tut.done){
     S.tut.done = true;
     log(`❄️ Frost: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
+    // M2: no dead moment — hand straight off to the Getting Started ladder + reveal advanced HUD
+    try{ SFX.fanfare(); }catch(e){}
+    toast("🌟 Tutorial complete! Frost's lined up your next goals — see 'Getting Started'.");
+    log(`🌟 <b>Getting Started</b> — your next goals are ready. Watch the tracker in your Warehouse panel and keep the coins rolling in.`, "good");
+    try{ syncOnboardingUI(); }catch(e){}
   }
   if (advanced){ updateHud(); save(); }
 }
@@ -7463,7 +7471,7 @@ if (typeof document !== 'undefined'){
   .firstrun-hint b{color:#ffd666}
   @keyframes frPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,150,30,.5)}50%{box-shadow:0 0 0 6px rgba(232,150,30,0)}}
   .fullscreen-mode .firstrun-hint{font-size:15px;padding:9px 18px}
-  .quest-rock{position:absolute;transform:translate(-50%,-140%);background:rgba(42,90,30,.96);color:#fff8e6;border:2px solid #ffd666;border-radius:8px;padding:3px 9px;font:700 11px 'IBM Plex Mono',monospace;white-space:nowrap;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.45);animation:qrBob 1.2s ease-in-out infinite}
+  .quest-rock{position:absolute;transform:translate(-50%,-140%);background:rgba(42,90,30,.96);color:#fff8e6;border:2px solid #ffd666;border-radius:8px;padding:4px 10px;font:700 12.5px 'IBM Plex Mono',monospace;white-space:nowrap;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.45);animation:qrBob 1.2s ease-in-out infinite}
   @keyframes qrBob{0%,100%{transform:translate(-50%,-140%)}50%{transform:translate(-50%,-172%)}}
   .quest-arrow{position:absolute;color:#ffd666;font-size:26px;pointer-events:none;text-shadow:0 2px 5px rgba(0,0,0,.7);animation:qaPulse 1s ease-in-out infinite}
   @keyframes qaPulse{0%,100%{opacity:.65}50%{opacity:1}}
