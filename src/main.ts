@@ -5,7 +5,7 @@ import { SKILLS } from './data/skills.ts';
 import { NPCS, MARKET_ROLL_MS } from './data/npcs.ts';
 import { UPGRADES } from './data/upgrades.ts';
 import { PETS } from './data/pets.ts';
-import { CLIENTS, CONTRACT_POOL } from './data/contracts.ts';
+import { CLIENTS, CONTRACT_POOL, rollContract, tierById, repRank, repSlotBonus, repDeltaOnDeliver, repDeltaOnExpire, isExpired } from './data/contracts.ts';
 import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS, NORTH_EXT } from './world/map.ts';
 import { nightAlpha, lampGlow, isNight, skyTint, gameHour, DAY_DURATION_MS } from './world/daynight.ts';
@@ -745,6 +745,7 @@ let _fishActiveId = null;    // which fishing station is currently being fished
 let _fishRodTip = { x:0, y:0 };  // world position of the player's rod tip (so the line connects to the character)
 let _voyageRenderAt = 0;        // throttle for live-refreshing the harbour voyages panel
 let _cellRenderAt = 0;          // throttle for live-refreshing the holding-cell countdown
+let _contractsRenderAt = 0;     // throttle for live-ticking contract deadlines
 let _intVfx = [];               // interior completion rewards (floating +item pops)
 let _comboCount = 0, _comboAt = 0, _comboSkill = null;   // consecutive-action streak (addictive feedback)
 let _fishSpot = null;            // where the bobber has been cast (interior coords) — click the water to set it
@@ -3317,7 +3318,7 @@ function doPrestige(){
   S.coins = 200; S.items = {}; S.prod = {}; S.action = null;
   S.upgrades = {}; S.automatons = {}; S.grid = { tier:0 };
   S.perks = {}; S.degrees = []; S.studying = null;
-  S.contracts = []; S.exchange = { positions:[] };
+  S.contracts = []; S.contractRep = {}; S.exchange = { positions:[] };
   S.caffBuff = 0; S.pintBuff = 0; S.mealBuff = null; S.danceBuff = 0; S.schoolBuff = 0;
   // …but keep name, appearance, home & furniture, friends & keepsakes, achievements,
   //   Founder's Journey titles, beautification, the school fund, and unlocked tabs.
@@ -7422,9 +7423,10 @@ function freshState(){
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
-    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0, voyages:0 },
+    counters:{ actions:0, contracts:0, coinsEarned:0, trades:0, raffleWins:0, voyages:0, contractsExpired:0 },
     action:null,
     contracts:[],
+    contractRep:{},
     tab:"village",
     appearance: Object.assign({}, DEFAULT_APPEARANCE),
     worldEvent: null, nextEventAt: Date.now() + 3*60*1000,
@@ -7588,6 +7590,14 @@ function load(){
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
       if (!("grid" in parsed) || !S.grid || typeof S.grid.tier !== "number") S.grid = { tier:0 };
+      // Contracts 2.0 — per-client reputation + tier/deadline on in-flight orders
+      if (!("contractRep" in parsed) || !S.contractRep || typeof S.contractRep !== "object") S.contractRep = {};
+      if (!("contractsExpired" in S.counters)) S.counters.contractsExpired = 0;
+      if (Array.isArray(S.contracts)) S.contracts.forEach(c => {
+        if (c && !c.tier) c.tier = "standard";
+        if (c && !c.deadline) c.deadline = Date.now() + 20*60*1000;   // give legacy orders a fresh standard window
+        if (c && typeof c.repAtOffer !== "number") c.repAtOffer = 0;
+      });
       // pre-mark already-unlocked gated districts so returning players aren't re-notified
       if (!("announcedDistricts" in parsed) || !Array.isArray(S.announcedDistricts))
         S.announcedDistricts = DISTRICTS.filter(d => d.unlock.type==='level' && isDistrictOpen(d, totalLvl())).map(d => d.id);
@@ -8655,18 +8665,42 @@ function applyOffline(){
   }
 }
 
-function contractSlots(){ return 2 + (skillLvl("logistics") >= 20 ? 1 : 0) + renownContractBonus(S.renown?.bought); }
+function totalContractRep(){ return S.contractRep ? Object.values(S.contractRep).reduce((a,b)=>a+(b||0),0) : 0; }
+function clientRep(client){ return (S.contractRep && S.contractRep[client]) || 0; }
+function contractSlots(){ return 2 + (skillLvl("logistics") >= 20 ? 1 : 0) + renownContractBonus(S.renown?.bought) + repSlotBonus(totalContractRep()); }
 function genContract(){
   const mLvl = skillLvl("manufacturing");
-  const opts = CONTRACT_POOL.filter(c => c.minLvl <= Math.max(mLvl, skillLvl("steelworks")));
-  const pick = opts[Math.floor(Math.random()*opts.length)];
-  const item = ITEMS[pick.item];
-  const qty = Math.max(2, Math.floor(2 + Math.random()*4 + mLvl/8));
-  const coins = Math.round(item.v * qty * (1.5 + Math.random()*0.5));
-  const xp = Math.round(item.v * qty * 0.45) + 10;
-  return { client: CLIENTS[Math.floor(Math.random()*CLIENTS.length)], item: pick.item, qty, coins, xp };
+  const maxLvl = Math.max(mLvl, skillLvl("steelworks"));
+  const pool = CONTRACT_POOL.filter(c => c.minLvl <= maxLvl);
+  return rollContract(Math.random, {
+    pool: pool.length ? pool : CONTRACT_POOL.filter(c => c.minLvl <= 1),
+    clients: CLIENTS,
+    itemValue: (id)=> ITEMS[id]?.v || 1,
+    mLvl,
+    repOf: clientRep,
+    demand: macroDemand(),
+    now: Date.now(),
+  });
 }
 function fillContracts(){ while (S.contracts.length < contractSlots()) S.contracts.push(genContract()); }
+// Age the board: any contract past its deadline lapses, denting that client's
+// reputation (never coins — kept forgiving/child-safe). Idle & offline-safe.
+function sweepContracts(){
+  if (!Array.isArray(S.contracts)) return;
+  const now = Date.now();
+  let changed = false;
+  for (let i = S.contracts.length - 1; i >= 0; i--){
+    const c = S.contracts[i];
+    if (isExpired(c, now)){
+      if (S.contractRep) S.contractRep[c.client] = Math.max(0, clientRep(c.client) + repDeltaOnExpire(c.tier));
+      S.counters.contractsExpired = (S.counters.contractsExpired||0) + 1;
+      log(`⌛ The ${tierById(c.tier).label.toLowerCase()} order for ${c.client} lapsed — they sourced elsewhere.`, "dim");
+      S.contracts.splice(i, 1);
+      changed = true;
+    }
+  }
+  if (changed){ fillContracts(); if (S.tab==="contracts") renderMain(); }
+}
 function deliverContract(i){
   const c = S.contracts[i];
   if (!c || itemCount(c.item) < c.qty) return;
@@ -8676,6 +8710,13 @@ function deliverContract(i){
   S.counters.coinsEarned = (S.counters.coinsEarned||0) + payout;
   grantXp("logistics", c.xp);
   S.counters.contracts++;
+  // Reward the relationship: on-time delivery builds standing with this client.
+  if (S.contractRep){
+    const before = repRank(clientRep(c.client)).name;
+    S.contractRep[c.client] = clientRep(c.client) + repDeltaOnDeliver(c.tier);
+    const after = repRank(clientRep(c.client)).name;
+    if (after !== before) toast(`🤝 ${c.client}: reputation is now "${after}".`);
+  }
   rollPet("contract");
   tutCheck();
   achCheck();
@@ -8940,15 +8981,38 @@ function renderInventoryPanel(){
   html += `</div></div>`;
   return html;
 }
+function _fmtCountdown(ms){
+  if (ms <= 0) return "expired";
+  const s = Math.floor(ms/1000), m = Math.floor(s/60);
+  if (m >= 60) return Math.floor(m/60)+"h "+(m%60)+"m";
+  if (m >= 1) return m+"m "+(s%60)+"s";
+  return s+"s";
+}
 function renderContracts(){
   fillContracts();
-  let html = `<div class="panel"><h2>📋 Open Contracts<small>Deliver goods, earn coins, level Logistics. Slots: ${contractSlots()}${skillLvl("logistics")<20?" (3rd slot at Logistics 20)":""}</small></h2>${xpBarHtml("logistics")}`;
+  const _mp = macroPhase();
+  const _demandHint = _mp.demand > 1.02 ? `📈 ${_mp.name} — orders pay a premium.`
+                    : _mp.demand < 0.98 ? `📉 ${_mp.name} — orders pay a little less.`
+                    : `📊 ${_mp.name} — orders pay their fair rate.`;
+  let html = `<div class="panel"><h2>📋 Open Contracts<small>Deliver on time to build client reputation. Slots: ${contractSlots()}${skillLvl("logistics")<20?" (3rd at Logistics 20)":""}</small></h2>${xpBarHtml("logistics")}
+    <div style="font-size:11px;color:var(--dim);margin:2px 0 8px">${_demandHint}</div>`;
+  const now = Date.now();
   S.contracts.forEach((c,i)=>{
     const have = itemCount(c.item);
     const ok = have >= c.qty;
     const payout = Math.round(c.coins * payMult());
+    const t = tierById(c.tier);
+    const rank = repRank(clientRep(c.client));
+    const stars = rank.stars>0 ? "★".repeat(rank.stars)+"☆".repeat(4-rank.stars) : "☆☆☆☆";
+    const left = (c.deadline||0) - now;
+    const urgent = left > 0 && left < 60*1000;
+    const tierCol = c.tier==='rush' ? 'var(--red)' : c.tier==='bulk' ? 'var(--gold,#e8c94e)' : 'var(--dim)';
     html += `<div class="contract">
-      <div class="who">🏢 ${c.client}</div>
+      <div class="who">🏢 ${c.client} <span style="font-size:9px;color:var(--dim)">${stars} ${rank.name}</span></div>
+      <div style="font-size:10px;margin:1px 0 3px">
+        <span style="color:${tierCol};text-transform:uppercase;letter-spacing:.5px">${t.ic} ${t.label}</span>
+        · <span style="color:${urgent?'var(--red)':'var(--dim)'}">⏳ ${_fmtCountdown(left)}${urgent?' — hurry!':''}</span>
+      </div>
       <div class="pay">💰 ${fmt(payout)} coins · +${c.xp} Logistics XP</div>
       <div class="req">Needs <span class="${ok?'have':'short'}">${c.qty}× ${ITEMS[c.item].ic} ${ITEMS[c.item].n}</span> — you have ${have}</div>
       <button class="btn deliver" data-deliver="${i}" ${ok?'':'disabled'}>DELIVER</button>
@@ -12026,6 +12090,7 @@ setInterval(()=>{
   updatePrestigeIncome(now);
   updateVillagerRequests(now);
   updateDailyChallenge();
+  sweepContracts();         // lapse any contract past its deadline (idle/offline-safe)
   updateGarden(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
@@ -12050,6 +12115,7 @@ setInterval(()=>{
   checkVoyages(false);      // land any returned ocean voyages
   if (S.tab==="harbour_office" && (S.voyages||[]).length && Date.now()-_voyageRenderAt > 4000){ _voyageRenderAt = Date.now(); renderMain(); }
   if (S.tab==="police_cell" && Date.now()-_cellRenderAt > 1000){ _cellRenderAt = Date.now(); renderMain(); }   // tick the countdown / reveal the walk-out
+  if (S.tab==="contracts" && Date.now()-_contractsRenderAt > 1000){ _contractsRenderAt = Date.now(); renderMain(); }   // live-tick the contract deadlines
   if (rollMarket(false) && S.tab === "trade") renderMain();
   const _itemsChanged = JSON.stringify(S.items) !== beforeItems;
   if (_itemsChanged && (S.tab in SKILLS || S.tab==="contracts")) {
