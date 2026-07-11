@@ -52,11 +52,13 @@ export function applyHit(f, dmg){
 }
 
 // ---- AI personalities (P6) ----
+// keepDist values are tuned to the 480×360 arena (half-diagonal ~300) so nobody
+// perpetually retreats into a corner.
 export const PERSONALITIES = {
-  aggressive: { push: 0.7,  coverBias: 0.3, keepDist: 90,  accuracy: 0.58 },
-  cautious:   { push: 0.35, coverBias: 0.9, keepDist: 155, accuracy: 0.64 },
-  scavenger:  { push: 0.25, coverBias: 0.7, keepDist: 135, accuracy: 0.55 },
-  marksman:   { push: 0.4,  coverBias: 0.6, keepDist: 240, accuracy: 0.72 },
+  aggressive: { push: 0.7,  coverBias: 0.3, keepDist: 80,  accuracy: 0.58 },
+  cautious:   { push: 0.35, coverBias: 0.9, keepDist: 130, accuracy: 0.64 },
+  scavenger:  { push: 0.25, coverBias: 0.7, keepDist: 120, accuracy: 0.55 },
+  marksman:   { push: 0.5,  coverBias: 0.6, keepDist: 165, accuracy: 0.72 },
 };
 const BOT_PERSONALITY = { Donna: 'aggressive', Daz: 'marksman', Reanna: 'cautious', Becky: 'scavenger', Noa: 'aggressive' };
 const BOT_WEAPON = { aggressive: 'shotgun', marksman: 'marksman', cautious: 'rifle', scavenger: 'pistol' };

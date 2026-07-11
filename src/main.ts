@@ -36,6 +36,7 @@ import { BR, BOT_NAMES, BOT_COLORS, spawnFighters, stormRadius, outsideStorm, ap
 import { CUES, cueById, cuePower, cueAim, cueOwned, canBuyCue } from './data/cues.ts';
 import { DART_SECTORS, DART_RINGS, scoreAt as dartScoreAt, aimPointFor, DART_DIFFICULTIES, difficultyById, DARTS_START, dartOutcome, botTarget } from './data/darts.ts';
 import { COMMISSION_DEFS, commissionById, commissionCoins, commissionXp, commissionRep, repTierUnlocked, repTitle, availableCommissions, rollCommissionBoard, commissionProgress, commissionDone } from './data/commissions.ts';
+import { STRIKER_FEE, strikerReward } from './data/fairground.ts';
 import { timeOfDay as _timeOfDay, pickLine as _pickLine, convoLine as _convoLine, INTRO_NPCS, introLine as _introLine } from './data/dialogue.ts';
 import { GRID_TIERS, GRID_MAX_TIER, gridTier, gridBonus, gridNext } from './data/grid.ts';
 import { WEATHER_INFO, pickWeather, weatherDuration } from './data/weather.ts';
@@ -645,6 +646,7 @@ const ACH = [
   { id:"festival_goer",   ic:"🎪", n:"Festival Goer",    ds:"Attend your first seasonal festival.",        r:100,  c:()=>(S.festival?.attended?.length||0)>=1 },
   { id:"festival_regular",ic:"🎡", n:"Festival Regular",  ds:"Attend all four seasonal festivals.",          r:500,  c:()=>(S.festival?.attended?.length||0)>=4 },
   { id:"raffle_winner",   ic:"🎟️", n:"Raffle Winner",    ds:"Win 10 raffle prizes at village festivals.",   r:200,  c:()=>(S.counters?.raffleWins||0)>=10 },
+  { id:"bell_ringer",     ic:"🔔", n:"Bell Ringer",       ds:"Ring the bell on the fairground High Striker.",r:150,  c:()=>(S.festival?.strikerBell||0)>=1 },
   { id:"automation_age",  ic:"🤖", n:"Automation Age",   ds:"Build your first automaton at the Automation Lab.",   r:300,  c:()=>Object.keys(S.automatons||{}).length>=1 },
   { id:"fully_automated", ic:"🦾", n:"Fully Automated",  ds:"Have an automaton working every automatable skill.",  r:1500, c:()=>Object.keys(SKILL_GROUP).every(sk=>S.automatons?.[sk]) },
   { id:"powering_up",     ic:"⚡", n:"Powering Up",      ds:"Bring the Power Grid online (Tier 1).",               r:500,  c:()=>(S.grid?.tier||0)>=1 },
@@ -10497,6 +10499,100 @@ function _dartsDraw(){
     g.beginPath(); g.arc(a.x,a.y,7,0,7); g.stroke();
     g.beginPath(); g.moveTo(a.x-11,a.y); g.lineTo(a.x+11,a.y); g.moveTo(a.x,a.y-11); g.lineTo(a.x,a.y+11); g.stroke(); }
 }
+// ===== The Fairground — festival High Striker (test your strength) =====
+let _fair = null;
+function _festivalTurnout(){
+  const today=getTodayStr();
+  if(!S.festival) S.festival={ raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+  if(S.festival.gamesDate===today) return;   // once-a-day turnout bonus
+  S.festival.gamesDate=today;
+  if(!S.friendships) S.friendships={};
+  const grp=[...VILLAGERS].sort(()=>Math.random()-.5).slice(0,3);
+  grp.forEach(v=>{ if(!S.friendships[v.id])S.friendships[v.id]={xp:0,lastChat:0};
+    const was=friendLvl(v.id);
+    S.friendships[v.id].xp=(S.friendships[v.id].xp||0)+Math.round(10*prestigeFriendXpMult()*festivalFriendXpMult());
+    const now=friendLvl(v.id);
+    if(now>was){ toast(`❤️ ${v.n} — ${FRIEND_LVL_NAMES[now]}!`); if(now===4)grantFriendshipGift(v.id,v.n); if(now===5)showKeepsakeCeremony(v.id,v.n); } });
+  toast(`🎡 A grand day out with ${grp.map(v=>v.n).join(', ')}! Friendship XP gained (2× at the festival).`);
+  save();
+}
+function openFairground(){
+  if(document.getElementById("fair-modal")) return;
+  const fst=isFestivalActive(); if(!fst){ toast("The fairground only opens during a festival."); return; }
+  _fair={ power:0, dir:1, phase:'ready', puck:0, lockedPower:0, result:null, bell:false, raffleItems:fst.raffleItems, raf:0 };
+  const el=document.createElement("div"); el.id="fair-modal"; el.className="dd-modal";
+  el.innerHTML=`<div class="dd-card" style="max-width:420px">
+    <button class="vp-close" id="fair-close">✕</button>
+    <div class="dd-title">🎡 ${fst.n} Fairground — High Striker</div>
+    <div id="fair-msg" class="dd-sub" style="min-height:20px">Tap when the gauge is high — ring the bell for a prize!</div>
+    <div style="background:#1a0f18;border-radius:10px;padding:8px"><canvas id="fair-cv" width="220" height="320" style="width:100%;max-width:250px;height:auto;display:block;margin:0 auto;touch-action:none;cursor:pointer"></canvas></div>
+    <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--dim)">💪 <b>Tap / Space</b> to swing · ${STRIKER_FEE}c a go · ring the bell (95%+) for coins + a seasonal prize</div>
+  </div>`;
+  document.body.appendChild(el);
+  const cv=document.getElementById("fair-cv");
+  const strike=()=>{
+    if(!_fair) return;
+    if(_fair.phase==='result'){ _fair.phase='ready'; _fair.puck=0; _fair.result=null; _fair.bell=false; _fairSetMsg('Tap when the gauge is high — ring the bell!'); return; }
+    if(_fair.phase!=='ready') return;
+    if(S.coins<STRIKER_FEE){ _fairSetMsg('Not enough coins for a go ('+STRIKER_FEE+'c).'); return; }
+    S.coins-=STRIKER_FEE; updateHud();
+    _fair.phase='rising'; _fair.lockedPower=_fair.power; _fair.puck=0;
+    _festivalTurnout();
+    try{ SFX.snap&&SFX.snap(); }catch(e){}
+  };
+  cv.addEventListener("mousedown",(e)=>{ e.preventDefault(); strike(); });
+  cv.addEventListener("touchstart",(e)=>{ e.preventDefault(); strike(); },{passive:false});
+  const kd=(e)=>{ if(e.key===' '||e.code==='Space'){ e.preventDefault(); strike(); } };
+  window.addEventListener("keydown",kd);
+  const close=()=>{ if(_fair)cancelAnimationFrame(_fair.raf); window.removeEventListener("keydown",kd); el.remove(); _fair=null; };
+  document.getElementById("fair-close").onclick=close;
+  el.addEventListener("click",e=>{ if(e.target===el) close(); });
+  _fairLoop();
+}
+function _fairSetMsg(m){ const e=document.getElementById("fair-msg"); if(e)e.textContent=m; }
+function _fairLoop(){ if(!_fair) return; _fairUpdate(); _fairDraw(); _fair.raf=requestAnimationFrame(_fairLoop); }
+function _fairUpdate(){
+  if(_fair.phase==='ready'){ _fair.power+=_fair.dir*2.3; if(_fair.power>=100){_fair.power=100;_fair.dir=-1;} if(_fair.power<=0){_fair.power=0;_fair.dir=1;} }
+  else if(_fair.phase==='rising'){ _fair.puck+=(_fair.lockedPower-_fair.puck)*0.2; if(Math.abs(_fair.lockedPower-_fair.puck)<0.6){ _fair.puck=_fair.lockedPower; _fairResolve(); } }
+}
+function _fairResolve(){
+  const rw=strikerReward(Math.round(_fair.lockedPower));
+  _fair.phase='result'; _fair.result=rw; _fair.bell=rw.bell;
+  S.coins+=rw.coins; S.counters.coinsEarned=(S.counters.coinsEarned||0)+rw.coins;
+  let extra='';
+  if(rw.bell){ const it=_fair.raffleItems[Math.floor(Math.random()*_fair.raffleItems.length)]; addItem(it,1); S.prod[it]=(S.prod[it]||0)+1; extra=` + ${ITEMS[it]?.ic||''} ${ITEMS[it]?.n||it}`;
+    if(!S.festival) S.festival={ raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
+    S.festival.strikerBell=(S.festival.strikerBell||0)+1;
+    try{ SFX.fanfare&&SFX.fanfare(); }catch(e){}
+    log(`🔔 <b>High Striker</b> — rang the bell! +${fmt(rw.coins)}c${extra}`,"rare"); }
+  _fairSetMsg(`${rw.label} +${fmt(rw.coins)}c${extra}. Tap to play again.`);
+  updateHud(); achCheck(); save();
+}
+function _fairDraw(){
+  const cv=document.getElementById("fair-cv"); if(!cv||!_fair) return;
+  const g=cv.getContext("2d"), W=220, H=320;
+  g.fillStyle="#1a0f18"; g.fillRect(0,0,W,H);
+  for(let i=0;i<12;i++){ g.fillStyle=["#ffd050","#ff7070","#70b0ff","#70ff90"][i%4]; g.beginPath(); g.arc(10+i*18, 8+Math.sin(i+Date.now()/400)*3, 2, 0, 7); g.fill(); }
+  const towerX=W/2, top=34, bottom=H-40, th=bottom-top;
+  g.fillStyle="#3a2030"; g.fillRect(towerX-16,top,32,th);
+  g.fillStyle="#4a2a3a"; g.fillRect(towerX-16,top,6,th);
+  g.strokeStyle="rgba(255,255,255,.25)"; g.lineWidth=1; g.fillStyle="rgba(255,255,255,.5)"; g.font="7px sans-serif"; g.textAlign="right"; g.textBaseline="middle";
+  for(let p=0;p<=100;p+=20){ const y=bottom-(p/100)*th; g.beginPath(); g.moveTo(towerX-16,y); g.lineTo(towerX+16,y); g.stroke(); g.fillText(String(p),towerX-19,y); }
+  // bell
+  g.fillStyle=_fair.bell?"#ffe27a":"#c9a020"; g.beginPath(); g.arc(towerX,top-6,10,Math.PI,0); g.fill(); g.fillRect(towerX-10,top-6,20,4);
+  g.fillStyle="#8a6a10"; g.fillRect(towerX-2,top-16,4,10);
+  if(_fair.bell){ g.strokeStyle="rgba(255,220,120,.7)"; g.lineWidth=2; for(let k=0;k<3;k++){ g.beginPath(); g.arc(towerX,top-6,14+k*5+Math.sin(Date.now()/80)*2,Math.PI*1.2,Math.PI*1.8); g.stroke(); } }
+  // puck
+  const puckY=bottom-(_fair.puck/100)*th;
+  g.fillStyle="#e05a4a"; g.fillRect(towerX-14,puckY-4,28,8);
+  g.fillStyle="#ff8a7a"; g.fillRect(towerX-14,puckY-4,28,2);
+  g.fillStyle="#5a3a2a"; g.fillRect(towerX-26,bottom,52,10);
+  // gauge marker while charging
+  if(_fair.phase==='ready'){ const y=bottom-(_fair.power/100)*th; g.fillStyle="#ffd666"; g.beginPath(); g.moveTo(towerX+18,y); g.lineTo(towerX+26,y-4); g.lineTo(towerX+26,y+4); g.closePath(); g.fill();
+    g.font="bold 10px sans-serif"; g.textAlign="left"; g.fillText(Math.round(_fair.power)+"%",towerX+28,y); }
+  g.textAlign="left"; g.textBaseline="alphabetic";
+  drawEmojiC(g,"💪",towerX-42,bottom-8,16);
+}
 function renderFurnitureShop(): string {
   const _owned = S.ownedFurniture || {};
   const _allItems = Object.entries(FURNITURE_DEFS);
@@ -10566,9 +10662,9 @@ function renderSeasonalMarket(): string {
     ${_raffleLeft > 0 ? `<button data-festival-raffle="1" style="background:#7a3a8a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🎟️ Buy Raffle Ticket — 25c</button>` : `<p style="color:var(--dim);font-size:11px;margin:0">Come back tomorrow for more tickets.</p>`}
   </div>
   <div class="panel" style="padding:10px;margin-bottom:8px">
-    <h3 style="margin:0 0 6px;font-size:13px">🎡 Village Games <span style="color:var(--dim);font-weight:normal;font-size:10px">— 15c entry · once per day</span></h3>
-    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Join in the fun and earn friendship with 3 random villagers.</p>
-    ${_gamesAvail ? `<button data-festival-games="1" style="background:#3a6a8a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">🎡 Enter Village Games — 15c</button>` : `<p style="color:var(--amber);font-size:11px;margin:0">✅ You've played today — come back tomorrow!</p>`}
+    <h3 style="margin:0 0 6px;font-size:13px">🎡 The Fairground <span style="color:var(--dim);font-weight:normal;font-size:10px">— ${STRIKER_FEE}c a go · High Striker</span></h3>
+    <p style="color:var(--dim);font-size:11px;margin:0 0 8px">Test your strength! Ring the bell for coins and a seasonal prize. ${_gamesAvail?'Your first go today also warms friendships with 3 villagers (2× festival XP).':'✅ Today\'s friendship bonus claimed — still worth a swing for prizes!'}</p>
+    <button data-open-fairground="1" style="background:#8a3a7a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">🎡 Play the High Striker</button>
   </div>
   <div class="panel" style="padding:10px;margin-bottom:8px">
     <h3 style="margin:0 0 6px;font-size:13px">🍽️ Grand Feast Order <span style="color:var(--dim);font-weight:normal;font-size:10px">— once per festival · 400c reward</span></h3>
@@ -11319,31 +11415,7 @@ function bindMain(){
     achCheck(); renderMain(); updateHud(); save();
   });
   // festival village games
-  document.querySelectorAll("[data-festival-games]").forEach(b=> b.onclick = ()=>{
-    if (S.coins < 15){ toast("Not enough coins."); return; }
-    const _fst = isFestivalActive(); if (!_fst){ toast("No festival active."); return; }
-    if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
-    const _today = getTodayStr();
-    if (S.festival.gamesDate === _today){ toast("🎡 You've already played today!"); return; }
-    S.coins -= 15; S.festival.gamesDate = _today;
-    if (!S.friendships) S.friendships = {};
-    const _shuffled = [...VILLAGERS].sort(()=>Math.random()-.5).slice(0,3);
-    _shuffled.forEach(v=>{
-      if (!S.friendships[v.id]) S.friendships[v.id] = { xp:0, lastChat:0 };
-      const wasLvl = friendLvl(v.id);
-      S.friendships[v.id].xp = (S.friendships[v.id].xp||0) + Math.round(10 * prestigeFriendXpMult() * festivalFriendXpMult());
-      const newLvl = friendLvl(v.id);
-      if (newLvl > wasLvl){
-        toast(`❤️ ${v.n} — ${FRIEND_LVL_NAMES[newLvl]}!`);
-        if (newLvl === 4) grantFriendshipGift(v.id, v.n);
-        if (newLvl === 5) showKeepsakeCeremony(v.id, v.n);
-      }
-    });
-    const _names = _shuffled.map(v=>v.n).join(', ');
-    toast(`🎡 Great fun with ${_names}! Friendship XP gained.`);
-    log(`🎡 <b>Village Games</b> — warmer with ${_names}`, "good");
-    achCheck(); renderMain(); updateHud(); save();
-  });
+  document.querySelectorAll("[data-open-fairground]").forEach(b=> b.onclick = ()=> openFairground());
   // festival grand feast
   document.querySelectorAll("[data-festival-feast]").forEach(b=> b.onclick = ()=>{
     const _fst = isFestivalActive(); if (!_fst){ toast("No festival active."); return; }
