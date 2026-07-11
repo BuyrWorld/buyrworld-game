@@ -20,6 +20,7 @@ import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
+import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBeat, allWelcomeDone, welcomeTopLevel } from './data/welcome.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
@@ -1105,6 +1106,18 @@ const HEARTBEAT_POOL = [
   { id:"tip", w:1, fn:()=>{
     const _tips=["💡 The Café gives a 20% speed boost for 5 minutes — worth it.","💡 World events shift market prices. Keep an eye on the ticker!","💡 Villagers post delivery requests — look for the green badge above them.","💡 Your Cottage can be upgraded. Visit it east of town.","💡 Rain affects the vibe. Fishing during a storm? Brave.","💡 Seasons affect prices — coal and fish are pricier in winter.","💡 The University offers permanent XP boosts. Worth the investment.","💡 The Exchange Floor lets you speculate on commodity prices using world events."];
     return _tips[Math.floor(Math.random()*_tips.length)];
+  }},
+  // M15 — a reward-bearing heartbeat beat so the opening pays off, not just chatters.
+  // Early game only (fades out by total level 40) and gated behind the tutorial,
+  // tiny value + the pool's 90s per-id cooldown keep it a treat, never a grind.
+  { id:"found_coins", w:3, fn:()=>{
+    if (!S.tut || !S.tut.done) return null;
+    if (totalLvl() > 40) return null;
+    const amt = 3 + Math.floor(Math.random()*8);
+    S.coins += amt; S.counters.coinsEarned = (S.counters.coinsEarned||0) + amt;
+    updateHud();
+    const _where=["by the path","near the fountain","under a market stall","on the quarry track","by the Depot doors"];
+    return `🪙 You spotted ${amt} coins ${_where[Math.floor(Math.random()*_where.length)]} — into the purse they go!`;
   }},
 ];
 const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub","robotics_lab","data_centre"]);
@@ -2789,6 +2802,55 @@ function claimJourneyStage(){
   updateHud(); save(); renderJourney(); syncJourneyBtn();
 }
 function closeJourney(){ const e = document.getElementById("journey-modal"); if (e) e.remove(); }
+// ---- M15: the "Getting Started" starter ladder (first-session fun pass) ----
+function welcomeCtx(){
+  return {
+    actions:       S.counters?.actions || 0,
+    steelworksLvl: skillLvl('steelworks'),
+    trades:        S.counters?.trades || 0,
+    goods:         prodSum(GOODS),
+    contracts:     S.counters?.contracts || 0,
+    totalLevel:    totalLvl(),
+    coinsEarned:   S.counters?.coinsEarned || 0,
+  };
+}
+// Auto-grant met beats in order (frictionless, like the tutorial). Capped per
+// tick so a big jump resolves over a few smooth ticks rather than one windfall.
+function checkWelcome(){
+  if (!S.welcome) S.welcome = { claimed:[], notified:"" };
+  if (allWelcomeDone(S.welcome.claimed)) return;
+  if (!S.tut || !S.tut.done) return;                 // finish Frost's tutorial first
+  const ctx = welcomeCtx();
+  let idx = currentBeatIndex(S.welcome.claimed), granted = 0;
+  while (idx < WELCOME_BEATS.length && beatComplete(WELCOME_BEATS[idx], ctx) && granted < 3){
+    const b = WELCOME_BEATS[idx];
+    S.welcome.claimed.push(b.id);
+    S.coins += b.reward.coins;
+    S.counters.coinsEarned = (S.counters.coinsEarned || 0) + b.reward.coins;
+    if (b.reward.item && ITEMS[b.reward.item]) S.items[b.reward.item] = (S.items[b.reward.item] || 0) + (b.reward.qty || 1);
+    const itemMsg = (b.reward.item && ITEMS[b.reward.item]) ? ` · ${b.reward.qty||1}× ${ITEMS[b.reward.item].n}` : "";
+    log(`🌟 Getting Started: <b>${b.title}</b> — +${fmt(b.reward.coins)} coins${itemMsg}.`, "good");
+    toast(`🌟 ${b.title} · +${fmt(b.reward.coins)}c`);
+    showJourneyBurst({ ic:b.ic, title:b.title, reward:{} });
+    try{ SFX.levelUp(); }catch(e){}
+    granted++; idx++;
+  }
+  if (granted){ updateHud(); save(); if (S.tab==="village" || S.tab==="contracts") renderMain(); }
+}
+// Compact starter tracker for new players; hidden during the tutorial and once
+// the ladder is complete (so veterans never see it).
+function welcomeObjectiveHtml(){
+  if (!S.tut || !S.tut.done) return "";
+  if (!S.welcome || allWelcomeDone(S.welcome.claimed)) return "";
+  const b = nextBeat(S.welcome.claimed); if (!b) return "";
+  const p = welcomeProgress(b, welcomeCtx());
+  const done = S.welcome.claimed.length, total = WELCOME_BEATS.length;
+  return `<div class="obj-tracker">
+    <div class="obj-row"><span>${b.ic} ${b.title} <small style="color:var(--dim)">· Getting Started ${done}/${total}</small></span><span><b>${p.cur}/${p.max}</b></span></div>
+    <div class="obj-bar"><div class="obj-fill" style="width:${p.pct}%"></div></div>
+    <div class="obj-where">🎁 ${b.desc} <b>+${fmt(b.reward.coins)}c</b></div>
+  </div>`;
+}
 // Reflect a claimable stage on the HUD button (a gentle pulse + dot).
 function syncJourneyBtn(){
   const b = document.getElementById("btn-journey");
@@ -7418,7 +7480,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -7590,6 +7652,14 @@ function load(){
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
       if (!("grid" in parsed) || !S.grid || typeof S.grid.tier !== "number") S.grid = { tier:0 };
+      // M15 — Getting Started ladder. For an existing save, pre-mark every beat
+      // already surpassed (no retroactive reward/spam); veterans end up fully
+      // complete so the tracker never shows for them.
+      if (!("welcome" in parsed) || !S.welcome || !Array.isArray(S.welcome.claimed)){
+        S.welcome = { claimed:[], notified:"" };
+        const _wctx = welcomeCtx();
+        WELCOME_BEATS.forEach(b => { if (beatComplete(b, _wctx)) S.welcome.claimed.push(b.id); });
+      }
       // Contracts 2.0 — per-client reputation + tier/deadline on in-flight orders
       if (!("contractRep" in parsed) || !S.contractRep || typeof S.contractRep !== "object") S.contractRep = {};
       if (!("contractsExpired" in S.counters)) S.counters.contractsExpired = 0;
@@ -8970,7 +9040,7 @@ function renderSkillPanel(skill){
 }
 function renderInventoryPanel(){
   const entries = Object.entries(S.items).filter(([,q])=>q>0);
-  let html = `<div class="panel"><h2>📦 Warehouse</h2>${tutObjectiveHtml()}<div class="inv">`;
+  let html = `<div class="panel"><h2>📦 Warehouse</h2>${tutObjectiveHtml()}${welcomeObjectiveHtml()}<div class="inv">`;
   if (!entries.length) html += `<span style="color:var(--dim);font-size:12px;">Empty. The auditors would approve. Go mine something.</span>`;
   entries.forEach(([id,q])=>{
     // highlight the item the current objective wants, so progress is obvious
@@ -12106,6 +12176,7 @@ setInterval(()=>{
   updateProgressBar();
   sampleNetWorth();   // LE4: throttled net-worth history sampling
   checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
+  checkWelcome();           // M15: auto-grant the Getting Started starter ladder
   checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
   checkStory();             // nudge when a Founder's Trail chapter becomes readable
   checkLore();              // reveal a Valley Lore waystone when the player reaches it
