@@ -490,45 +490,49 @@ function scenarioForTab(tab){
 // A file-based playlist engine (HTMLAudioElement). Loops a shuffled bucket; the
 // exclusive radio drives it directly with a single-track playlist.
 const FILEMUSIC = (() => {
-  let el = null, key = null, list = [], idx = 0, volMult = 1.0, base = 0.75, fadeTimer = null;
+  let el = null, key = null, list = [], idx = 0, volMult = 1.0, base = 0.75;
   function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
   function target(){ return Math.max(0, Math.min(1, base * volMult)); }
   function make(src){
     const a = new Audio(encodeURI('./' + src));
     a.preload = 'auto'; a.loop = (list.length <= 1);
-    a.volume = 0;
+    a.volume = 0; (a as any)._fadeTimer = null;
     a.addEventListener('ended', () => { if (list.length > 1 && el === a) advance(); });
     return a;
   }
-  function fadeTo(a, to, done){
-    if (fadeTimer){ clearInterval(fadeTimer); fadeTimer = null; }
+  // Per-element fade so a fade-out and a fade-in can run at once without clobbering
+  // each other (the old track always completes its fade and pauses).
+  function fadeEl(a, to, done){
+    if (!a) return;
+    if (a._fadeTimer){ clearInterval(a._fadeTimer); a._fadeTimer = null; }
     const step = (to - a.volume) / 12;
-    fadeTimer = setInterval(() => {
+    if (Math.abs(step) < 0.0001){ try{ a.volume = to; }catch(e){} if (done) done(); return; }
+    a._fadeTimer = setInterval(() => {
       try{ a.volume = Math.max(0, Math.min(1, a.volume + step)); }catch(e){}
       if ((step >= 0 && a.volume >= to - 0.01) || (step < 0 && a.volume <= to + 0.01)){
         try{ a.volume = to; }catch(e){}
-        clearInterval(fadeTimer); fadeTimer = null; if (done) done();
+        clearInterval(a._fadeTimer); a._fadeTimer = null; if (done) done();
       }
     }, 45);
   }
   function swapTo(src){
     const old = el;
-    if (old){ fadeTo(old, 0, () => { try{ old.pause(); }catch(e){} }); }
+    if (old){ fadeEl(old, 0, () => { try{ old.pause(); old.src = ''; }catch(e){} }); }
     el = make(src);
     const a = el;
-    a.play().then(() => fadeTo(a, target())).catch(() => {});
+    a.play().then(() => fadeEl(a, target())).catch(() => { try{ a.volume = target(); }catch(e){} });
   }
   function advance(){ if (!list.length) return; idx = (idx + 1) % list.length; swapTo(list[idx]); }
   return {
     // Start (or keep) a scenario playlist. key guards against needless restarts.
     playList(newKey, srcs){
       if (!srcs || !srcs.length){ this.stop(); return; }
-      if (key === newKey && el){ if (el.volume < target() - 0.02 && !fadeTimer) fadeTo(el, target()); return; }
+      if (key === newKey && el){ if (el.volume < target() - 0.02 && !el._fadeTimer) fadeEl(el, target()); return; }
       key = newKey; list = shuffle(srcs.slice()); idx = 0; swapTo(list[0]);
     },
-    stop(){ if (fadeTimer){ clearInterval(fadeTimer); fadeTimer = null; } if (el){ const old = el; fadeTo(old, 0, () => { try{ old.pause(); }catch(e){} }); } el = null; key = null; },
-    setVol(v){ base = v; if (el && !fadeTimer) { try{ el.volume = target(); }catch(e){} } },
-    setVolMult(m){ volMult = m; if (el && !fadeTimer) { try{ el.volume = target(); }catch(e){} } },
+    stop(){ if (el){ const old = el; fadeEl(old, 0, () => { try{ old.pause(); old.src = ''; }catch(e){} }); } el = null; key = null; },
+    setVol(v){ base = v; if (el && !el._fadeTimer) { try{ el.volume = target(); }catch(e){} } },
+    setVolMult(m){ volMult = m; if (el && !el._fadeTimer) { try{ el.volume = target(); }catch(e){} } },
     playing(k){ return key === k && !!el; },
   };
 })();
