@@ -24,7 +24,7 @@ export const DISTRICTS: District[] = [
     hub:[16,29], buildings:['depot','stall_marge','stall_bolt','stall_perry','stall_finn'], unlock:{type:'open'} },
   { id:'retail', name:'Retail High Street', ic:'🛍️', color:'#e05a80',
     blurb:'Shops, services and nightlife along the bustling high street.',
-    hub:[30,5], buildings:['retail','postoffice','estateagent','bike_shop','furniture_shop','pub','nightclub','police_station'], unlock:{type:'open'} },
+    hub:[30,5], buildings:['retail','postoffice','estateagent','bike_shop','furniture_shop','frost_lodge','pub','nightclub','police_station'], unlock:{type:'open'} },
   { id:'residential', name:'Residential & Leisure', ic:'🏡', color:'#6aaa5a',
     blurb:'Cottages, the café, the park and the trophy hall — home life.',
     hub:[68,28], buildings:['cafe','barn','trophy','player_home'], prefixes:['home_'], unlock:{type:'open'} },

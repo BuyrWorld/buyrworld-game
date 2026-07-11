@@ -871,6 +871,7 @@ const INTERIOR_RESIDENTS = {
   village_fund:   { name:"The Committee",x:90,  y:76,  lines:["Every donation makes the valley bloom.","We've grand plans for the village green.","Thank you kindly for your generosity."] },
   contracts:      { name:"Depot Clerk",  x:43,  y:120, lines:["Orders keep piling up — grand for business!","Deliver the goods, collect your coin.","Bigger orders pay the most, mind.","The lorry's due in any minute now."] },
   upgrades:       { name:"The Mayor",    x:160, y:56,  lines:["Welcome to the Town Hall!","Invest your profits — every upgrade pays for itself.","A prosperous founder makes a prosperous valley.","We're always improving Featherstone."] },
+  frost_lodge:    { name:"Frost",        x:160, y:148, lines:["Welcome to the lodge — warm yourself by the fire! What do you need a hand with?","Stuck on something? Mining, trade, contracts — ask away, I've done the lot.","Buy low when the arrow's red, sell high when it's green. That's the whole MBA.","Deliver contracts to level Logistics and open up the Harbour.","Never too late for a chat. Stay frosty."] },
 };
 let _intChat = null; // {name, lines, idx} — the resident NPC you're currently chatting with
 // ---- Dialogue system v2: ambient, situational, legible speech bubbles ----
@@ -1192,7 +1193,7 @@ const HEARTBEAT_POOL = [
     return `🪙 You spotted ${amt} coins ${_where[Math.floor(Math.random()*_where.length)]} — into the purse they go!`;
   }},
 ];
-const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub","robotics_lab","data_centre"]);
+const INTERIOR_TABS = new Set(["mining","steelworks","manufacturing","crafting","contracts","trade","pets","upgrades","ach","woodcutting","fishing","foraging","home","school","cafe","myhome","bank","exchange","university","retail","postoffice","estateagent","lore_stone","bike_shop","notice_board","harbour_office","boat_hire","fishmonger_wh","village_fund","seasonal_market","furniture_shop","pub","police_station","police_cell","nightclub","robotics_lab","data_centre","frost_lodge"]);
 const PROPERTIES = [
   { id:"cottage_a", n:"Valley Cottage",   desc:"A cosy rental by the river. Reliable steady yield.",   cost:3000,  rent:2  },
   { id:"flat_b",    n:"Market Flat",      desc:"Above the market hall. High footfall, good yield.",     cost:10000, rent:8  },
@@ -5690,6 +5691,25 @@ function drawInterior(t){
     // reg NPC at chart table
     const _hwx = W/2-24 + Math.sin(t*0.25)*6;
     drawPerson(ctx, _hwx, 80, "#3a2a1a", "#2a4a6a", t, false, IP.x >= _hwx ? 1 : -1, null, "down");
+  } else if (S.tab==="frost_lodge"){
+    // The Valley Lodge — Frost's cosy home: warm timber, a fire, snowy-blue trim
+    room("#3a4650","#4a5a68","#8a6a44","#7a5a34","#20282e");
+    // window with a wintry view
+    ctx.fillStyle="#2a3a4a"; ctx.fillRect(W-40,14,26,20); ctx.fillStyle="#bfe8f7"; ctx.fillRect(W-38,16,22,16);
+    ctx.strokeStyle="#20282e"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(W-27,16); ctx.lineTo(W-27,32); ctx.moveTo(W-38,24); ctx.lineTo(W-16,24); ctx.stroke();
+    // hearth + fire
+    ctx.fillStyle="#5a4030"; ctx.fillRect(24,60,44,H-84); ctx.fillStyle="#2a1a12"; ctx.fillRect(30,H-40,32,16);
+    const _fl = 0.5+Math.abs(Math.sin(t*6))*0.5; ctx.globalAlpha=_fl; drawEmojiC(ctx,"🔥",46,H-34,16); ctx.globalAlpha=1;
+    drawEmojiC(ctx,"🖼️",46,40,14);
+    // rug, armchair, kettle
+    ctx.fillStyle="#8a3a3a"; ctx.fillRect(W/2-30,H-46,60,20); ctx.fillStyle="#6a2a2a"; ctx.fillRect(W/2-30,H-46,60,3);
+    drawEmojiC(ctx,"🪑",W-52,H-40,15); drawEmojiC(ctx,"🫖",W-30,H-52,11);
+    // Frost is home in the evenings/at night; out and about by day
+    if (isNight() || gameHour() >= 18.5){
+      const _fx = W*0.5 + Math.sin(t*0.3)*5;
+      drawPerson(ctx, _fx, H-52, "#17161a", "#bfe8f7", t, false, IP.x >= _fx ? 1 : -1, null, "down");
+      drawEmojiC(ctx,"❄️",_fx+12,H-64,10);
+    }
   } else if (S.tab==="boat_hire"){
     // Boat Hire shack — weathered timber, sandy floor
     room("#4a3820","#6a5030","#c0a060","#b09050","#2a1808");
@@ -11476,6 +11496,7 @@ function renderMain(){
     else if (S.tab==="police_cell") m.innerHTML = _withRoom("🚔 Holding Cell — Featherstone Constabulary", renderPoliceCellPanel());
     else if (S.tab==="notice_board") m.innerHTML = _withRoom("📋 Village Notice Board", renderNoticeBoard());
     else if (S.tab==="harbour_office") m.innerHTML = _withRoom("⚓ Harbourmaster's Office", renderHarbourOffice());
+    else if (S.tab==="frost_lodge") m.innerHTML = _withRoom("🏡 The Valley Lodge", `<div class="panel" style="padding:10px"><h3 style="margin:0 0 6px;font-size:14px">🏡 The Valley Lodge</h3><p style="color:var(--dim);font-size:12px;margin:0">Frost's cosy home. He's here in the evenings and after dark — pop in for a warm welcome and a hand with anything you're stuck on. By day he's out and about the valley.</p></div>`);
     else if (S.tab==="boat_hire") m.innerHTML = _withRoom("⛵ Featherstone Boat Hire", renderBoatHire());
     else if (S.tab==="fishmonger_wh") m.innerHTML = _withRoom("🐟 Pearl's Fish Warehouse", renderFishmongerWH());
     else if (S.tab==="home"){

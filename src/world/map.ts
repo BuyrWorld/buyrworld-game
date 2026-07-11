@@ -124,6 +124,7 @@ export const V_OBJECTS: WorldObject[] = [
   { id: 'bike_shop',   kind: 'bld',   tx: 29, ty: 2,  w: 2, h: 2, tab: 'bike_shop',     name: 'Cycle Shop',      ic: '🚲', wall: '#c8d8c0', roof: '#3a6a3a' },
   { id: 'notice_board',   kind: 'sign', tx: 35, ty: 3,  w: 1, h: 1, tab: 'notice_board',   name: 'Notice Board',     ic: '📋' },
   { id: 'furniture_shop', kind: 'bld',  tx: 37, ty: 2,  w: 2, h: 2, tab: 'furniture_shop', name: "Nell's Home Store", ic: '🛋️', wall: '#e8d8c0', roof: '#8a5a40' },
+  { id: 'frost_lodge',    kind: 'bld',  tx: 44, ty: 2,  w: 2, h: 2, tab: 'frost_lodge',    name: 'The Valley Lodge',  ic: '🏡', wall: '#cfe6f2', roof: '#3a6a8a' },
   { id: 'pub',            kind: 'bld',  tx: 52, ty: 2,  w: 3, h: 2, tab: 'pub',            name: 'The Rose & Pallet', ic: '🍺', wall: '#5a3020', roof: '#2a1010' },
   { id: 'police_station', kind: 'bld',  tx: 57, ty: 2,  w: 3, h: 2, tab: 'police_station', name: 'Featherstone Police Station', ic: '🚔', wall: '#c0c8d8', roof: '#2a3a5a' },
   { id: 'nightclub',      kind: 'bld',  tx: 62, ty: 2,  w: 3, h: 2, tab: 'nightclub',      name: 'Club Featherstone', ic: '🪩', wall: '#2a1a3a', roof: '#c02090' },
