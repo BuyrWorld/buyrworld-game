@@ -16,7 +16,8 @@ export const TUTORIAL_STEPS = [
 ] as const;
 
 // The guaranteed tutorial contract spec (never rotated, never expires while active).
-export const TUTORIAL_CONTRACT = { client: 'Featherstone Works (Tutorial Order)', item: 'bracket', qty: 3, coins: 200, xp: 30 };
+// coins trimmed to 150 for the audited tutorial reward budget (Milestone 5)
+export const TUTORIAL_CONTRACT = { client: 'Featherstone Works (Tutorial Order)', item: 'bracket', qty: 3, coins: 150, xp: 30 };
 
 // During the tutorial, producing `itemId` should stop the job once the player has
 // its target in hand — so no swing/yield/idle cycle overshoots the exact amount.

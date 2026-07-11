@@ -215,6 +215,9 @@ main{ flex:1; width:100%; max-width:1400px; margin:0 auto; padding:14px; }
 /* M4: 3-screen character creator — scrollable option groups + visible keyboard focus */
 #wiz-options{ max-height:250px; overflow-y:auto; padding-right:4px; }
 .swatch:focus-visible, .swatch-txt:focus-visible, #wiz-back:focus-visible, #wiz-next:focus-visible, #name-input:focus-visible, #btn-start:focus-visible, #btn-quick:focus-visible{ outline:2px solid #ffd666; outline-offset:2px; }
+/* M5: collapsible activity log (keeps it from hogging the screen) */
+#log.collapsed{ max-height:0; overflow:hidden; padding-top:0; padding-bottom:0; margin:0; }
+#log{ transition:max-height .2s ease; }
 /* M4: text-size accessibility setting */
 body.text-large .panel, body.text-large .log, body.text-large .obj-tracker, body.text-large .vhint, body.text-large .say p{ font-size:1.13em; }
 body.text-small .panel, body.text-small .log, body.text-small .obj-tracker, body.text-small .vhint, body.text-small .say p{ font-size:0.9em; }
@@ -694,6 +697,10 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 </div>
 
 <div id="zone-card" role="status" aria-live="polite"></div>
+<div id="log-header" style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--dim);padding:3px 6px 0;user-select:none">
+  <span>📜 Activity log</span>
+  <button id="log-collapse" aria-label="Collapse activity log" title="Collapse/expand log" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:0 4px">▾</button>
+</div>
 <div id="log" aria-live="polite"></div>
 <div id="toast" role="status"></div>
 

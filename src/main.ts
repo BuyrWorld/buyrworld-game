@@ -20,6 +20,7 @@ import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
+import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -230,16 +231,16 @@ function frostSvg(size){
 // 3 brackets → deliver 3 brackets via the guaranteed Tutorial Order.
 const TUT = [
   { say:()=>`Hey ${pName()}! Frost here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>6 Iron Ore</b>. It'll stop on its own when you've got enough.`,
-    obj:"Mine 6 Iron Ore", cond:()=> itemCount("iron_ore") >= 6, reward:60,
+    obj:"Mine 6 Iron Ore", cond:()=> itemCount("iron_ore") >= 6, reward:TUTORIAL_REWARDS.mine,
     target:"rock_iron4", where:"Quarry (far west)", cur:()=>itemCount("iron_ore"), max:6 },
   { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk to the <b>Furnace</b> (the building with the chimney, west of the quarry) and smelt <b>3 Iron Bars</b> — exactly what your 6 ore makes.`,
-    obj:"Smelt 3 Iron Bars", cond:()=> itemCount("iron_bar") >= 3, reward:90,
+    obj:"Smelt 3 Iron Bars", cond:()=> itemCount("iron_bar") >= 3, reward:TUTORIAL_REWARDS.smelt,
     target:"furnace", where:"The Furnace", cur:()=>itemCount("iron_bar"), max:3 },
   { say:()=>`Toasty! Now make something someone will pay for — pop into the <b>Workshop</b> next door and press <b>3 Brackets</b> from your 3 bars.`,
-    obj:"Press 3 Brackets", cond:()=> itemCount("bracket") >= 3, reward:120,
+    obj:"Press 3 Brackets", cond:()=> itemCount("bracket") >= 3, reward:TUTORIAL_REWARDS.make,
     target:"workshop", where:"The Workshop", cur:()=>itemCount("bracket"), max:3 },
   { say:()=>`Last step: head to the <b>Depot</b> and deliver the <b>Tutorial Order</b> — it wants exactly your 3 Brackets, pinned to the top of your contracts.`,
-    obj:"Deliver the Tutorial Order", cond:()=> !!S.tutContractDone, reward:200,
+    obj:"Deliver the Tutorial Order", cond:()=> !!S.tutContractDone, reward:TUTORIAL_REWARDS.deliver,
     target:"depot", where:"The Depot", cur:()=>(S.tutContractDone?1:0), max:1 },
 ];
 // Current tutorial objective + live progress (for the Warehouse panel & banner).
@@ -260,7 +261,8 @@ function tutCheck(){
   while (S.tut.step < TUT.length && TUT[S.tut.step].cond()){
     const st = TUT[S.tut.step];
     S.coins += st.reward;
-    toast(`❄️ FROST: NICE ONE! +${st.reward} COINS`);
+    endLogGroup();   // an objective completion breaks the grouped-production run
+    notify(`❄️ Frost: nice one! +${st.reward} coins`, 'tutorial_step');
     log(`❄️ Frost approves — objective complete (<b>+${st.reward} coins</b>).`, "good");
     // M2: make the win land — a burst + a chime on every tutorial step
     try{ SFX.levelUp(); }catch(e){}
@@ -269,15 +271,47 @@ function tutCheck(){
   }
   if (S.tut.step >= TUT.length && !S.tut.done){
     S.tut.done = true;
+    S.action = null;                 // stop any manual tutorial job
+    S.coins += TUTORIAL_REWARDS.completeBonus;   // one-time completion bonus (audited budget)
+    endLogGroup();
     log(`❄️ Frost: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
-    // M2: no dead moment — hand straight off to the Getting Started ladder + reveal advanced HUD
     try{ SFX.fanfare(); }catch(e){}
-    toast("🌟 Tutorial complete! Frost's lined up your next goals — see 'Getting Started'.");
-    log(`🌟 <b>Getting Started</b> — your next goals are ready. Watch the tracker in your Warehouse panel and keep the coins rolling in.`, "good");
     try{ syncOnboardingUI(); }catch(e){}
+    try{ showTutorialSummary(); }catch(e){}   // the single "Your First Supply Chain" summary
   }
   try{ ensureTutorialContract(); }catch(e){}   // pin/remove the guaranteed Tutorial Order as the stage changes
   if (advanced){ updateHud(); save(); }
+}
+// M5: the single "Your First Supply Chain" summary, shown once when the tutorial ends.
+function showTutorialSummary(){
+  if (document.getElementById('tut-summary')) return;
+  const rep = (S.contractRep && S.contractRep[TUTORIAL_CONTRACT.client]) || 2;
+  const el=document.createElement('div'); el.id='tut-summary';
+  el.style.cssText='position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px';
+  el.innerHTML=`<div class="panel" style="padding:16px;max-width:400px;text-align:center">
+    <h2 style="margin:0 0 4px;font-size:18px">🏭 Your First Supply Chain</h2>
+    <p style="font-size:12px;color:var(--dim);margin:0 0 10px">You took raw ore all the way to a paid customer order — the heart of BuyrWorld.</p>
+    <div style="text-align:left;font-size:12px;line-height:1.9;background:rgba(255,255,255,.04);border-radius:6px;padding:8px 12px;margin-bottom:10px">
+      ✅ Gathered <b>6 Iron Ore</b><br>✅ Smelted <b>3 Iron Bars</b><br>✅ Manufactured <b>3 Brackets</b><br>✅ Delivered your first customer contract</div>
+    <div style="font-size:12px;line-height:1.8;margin-bottom:10px">
+      Contract payment: <b>${fmt(TUTORIAL_CONTRACT.coins)} coins</b><br>
+      Tutorial bonus: <b>${fmt(TUTORIAL_REWARDS.completeBonus)} coins</b><br>
+      Total coins now: <b>${fmt(S.coins)}</b><br>
+      Customer reputation: <b>+${rep}</b> with ${esc(TUTORIAL_CONTRACT.client.replace(' (Tutorial Order)',''))}</div>
+    <div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:6px">What next?</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+      ${NEXT_ACTIONS.map((a,i)=>`<button data-next="${i}" style="background:#3a5a6a;color:#fff;border:none;padding:7px;border-radius:5px;cursor:pointer;font-size:12px">${['🔥','🗺️','📋'][i]} ${a}</button>`).join('')}</div>
+    <button id="tut-sum-close" style="background:#2a5a2a;color:#fff;border:none;padding:8px 20px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:700;width:100%">Let's go! ▶</button>
+  </div>`;
+  document.body.appendChild(el);
+  const finish=()=>{ el.remove(); notify("🌟 New goals ready — see 'Getting Started' in your Warehouse.", 'system_unlock'); };
+  document.getElementById('tut-sum-close')!.onclick=finish;
+  el.querySelectorAll('[data-next]').forEach(b=>(b as HTMLElement).onclick=()=>{
+    const i=+(b as HTMLElement).dataset.next!; el.remove();
+    S.tab = i===0 ? 'steelworks' : i===2 ? 'contracts' : 'village';
+    renderNav(); renderMain(); save();
+    notify("🌟 New goals ready — see 'Getting Started' in your Warehouse.", 'system_unlock');
+  });
 }
 function tutBannerHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
@@ -2845,7 +2879,7 @@ function checkDistrictUnlocks(){
   for (const d of DISTRICTS){
     if (d.unlock.type==='level' && tl >= (d.unlock as any).n && !S.announcedDistricts.includes(d.id)){
       S.announcedDistricts.push(d.id);
-      toast(`${d.ic} ${d.name} unlocked!`);
+      notify(`${d.ic} ${d.name} district unlocked!`, 'district_unlocked');
       log(`${d.ic} <b>${d.name}</b> is now open — find it via the 🗺️ Town Directory! (Total level ${(d.unlock as any).n})`, "good");
     }
   }
@@ -9393,18 +9427,49 @@ function effCost(act, id, q){
   return cost;
 }
 
+// M5: consecutive identical log lines collapse into "… ×N" instead of many rows.
+let _logGroup: any = null;   // { el, base, count }
 function log(msg, cls){
-  const el = document.createElement("p");
+  const box = $("#log");
   const t = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
-  el.innerHTML = `<span class="t">[${t}]</span><span class="${cls||""}">${msg}</span>`;
-  const box = $("#log"); box.prepend(el);
+  if (_logGroup && _logGroup.base === msg && _logGroup.el.parentNode === box && box.firstChild === _logGroup.el){
+    _logGroup.count++;
+    _logGroup.el.querySelector(".t").textContent = `[${t}]`;
+    _logGroup.el.querySelector(".logmsg").innerHTML = msg + ` <span class="logx" style="opacity:.75;font-weight:700">×${_logGroup.count}</span>`;
+    return;
+  }
+  const el = document.createElement("p");
+  el.innerHTML = `<span class="t">[${t}]</span><span class="${cls||""} logmsg">${msg}</span>`;
+  box.prepend(el);
+  _logGroup = { el, base: msg, count: 1 };
   while (box.children.length > 60) box.removeChild(box.lastChild);
 }
+// End the current log group (a new/important event starts a fresh line next time).
+function endLogGroup(){ _logGroup = null; }
+// ---- M5: managed notifications (one important/critical toast at a time; routine may replace) ----
 let toastTimer = null;
-function toast(msg){
+let _noticeQueue: any[] = []; let _noticeSeq = 0; let _noticeShowing = false;
+function toast(msg){ notify(msg, 'routine'); }   // legacy callers → routine feedback
+function _showToastRaw(msg, ms){
   const t = $("#toast"); t.textContent = msg; t.classList.remove("show");
   void t.offsetWidth; t.classList.add("show");
-  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove("show"), 2600);
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove("show"), ms);
+}
+function _processNotice(){
+  if (_noticeShowing) return;
+  const i = _notifyNext(_noticeQueue);
+  if (i < 0) return;
+  const n = _noticeQueue.splice(i, 1)[0];
+  _noticeShowing = true;
+  _showToastRaw(n.msg, notifyDuration(n.priority));
+  setTimeout(()=>{ _noticeShowing = false; _processNotice(); }, notifyDuration(n.priority) + 250);
+}
+// Route feedback by category: important/critical are queued and shown one at a
+// time; routine uses immediate small feedback (and won't clobber a managed toast).
+function notify(msg, category='routine'){
+  const p = notifyPriority(category);
+  if (isManaged(p)){ _noticeQueue.push({ msg, priority:p, seq:_noticeSeq++ }); _processNotice(); }
+  else if (!_noticeShowing){ _showToastRaw(msg, 1800); }
 }
 
 function grantXp(skill, xp){
@@ -9423,11 +9488,12 @@ function grantXp(skill, xp){
   if (after > before){
     showLevelBurst(skill, after);
     if (typeof SFX !== "undefined") SFX.levelUp();
+    endLogGroup();   // a level-up is its own distinct log line, not part of a ×N run
     log(`${SKILLS[skill].n} reached level <b>${after}</b>.`, "good");
     if (SKILL_PERKS[skill]){
       for (const t of [10,25,40]){
         if (after >= t && before < t){
-          toast(`⭐ Perk unlocked! Open the ${SKILLS[skill].n} panel to choose your level ${t} talent.`);
+          notify(`⭐ Perk unlocked! Open the ${SKILLS[skill].n} panel to choose your level ${t} talent.`, 'skill_level');
           log(`⭐ <b>${SKILLS[skill].n} perk</b> available at level ${t} — open the panel to choose.`, "good");
         }
       }
@@ -9768,7 +9834,7 @@ function deliverContract(i){
   S.counters.coinsEarned = (S.counters.coinsEarned||0) + payout;
   grantXp("logistics", c.xp);
   S.counters.contracts++;
-  if (c.tutorial) S.tutContractDone = true;   // completes the tutorial delivery stage (guaranteed, no dup)
+  if (c.tutorial){ S.tutContractDone = true; if (!S.contractRep) S.contractRep = {}; S.contractRep[c.client] = 2; }   // completes the tutorial delivery stage + a starter reputation for the summary
   // Reward the relationship: on-time delivery builds standing with this client (skip the tutorial order).
   if (S.contractRep && !c.tutorial){
     const before = repRank(clientRep(c.client)).name;
@@ -9846,7 +9912,7 @@ function syncTabUnlocks(silent){
       S.unlockedTabs[id] = true; changed = true;
       if (!silent){
         const t = TABS.find(x => x.id === id);
-        if (t){ toast(`🔓 ${t.ic} ${t.n} unlocked!`); log(`🔓 <b>${t.n}</b> is now available in your tabs.`, "good"); }
+        if (t){ notify(`🔓 ${t.ic} ${t.n} unlocked!`, 'system_unlock'); log(`🔓 <b>${t.n}</b> is now available in your tabs.`, "good"); }
       }
     }
   }
@@ -13430,6 +13496,12 @@ applyTextScale();
 document.getElementById("btn-settings")?.addEventListener("click", () => openSettings());
 document.getElementById("btn-settings-hud")?.addEventListener("click", () => openSettings());
 document.getElementById("btn-about")?.addEventListener("click", () => openRoadmap());
+// M5: collapsible activity log
+{ const _lc=document.getElementById("log-collapse"), _lg=document.getElementById("log");
+  if (_lc && _lg){
+    if (S.logCollapsed){ _lg.classList.add("collapsed"); _lc.textContent="▸"; }
+    _lc.onclick = ()=>{ const c=_lg.classList.toggle("collapsed"); S.logCollapsed=c; _lc.textContent=c?"▸":"▾"; _lc.setAttribute("aria-label", c?"Expand activity log":"Collapse activity log"); save(); };
+  } }
 // Continue (save summary) — shown on the title when a valid save exists
 (()=>{
   const sum = S.playerName ? saveSummary({ name:S.playerName, totalLevel:totalLvl(), coins:S.coins, lastSeen:S.lastSeen, legacy:S.legacy }) : null;
