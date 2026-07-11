@@ -24,6 +24,7 @@ import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBea
 import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, reliabilityLabel, reliabilityStars } from './data/suppliers.ts';
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
+import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
@@ -419,6 +420,9 @@ const MUSIC = (() => {
 })();
 function updateMusicZone(){
   if (MUSIC.unlocked && S.settings && S.settings.music){
+    // Holding cell: slow, restrained ambience at a hushed volume (its own hook),
+    // fading in on arrival and back out to the town on release via the track change.
+    if (S.tab === "police_cell"){ MUSIC.setVolMult(0.18); MUSIC.play("home"); return; }
     const isHome = S.tab === "home";
     const isInterior = INTERIOR_TABS.has(S.tab) && S.tab !== "village";
     MUSIC.setVolMult(isHome ? 0.28 : isInterior ? 0.42 : 1.0);
@@ -6613,10 +6617,31 @@ function drawInterior(t){
     ctx.translate(Math.round(W*0.34),28); ctx.rotate(-0.06); fitText(ctx,"I WOZ 'ERE",0,0,64,9,{weight:"bold",family:"'Comic Sans MS',cursive",baseline:"middle"}); ctx.restore();
     ctx.save(); ctx.fillStyle="rgba(230,210,210,.42)";
     ctx.translate(Math.round(W*0.60),20); ctx.rotate(0.05); fitText(ctx,"♥ BETTY",0,0,52,9,{weight:"bold",family:"'Comic Sans MS',cursive",baseline:"middle"}); ctx.restore();
-    // cellmate + a crisp, readable speech bubble
-    const _cmX=W*0.74, _cmY=H*0.66;
-    drawPerson(ctx,_cmX,_cmY,"#3a3a3a","#5a5a5a",t,false,-1,null,"left","#c89060","#3a3a3a",null,false);
-    const _cLines=["First time? Heh. Won't be.","*snores loudly*","I was framed. Again.","The chips in here are terrible.","Officer Plonk's got it in for me.","You smell like someone else's house."];
+    // cellmate — cycles believable states (sleep/sit/pace/idle/talk) so he's never frozen
+    const _cmState = prisonerState(t);
+    const _pacing = _cmState === "pace";
+    const _cmBaseX = W*0.74;
+    const _cmX = _pacing ? _cmBaseX + Math.sin(t*1.4)*22 : _cmBaseX;   // paces back and forth
+    let _cmY = H*0.66;
+    let _cmDir = "left", _cmMoving = false;
+    if (_cmState === "sleep"){ _cmY = 66; }                            // lies on the bunk
+    else if (_cmState === "pace"){ _cmMoving = true; _cmDir = Math.cos(t*1.4) >= 0 ? "right" : "left"; }
+    else if (_cmState === "sit"){ _cmY = H*0.70; }
+    const _cmFacing = _cmDir === "right" ? 1 : -1;
+    if (_cmState === "sleep"){
+      // asleep on the bunk — head on the pillow, Zzz
+      ctx.fillStyle="#c89060"; ctx.beginPath(); ctx.arc(60, 70, 5, 0, 7); ctx.fill();
+      ctx.fillStyle="#3a3a3a"; ctx.fillRect(55, 64, 10, 4);
+      ctx.fillStyle="#6558a0"; ctx.fillRect(24, 74, 44, 12);
+      ctx.globalAlpha=0.3+Math.max(0,Math.sin(t*1.3))*0.25; ctx.fillStyle="#c9c4e6"; ctx.font="italic bold 9px 'IBM Plex Mono',monospace"; ctx.fillText("Zzz", 70, 60); ctx.globalAlpha=1;
+    } else {
+      drawPerson(ctx,_cmX,_cmY,"#3a3a3a","#5a5a5a",t,_cmMoving,_cmFacing,null,_cmDir,"#c89060","#3a3a3a",null,false,1.0,'none','#2a1a0a',{ shoes:"#2a2a30" });
+    }
+    // crime-specific chat + a couple of ambient lines, cycling
+    const _lesson = lessonFor(S.caught?.offence || "trespassing");
+    const _cLines = _cmState === "sleep" ? ["*snores loudly*"]
+      : _cmState === "talk" ? _lesson.lines
+      : ["First time? Heh. Won't be.","The chips in here are terrible.","Officer Plonk's got it in for me.","Reckon they'll let us out by teatime."];
     const _cl=_cLines[Math.floor(Date.now()/6000)%_cLines.length];
     ctx.font="bold 8px 'IBM Plex Mono',monospace"; const _cbw=Math.ceil(ctx.measureText(_cl).width)+14;
     const _cbx=Math.max(4,_cmX-_cbw-2), _cby=_cmY-40;
@@ -7114,8 +7139,11 @@ const _STOLEN_FOODS = ["mushroom","berries","wild_herb","berry_jam","herb_tea","
 function _arrestPlayer(){
   const _fine = Math.floor(S.coins * 0.20);
   S.coins = Math.max(0, S.coins - _fine);
-  const _dur = DAY_DURATION_MS * (S.stolen ? 2 : 1);
-  S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur };
+  // classify the offence for the cellmate's crime-specific chat
+  const _drunk = !!(S.drunkUntil && Date.now() < S.drunkUntil);
+  const _off = S.stolen ? (S.trespass?.homeId ? "burglary" : "theft") : (_drunk ? "drunk" : "trespassing");
+  const _dur = cellDuration(!!S.stolen);
+  S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur, offence: _off, acts: [] };
   S.trespass = { active: false, homeId: null };
   S.stolen = false;
   S.fleeUntil = 0;
@@ -7123,9 +7151,10 @@ function _arrestPlayer(){
   IP.x = icanvasW()/2; IP.y = icanvasH() - 60;
   IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
   CHAT_NPC = null;
-  if (_fine > 0) log(`🚔 Arrested! ${fmt(_fine)} coin fine. Sentence: ${S.caught.maxTime === DAY_DURATION_MS ? "24" : "48"} game-hours.`, "bad");
-  else log(`🚔 Arrested! Sentence: ${S.caught.maxTime === DAY_DURATION_MS ? "24" : "48"} game-hours.`, "bad");
+  if (_fine > 0) log(`🚔 Arrested for ${lessonFor(_off).name.toLowerCase()}! ${fmt(_fine)} coin fine. Held for about five in-game minutes.`, "bad");
+  else log(`🚔 Arrested for ${lessonFor(_off).name.toLowerCase()}! Held for about five in-game minutes.`, "bad");
   toast(`🚔 YOU'VE BEEN NICKED! ${_fine > 0 ? `${fmt(_fine)} coins fined.` : ""}`);
+  updateMusicZone();
   renderNav(); renderMain(); save();
 }
 function villageFrame(ts){
@@ -7772,6 +7801,14 @@ function load(){
       if (!("fleeUntil" in parsed)) S.fleeUntil = 0;
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
+      // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
+      // (24h/48h) sentence so old detained saves aren't stuck for real-world minutes.
+      if (S.caught && !Array.isArray(S.caught.acts)) S.caught.acts = [];
+      if (S.caught && !("offence" in S.caught)) S.caught.offence = "trespassing";
+      if (S.caught?.active){
+        const _maxNew = CELL_MS_BASE + CELL_MS_STOLEN_EXTRA;
+        if ((S.caught.cellUntil||0) - Date.now() > _maxNew){ S.caught.cellUntil = Date.now() + _maxNew; S.caught.maxTime = _maxNew; }
+      }
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
@@ -11321,11 +11358,9 @@ function drawCharPreview(canvasId: string){
 function renderPoliceCellPanel(){
   const _now = Date.now();
   const _cellUntil = S.caught?.cellUntil || 0;
-  const _maxTime = S.caught?.maxTime || DAY_DURATION_MS;
-  const _remaining = Math.max(0, _cellUntil - _now);
+  const _maxTime = S.caught?.maxTime || CELL_MS_BASE;
+  const _remaining = remainingMs(_cellUntil, _now);
   const _free = _remaining <= 0;
-  const _gameHrsLeft = Math.ceil(_remaining / (DAY_DURATION_MS / 24));
-  const _minsLeft = Math.ceil(_remaining / 60000);
   const _pct = _free ? 0 : Math.round((_remaining / _maxTime) * 100);
   if (_free){
     return `<div class="panel" style="padding:10px">
@@ -11337,21 +11372,32 @@ function renderPoliceCellPanel(){
   const _dealCost = Math.max(20, Math.round(S.coins * 0.15));
   const _canDeal = S.coins >= _dealCost;
   const _rmMin = Math.floor(_remaining/60000), _rmSec = Math.floor((_remaining%60000)/1000);
+  const _lesson = lessonFor(S.caught?.offence || "trespassing");
+  const _acts = S.caught?.acts || [];
+  const _lessonLines = _lesson.lines.map(l => `<div style="font-size:11px;color:#d8d0e8;margin:2px 0">💬 “${l}”</div>`).join('');
+  const _actBtns = CELL_ACTIVITIES.map(a => {
+    const done = _acts.includes(a.id);
+    return `<button data-cell-act="${a.id}" ${done?'disabled':''} style="text-align:left;background:${done?'#2a2a30':'#33333c'};color:${done?'#6a6a72':'#e8e8ee'};border:1px solid #44444e;border-radius:5px;padding:5px 8px;font-size:11px;cursor:${done?'default':'pointer'}">${a.ic} ${a.label}${done?' ✓':` <span style="color:var(--dim)">−${Math.round(a.cutMs/1000)}s</span>`}</button>`;
+  }).join('');
   return `<div class="panel" style="padding:10px">
     <h3 style="color:#ff8870;margin:0 0 6px">🚔 In Custody — Featherstone Constabulary</h3>
     <div style="text-align:center;background:rgba(255,80,64,.12);border:1px solid rgba(255,80,64,.4);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="font-size:11px;color:var(--dim);letter-spacing:1px">⏳ TIME TO FREEDOM</div>
       <div style="font-size:26px;font-weight:800;color:#ff8870;font-variant-numeric:tabular-nums">${_rmMin}:${String(_rmSec).padStart(2,'0')}</div>
-      <div style="font-size:10px;color:var(--dim)">${_gameHrsLeft} game-hours left</div>
+      <div style="font-size:10px;color:var(--dim)">Held for about five in-game minutes · in for <b>${_lesson.name.toLowerCase()}</b></div>
     </div>
     <div style="height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin-bottom:10px">
       <div style="height:6px;background:#ff5040;border-radius:3px;width:${_pct}%;transition:width 1s"></div>
     </div>
-    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">Your cellmate: <b>Derek</b> — in for "aggressive parking".</p>
-    <p style="font-size:10px;color:var(--dim);margin:0 0 10px">💡 Officer Plonk does deals if you've got the coins.</p>
+    <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:7px 9px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:#c8b8e8;margin-bottom:2px">🧔 Derek, your cellmate:</div>
+      ${_lessonLines}
+    </div>
+    <div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:5px">Pass the time (each shaves a little off your sentence):</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px">${_actBtns}</div>
     ${_canDeal
       ? `<button data-deal-cell style="background:#4a3a1a;color:#ffd666;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px">🤝 Make a deal — pay ${fmt(_dealCost)} coins (halve sentence)</button>`
-      : `<p style="font-size:11px;color:var(--dim);margin:0">Need ${fmt(_dealCost)} coins to make a deal.</p>`}
+      : `<p style="font-size:11px;color:var(--dim);margin:0">Need ${fmt(_dealCost)} coins to make a deal with Officer Plonk.</p>`}
   </div>`;
 }
 function renderPoliceStationPanel(){
@@ -12074,6 +12120,11 @@ function bindMain(){
     S.trespass = { active: false, homeId: null };
     S.stolen = false; S.fleeUntil = 0;
     IP.tx = null; IP.ty = null; IP.moving = false;
+    // release onto the street outside the police station — a validated, walkable
+    // tile, never inside walls/water/an NPC
+    const _ps = V_OBJECTS.find(o => o.id === "police_station");
+    if (_ps){ const _a = objApproach(_ps); VP.x = _a.x; VP.y = _a.y; }
+    VP.tx = null; VP.ty = null; VP.pending = null; VP.moving = false;
     VP.enterCooldown = 90;
     S.tab = "village";
     log(`🔓 ${pName()} released from the Featherstone holding cell.`, "good");
@@ -12090,11 +12141,25 @@ function bindMain(){
     log(`🤝 Paid Officer Plonk ${fmt(_dealCost)} coins — sentence halved.`, "");
     renderMain(); updateHud(); save();
   });
+  document.querySelectorAll("[data-cell-act]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    if (!S.caught?.active) return;
+    if (remainingMs(S.caught.cellUntil, Date.now()) <= 0) return;   // already free
+    const _id = (b as HTMLElement).dataset.cellAct;
+    if (!S.caught.acts) S.caught.acts = [];
+    const _cut = activityCut(_id, S.caught.acts);   // 0 if unknown or already done → idempotent, no farming
+    if (_cut <= 0){ return; }
+    S.caught.acts.push(_id);
+    S.caught.cellUntil = Math.max(Date.now(), S.caught.cellUntil - _cut);   // never negative
+    const _a = activityById(_id);
+    if (_a){ toast(`${_a.ic} ${_a.note}`); }
+    try{ SFX.play("fishing"); }catch(e){}
+    renderMain(); save();
+  });
   document.querySelectorAll("[data-surrender]").forEach(b=> (b as HTMLElement).onclick = ()=>{
     const _fine = Math.floor(S.coins * 0.10);
     S.coins = Math.max(0, S.coins - _fine);
-    const _dur = Math.round(DAY_DURATION_MS / 2); // 12 game-hours
-    S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur };
+    const _dur = CELL_MS_BASE;   // handing yourself in: the shorter, base sentence
+    S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur, offence: "trespassing", acts: [] };
     S.stolen = false; S.trespass = { active: false, homeId: null }; S.fleeUntil = 0;
     S.tab = "police_cell";
     IP.x = icanvasW()/2; IP.y = icanvasH() - 60;
