@@ -21,6 +21,7 @@ import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } fro
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBeat, allWelcomeDone, welcomeTopLevel } from './data/welcome.ts';
+import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, reliabilityLabel, reliabilityStars } from './data/suppliers.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
@@ -584,6 +585,8 @@ const ACH = [
   { id:"hot_stuff",   ic:"🔥", n:"Hot Stuff",         ds:"Smelt your first bar.",             r:25,   c:()=>prodSum(BARS)>=1 },
   { id:"made_here",   ic:"🏭", n:"Made in the Valley",ds:"Manufacture your first product.",   r:25,   c:()=>prodSum(GOODS)>=1 },
   { id:"first_run",   ic:"🚚", n:"First Delivery",    ds:"Deliver your first contract.",      r:50,   c:()=>S.counters.contracts>=1 },
+  { id:"first_po",    ic:"📝", n:"On Order",          ds:"Place your first purchase order.",  r:60,   c:()=>(S.counters?.ordersPlaced||0)>=1 },
+  { id:"procurement_pro", ic:"🛒", n:"Procurement Pro", ds:"Place 25 purchase orders.",       r:400,  c:()=>(S.counters?.ordersPlaced||0)>=25 },
   { id:"runs_10",     ic:"📦", n:"Reliable Supplier", ds:"Deliver 10 contracts.",             r:100,  c:()=>S.counters.contracts>=10 },
   { id:"runs_50",     ic:"🚛", n:"Logistics Legend",  ds:"Deliver 50 contracts.",             r:500,  c:()=>S.counters.contracts>=50 },
   { id:"first_deal",  ic:"⚖️", n:"Deal!",             ds:"Make your first trade.",            r:25,   c:()=>S.counters.trades>=1 },
@@ -747,6 +750,7 @@ let _fishRodTip = { x:0, y:0 };  // world position of the player's rod tip (so t
 let _voyageRenderAt = 0;        // throttle for live-refreshing the harbour voyages panel
 let _cellRenderAt = 0;          // throttle for live-refreshing the holding-cell countdown
 let _contractsRenderAt = 0;     // throttle for live-ticking contract deadlines
+let _postRenderAt = 0;          // throttle for live-ticking supplier delivery ETAs
 let _intVfx = [];               // interior completion rewards (floating +item pops)
 let _comboCount = 0, _comboAt = 0, _comboSkill = null;   // consecutive-action streak (addictive feedback)
 let _fishSpot = null;            // where the bobber has been cast (interior coords) — click the water to set it
@@ -7480,7 +7484,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" },
+    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] },
     playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -7660,6 +7664,10 @@ function load(){
         const _wctx = welcomeCtx();
         WELCOME_BEATS.forEach(b => { if (beatComplete(b, _wctx)) S.welcome.claimed.push(b.id); });
       }
+      // M17 — Procurement: an empty order book for saves that predate it
+      if (!("procurement" in parsed) || !S.procurement || !Array.isArray(S.procurement.orders)) S.procurement = { orders:[] };
+      if (!("ordersPlaced" in S.counters)) S.counters.ordersPlaced = 0;
+      if (!("ordersShort" in S.counters)) S.counters.ordersShort = 0;
       // Contracts 2.0 — per-client reputation + tier/deadline on in-flight orders
       if (!("contractRep" in parsed) || !S.contractRep || typeof S.contractRep !== "object") S.contractRep = {};
       if (!("contractsExpired" in S.counters)) S.counters.contractsExpired = 0;
@@ -7684,6 +7692,101 @@ function totalLvl(){ return Object.keys(S.skills).reduce((a,k)=>a+skillLvl(k),0)
 function itemCount(id){ return S.items[id] || 0; }
 function addItem(id, q){ S.items[id] = (S.items[id]||0) + q; }
 function findAction(skill, id){ return SKILLS[skill].actions.find(a=>a.id===id); }
+
+/* ---------- M17: Procurement — purchase orders to suppliers ---------- */
+function placeOrder(supplierId, item, qty){
+  if (!S.procurement) S.procurement = { orders:[] };
+  const sup = supplierById(supplierId);
+  if (!sup || !sup.items.includes(item)){ toast("That supplier can't source that."); return; }
+  if (totalLvl() < sup.unlockLvl){ toast(`${sup.n} unlocks at total level ${sup.unlockLvl}.`); return; }
+  qty = Math.max(0, Math.floor(+qty || 0));
+  const q = supplierQuote(sup, qty, ITEMS[item]?.v || 1);
+  if (!q.moqOk){ toast(`${sup.n} needs a minimum order of ${sup.moq}.`); return; }
+  if (S.coins < q.total){ toast(`Need ${fmt(q.total)} coins for that order.`); return; }
+  S.coins -= q.total;                                   // pay on order — a real PO commitment
+  const now = Date.now();
+  S.procurement.orders.push({
+    id: now.toString(36) + Math.floor(Math.random()*1e4),
+    supplierId, item, qty, unit: q.unit, total: q.total,
+    placedAt: now, eta: now + sup.leadMin*60*1000, status:'transit',
+  });
+  S.counters.ordersPlaced = (S.counters.ordersPlaced||0) + 1;
+  log(`📝 Purchase order: ${qty}× ${ITEMS[item].n} from ${sup.n} — ${fmt(q.total)} coins, due in ~${sup.leadMin} min.`);
+  toast(`📝 PO placed with ${sup.n} · −${fmt(q.total)}c`);
+  achCheck(); renderMain(); updateHud(); save();
+}
+// Land any deliveries whose ETA has passed (timestamp-based → idle/offline-safe).
+function updateProcurement(now){
+  if (!S.procurement || !Array.isArray(S.procurement.orders) || !S.procurement.orders.length) return;
+  let resolved = false;
+  for (let i = S.procurement.orders.length - 1; i >= 0; i--){
+    const o = S.procurement.orders[i];
+    if (!o || o.status !== 'transit' || now < o.eta) continue;
+    const sup = supplierById(o.supplierId);
+    const out = rollDelivery(sup || { reliability:1 }, o.qty, Math.random);
+    addItem(o.item, out.delivered);
+    if (out.shortfall > 0){
+      const refund = out.shortfall * o.unit;
+      S.coins += refund;                               // refund what never arrived
+      S.counters.ordersShort = (S.counters.ordersShort||0) + 1;
+      log(`⚠️ ${sup?sup.n:'Supplier'} short-shipped: ${out.delivered}/${o.qty}× ${ITEMS[o.item].n} arrived (refunded ${fmt(refund)}c). Reliability matters.`, "bad");
+      toast(`⚠️ Short delivery: ${out.delivered}/${o.qty}× ${ITEMS[o.item].n}`);
+    } else {
+      log(`📦 Delivered: ${out.delivered}× ${ITEMS[o.item].n} from ${sup?sup.n:'a supplier'}.`, "good");
+      toast(`📦 ${out.delivered}× ${ITEMS[o.item].n} delivered`);
+    }
+    S.procurement.orders.splice(i, 1);
+    resolved = true;
+  }
+  if (resolved){ updateHud(); if (S.tab==="postoffice") renderMain(); save(); }
+}
+// The Post Office "Purchasing Desk" — place POs with suppliers + track deliveries.
+function renderPurchasingDesk(){
+  const tl = totalLvl();
+  const open = SUPPLIERS.filter(s => tl >= s.unlockLvl);
+  const locked = SUPPLIERS.filter(s => tl < s.unlockLvl);
+  const cards = open.map(sup => {
+    const stars = "★".repeat(reliabilityStars(sup.reliability)) + "☆".repeat(4 - reliabilityStars(sup.reliability));
+    const opts = sup.items.map(it => {
+      const q = supplierQuote(sup, sup.moq, ITEMS[it]?.v || 1);
+      return `<option value="${it}">${ITEMS[it].ic} ${ITEMS[it].n} — ${fmt(q.listUnit)}c/ea</option>`;
+    }).join("");
+    const bulkNote = sup.bulkBreak > 0 ? ` · 📦 ${Math.round(sup.bulkDiscount*100)}% off at ${sup.bulkBreak}+` : "";
+    return `<div class="card" style="padding:8px 10px;margin-bottom:8px;background:rgba(255,255,255,.03);border-radius:6px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
+        <span style="font-weight:700;font-size:13px">${sup.ic} ${sup.n}</span>
+        <span style="font-size:10px;color:var(--dim)">${stars} ${reliabilityLabel(sup.reliability)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin:1px 0 6px">${sup.blurb}</div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:6px">⏳ ~${sup.leadMin} min lead · min order ${sup.moq}${bulkNote}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <select data-po-item="${sup.id}" style="flex:1;min-width:130px;background:#20242c;color:#e8e8e8;border:1px solid #3a4048;border-radius:4px;padding:4px 6px;font-size:12px">${opts}</select>
+        <input data-po-qty="${sup.id}" type="number" min="${sup.moq}" value="${sup.moq}" style="width:60px;background:#20242c;color:#e8e8e8;border:1px solid #3a4048;border-radius:4px;padding:4px 6px;font-size:12px">
+        <button data-po-place="${sup.id}" style="background:#2a5a8a;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">Order</button>
+      </div>
+    </div>`;
+  }).join("");
+  const now = Date.now();
+  const orders = (S.procurement?.orders || []).slice().sort((a,b)=>a.eta-b.eta);
+  const incoming = orders.length
+    ? orders.map(o => {
+        const sup = supplierById(o.supplierId);
+        return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-top:1px solid rgba(255,255,255,.06)">
+          <span>📦 ${o.qty}× ${ITEMS[o.item].ic} ${ITEMS[o.item].n} <span style="color:var(--dim)">· ${sup?sup.n:'supplier'}</span></span>
+          <span style="color:${(o.eta-now)<30000?'var(--mint)':'var(--dim)'}">⏳ ${_fmtCountdown(o.eta-now)}</span>
+        </div>`;
+      }).join("")
+    : `<div style="font-size:11px;color:var(--dim);padding:4px 0">No deliveries in transit. Place an order above.</div>`;
+  const lockedNote = locked.length
+    ? `<div style="font-size:10px;color:var(--dim);margin-top:6px">🔒 ${locked.map(s=>`${s.n} (Lv ${s.unlockLvl})`).join(" · ")}</div>` : "";
+  return `<div class="panel" style="padding:10px;margin-top:8px">
+    <h3 style="margin:0 0 6px;font-size:14px">🛒 Purchasing Desk</h3>
+    <p style="color:var(--dim);font-size:12px;margin:0 0 10px">Source raw materials by purchase order. Suppliers trade off price, speed and reliability — the cheapest isn't always the smartest buy. You pay on order; goods arrive by post.</p>
+    ${cards}${lockedNote}
+    <h4 style="margin:12px 0 2px;font-size:12px">🚚 Incoming Deliveries</h4>
+    ${incoming}
+  </div>`;
+}
 
 // Active meal-buff multiplier for a given kind (1 when no matching buff is active).
 // speed buffs are <1 (faster); xp/sell buffs are >1 (bonus).
@@ -11375,7 +11478,7 @@ function renderMain(){
             ? `<button data-daily-claim="1" style="background:#b03020;color:#fff;border:none;padding:8px 22px;border-radius:4px;cursor:pointer;font-size:14px;font-weight:700">📮 Collect Parcel — ${fmt(_reward)} coins</button>`
             : `<div style="color:#4aff88;font-size:13px;margin:4px 0">✔ Parcel collected today. Come back tomorrow!</div>`}
           <p style="color:var(--dim);font-size:11px;margin:10px 0 0">Current reward: <b>${fmt(_reward)} coins</b> (Level ${totalLvl()} × 3 + 50, capped at 500)</p>
-        </div>`);
+        </div>` + renderPurchasingDesk());
     }
     else if (S.tab==="estateagent"){
       const _nextRent = Math.max(0, ((S.rentAt||0) - Date.now()) / 60000);
@@ -11849,6 +11952,14 @@ function bindMain(){
     log("📮 <b>Daily parcel:</b> +" + fmt(_r) + " coins. Come back tomorrow!", "good");
     renderMain(); updateHud(); save();
   });
+  // M17 — place a purchase order from the Purchasing Desk
+  document.querySelectorAll("[data-po-place]").forEach(b=> b.onclick = ()=>{
+    const sid = b.dataset.poPlace;
+    const sel = document.querySelector(`[data-po-item="${sid}"]`);
+    const qin = document.querySelector(`[data-po-qty="${sid}"]`);
+    if (!sel || !qin) return;
+    placeOrder(sid, sel.value, qin.value);
+  });
   // property purchase
   document.querySelectorAll("[data-buy-prop]").forEach(b=> b.onclick = ()=>{
     const _pid = b.dataset.buyProp;
@@ -12161,6 +12272,7 @@ setInterval(()=>{
   updateVillagerRequests(now);
   updateDailyChallenge();
   sweepContracts();         // lapse any contract past its deadline (idle/offline-safe)
+  updateProcurement(now);   // M17: land any supplier deliveries whose ETA has passed
   updateGarden(now);
   // engagement heartbeat — something every 20-30 seconds
   if (now > _heartbeatAt){
@@ -12187,6 +12299,7 @@ setInterval(()=>{
   if (S.tab==="harbour_office" && (S.voyages||[]).length && Date.now()-_voyageRenderAt > 4000){ _voyageRenderAt = Date.now(); renderMain(); }
   if (S.tab==="police_cell" && Date.now()-_cellRenderAt > 1000){ _cellRenderAt = Date.now(); renderMain(); }   // tick the countdown / reveal the walk-out
   if (S.tab==="contracts" && Date.now()-_contractsRenderAt > 1000){ _contractsRenderAt = Date.now(); renderMain(); }   // live-tick the contract deadlines
+  if (S.tab==="postoffice" && (S.procurement?.orders||[]).length && Date.now()-_postRenderAt > 1000){ _postRenderAt = Date.now(); renderMain(); }   // live-tick supplier delivery ETAs
   if (rollMarket(false) && S.tab === "trade") renderMain();
   const _itemsChanged = JSON.stringify(S.items) !== beforeItems;
   if (_itemsChanged && (S.tab in SKILLS || S.tab==="contracts")) {
