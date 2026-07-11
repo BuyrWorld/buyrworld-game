@@ -25,6 +25,7 @@ import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, rel
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
+import { OFFENCES, offenceDef, computeSeverity, severityLabel, strikePointsFor, shouldEscalate, legalStatus, consequenceFor, spentDaysFor, isSpent as incidentSpent, daysUntilSpent, roleEligibility, COMMUNITY_TASKS, communityTaskById, communityRehabDays } from './data/justice.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
@@ -7136,14 +7137,197 @@ function drawTitleFX(t){
   ctx.globalAlpha=1; ctx.textAlign="left";
 }
 const _STOLEN_FOODS = ["mushroom","berries","wild_herb","berry_jam","herb_tea","sardine"];
+/* ================= Justice System V2 — crime ledger ================= */
+function _gameDay(){ return Math.floor(Date.now() / DAY_DURATION_MS); }
+function _justice(){ if (!S.justice) S.justice = { v:2, incidents:[], nextId:1, community:null }; return S.justice; }
+// non-spent recorded offences (level >= 2, i.e. actual offences, not warnings)
+function activeIncidents(){ const J=_justice(), d=_gameDay(); return J.incidents.filter(i => i.level >= 2 && !incidentSpent(i, d)); }
+function activeStrikePoints(){ return activeIncidents().reduce((s,i)=> s + (i.strikePoints||0), 0); }
+function outstandingFines(){ return _justice().incidents.reduce((s,i)=> s + (i.finePaid?0:(i.fine||0)), 0); }
+function outstandingCompensation(){ return _justice().incidents.reduce((s,i)=> s + (i.compPaid?0:(i.compensation||0)), 0); }
+// Idempotent incident creation — the same event token can never record twice.
+function recordOffence(offenceId, factors={}, opts={}){
+  const J = _justice();
+  if (opts.token && J.incidents.some(i => i.token === opts.token)) return null;   // dedupe
+  const def = OFFENCES[offenceId]; if (!def) return null;
+  const prior = activeIncidents().length;
+  const sev = computeSeverity(offenceId, Object.assign({}, factors, { priorActive: prior }));
+  if (sev.level <= 0) return null;                                                 // not an offence
+  const strike = strikePointsFor(sev.level);
+  const cons = consequenceFor(offenceId, sev.level, { value: factors.value||0, hasGoods: !!opts.confiscateItem, activeStrikePoints: activeStrikePoints() });
+  const inc = {
+    id: J.nextId++, token: opts.token || null,
+    type: offenceId, category: def.category, level: sev.level, label: sev.label, reasons: sev.reasons,
+    day: _gameDay(), time: Math.round(gameHour()),
+    location: opts.location || 'the valley', target: opts.target || null,
+    value: Math.max(0, factors.value||0), attempted: !!opts.attempted, completed: !opts.attempted,
+    detected: opts.detected !== false, witness: !!opts.witness, arrested: !!opts.arrested,
+    consequence: cons.kind, strikePoints: strike,
+    fine: cons.fine, compensation: cons.compensation, finePaid: cons.fine===0, compPaid: cons.compensation===0,
+    confiscated: false, community: cons.community, escalate: !!cons.escalate,
+    status: cons.escalate ? 'escalated' : (sev.level<=1 ? 'warning' : 'active'),
+    rehab: [], rehabDays: 0, meta: opts.meta || {},
+  };
+  // confiscation — remove the single tracked stolen item (no duplication/reload exploit)
+  if (cons.confiscate && opts.confiscateItem && (S.items?.[opts.confiscateItem]||0) > 0){
+    S.items[opts.confiscateItem] = Math.max(0, (S.items[opts.confiscateItem]||0) - 1);
+    inc.confiscated = true;
+  }
+  J.incidents.push(inc);
+  // concise notification; full breakdown lives in Legal Status
+  const bits = [];
+  if (strike>0) bits.push(`+${strike} strike`);
+  if (inc.confiscated) bits.push('goods seized');
+  if (inc.fine) bits.push(`fine ${fmt(inc.fine)}c`);
+  if (inc.compensation) bits.push(`comp ${fmt(inc.compensation)}c`);
+  if (inc.escalate) bits.push('CASE ESCALATED');
+  toast(`⚖️ ${def.name} — ${sev.label}${bits.length?` · ${bits.join(' · ')}`:''}`);
+  log(`⚖️ <b>${def.name} recorded — ${sev.label}.</b> ${bits.join(' · ')}${bits.length?'. ':''}Open Legal Status (📖 Ledger) for the full record.`, sev.level>=4?"bad":"");
+  try{ achCheck(); }catch(e){}
+  return inc;
+}
+// Pay a fine or compensation for one incident — idempotent, uses the debt system
+// if short, and never drops coins below zero.
+function payJusticeDebt(incId, which){
+  const inc = _justice().incidents.find(i => i.id === incId); if (!inc) return;
+  const owed = which === 'fine' ? (inc.finePaid?0:inc.fine) : (inc.compPaid?0:inc.compensation);
+  if (owed <= 0){ toast('Already paid.'); return; }
+  if (S.coins < owed){ toast(`Need ${fmt(owed)} coins — the balance stays outstanding until you can pay.`); return; }
+  S.coins -= owed;
+  if (which === 'fine') inc.finePaid = true; else inc.compPaid = true;
+  inc.rehabDays = Math.min(6, (inc.rehabDays||0) + 1);   // paying up aids rehabilitation (doesn't erase the record)
+  toast(`⚖️ Paid ${which === 'fine' ? 'fine' : 'compensation'}: ${fmt(owed)}c.`);
+  log(`⚖️ Paid ${which} of ${fmt(owed)}c on your ${OFFENCES[inc.type]?.name||'offence'} record.`, "good");
+  renderMain(); updateHud(); save();
+}
+// Employment eligibility hook for future careers (and the bank-loan trust check).
+function jobEligibility(sensitivity){
+  return roleEligibility(activeIncidents().map(i => ({ type:i.type, category:i.category, level:i.level })), sensitivity);
+}
+// ---- Community service (rehabilitation) ----
+function startCommunityService(taskId){
+  const J = _justice();
+  if (J.community && !J.community.done){ toast('You already have a service order on the go.'); return; }
+  const task = communityTaskById(taskId); if (!task) return;
+  J.community = { taskId, units:task.units, unitsDone:0, done:false, lastUnit:0 };
+  toast(`🧹 Community service assigned: ${task.label}.`);
+  log(`🧹 Community service: <b>${task.label}</b> (${task.units} tasks). Chip away at it to aid rehabilitation.`, "good");
+  renderLegalModal(); save();
+}
+function doCommunityUnit(){
+  const J = _justice(); const c = J.community; if (!c || c.done) return;
+  const now = Date.now();
+  if (now - (c.lastUnit||0) < 2500){ toast('Steady on — take your time.'); return; }   // reasonable pacing, no spam
+  c.lastUnit = now; c.unitsDone = Math.min(c.units, c.unitsDone + 1);
+  if (c.unitsDone >= c.units){
+    c.done = true;
+    const days = communityRehabDays(c.units);
+    // credit rehab to active offences (shortens the spent period; never erases them)
+    activeIncidents().forEach(i => { i.rehabDays = Math.min(6, (i.rehabDays||0) + days); if (!i.rehab.includes('community')) i.rehab.push('community'); });
+    if (S.renown) {}   // (reputation hook — kept light; no coins/XP so it can't be farmed)
+    toast(`✅ Community service complete — rehabilitation improved.`);
+    log(`✅ Completed community service. Your active records will clear a little sooner.`, "good");
+    J.community = null;
+  } else {
+    toast(`🧹 Task done (${c.unitsDone}/${c.units}).`);
+  }
+  renderLegalModal(); save();
+}
+// ---- Criminal Record / Legal Status screen ----
+function renderLegalStatus(){
+  const J = _justice(), d = _gameDay();
+  const asp = activeStrikePoints();
+  const status = legalStatus(asp);
+  const recorded = J.incidents.filter(i => i.level >= 1);
+  const active = recorded.filter(i => !incidentSpent(i, d));
+  const spent = recorded.filter(i => incidentSpent(i, d));
+  const fines = outstandingFines(), comp = outstandingCompensation();
+  const statusColour = asp <= 0 ? '#4aff88' : asp < 3 ? '#e8b24a' : '#ff6a4a';
+  const strikePct = Math.min(100, Math.round(asp / 3 * 100));
+  const incRow = (i) => {
+    const owe = [];
+    if (!i.finePaid && i.fine) owe.push(`<button data-pay-fine="${i.id}" style="background:#4a3a1a;color:#ffd666;border:none;padding:3px 9px;border-radius:4px;cursor:pointer;font-size:10px">Pay fine ${fmt(i.fine)}c</button>`);
+    if (!i.compPaid && i.compensation) owe.push(`<button data-pay-comp="${i.id}" style="background:#3a2a4a;color:#d8b8f8;border:none;padding:3px 9px;border-radius:4px;cursor:pointer;font-size:10px">Pay compensation ${fmt(i.compensation)}c</button>`);
+    const _spentIn = i.escalate ? '<span style="color:#ff6a4a">Escalated — pending magistrate</span>'
+      : incidentSpent(i, d) ? '<span style="color:#4aff88">Spent</span>'
+      : `Clears in ~${daysUntilSpent(i, d)} day${daysUntilSpent(i,d)!==1?'s':''}${(!i.finePaid&&i.fine)||(!i.compPaid&&i.compensation)?' (once paid)':''}`;
+    return `<div style="border-left:3px solid ${i.level>=4?'#ff6a4a':i.level>=3?'#e8b24a':'#7a7a8a'};background:rgba(255,255,255,.03);border-radius:5px;padding:7px 9px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700"><span>${OFFENCES[i.type]?.name||i.type} — ${i.label}</span><span style="color:var(--dim);font-weight:400">Day ${i.day}, ${String(i.time).padStart(2,'0')}:00</span></div>
+      <div style="font-size:10px;color:var(--dim);margin:2px 0">${(i.reasons||[]).join(' · ')}${i.confiscated?' · goods confiscated':''}</div>
+      <div style="font-size:10px;color:var(--dim)">${_spentIn}${i.strikePoints?` · ${i.strikePoints} strike`:''}</div>
+      ${owe.length?`<div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap">${owe.join('')}</div>`:''}
+    </div>`;
+  };
+  // restrictions (eligibility hooks)
+  const restr = [];
+  for (const s of ['money','security','public']){ const e = jobEligibility(s); if (!e.eligible) restr.push(e.reason); }
+  // community service block
+  const c = J.community;
+  let community;
+  if (c && !c.done){
+    const t = communityTaskById(c.taskId);
+    community = `<div style="font-size:11px;margin-bottom:4px">${t?.ic||'🧹'} <b>${t?.label||'Service order'}</b> — ${c.unitsDone}/${c.units} done</div>
+      <div class="obj-bar" style="margin-bottom:6px"><div class="obj-fill" style="width:${Math.round(c.unitsDone/c.units*100)}%"></div></div>
+      <button data-community-unit style="background:#2a5a3a;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px">🧹 Do a task</button>`;
+  } else {
+    community = `<div style="font-size:11px;color:var(--dim);margin-bottom:5px">Take on a community-service order to aid rehabilitation (shortens how long records take to clear):</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${COMMUNITY_TASKS.map(t=>`<button data-community-start="${t.id}" style="background:#33333c;color:#e8e8ee;border:1px solid #44444e;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:10px">${t.ic} ${t.label}</button>`).join('')}</div>`;
+  }
+  return `<div class="panel" style="padding:12px;max-width:520px">
+    <h2 style="margin:0 0 8px;font-size:16px">⚖️ Legal Status — Featherstone</h2>
+    <div style="background:rgba(255,255,255,.04);border-radius:6px;padding:9px 11px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>Status: <span style="color:${statusColour}">${status}</span></span><span style="color:var(--dim);font-weight:400">${active.length} active · ${spent.length} spent</span></div>
+      <div style="font-size:10px;color:var(--dim);margin:4px 0 2px">Active strike points: <b>${asp}</b> / 3 ${asp>=3?'— case escalated to the magistrate':''}</div>
+      <div class="obj-bar"><div class="obj-fill" style="width:${strikePct}%;background:${statusColour}"></div></div>
+      ${(fines||comp)?`<div style="font-size:10px;color:#e8b24a;margin-top:5px">Outstanding — fines: ${fmt(fines)}c · compensation: ${fmt(comp)}c</div>`:`<div style="font-size:10px;color:#4aff88;margin-top:5px">No outstanding balance.</div>`}
+    </div>
+    ${restr.length?`<div style="background:rgba(255,106,74,.1);border:1px solid rgba(255,106,74,.3);border-radius:6px;padding:7px 9px;margin-bottom:10px;font-size:10px;color:#ffb0a0">🔒 Current restrictions:<br>${restr.map(r=>'• '+r).join('<br>')}</div>`:''}
+    <h3 style="font-size:12px;margin:0 0 5px">Active record</h3>
+    ${active.length?active.map(incRow).join(''):'<p style="font-size:11px;color:var(--dim);margin:0 0 8px">A clean record. Keep it that way.</p>'}
+    <h3 style="font-size:12px;margin:10px 0 5px">Community service</h3>
+    ${community}
+    ${spent.length?`<h3 style="font-size:12px;margin:10px 0 5px">Spent records (${spent.length})</h3><p style="font-size:10px;color:var(--dim);margin:0">These no longer count against you: ${spent.map(i=>OFFENCES[i.type]?.name||i.type).join(', ')}.</p>`:''}
+  </div>`;
+}
+function renderLegalModal(){ const e = document.getElementById("legal-body"); if (e) e.innerHTML = renderLegalStatus(); }
+function openLegal(){
+  if (document.getElementById("legal-modal")) { renderLegalModal(); return; }
+  const el = document.createElement("div"); el.id = "legal-modal";
+  el.style.cssText = "position:fixed;inset:0;z-index:60;display:flex;align-items:flex-start;justify-content:center;background:rgba(0,0,0,.55);padding:20px;overflow:auto";
+  el.innerHTML = `<div style="position:relative;width:100%;max-width:520px"><button id="legal-close" style="position:absolute;top:6px;right:6px;z-index:2;background:#333;color:#fff;border:none;border-radius:4px;width:26px;height:26px;cursor:pointer">✕</button><div id="legal-body"></div></div>`;
+  document.body.appendChild(el);
+  renderLegalModal();
+  el.addEventListener("click", e => { if (e.target === el) el.remove(); });
+  document.getElementById("legal-close").onclick = () => el.remove();
+}
+(globalThis as any).openLegal = openLegal;
+// modal buttons are re-bound each render via delegation on the modal container
+document.addEventListener("click", (e:any) => {
+  const t = e.target?.closest?.("[data-pay-fine],[data-pay-comp],[data-community-start],[data-community-unit]");
+  if (!t) return;
+  if (t.dataset.payFine){ payJusticeDebt(+t.dataset.payFine, 'fine'); renderLegalModal(); }
+  else if (t.dataset.payComp){ payJusticeDebt(+t.dataset.payComp, 'comp'); renderLegalModal(); }
+  else if (t.dataset.communityStart){ startCommunityService(t.dataset.communityStart); }
+  else if (t.hasAttribute("data-community-unit")){ doCommunityUnit(); }
+});
 function _arrestPlayer(){
+  if (S.caught?.active) return;   // idempotency: never double-arrest / double-record
   const _fine = Math.floor(S.coins * 0.20);
   S.coins = Math.max(0, S.coins - _fine);
-  // classify the offence for the cellmate's crime-specific chat
+  // classify the offence for the cellmate's crime-specific chat + the crime ledger
   const _drunk = !!(S.drunkUntil && Date.now() < S.drunkUntil);
-  const _off = S.stolen ? (S.trespass?.homeId ? "burglary" : "theft") : (_drunk ? "drunk" : "trespassing");
-  const _dur = cellDuration(!!S.stolen);
-  S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur, offence: _off, acts: [] };
+  const _off = S.stolen ? (S.trespass?.homeId ? "burglary" : "theft") : (_drunk ? "drunk_disorderly" : "trespassing");
+  const _homeId = S.trespass?.homeId || null;
+  const _stolenVal = S.stolenItem ? (ITEMS[S.stolenItem]?.v || 0) : 0;
+  // record it in the ledger (idempotent token per arrest); the cellmate lesson key
+  // maps burglary/theft → their lesson, drunk_disorderly → drunk.
+  const _inc = recordOffence(_off, { value:_stolenVal, isHome:!!_homeId, warningsIgnored:true, disruptiveAction:_drunk },
+    { arrested:true, detected:true, witness:true, location:_homeId?"a private home":"the valley",
+      target:_homeId, confiscateItem: S.stolen ? S.stolenItem : null, token: "arrest:"+Date.now() });
+  const _cellOff = _off === "drunk_disorderly" ? "drunk" : _off;
+  const _dur = cellDuration(!!S.stolen) + (_inc?.escalate ? 30000 : 0);   // escalated cases held a touch longer
+  S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur, offence: _cellOff, acts: [] };
+  S.stolenItem = null;
   S.trespass = { active: false, homeId: null };
   S.stolen = false;
   S.fleeUntil = 0;
@@ -7151,8 +7335,8 @@ function _arrestPlayer(){
   IP.x = icanvasW()/2; IP.y = icanvasH() - 60;
   IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "down";
   CHAT_NPC = null;
-  if (_fine > 0) log(`🚔 Arrested for ${lessonFor(_off).name.toLowerCase()}! ${fmt(_fine)} coin fine. Held for about five in-game minutes.`, "bad");
-  else log(`🚔 Arrested for ${lessonFor(_off).name.toLowerCase()}! Held for about five in-game minutes.`, "bad");
+  if (_fine > 0) log(`🚔 Arrested for ${lessonFor(_cellOff).name.toLowerCase()}! ${fmt(_fine)} coin fine. Held for about five in-game minutes.`, "bad");
+  else log(`🚔 Arrested for ${lessonFor(_cellOff).name.toLowerCase()}! Held for about five in-game minutes.`, "bad");
   toast(`🚔 YOU'VE BEEN NICKED! ${_fine > 0 ? `${fmt(_fine)} coins fined.` : ""}`);
   updateMusicZone();
   renderNav(); renderMain(); save();
@@ -7681,6 +7865,8 @@ function freshState(){
     stolen: false,
     fleeUntil: 0,
     caught: { active: false, cellUntil: 0, maxTime: 0 },
+    stolenItem: null,
+    justice: { v:2, incidents:[], nextId:1, community:null },
   };
 }
 let S = freshState();
@@ -7809,6 +7995,11 @@ function load(){
         const _maxNew = CELL_MS_BASE + CELL_MS_STOLEN_EXTRA;
         if ((S.caught.cellUntil||0) - Date.now() > _maxNew){ S.caught.cellUntil = Date.now() + _maxNew; S.caught.maxTime = _maxNew; }
       }
+      // Justice V2: empty crime ledger for saves that predate it (no fabricated records)
+      if (!("stolenItem" in parsed)) S.stolenItem = null;
+      if (!("justice" in parsed) || !S.justice || !Array.isArray(S.justice.incidents)) S.justice = { v:2, incidents:[], nextId:1, community:null };
+      if (typeof S.justice.nextId !== "number") S.justice.nextId = (S.justice.incidents.reduce((m,i)=>Math.max(m,i.id||0),0)||0)+1;
+      if (!("community" in S.justice)) S.justice.community = null;
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
@@ -11409,10 +11600,12 @@ function renderPoliceStationPanel(){
     <p style="font-size:12px;margin:0 0 8px"><b>Officer Plonk:</b> <i>"Keep it cosy out there."</i></p>
     ${_stolen
       ? `<div style="background:rgba(255,200,40,.1);border:1px solid rgba(255,200,40,.3);border-radius:4px;padding:8px 10px;margin-bottom:8px">
-          <p style="font-size:11px;color:#ffd666;margin:0 0 6px">🤚 You're carrying stolen goods. Best to come clean now — reduced sentence of 12 game-hours instead of 24.</p>
-          <button data-surrender style="background:#5a3a1a;color:#ffd666;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px">🙋 Hand yourself in (pay ${fmt(_fine)} coin fine, 12 game-hr sentence)</button>
+          <p style="font-size:11px;color:#ffd666;margin:0 0 6px">🤚 You're carrying stolen goods. Best to come clean now — a shorter stay in the cell.</p>
+          <button data-surrender style="background:#5a3a1a;color:#ffd666;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px">🙋 Hand yourself in (pay ${fmt(_fine)} coin fine)</button>
         </div>`
-      : `<p style="font-size:11px;color:var(--dim);margin:0">Nothing to report? Good. Keep it that way.</p>`}
+      : `<p style="font-size:11px;color:var(--dim);margin:0 0 8px">Nothing to report? Good. Keep it that way.</p>`}
+    <button onclick="openLegal()" style="background:#2a3a5a;color:#cfe0ff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">⚖️ View your Legal Status &amp; record</button>
+    ${(outstandingFines()+outstandingCompensation())>0?`<p style="font-size:10px;color:#e8b24a;margin:6px 0 0">You have ${fmt(outstandingFines()+outstandingCompensation())}c of fines/compensation outstanding.</p>`:''}
   </div>`;
 }
 function renderCharacterCustomisation(){
@@ -12105,6 +12298,7 @@ function bindMain(){
     if (!S.items) S.items = {};
     S.items[_item] = (S.items[_item]||0) + 1;
     S.stolen = true;
+    S.stolenItem = _item;   // track for confiscation + ledger value on arrest
     const _stir = Math.random() < 0.25;
     if (_stir){
       toast(`😬 You heard something stir… grab what you can and get out!`);
@@ -12362,6 +12556,9 @@ function bindMain(){
     buyPosition(cid, parseInt(qStr)||1);
   });
   document.querySelectorAll("[data-loanborrow]").forEach(b=>b.onclick=()=>{
+    // employment/finance eligibility hook: the bank is a high-trust lender
+    const _elig = jobEligibility('money');
+    if (!_elig.eligible){ toast(`🏦 Loan refused. ${_elig.reason}`); log(`🏦 <b>Loan refused:</b> ${_elig.reason}`, "bad"); return; }
     const amt=parseInt(b.dataset.loanborrow);
     S.coins+=amt;
     S.loans.push({amount:amt, borrowed:Date.now(), interestAccrued:0});
