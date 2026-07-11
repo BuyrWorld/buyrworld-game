@@ -53,10 +53,10 @@ export function applyHit(f, dmg){
 
 // ---- AI personalities (P6) ----
 export const PERSONALITIES = {
-  aggressive: { push: 1,   coverBias: 0.2, keepDist: 60,  accuracy: 0.85 },
-  cautious:   { push: 0.4, coverBias: 0.9, keepDist: 150, accuracy: 0.9  },
-  scavenger:  { push: 0.3, coverBias: 0.7, keepDist: 120, accuracy: 0.8  },
-  marksman:   { push: 0.5, coverBias: 0.6, keepDist: 240, accuracy: 0.95 },
+  aggressive: { push: 0.7,  coverBias: 0.3, keepDist: 90,  accuracy: 0.58 },
+  cautious:   { push: 0.35, coverBias: 0.9, keepDist: 155, accuracy: 0.64 },
+  scavenger:  { push: 0.25, coverBias: 0.7, keepDist: 135, accuracy: 0.55 },
+  marksman:   { push: 0.4,  coverBias: 0.6, keepDist: 240, accuracy: 0.72 },
 };
 const BOT_PERSONALITY = { Donna: 'aggressive', Daz: 'marksman', Reanna: 'cautious', Becky: 'scavenger', Noa: 'aggressive' };
 const BOT_WEAPON = { aggressive: 'shotgun', marksman: 'marksman', cautious: 'rifle', scavenger: 'pistol' };
@@ -66,9 +66,9 @@ export function spawnFighters(){
   const mk = (id, name, x, y, isPlayer, color, personality) => {
     const wid = isPlayer ? 'pistol' : (BOT_WEAPON[personality] || 'pistol');
     const w = WEAPONS[wid];
-    return { id, name, x, y, hp: BR.MAX_HP, shield: isPlayer ? 0 : (personality==='cautious'||personality==='marksman'?50:25),
+    return { id, name, x, y, hp: BR.MAX_HP, shield: isPlayer ? 0 : (personality==='cautious'||personality==='marksman'?30:15),
              alive: true, isPlayer, color, personality, weapon: wid, ammo: w.mag, reloadT: 0, fireCd: 0,
-             state: 'engage', spawnProtect: 90, elims: 0, hitFlash: 0 };
+             state: 'engage', spawnProtect: 150, elims: 0, hitFlash: 0 };
   };
   const spots = [ [60, 40], [420, 50], [40, 180], [420, 320], [240, 40] ];   // all clear of COVER
   const fighters = [mk(0, 'You', BR.W / 2, BR.H - 30, true, '#f2f2f2', null)];

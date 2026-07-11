@@ -9851,7 +9851,7 @@ function _brFreshState(){
   const p = fighters.find(x=>x.isPlayer);
   // player inventory (P4): two weapon slots, a heal slot and a utility slot
   p.weapons = [p.weapon]; p.ammos = [p.ammo]; p.active = 0; p.heal = null; p.utility = null;
-  p.boost = 0; p.mvx = 0; p.mvy = 0; p.shield = 25;   // small starting shield for a fair first fight
+  p.boost = 0; p.mvx = 0; p.mvy = 0; p.shield = 50;   // starting shield so you can survive early fights
   return { fighters, bullets:[], loot:spawnLoot(),
     muzzles:[], tracers:[], particles:[], dmgNums:[], markers:[], elimFx:[], pickups:[],
     tick:0, over:false, result:null, phase:'play', bannerLife:0, debug:false, telemetry:[], fps:60, lastFrame:0, swapPrompt:null,
@@ -9981,17 +9981,18 @@ function _brBotAI(b, F, r){
     if(Math.random()<per.coverBias*0.25){ const cv=_brNearestCover(b); if(cv){ tx=(tx+cv.x)/2; ty=(ty+cv.y)/2; } }
   } else { state='patrol'; if(!b._wander||_br.tick>b._wander.until){ b._wander={ x:40+Math.random()*(BR.W-80), y:40+Math.random()*(BR.H-80), until:_br.tick+80+Math.random()*120 }; } tx=b._wander.x; ty=b._wander.y; }
   b.state=state;
-  // move (slide along cover; never faster diagonally)
-  const mx=tx-b.x, my=ty-b.y, mm=Math.hypot(mx,my)||1, sp=BR.SPEED*0.9;
+  // move (slide along cover; never faster diagonally). Bots are a touch slower
+  // than the player so you can kite them.
+  const mx=tx-b.x, my=ty-b.y, mm=Math.hypot(mx,my)||1, sp=BR.SPEED*0.8;
   moveFighter(b, mx/mm*sp, my/mm*sp);
-  // shoot: only with clear line of sight, in range, and off cooldown; miss some
-  if(target && b.fireCd<=0 && b.reloadT<=0 && tdist < w.range*1.05 && !segmentBlocked(b.x,b.y,target.x,target.y)){
-    // lead the target a touch
-    const lead = w.pellets>1?0:8;
+  // shoot: only with clear line of sight, in range, and off cooldown; miss more
+  // at range, with trigger discipline so they aren't relentless.
+  if(target && b.fireCd<=0 && b.reloadT<=0 && tdist < w.range && !segmentBlocked(b.x,b.y,target.x,target.y)){
+    const lead = w.pellets>1?0:6;
     const px = target.x + (target._vx||0)*lead, py = target.y + (target._vy||0)*lead;
-    const err = (1-per.accuracy)*0.5;
-    _brFire(b, px+(Math.random()-0.5)*err*120, py+(Math.random()-0.5)*err*120);
-    b.fireCd += Math.floor(Math.random()*10);   // slight cadence variance
+    const miss = (1-per.accuracy) * tdist * 0.9;   // lower accuracy + more distance = bigger miss
+    _brFire(b, px+(Math.random()-0.5)*miss, py+(Math.random()-0.5)*miss);
+    b.fireCd += 12 + Math.floor(Math.random()*20);
   }
 }
 function _brPickup(f){
@@ -10050,6 +10051,8 @@ function _brUpdate(){
     const moved=Math.hypot(p._vx,p._vy);
     if(p.boost>0) p.boost--;
     _br.stamina = sprinting ? Math.max(0,_br.stamina-0.9) : Math.min(100,_br.stamina+0.55);
+    // out-of-combat regen: recover slowly ~2.5s after last taking damage
+    if(p.hp<BR.MAX_HP && _br.tick-(p.lastHurt||-999)>150) p.hp=Math.min(BR.MAX_HP,p.hp+0.2);
     if(moved>0.6){ if(--_br.footT<=0){ _brSfx('foot',0.55); _br.footT=sprinting?9:14; } } else _br.footT=0;
     if(_br.firing) _brShoot();
     _brPickup(p);
@@ -10078,7 +10081,7 @@ function _brUpdate(){
         if(bl.owner===0||hit.isPlayer) _brSfx('hit', hit.isPlayer?0.9:0.7);
         if(res.shieldHit && hit.shield<=0) _brSfx('shieldbreak', hit.isPlayer?1:_brDistVol(hit)*0.8);
         if(bl.owner===0){ if(_br.markers.length){ _br.markers[0].life=8; } else _br.markers.push({life:8}); _br.stats.hits++; _br.stats.damageDealt+=res.dmg; _br.stats.byWeapon[bl.wid]=(_br.stats.byWeapon[bl.wid]||0)+res.dmg; }
-        if(hit.isPlayer){ _br.stats.damageTaken+=res.dmg; _br.shake=Math.min(7,_br.shake+2); _br.hurtDir={ ang:Math.atan2(hit.y-bl.y,hit.x-bl.x)+Math.PI, life:26 }; }
+        if(hit.isPlayer){ _br.stats.damageTaken+=res.dmg; _br.shake=Math.min(7,_br.shake+2); _br.hurtDir={ ang:Math.atan2(hit.y-bl.y,hit.x-bl.x)+Math.PI, life:26 }; hit.lastHurt=_br.tick; }
         if(res.elim) _brElim(hit,bl.owner);
         gone=true; break;
       }
@@ -10086,7 +10089,7 @@ function _brUpdate(){
     if(gone||(--bl.life<=0)) _br.bullets.splice(i,1);
   }
   // storm damage (ramps up; ignores spawn protection)
-  for(const f of F){ if(f.alive && f.spawnProtect<=0 && outsideStorm(f,r)){ if(applyDamage(f,sdmg)){ if(f.isPlayer)_br.stats.damageTaken+=sdmg; _brElim(f,-1); } } }
+  for(const f of F){ if(f.alive && f.spawnProtect<=0 && outsideStorm(f,r)){ if(f.isPlayer){ _br.stats.damageTaken+=sdmg; f.lastHurt=_br.tick; } if(applyDamage(f,sdmg)) _brElim(f,-1); } }
   // effect lifetimes
   for(const a of [_br.muzzles,_br.tracers,_br.particles,_br.dmgNums,_br.markers,_br.elimFx,_br.pickups,_br.feed]) for(let i=a.length-1;i>=0;i--){ const e=a[i]; if(e.life!==undefined && --e.life<=0) a.splice(i,1); }
   for(const p2 of _br.particles){ p2.x+=p2.vx; p2.y+=p2.vy; }
