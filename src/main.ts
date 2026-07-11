@@ -26,6 +26,7 @@ import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, 
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
 import { OFFENCES, offenceDef, computeSeverity, severityLabel, strikePointsFor, shouldEscalate, legalStatus, consequenceFor, spentDaysFor, isSpent as incidentSpent, daysUntilSpent, roleEligibility, COMMUNITY_TASKS, communityTaskById, communityRehabDays } from './data/justice.ts';
+import { caseTrigger, triggerLabel, buildEvidence, evidenceStrength, EVIDENCE_BANDS, PLEAS, REPRESENTATION, repById, repCompetence, outcomeFloorRaised, PREP_ACTIONS, prepCompleteness, prepFactor, computeVerdict, seededWobble, computeSentence, factorsFor, OUTCOME_LABELS, suspendedOrder, custodyData, HEARING_PHASES } from './data/court.ts';
 import { RECIPES, recipeById, recipeUnlocked, canCook, maxCookable, buffDurationMs, availableRecipes } from './data/cooking.ts';
 import { FISH, fishById, rollCatch as _rollCatch, catchChance as _catchChance } from './data/fishing.ts';
 import { SCHOOL_UPGRADES, schoolTier, nextUpgrade, isSchoolComplete } from './data/school.ts';
@@ -7141,7 +7142,7 @@ const _STOLEN_FOODS = ["mushroom","berries","wild_herb","berry_jam","herb_tea","
 function _gameDay(){ return Math.floor(Date.now() / DAY_DURATION_MS); }
 function _justice(){ if (!S.justice) S.justice = { v:2, incidents:[], nextId:1, community:null }; return S.justice; }
 // non-spent recorded offences (level >= 2, i.e. actual offences, not warnings)
-function activeIncidents(){ const J=_justice(), d=_gameDay(); return J.incidents.filter(i => i.level >= 2 && !incidentSpent(i, d)); }
+function activeIncidents(){ const J=_justice(), d=_gameDay(); return J.incidents.filter(i => i.level >= 2 && i.status !== 'dismissed' && !incidentSpent(i, d)); }
 function activeStrikePoints(){ return activeIncidents().reduce((s,i)=> s + (i.strikePoints||0), 0); }
 function outstandingFines(){ return _justice().incidents.reduce((s,i)=> s + (i.finePaid?0:(i.fine||0)), 0); }
 function outstandingCompensation(){ return _justice().incidents.reduce((s,i)=> s + (i.compPaid?0:(i.compensation||0)), 0); }
@@ -7184,6 +7185,7 @@ function recordOffence(offenceId, factors={}, opts={}){
   toast(`⚖️ ${def.name} — ${sev.label}${bits.length?` · ${bits.join(' · ')}`:''}`);
   log(`⚖️ <b>${def.name} recorded — ${sev.label}.</b> ${bits.join(' · ')}${bits.length?'. ':''}Open Legal Status (📖 Ledger) for the full record.`, sev.level>=4?"bad":"");
   try{ achCheck(); }catch(e){}
+  if (inc.escalate){ try{ maybeOpenCourtCase(); }catch(e){} }   // V3: refer escalated cases to court
   return inc;
 }
 // Pay a fine or compensation for one incident — idempotent, uses the debt system
@@ -7273,8 +7275,19 @@ function renderLegalStatus(){
     community = `<div style="font-size:11px;color:var(--dim);margin-bottom:5px">Take on a community-service order to aid rehabilitation (shortens how long records take to clear):</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px">${COMMUNITY_TASKS.map(t=>`<button data-community-start="${t.id}" style="background:#33333c;color:#e8e8ee;border:1px solid #44444e;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:10px">${t.ic} ${t.label}</button>`).join('')}</div>`;
   }
+  // pending / recent court cases
+  const _pend = pendingCourtCase();
+  const _closedCases = J === J ? _court().cases.filter(cc => cc.status === 'closed') : [];
+  const courtBlock = _pend
+    ? `<div style="background:rgba(255,106,74,.12);border:1px solid rgba(255,106,74,.4);border-radius:6px;padding:9px 11px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:#ffb0a0;margin-bottom:3px">🏛️ Court hearing ${_pend.status==='in_progress'?'in progress':'scheduled'}</div>
+        <div style="font-size:10px;color:var(--dim);margin-bottom:6px">Charges: ${_pend.charges.map(t=>OFFENCES[t]?.name||t).join(', ')}. You're on bail — prepare and attend.</div>
+        <button onclick="openCourt(${_pend.id})" style="background:#5a2a2a;color:#ffd0c0;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">${_pend.status==='in_progress'?'▸ Resume hearing':'🏛️ Prepare & attend hearing'}</button>
+      </div>`
+    : (_closedCases.length ? `<div style="font-size:10px;color:var(--dim);margin-bottom:10px">Past court cases: ${_closedCases.map(cc=>`<a href="#" onclick="openCourt(${cc.id});return false" style="color:#8ab4e8">${cc.charges.map(t=>OFFENCES[t]?.name||t).join('/')}</a>`).join(' · ')}</div>` : '');
   return `<div class="panel" style="padding:12px;max-width:520px">
     <h2 style="margin:0 0 8px;font-size:16px">⚖️ Legal Status — Featherstone</h2>
+    ${courtBlock}
     <div style="background:rgba(255,255,255,.04);border-radius:6px;padding:9px 11px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>Status: <span style="color:${statusColour}">${status}</span></span><span style="color:var(--dim);font-weight:400">${active.length} active · ${spent.length} spent</span></div>
       <div style="font-size:10px;color:var(--dim);margin:4px 0 2px">Active strike points: <b>${asp}</b> / 3 ${asp>=3?'— case escalated to the magistrate':''}</div>
@@ -7309,6 +7322,230 @@ document.addEventListener("click", (e:any) => {
   else if (t.dataset.payComp){ payJusticeDebt(+t.dataset.payComp, 'comp'); renderLegalModal(); }
   else if (t.dataset.communityStart){ startCommunityService(t.dataset.communityStart); }
   else if (t.hasAttribute("data-community-unit")){ doCommunityUnit(); }
+});
+/* ================= Justice System V3 — court hearings ================= */
+function _court(){ if (!S.court) S.court = { cases:[], nextId:1 }; return S.court; }
+function _incSummary(i){ return { id:i.id, type:i.type, category:i.category, level:i.level, value:i.value, escalate:i.escalate, confiscated:i.confiscated, witness:i.witness, returned:(i.rehab||[]).includes('returned'), compensated:!!(i.compPaid&&i.compensation), rehab:i.rehab }; }
+function courtCaseById(id){ return _court().cases.find(c => c.id === id) || null; }
+function pendingCourtCase(){ return _court().cases.find(c => c.status === 'pending' || c.status === 'in_progress') || null; }
+// Idempotent: one open case at a time; never re-cases already-cased incidents.
+function maybeOpenCourtCase(){
+  const C = _court();
+  if (pendingCourtCase()) return null;
+  const active = activeIncidents();
+  const trigger = caseTrigger(active.map(_incSummary), activeStrikePoints());
+  if (!trigger) return null;
+  const linked = active.filter(i => i.level >= 2);
+  if (!linked.length) return null;
+  const ids = linked.map(i => i.id);
+  if (C.cases.some(c => c.status !== 'closed' && c.incidentIds.some(id => ids.includes(id)))) return null;
+  const c = {
+    id: C.nextId++, incidentIds: ids, charges: [...new Set(linked.map(i=>i.type))], categories: [...new Set(linked.map(i=>i.category))],
+    severity: Math.max(...linked.map(i=>i.level)), trigger, evidence: buildEvidence(linked.map(_incSummary)),
+    plea: null, rep: 'self', repPaid: false, repCost: 0, prep: [], challenged: [], phase: 'intro', status: 'pending',
+    hearingDay: _gameDay()+1, createdDay: _gameDay(), verdict: null, sentence: null, custody: null, suspended: null,
+    fine: 0, compensation: 0, finePaid: true, compPaid: true, committed: false, completedDay: null, appealHook: false, legalKnowledgeGained: false,
+  };
+  C.cases.push(c);
+  toast(`⚖️ Court summons — a hearing is scheduled (${triggerLabel(trigger)}). You're on bail.`);
+  log(`⚖️ <b>Court summons.</b> Your case has been referred to the Featherstone Magistrate for ${triggerLabel(trigger)}. Open ⚖️ Legal Status to review evidence, choose representation, prepare, and attend. You remain on bail until the hearing.`, "bad");
+  return c;
+}
+// ---- preparation / representation (pre-hearing, on bail) ----
+function courtSelectRep(caseId, repId){ const c = courtCaseById(caseId); if (!c || c.status==='closed') return; if (c.phase!=='intro'){ toast('The hearing has already begun.'); return; } if (!repById(repId)) return; c.rep = repId; renderCourtModal(); renderLegalModal(); save(); }
+function courtPrep(caseId, actionId){
+  const c = courtCaseById(caseId); if (!c || c.status==='closed') return;
+  if (!PREP_ACTIONS.some(a=>a.id===actionId)) return;
+  if (c.prep.includes(actionId)){ return; }
+  c.prep.push(actionId);
+  if (actionId==='legal_reading' && !c.legalKnowledgeGained){ S.legalKnowledge = Math.min(10, (S.legalKnowledge||0) + 1); c.legalKnowledgeGained = true; toast('📖 You brush up on your Legal Knowledge (+1).'); }
+  else if (actionId==='review_evidence'){ c.evidence.forEach(e=>e.reviewed=true); toast('🔍 You review the evidence bundle.'); }
+  else toast('✔ Preparation noted.');
+  renderCourtModal(); renderLegalModal(); save();
+}
+// ---- start / run the hearing ----
+function courtStart(caseId){
+  const c = courtCaseById(caseId); if (!c || c.status==='closed') return;
+  if (c.phase !== 'intro'){ openCourt(caseId); return; }
+  const rep = repById(c.rep) || REPRESENTATION.self;
+  if (!c.repPaid && rep.cost > 0){
+    if (S.coins < rep.cost){ toast(`${rep.name} costs ${fmt(rep.cost)}c — choose a cheaper option (the free duty solicitor is always available).`); return; }
+    S.coins -= rep.cost; c.repCost = rep.cost; updateHud();
+    log(`⚖️ Engaged ${rep.name} for ${fmt(rep.cost)} coins.`, "");
+  }
+  c.repPaid = true; c.status = 'in_progress'; c.phase = 'charges';
+  save(); openCourt(caseId);
+}
+function courtSetPlea(caseId, plea){ const c = courtCaseById(caseId); if (!c || !PLEAS.includes(plea)) return; if (c.phase!=='plea') return; c.plea = plea; c.phase = 'evidence'; save(); renderCourtModal(); }
+function courtChallenge(caseId, evType){ const c = courtCaseById(caseId); if (!c || c.phase!=='challenge') return; const e = c.evidence.find(x=>x.type===evType && x.challengeable); if (!e) return; if (!c.challenged.includes(evType)) c.challenged.push(evType); toast(`🗣️ You challenge: ${e.desc}`); save(); renderCourtModal(); }
+function courtAdvance(caseId){
+  const c = courtCaseById(caseId); if (!c) return;
+  const order = ['charges','plea','evidence','challenge','response','mitigation','decision','sentence','result'];
+  const idx = order.indexOf(c.phase);
+  if (c.phase === 'plea'){ toast('Enter a plea first.'); return; }
+  if (idx < 0 || idx >= order.length-1){ return; }
+  c.phase = order[idx+1];
+  // skip the challenge phase when there's nothing to challenge (or you admitted)
+  if (c.phase === 'challenge' && (c.plea !== 'contest' || !c.evidence.some(e => e.challengeable))) c.phase = 'response';
+  if (c.phase === 'decision'){ _runVerdict(c); }
+  if (c.phase === 'sentence'){ _runSentence(c); }
+  if (c.phase === 'result'){ _commitSentence(c); }
+  save(); renderCourtModal();
+}
+function _runVerdict(c){
+  const strength = evidenceStrength(c.evidence, { challenged: c.challenged }).score;
+  const comp = repCompetence(c.rep || 'self', S.legalKnowledge || 0, prepFactor(c.prep));
+  const contradiction = c.challenged.length > 0 && strength < 0.55;
+  c.verdict = computeVerdict({ strength, plea: c.plea, competence: comp, prep: prepFactor(c.prep), contradiction, elementsMet: true, seed: c.id * 7 + (c.incidentIds[0] || 0) });
+  return c.verdict;
+}
+function _caseIncidents(c){ return c.incidentIds.map(id => _justice().incidents.find(i => i.id === id)).filter(Boolean); }
+function _runSentence(c){
+  const incs = _caseIncidents(c);
+  const prior = Math.max(0, activeIncidents().length - incs.length);
+  const isHome = incs.some(i => i.type === 'burglary' || i.type === 'trespassing');
+  const value = incs.reduce((s,i)=> s + (i.value||0), 0);
+  const returned = incs.some(i => (i.rehab||[]).includes('returned'));
+  const compensated = incs.some(i => i.compPaid && i.compensation);
+  const rehabilitated = incs.some(i => (i.rehab||[]).includes('community'));
+  const f = factorsFor({ incidents: incs.map(_incSummary), plea: c.plea, priorActive: prior, isHome, value, returned, compensated, rehabilitated });
+  c.sentence = computeSentence({ finding: c.verdict.finding, severity: c.severity, offenceType: c.charges[0], value, aggravating: f.aggravating, mitigating: f.mitigating, repFloor: outcomeFloorRaised(c.rep || 'self') });
+  return c.sentence;
+}
+function _commitSentence(c){
+  if (c.committed) return;   // idempotent — never sentence twice / re-charge on reload
+  c.committed = true;
+  const incs = _caseIncidents(c);
+  const proven = c.verdict.finding === 'proven' || c.verdict.finding === 'lesser';
+  if (!proven){
+    incs.forEach(i => { i.status = 'dismissed'; i.escalate = false; i.strikePoints = 0; });
+    c.status = 'closed'; c.completedDay = _gameDay();
+    log(`⚖️ <b>Case ${proven?'':'not proven'}</b> — the linked allegations are cleared from your active record.`, "good");
+    return;
+  }
+  const s = c.sentence;
+  c.fine = s.fine; c.compensation = s.compensation; c.finePaid = s.fine === 0; c.compPaid = s.compensation === 0;
+  // the court order replaces the provisional V2 amounts on the linked incidents; mark them resolved (convicted, de-escalated)
+  incs.forEach(i => { i.fine = 0; i.finePaid = true; i.compensation = 0; i.compPaid = true; i.escalate = false; i.status = 'convicted'; });
+  if (s.community > 0 && !_justice().community){ startCommunityService('litter'); }
+  if (s.outcome === 'suspended'){ c.suspended = suspendedOrder(s.suspendedDays, { community: s.community, compensation: s.compensation }); c.suspendedUntilDay = _gameDay() + s.suspendedDays; }
+  if (s.outcome === 'custody'){ _applyCustody(c, s.custodyDays); }
+  c.status = 'closed'; c.completedDay = _gameDay();
+  log(`⚖️ <b>Sentence: ${OUTCOME_LABELS[s.outcome]}.</b> ${s.explanation}`, "bad");
+}
+// Custody = a SAFE, compressed interim term in the holding cell (NOT a prison scene).
+function _applyCustody(c, days){
+  const cd = custodyData(days); c.custody = cd;
+  const _dur = cd.compressedMs;
+  S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur, offence: c.charges[0] === 'burglary' ? 'burglary' : c.charges[0] === 'financial' ? 'financial' : 'trespassing', acts: [] };
+  S.tab = 'police_cell'; IP.x = icanvasW()/2; IP.y = icanvasH()-60; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = 'down';
+  const _lm = document.getElementById('court-modal'); if (_lm) _lm.remove();
+  const _ll = document.getElementById('legal-modal'); if (_ll) _ll.remove();
+  toast(`⚖️ Custodial sentence: ${days} days (served as a short compressed term).`);
+  log(`⚖️ <b>Custodial sentence — ${days} days.</b> A future prison milestone will use this record; for now you serve a short compressed term in the cell, then you're released. Your record is preserved.`, "bad");
+  try{ updateMusicZone(); }catch(e){}
+}
+// pay a court-ordered fine/compensation (idempotent, recorded separately from incident amounts)
+function payCourtOrder(caseId, which){
+  const c = courtCaseById(caseId); if (!c) return;
+  const owed = which === 'fine' ? (c.finePaid ? 0 : c.fine) : (c.compPaid ? 0 : c.compensation);
+  if (owed <= 0){ toast('Already paid.'); return; }
+  if (S.coins < owed){ toast(`Need ${fmt(owed)} coins — the court order stays outstanding until you can pay.`); return; }
+  S.coins -= owed; if (which === 'fine') c.finePaid = true; else c.compPaid = true;
+  toast(`⚖️ Paid court ${which}: ${fmt(owed)}c.`); renderCourtModal(); renderLegalModal(); updateHud(); save();
+}
+// ---- Court hearing modal (phased, keyboard + mouse, subtitled) ----
+function _chargeNames(c){ return c.charges.map(t => OFFENCES[t]?.name || t).join(', '); }
+function renderCourt(c){
+  const st = evidenceStrength(c.evidence, { challenged: c.challenged });
+  const btn = (act, label, style='') => `<button data-court="${act}" style="background:#2a3a5a;color:#cfe0ff;border:none;padding:7px 14px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:700;${style}">${label}</button>`;
+  const cont = btn(`advance:${c.id}`, 'Continue ▸');
+  let body = '', phaseName = '';
+  if (c.status === 'closed' && c.phase === 'result') c.phase = 'result';
+  switch (c.phase){
+    case 'intro': {
+      phaseName = 'Preparation (on bail)';
+      const reps = Object.values(REPRESENTATION).map(r => `<label style="display:block;font-size:12px;margin:3px 0;cursor:pointer"><input type="radio" name="court-rep" ${c.rep===r.id?'checked':''} onchange="courtSelectRep(${c.id},'${r.id}')"> <b>${r.name}</b>${r.cost?` — ${fmt(r.cost)}c`:' — free'} <span style="color:var(--dim)">${r.blurb}</span></label>`).join('');
+      const prog = prepCompleteness(c.prep);
+      const preps = PREP_ACTIONS.map(a => `<button data-court="prep:${c.id}:${a.id}" ${c.prep.includes(a.id)?'disabled':''} style="text-align:left;background:${c.prep.includes(a.id)?'#2a2a30':'#33333c'};color:${c.prep.includes(a.id)?'#6a6a72':'#e8e8ee'};border:1px solid #44444e;border-radius:5px;padding:5px 8px;font-size:11px;cursor:${c.prep.includes(a.id)?'default':'pointer'}">${c.prep.includes(a.id)?'✓ ':''}${a.label}</button>`).join('');
+      body = `<p style="font-size:12px;color:var(--dim);margin:0 0 8px">You are summoned for <b>${_chargeNames(c)}</b> (${triggerLabel(c.trigger)}). You are on bail. Prepare, then attend when ready.</p>
+        <div style="font-size:11px;font-weight:700;margin:6px 0 3px">⚖️ Representation</div>${reps}
+        <div style="font-size:11px;font-weight:700;margin:10px 0 3px">📋 Preparation — ${prog.pct}% complete</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">${preps}</div>
+        ${prog.remaining.length?`<p style="font-size:10px;color:var(--dim);margin:6px 0 0">Outstanding: ${prog.remaining.join(', ')}.</p>`:'<p style="font-size:10px;color:#4aff88;margin:6px 0 0">Fully prepared.</p>'}
+        <div style="margin-top:12px">${btn(`start:${c.id}`, '⚖️ Attend the hearing ▸', 'background:#2a5a3a')}</div>`;
+      break;
+    }
+    case 'charges': phaseName = 'Charges'; body = `<p style="font-size:13px;margin:0 0 6px">The clerk reads the charges: <b>${_chargeNames(c)}</b>.</p><p style="font-size:12px;color:var(--dim);margin:0 0 8px">Combined severity: <b>${severityLabel(c.severity)}</b>. The magistrate asks how you plead.</p>${cont}`; break;
+    case 'plea': phaseName = 'Your plea'; body = `<p style="font-size:12px;color:var(--dim);margin:0 0 8px">How do you answer the charge?</p>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${btn(`plea:${c.id}:admit`, '🙇 Admit the offence', 'background:#3a5a3a;text-align:left')}
+        ${btn(`plea:${c.id}:partial`, '½ Admit part of it', 'background:#4a4a2a;text-align:left')}
+        ${btn(`plea:${c.id}:contest`, '🛡️ Contest the allegation', 'background:#5a3a3a;text-align:left')}
+      </div>
+      <p style="font-size:10px;color:var(--dim);margin:8px 0 0">Admitting counts as cooperation and may reduce the sentence, but does not remove it. Contesting is sensible when the evidence is weak.</p>`; break;
+    case 'evidence': phaseName = 'Evidence'; body = `<div style="font-size:12px;font-weight:700;margin-bottom:4px">Evidence strength: <b>${st.band}</b></div><div style="font-size:11px;color:var(--dim);line-height:1.6;margin-bottom:8px">${st.reasons.join('<br>')||'No evidence on file.'}</div><p style="font-size:10px;color:var(--dim);margin:0 0 8px">${c.plea==='contest'?'You may challenge unreliable evidence next.':'You have entered your plea.'}</p>${cont}`; break;
+    case 'challenge': {
+      phaseName = 'Challenge evidence';
+      const ch = c.evidence.filter(e => e.challengeable);
+      body = `<p style="font-size:12px;color:var(--dim);margin:0 0 8px">Challenge any evidence you believe is unreliable (a good challenge can weaken a shaky case — it won't beat overwhelming evidence).</p>
+        ${ch.map(e => `<button data-court="challenge:${c.id}:${e.type}" ${c.challenged.includes(e.type)?'disabled':''} style="display:block;width:100%;text-align:left;background:${c.challenged.includes(e.type)?'#2a2a30':'#4a3a3a'};color:#e8d8d8;border:none;border-radius:4px;padding:6px 9px;font-size:11px;margin-bottom:5px;cursor:${c.challenged.includes(e.type)?'default':'pointer'}">${c.challenged.includes(e.type)?'✓ challenged: ':'🗣️ challenge: '}${e.desc}</button>`).join('')}
+        <div style="margin-top:6px">${cont}</div>`; break;
+    }
+    case 'response': phaseName = 'Your response'; body = `<p style="font-size:12px;margin:0 0 8px">${c.rep==='self'?'You address the magistrate directly.':`Your ${repById(c.rep)?.name} makes submissions on your behalf.`}</p><p style="font-size:11px;color:var(--dim);margin:0 0 8px">${c.plea==='admit'?'"My client accepts responsibility and wishes to make amends."':c.plea==='partial'?'"My client accepts part of the allegation only."':'"The evidence does not meet the required standard."'}</p>${cont}`; break;
+    case 'mitigation': { phaseName = 'Mitigation & aggravation'; const f = (()=>{ const incs=_caseIncidents(c); const prior=Math.max(0,activeIncidents().length-incs.length); return factorsFor({ incidents:incs.map(_incSummary), plea:c.plea, priorActive:prior, isHome:incs.some(i=>i.type==='burglary'||i.type==='trespassing'), value:incs.reduce((s,i)=>s+(i.value||0),0), returned:incs.some(i=>(i.rehab||[]).includes('returned')), compensated:incs.some(i=>i.compPaid&&i.compensation), rehabilitated:incs.some(i=>(i.rehab||[]).includes('community')) }); })();
+      body = `<div style="font-size:11px"><div style="color:#8adf8a;font-weight:700;margin-bottom:3px">In your favour</div>${f.mitigating.length?f.mitigating.map(m=>`• ${m.text}`).join('<br>'):'• (none noted)'}<div style="color:#e8a06a;font-weight:700;margin:8px 0 3px">Against you</div>${f.aggravating.length?f.aggravating.map(a=>`• ${a.text}`).join('<br>'):'• (none noted)'}</div><div style="margin-top:10px">${btn(`advance:${c.id}`,'Hear the decision ▸','background:#4a3a5a')}</div>`; break; }
+    case 'decision': phaseName = 'Decision'; body = `<p style="font-size:14px;font-weight:800;margin:0 0 6px">Finding: ${c.verdict.finding==='proven'?'Offence proven':c.verdict.finding==='lesser'?'Lesser offence proven':c.verdict.finding==='dismissed'?'Case dismissed':'Not proven'}</p><div style="font-size:11px;color:var(--dim);line-height:1.6">${(c.verdict.reasons||[]).map(r=>'• '+r).join('<br>')}</div><div style="margin-top:10px">${cont}</div>`; break;
+    case 'sentence': { phaseName = 'Sentence'; const s = c.sentence; body = (s.outcome==='no_action')
+        ? `<p style="font-size:13px;margin:0 0 8px">No sentence — no finding of guilt.</p>${cont}`
+        : `<p style="font-size:14px;font-weight:800;margin:0 0 6px">${OUTCOME_LABELS[s.outcome]}</p><div style="font-size:11px;color:var(--dim);line-height:1.6;margin-bottom:8px">${s.explanation}</div>
+           <div style="font-size:11px">${s.fine?`Fine: <b>${fmt(s.fine)}c</b><br>`:''}${s.compensation?`Compensation: <b>${fmt(s.compensation)}c</b><br>`:''}${s.community?`Community service: <b>${s.community} tasks</b><br>`:''}${s.suspendedDays?`Suspended for <b>${s.suspendedDays} days</b><br>`:''}${s.custodyDays?`Custody: <b>${s.custodyDays} days</b> (compressed)<br>`:''}</div>
+           <div style="margin-top:10px">${btn(`advance:${c.id}`,'Acknowledge ▸','background:#5a3a3a')}</div>`; break; }
+    case 'result': { phaseName = 'Result'; const s = c.sentence, v = c.verdict; const proven = v.finding==='proven'||v.finding==='lesser';
+      const pay = [];
+      if (!c.finePaid && c.fine) pay.push(`<button data-court="payfine:${c.id}" style="background:#4a3a1a;color:#ffd666;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Pay fine ${fmt(c.fine)}c</button>`);
+      if (!c.compPaid && c.compensation) pay.push(`<button data-court="paycomp:${c.id}" style="background:#3a2a4a;color:#d8b8f8;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Pay compensation ${fmt(c.compensation)}c</button>`);
+      body = `<div style="font-size:13px;font-weight:800;margin:0 0 6px">${proven?OUTCOME_LABELS[s.outcome]:'No conviction'}</div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:8px">Finding: ${v.finding.replace('_',' ')}. Representation: ${repById(c.rep)?.name||'self'}${c.repCost?` (${fmt(c.repCost)}c)`:''}.</div>
+        ${proven?`<div style="font-size:11px;line-height:1.6">${c.fine?`Fine ${fmt(c.fine)}c ${c.finePaid?'✓':''}<br>`:''}${c.compensation?`Compensation ${fmt(c.compensation)}c ${c.compPaid?'✓':''}<br>`:''}${c.suspended?`Suspended sentence — ${c.suspended.activeDays} days. Conditions: ${c.suspended.conditions.join('; ')}.<br>`:''}${c.custody?`Custodial record: ${c.custody.custodyDays} days (served compressed).<br>`:''}</div>`:'<p style="font-size:11px;color:#8adf8a">The allegations were cleared from your active record.</p>'}
+        ${pay.length?`<div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">${pay.join('')}</div>`:''}
+        <p style="font-size:10px;color:var(--dim);margin:10px 0 0">This result is recorded. You can reopen it any time from ⚖️ Legal Status.</p>
+        <div style="margin-top:8px"><button data-court="close" style="background:#2a5a2a;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px">Done</button></div>`; break; }
+  }
+  return `<div class="panel" style="padding:12px;max-width:520px">
+    <h2 style="margin:0 0 2px;font-size:16px">⚖️ Featherstone Magistrate's Court</h2>
+    <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">${phaseName}</div>
+    ${body}
+  </div>`;
+}
+function renderCourtModal(){ const c = _activeCourt && courtCaseById(_activeCourt); const e = document.getElementById('court-body'); if (e && c) e.innerHTML = renderCourt(c); }
+let _activeCourt = null;
+function openCourt(caseId){
+  const c = courtCaseById(caseId); if (!c) return;
+  _activeCourt = caseId;
+  if (document.getElementById('court-modal')){ renderCourtModal(); return; }
+  const el = document.createElement('div'); el.id = 'court-modal';
+  el.style.cssText = 'position:fixed;inset:0;z-index:62;display:flex;align-items:flex-start;justify-content:center;background:rgba(0,0,0,.6);padding:20px;overflow:auto';
+  el.innerHTML = `<div style="position:relative;width:100%;max-width:520px"><button id="court-close" style="position:absolute;top:6px;right:6px;z-index:2;background:#333;color:#fff;border:none;border-radius:4px;width:26px;height:26px;cursor:pointer">✕</button><div id="court-body"></div></div>`;
+  document.body.appendChild(el);
+  renderCourtModal();
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  document.getElementById('court-close').onclick = () => el.remove();
+}
+(globalThis as any).openCourt = openCourt;
+(globalThis as any).courtSelectRep = courtSelectRep;
+document.addEventListener('click', (e:any) => {
+  const t = e.target?.closest?.('[data-court]'); if (!t) return;
+  const [act, id, arg] = (t.dataset.court || '').split(':');
+  const cid = +id;
+  if (act === 'start') courtStart(cid);
+  else if (act === 'prep') courtPrep(cid, arg);
+  else if (act === 'plea') courtSetPlea(cid, arg);
+  else if (act === 'challenge') courtChallenge(cid, arg);
+  else if (act === 'advance') courtAdvance(cid);
+  else if (act === 'payfine') payCourtOrder(cid, 'fine');
+  else if (act === 'paycomp') payCourtOrder(cid, 'comp');
+  else if (act === 'close'){ const m = document.getElementById('court-modal'); if (m) m.remove(); renderLegalModal(); }
 });
 function _arrestPlayer(){
   if (S.caught?.active) return;   // idempotency: never double-arrest / double-record
@@ -7867,6 +8104,8 @@ function freshState(){
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     justice: { v:2, incidents:[], nextId:1, community:null },
+    court: { cases:[], nextId:1 },
+    legalKnowledge: 0,
   };
 }
 let S = freshState();
@@ -8000,6 +8239,10 @@ function load(){
       if (!("justice" in parsed) || !S.justice || !Array.isArray(S.justice.incidents)) S.justice = { v:2, incidents:[], nextId:1, community:null };
       if (typeof S.justice.nextId !== "number") S.justice.nextId = (S.justice.incidents.reduce((m,i)=>Math.max(m,i.id||0),0)||0)+1;
       if (!("community" in S.justice)) S.justice.community = null;
+      // Justice V3 — court cases + legal knowledge (empty for saves that predate it)
+      if (!("court" in parsed) || !S.court || !Array.isArray(S.court.cases)) S.court = { cases:[], nextId:1 };
+      if (typeof S.court.nextId !== "number") S.court.nextId = (S.court.cases.reduce((m,c)=>Math.max(m,c.id||0),0)||0)+1;
+      if (typeof S.legalKnowledge !== "number") S.legalKnowledge = 0;
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
       if (!("automatons" in parsed) || !S.automatons || typeof S.automatons !== "object") S.automatons = {};
