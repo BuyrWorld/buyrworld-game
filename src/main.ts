@@ -23,6 +23,7 @@ import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary,
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph } from './data/ui.ts';
+import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -470,25 +471,20 @@ const CHIP = (() => {
 // Scenario buckets → the actual MP3s the player dropped into Music/Frosty/*.
 // The global engine only ever selects from these; the "Frosty Exclusive" folder is
 // deliberately absent — those tracks are radio-only (see src/data/radio.ts).
-const MUSIC_FILES = {
-  title:            ['music/title/Frosty - Dead Inside (Game Music).mp3'],
-  nightclub_strip:  ['music/nightclub_strip/Frosty - Dark Passenger.mp3','music/nightclub_strip/Frosty - Mistakes.mp3','music/nightclub_strip/Frosty - Unapologetic (Explicit).mp3'],
-  nightclub_normal: ['music/nightclub_normal/Frosty - Deja Vu (Club).mp3','music/nightclub_normal/Frosty - Hit Back (Club).mp3','music/nightclub_normal/Frosty - Insatiable (Dance).mp3','music/nightclub_normal/Frosty - Too Far Gone (Dance).mp3','music/nightclub_normal/Frosty - Unsociable (Club).mp3'],
-  forest:           ['music/forest/Frosty - Departure [Instrumental].mp3'],
-  general:          ['music/general/Frosty - It is What it is (General Game).mp3'],
-  holding:          ['music/holding/Frosty - Unhinged [Instrumental].mp3'],
-};
-// Player-facing "Con" venue: the strip-club set is reserved for a player who has
-// worked to the TOP of the criminal career ladder (Kingpin) — sustained, serious
-// unethical behaviour, not a one-off slip. Civilians (and lesser offenders) get the
-// normal club set.
-function _isCon(){ return !!(S.justice && Array.isArray(S.justice.incidents) && atTopOfCriminalPath(S.justice.incidents)); }
-// Map the current tab to one of the scenario buckets above (global engine only).
-function scenarioForTab(tab){
-  if (tab === "police_cell") return "holding";
-  if (tab === "nightclub") return _isCon() ? "nightclub_strip" : "nightclub_normal";
-  if (tab === "woodcutting" || tab === "foraging") return "forest";
-  return "general";
+// Music scenario detection. The owner's manifest (src/data/musicManifest.ts) is
+// authoritative: FOLDER → scenario, never inferred from filename/genre/crime.
+function _worldFlags(){ return { prisonExpansionBuilt: !!S.prisonExpansionBuilt, nightclubVenueMode: S.nightclubVenueMode }; }
+function _soundtrackMode(){ return (S.settings && S.settings.soundtrack === 'chiptune') ? 'chiptune' : 'frosty'; }
+// Candidate scenarios that currently apply → resolved by the authoritative priority.
+// (The Frosty radio is handled separately at the top of updateMusicZone.)
+function currentScenario(){
+  const c = [];
+  if (typeof _titleUp === "function" && _titleUp()) c.push('title');
+  if (S.tab === "police_cell") c.push('holding');
+  if (S.tab === "nightclub") c.push('nightclub');
+  if (S.tab === "woodcutting" || S.tab === "foraging" || S.tab === "lore_stone") c.push('forest');
+  c.push('general');
+  return resolveScenario(c);
 }
 const AUDIO_CACHE_BUST = 'm2';
 // Self-heal: purge any audio a stale service worker cached (broken pointers, wrong
@@ -566,16 +562,20 @@ const FILEMUSIC = (() => {
   };
 })();
 
-// Public facade: real MP3s when a scenario/file exists, chiptune as a safety net.
+// Public facade over the two engines: Frosty Original (real MP3s) and Classic
+// Chiptune. The diegetic radio plays a specific file in either mode.
 const MUSIC = {
   unlocked: false,
-  // scenario bucket (title/nightclub_*/forest/general/holding) → its MP3 playlist
-  playScenario(scn){ const files = MUSIC_FILES[scn]; if (files){ CHIP.stop(); FILEMUSIC.playList(scn, files); } else { FILEMUSIC.stop(); CHIP.play(zoneForTab(S.tab)); } },
-  // a specific file (used by the diegetic radio) under a caller-chosen key
+  _chipScn: null as string|null, _chipTrack: null as string|null,
+  // Frosty Original — play the manifest playlist for a scenario key.
+  playFrosty(scnKey, srcs){ if (!srcs || !srcs.length) return false; CHIP.stop(); FILEMUSIC.playList(scnKey, srcs); return true; },
+  // Classic Chiptune — play a chiptune track for the scenario (rotates on scenario change).
+  playChip(scnKey, keys){ FILEMUSIC.stop(); if (!keys || !keys.length){ return; } if (this._chipScn !== scnKey){ this._chipScn = scnKey; this._chipTrack = keys[Math.floor(Math.random()*keys.length)]; } CHIP.play(this._chipTrack); },
+  // Diegetic radio — a specific file, regardless of the selected soundtrack mode.
   playFile(key, src){ CHIP.stop(); FILEMUSIC.playList(key, [src]); },
-  // legacy chiptune-key callers (e.g. title preview) still work
-  play(id){ if (MUSIC_FILES[id]){ this.playScenario(id); } else if (typeof TRACKS !== 'undefined' && TRACKS[id]){ FILEMUSIC.stop(); CHIP.play(id); } else { this.playScenario('general'); } },
-  stop(){ FILEMUSIC.stop(); CHIP.stop(); },
+  // Legacy callers (e.g. title preview): a raw chiptune key, else defer to the zone logic.
+  play(id){ if (typeof TRACKS !== 'undefined' && TRACKS[id]){ FILEMUSIC.stop(); CHIP.play(id); } else { updateMusicZone(); } },
+  stop(){ FILEMUSIC.stop(); CHIP.stop(); this._chipScn = null; },
   setVol(v){ FILEMUSIC.setVol(v); CHIP.setVol(v); },
   setVolMult(m){ FILEMUSIC.setVolMult(m); CHIP.setVolMult(m); },
   start(){ this.unlocked = true; updateMusicZone(); },
@@ -584,23 +584,33 @@ function updateMusicZone(){
   // The radio is house-only and never auto-resumes: leaving Frosty's House switches it off.
   if (S.tab !== "frost_lodge" && _radioOn) _radioOn = false;
   if (!(MUSIC.unlocked && S.settings && S.settings.music)) return;
-  // Diegetic radio takes over while inside Frosty's House and switched on.
+  // PRIORITY 1 — Frosty radio: plays the unlocked exclusive file in EITHER mode
+  // (a deliberate in-world interaction). It never changes the saved soundtrack pref.
   if (S.tab === "frost_lodge" && _radioOn && _radioSelectedTrack()){
     MUSIC.setVolMult(_radioVolMult());
     MUSIC.playFile('radio:' + _radioSelectedTrack().id, _radioSelectedTrack().file);
     return;
   }
-  // Title / character-creation screen → the Title theme (top of the global priority).
-  if (typeof _titleUp === "function" && _titleUp()){ MUSIC.setVolMult(1.0); MUSIC.playScenario("title"); return; }
-  const scn = scenarioForTab(S.tab);
+  const scn = currentScenario();                       // priority: holding > nightclub > forest > title > general
   const isHome = S.tab === "home" || S.tab === "myhome" || S.tab === "frost_lodge";
   const isInterior = INTERIOR_TABS.has(S.tab) && S.tab !== "village";
-  MUSIC.setVolMult(scn === "holding" ? 0.55 : isHome ? 0.6 : isInterior ? 0.82 : 1.0);
-  MUSIC.playScenario(scn);
+  MUSIC.setVolMult(scn === "holding" ? 0.7 : isHome ? 0.75 : isInterior ? 0.9 : 1.0);
+  const flags = _worldFlags();
+  const vmode = nightclubVenueMode(flags);
+  if (_soundtrackMode() === "chiptune"){
+    MUSIC.playChip('chip:' + scn + ':' + vmode, chiptuneKeys(scn, vmode));
+  } else {
+    const srcs = frostySources(scn, { venueMode: vmode, flags });
+    if (srcs.length) MUSIC.playFrosty('frosty:' + scn + ':' + vmode, srcs);
+    else { const gen = frostySources('general', { flags }); if (gen.length) MUSIC.playFrosty('frosty:general', gen); }  // e.g. strip venue locked → general
+  }
 }
 /* ---------- action sound effects ---------- */
-const VOL_LEVELS = { low: 0.45, med: 0.75, loud: 1.05 };
-function volLevel(){ return VOL_LEVELS[(S.settings && S.settings.vol) || "med"] || 0.75; }
+// Off / Low / Medium / Loud — genuinely distinct gains from the manifest (default Low).
+function volLevel(){ return volumeGain((S.settings && S.settings.vol) || DEFAULT_VOLUME); }
+// SFX loudness scales with the volume setting but stays clearly audible even at Low
+// (short blips would vanish at the low music gain, so they get their own curve).
+function sfxGain(){ return ({ off:0, low:0.7, med:1.0, loud:1.35 } as any)[(S.settings && S.settings.vol) || DEFAULT_VOLUME] || 0.7; }
 const SFX = (() => {
   let ctx = null, noise = null;
   function ensure(){
@@ -628,7 +638,7 @@ const SFX = (() => {
     if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
       ensure();
-      const mv = volLevel() / 0.75;
+      const mv = sfxGain();
       if (skill==="mining"){ hit(0.10*mv, 0.05); osc("square", 1500, 640, 0.07, 0.05*mv); }
       else if (skill==="steelworks"){ osc("square", 660, 200, 0.16, 0.06*mv); hit(0.08*mv, 0.10); }
       else if (skill==="manufacturing"){ hit(0.07*mv, 0.03); hit(0.07*mv, 0.03, 0.08); }
@@ -639,7 +649,7 @@ const SFX = (() => {
   levelUp(){
     if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
-      ensure(); const mv = volLevel() / 0.75;
+      ensure(); const mv = sfxGain();
       // rising major arpeggio C-E-G-C
       osc("square", 523, 523, 0.12, 0.055*mv, 0);
       osc("square", 659, 659, 0.12, 0.055*mv, 0.10);
@@ -650,7 +660,7 @@ const SFX = (() => {
   snap(){
     if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
-      ensure(); const mv = volLevel() / 0.75;
+      ensure(); const mv = sfxGain();
       hit(0.10*mv, 0.05);                          // the crack
       osc("square", 950, 150, 0.09, 0.06*mv, 0);   // twang whipping back
     }catch(e){}
@@ -658,7 +668,7 @@ const SFX = (() => {
   cook(){
     if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
-      ensure(); const mv = volLevel() / 0.75;
+      ensure(); const mv = sfxGain();
       hit(0.07*mv, 0.22);                         // sizzle
       hit(0.05*mv, 0.18, 0.10);
       osc("sine", 440, 660, 0.18, 0.045*mv, 0.14); // a cheerful "ready!" chime
@@ -668,7 +678,7 @@ const SFX = (() => {
   fanfare(){
     if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
     try{
-      ensure(); const mv = volLevel() / 0.75;
+      ensure(); const mv = sfxGain();
       // grand two-bar rising fanfare for a Founder's Journey milestone
       osc("square",   523, 523, 0.14, 0.05*mv, 0.00);   // C5
       osc("square",   784, 784, 0.14, 0.05*mv, 0.12);   // G5
@@ -682,7 +692,7 @@ const SFX = (() => {
   // distance-based volume for far-off gunfire. All synthesised (no samples).
   br(kind, vol=1){
     if (!MUSIC.unlocked || !S.settings || S.settings.sfx === false) return;
-    try{ ensure(); const mv = (volLevel()/0.75) * Math.max(0, Math.min(1, vol));
+    try{ ensure(); const mv = sfxGain() * Math.max(0, Math.min(1, vol));
       if (mv < 0.02) return;
       switch(kind){
         case 'pistol':   hit(0.06*mv,0.04); osc('square',720,300,0.06,0.05*mv); break;
@@ -784,8 +794,10 @@ function openSettings(){
   el.style.cssText='position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);padding:16px';
   el.innerHTML=`<div class="panel" style="padding:14px;max-width:380px;width:100%">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 style="margin:0;font-size:16px">⚙️ Settings</h2><button id="set-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
+    ${seg('Soundtrack', [{v:'frosty',l:'Frosty'},{v:'chiptune',l:'Chiptune'}], st.soundtrack==='chiptune'?'chiptune':'frosty', 'soundtrack')}
+    <div style="font-size:10px;color:var(--dim);margin:-3px 0 4px">Frosty = the loaded original soundtrack · Chiptune = the classic built-in tunes.</div>
     ${seg('Music', [{v:'on',l:'On'},{v:'off',l:'Off'}], st.music?'on':'off', 'music')}
-    ${seg('Music volume', [{v:'low',l:'Low'},{v:'med',l:'Med'},{v:'loud',l:'Loud'}], st.vol||'med', 'vol')}
+    ${seg('Music volume', [{v:'low',l:'Low'},{v:'med',l:'Med'},{v:'loud',l:'Loud'}], st.vol||'low', 'vol')}
     ${seg('Sound effects', [{v:'on',l:'On'},{v:'off',l:'Off'}], st.sfx===false?'off':'on', 'sfx')}
     ${seg('Text size', [{v:'small',l:'A'},{v:'normal',l:'A'},{v:'large',l:'A'}], st.textScale||'normal', 'text')}
     ${seg('Reduced motion', [{v:'off',l:'On anim'},{v:'on',l:'Reduced'}], st.motion===false?'on':'off', 'motion')}
@@ -800,6 +812,7 @@ function openSettings(){
   el.querySelectorAll('[data-set]').forEach(b=>(b as HTMLElement).onclick=()=>{
     const [k,v]=(b as HTMLElement).dataset.set!.split(':');
     if(k==='music') setMusic(v==='on');
+    else if(k==='soundtrack'){ st.soundtrack=(v==='chiptune'?'chiptune':'frosty'); MUSIC.stop(); if(st.music){ MUSIC.unlocked=true; updateMusicZone(); MUSIC.setVol(volLevel()); } }
     else if(k==='vol'){ st.vol=v; if(st.music){ MUSIC.setVol(volLevel()); } syncMusicButton(); }
     else if(k==='sfx') st.sfx=(v==='on');
     else if(k==='text'){ st.textScale=v; applyTextScale(); }
@@ -8257,8 +8270,19 @@ function showTitle(){
         Body: <b>${ap.gender==='female'?'Female':'Male'}</b> · Hair: <b>${(HAIR_STYLE_LABELS.find(h=>h.v==ap.hairStyle)||{label:'—'}).label}</b><br>
         Outfit set · Accessory: <b>${(ACCESSORY_STYLES.find(a=>a.v===ap.accessory)||{label:'None'}).label}</b> · Hat: <b>${(HAT_STYLES.find(h=>h.v===ap.hat)||{label:'None'}).label}</b>
       </div>`;
-      _optsEl.innerHTML = `<p style="font-size:12px;margin:2px 0 4px">Looking good, <b>${esc(_input.value.trim()||'Founder')}</b>! Ready to begin?</p>${_sum}${_tools}`;
+      const _stCur = (S.settings && S.settings.soundtrack === 'chiptune') ? 'chiptune' : 'frosty';
+      const _stBtn = (v,label,desc) => `<button data-st-mode="${v}" style="flex:1;background:${_stCur===v?'#3a6a8a':'#33333c'};color:#fff;border:1px solid ${_stCur===v?'#8ac0ff':'#44444e'};border-radius:5px;padding:7px 8px;font-size:11px;cursor:pointer;text-align:left"><b>${label}</b><br><span style="font-size:9px;color:${_stCur===v?'#cfe6ff':'var(--dim)'}">${desc}</span></button>`;
+      const _stPick = `<div style="margin-top:8px"><div style="font-size:11px;margin-bottom:4px">🎵 Soundtrack <span style="color:var(--dim)">(change any time in Settings)</span></div>
+        <div style="display:flex;gap:6px">${_stBtn('frosty','Frosty Original','The loaded soundtrack')}${_stBtn('chiptune','Classic Chiptune','Retro built-in tunes')}</div></div>`;
+      _optsEl.innerHTML = `<p style="font-size:12px;margin:2px 0 4px">Looking good, <b>${esc(_input.value.trim()||'Founder')}</b>! Ready to begin?</p>${_sum}${_stPick}${_tools}`;
       _optsEl.style.display=''; _nameBlk.style.display='none';
+      _optsEl.querySelectorAll('[data-st-mode]').forEach(b=>(b as HTMLElement).onclick=()=>{
+        if(!S.settings) S.settings = Object.assign({}, DEFAULT_SETTINGS);
+        S.settings.soundtrack = (b as HTMLElement).dataset.stMode === 'chiptune' ? 'chiptune' : 'frosty';
+        save();
+        if (MUSIC.unlocked && S.settings.music){ MUSIC.stop(); updateMusicZone(); MUSIC.setVol(volLevel()); }  // preview the chosen mode on the title theme
+        _renderWizard();
+      });
     } else {
       _optsEl.innerHTML = _tools + scr.build(ap) + (scr.id==='identity' ? '' : '');
       _optsEl.style.display=''; _nameBlk.style.display = scr.id==='identity' ? '' : 'none';
@@ -8414,7 +8438,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false,
-    playerName:"", settings:{ music:true, vol:"med" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
+    playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -8470,6 +8494,10 @@ function freshState(){
     legalKnowledge: 0,
     frostyRadio: { announced:[] as string[], selected:null as string|null, volume:"med" },
     uiCollapsed: {} as Record<string,boolean>,
+    // Nightclub venue state — future prison/world expansion flips the venue to strip-club.
+    // Music venue mode is driven by these flags, NEVER by the player's criminal record.
+    prisonExpansionBuilt: false,
+    nightclubVenueMode: "normal",
   };
 }
 let S = freshState();
@@ -8573,13 +8601,17 @@ function load(){
       if (S.upgrades.pick3){ S.upgrades.tool_gold = true; delete S.upgrades.pick1; delete S.upgrades.pick2; delete S.upgrades.pick3; }
       else if (S.upgrades.pick2){ S.upgrades.tool_iron = true; delete S.upgrades.pick1; delete S.upgrades.pick2; }
       else if (S.upgrades.pick1){ S.upgrades.tool_stone = true; delete S.upgrades.pick1; }
-      if (!("settings" in parsed)) S.settings = { music:true };
+      // New/unset save → full defaults (Frosty Original + Low). Returning players keep theirs.
+      if (!("settings" in parsed)) S.settings = Object.assign({}, DEFAULT_SETTINGS);
       // M4: settings defaults (volume, sfx, reduced-motion, text size)
-      if (!S.settings.vol) S.settings.vol = 'med';
+      if (!S.settings.vol) S.settings.vol = 'med';                // pre-existing saves keep their era default
       if (!("sfx" in S.settings)) S.settings.sfx = true;
       if (!("motion" in S.settings)) S.settings.motion = true;
       if (!("textScale" in S.settings)) S.settings.textScale = 'normal';
       if (!("couch" in S.settings)) S.settings.couch = false;   // Steam Deck / couch mode (opt-in)
+      // Soundtrack mode — Frosty Original vs Classic Chiptune (default Frosty for all saves).
+      if (!isSoundtrackMode(S.settings.soundtrack)) S.settings.soundtrack = 'frosty';
+      if (!S.uiCollapsed || typeof S.uiCollapsed !== "object") S.uiCollapsed = {};   // (also below; harmless)
       if (!S.uiCollapsed || typeof S.uiCollapsed !== "object") S.uiCollapsed = {};   // collapsible section state
       if (!("prod" in parsed)) S.prod = {};
       if (!("tut" in parsed)) S.tut = { step:99, done:true };

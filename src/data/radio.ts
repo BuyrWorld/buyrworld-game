@@ -1,8 +1,8 @@
 // Milestone addendum — Frosty's House Radio. A DIEGETIC music source: these
 // "Frosty Exclusive" tracks play ONLY through the radio inside Frosty's House,
-// never via the global zone/scenario music. They are the real MP3s the player
-// loaded under Music/Frosty/Frosty Exclusive/ (served from public/music/frosty_exclusive/).
-// Unlock progression scales with Frosty-guided quest milestones. Pure/testable.
+// never via the global zone/scenario music. Derived from the authoritative music
+// manifest (radioOnly tracks) so there is one source of truth. Pure/testable.
+import { MUSIC_MANIFEST } from './musicManifest.ts';
 
 export interface FrostyTrack {
   id: string;
@@ -14,14 +14,14 @@ export interface FrostyTrack {
   source: string;     // which Frosty quest unlocks it (player-facing)
 }
 
-// Frosty Exclusive tracks — the actual MP3s from the "Frosty Exclusive" folder.
-export const FROSTY_TRACKS: FrostyTrack[] = [
-  { id: 'ft_stayfrosty', title: 'Stay Frosty (Main Theme)', composer: 'Frosty', licence: 'Original — BuyrWorld', file: 'music/frosty_exclusive/Frosty - Stay Frosty (Main Theme).mp3', unlockAt: 1, source: "Frosty's tutorial" },
-  { id: 'ft_insatiable', title: 'Insatiable (Dubstep Edit)', composer: 'Frosty', licence: 'Original — BuyrWorld', file: 'music/frosty_exclusive/Frosty - Insatiable (Dubstep Edit).mp3', unlockAt: 3, source: "Frosty's later milestones" },
-];
+// Frosty Exclusive tracks — projected from the manifest's radioOnly entries.
+export const FROSTY_TRACKS: FrostyTrack[] = MUSIC_MANIFEST
+  .filter(t => t.radioOnly && t.enabled)
+  .sort((a, b) => (a.unlockAt || 1) - (b.unlockAt || 1))
+  .map(t => ({ id: t.id, title: t.title, composer: t.artist, licence: 'Original — BuyrWorld', file: t.source, unlockAt: t.unlockAt || 1, source: t.unlockLabel || "Frosty's quests" }));
 
 // The "Frosty Exclusive" folder — used by the global engine to refuse these files.
-export const FROSTY_EXCLUSIVE_DIR = 'music/frosty_exclusive/';
+export const FROSTY_EXCLUSIVE_DIR = 'music/frosty/frosty-exclusive/';
 
 // Radio access (and the first track) unlocks once the first Frosty quest is done.
 export const RADIO_UNLOCK_QUESTS = 1;
