@@ -68,28 +68,36 @@
 <meta name="apple-mobile-web-app-title" content="BuyrWorld">
 <style>
 :root{
-  --bg:#9fd6a8;      /* meadow green */
-  --panel:#fff8e6;   /* warm cream */
-  --panel2:#f6ecd2;  /* sand */
-  --edge:#8c6947;    /* soft wood brown */
-  --amber:#e8961e;   /* sunshine */
-  --orange:#ff8a5c;  /* coral */
-  --mint:#3aa66a;    /* leaf green */
-  --red:#e05d5d;
-  --text:#453423;    /* dark cocoa */
-  --dim:#8a7a63;
-  --shadow:#7c9a72;  /* leafy shadow */
-  --sky:#a6dff5;
+  /* Console-style dark identity — deep navy/charcoal with teal/cyan/purple/pink accents */
+  --bg:#0b1020;      /* deep navy ground */
+  --panel:#161d2e;   /* charcoal-navy panel */
+  --panel2:#1f2942;  /* raised panel / header / nav */
+  --edge:#33415f;    /* subtle cool border */
+  --amber:#ffc861;   /* currency / warm accent */
+  --orange:#ff7ea8;  /* pink-coral */
+  --mint:#35d6c1;    /* teal (levels / good) */
+  --red:#ff6b6b;
+  --text:#e9eefb;    /* near-white */
+  --dim:#94a4c6;     /* muted blue-grey */
+  --shadow:#04060d;  /* deep shadow */
+  --sky:#a6dff5;     /* (canvas sky — unchanged) */
+  --cyan:#37c8ff;
+  --purple:#a479ff;
+  --pink:#ff6ec7;
+  --teal:#35d6c1;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
-html{ -webkit-text-size-adjust:100%; }
+html{ -webkit-text-size-adjust:100%; background:var(--bg); }
 body{
   background:var(--bg); color:var(--text);
   font-family:'IBM Plex Mono', ui-monospace, monospace;
   font-size:14px; line-height:1.5;
-  min-height:100vh; display:flex; flex-direction:column;
-  image-rendering:pixelated;
+  min-height:100vh; min-height:100dvh; display:flex; flex-direction:column;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
 }
+/* Pixel-art (canvases + sprite assets) stays crisp-pixelated; HTML text/UI stays smooth & sharp */
+canvas{ image-rendering:pixelated; }
+img.px, .pixel-art{ image-rendering:pixelated; }
 h1,h2,h3,.px{ font-family:'Press Start 2P', monospace; }
 button{ font-family:inherit; cursor:pointer; }
 button:focus-visible, [tabindex]:focus-visible{ outline:3px solid var(--amber); outline-offset:2px; }
@@ -182,16 +190,17 @@ body.couch-mode .qty-sel button, body.couch-mode .qty-sel input{ font-size:16px;
 }
 
 /* ---------- layout ---------- */
-main{ flex:1; width:100%; max-width:1400px; margin:0 auto; padding:14px; }
-/* World view targets ~80% of the viewport height so the map dominates the screen */
-.village-canvas-rel{ max-width:min(100%, 142vh); margin:0 auto; }
-#village{ max-height:80vh; margin:0 auto; }
-.int-left #interior{ max-height:78vh; }
-body.couch-mode #village, body.fullscreen-mode #village{ max-height:85vh; }
+main{ flex:1; width:100%; max-width:1760px; margin:0 auto; padding:16px clamp(12px, 3vw, 40px); }
+/* World view dominates the screen (console-style large viewport) */
+.village-canvas-rel{ max-width:min(100%, 155vh); margin:0 auto; }
+#village{ max-height:84vh; margin:0 auto; }
+.int-left #interior{ max-height:80vh; }
+body.couch-mode #village, body.fullscreen-mode #village{ max-height:90vh; }
+body.fullscreen-mode main{ max-width:100%; padding:10px clamp(8px, 2vw, 28px); }
 .panel{
-  background:var(--panel); border:2px solid var(--edge);
-  box-shadow:4px 4px 0 var(--shadow); padding:16px; margin-bottom:16px;
-  border-top:3px solid var(--amber);
+  background:rgba(22,29,46,.92); border:1px solid var(--edge);
+  box-shadow:0 6px 22px rgba(0,0,0,.38); padding:16px; margin-bottom:14px;
+  border-top:2px solid var(--amber); border-radius:12px;
 }
 .panel h2{ font-size:12px; color:var(--amber); margin-bottom:11px; line-height:1.4; }
 .panel h2 small{ display:block; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--dim); margin-top:6px; font-weight:400; line-height:1.5; }
@@ -254,12 +263,12 @@ body.couch-mode #village, body.fullscreen-mode #village{ max-height:85vh; }
 .contract .req .have{ color:var(--mint); } .contract .req .short{ color:var(--orange); }
 .contract .pay{ font-size:12px; color:var(--amber); }
 .btn{
-  background:var(--orange); color:#1a0d05; border:none; padding:9px 16px;
-  font-size:13px; font-weight:600; box-shadow:3px 3px 0 var(--shadow);
-  transition:background 0.12s, transform 0.08s, box-shadow 0.08s;
+  background:var(--orange); color:#1a0d05; border:none; padding:9px 16px; border-radius:8px;
+  font-size:13px; font-weight:700; box-shadow:0 3px 12px rgba(0,0,0,.3);
+  transition:background 0.12s, transform 0.08s, box-shadow 0.08s, filter 0.12s;
 }
-.btn:hover:not(:disabled){ background:#ff9e72; }
-.btn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--shadow); }
+.btn:hover:not(:disabled){ filter:brightness(1.12); }
+.btn:active{ transform:translateY(1px); box-shadow:0 1px 5px rgba(0,0,0,.35); }
 .btn.alt{ background:var(--panel2); color:var(--dim); border:2px solid var(--edge); box-shadow:none; }
 .btn.alt:hover:not(:disabled){ background:var(--panel); }
 /* Journey button glows + pulses when a milestone is ready to claim */
@@ -292,8 +301,8 @@ body.text-small .panel, body.text-small .log, body.text-small .obj-tracker, body
 
 /* ---------- upgrades / companions ---------- */
 .card{
-  background:var(--panel2); border:2px solid var(--edge); padding:12px; margin-bottom:10px;
-  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+  background:var(--panel2); border:1px solid var(--edge); padding:12px; margin-bottom:10px;
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap; border-radius:9px;
 }
 .card .ic{ font-size:26px; }
 .card .body{ flex:1; min-width:180px; }
