@@ -501,6 +501,15 @@ const FILEMUSIC = (() => {
     a.preload = 'auto'; a.loop = (list.length <= 1);
     a.volume = 0; (a as any)._fadeTimer = null;
     a.addEventListener('ended', () => { if (list.length > 1 && el === a) advance(); });
+    // If a real MP3 can't load (missing from the build, blocked, decode error), don't
+    // go silent — fall back to the procedural chiptune for the current zone.
+    a.addEventListener('error', () => {
+      if (el !== a) return;
+      try{ console.warn('[music] MP3 failed to load — falling back to chiptune:', src, a.error && a.error.code); }catch(e){}
+      key = null; el = null;
+      try{ CHIP.play(zoneForTab(S.tab)); }catch(e){}
+      try{ if (!(window as any).__mp3warned){ (window as any).__mp3warned = true; log("🎵 Music files couldn't be loaded — using the built-in chiptune soundtrack instead.", ""); } }catch(e){}
+    });
     return a;
   }
   // Per-element fade so a fade-out and a fade-in can run at once without clobbering

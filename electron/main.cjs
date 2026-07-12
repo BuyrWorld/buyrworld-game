@@ -29,10 +29,31 @@ function startServer(){
         let file = path.join(DIST, path.normalize(p));
         if (!file.startsWith(DIST)) { res.statusCode = 403; return res.end('forbidden'); }
         if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
-        const body = fs.readFileSync(file);
+        const total = fs.statSync(file).size;
         res.setHeader('Content-Type', MIME[path.extname(file).toLowerCase()] || 'application/octet-stream');
         res.setHeader('Cache-Control', 'no-cache');
-        res.end(body);
+        res.setHeader('Accept-Ranges', 'bytes');   // media (<audio>) relies on range support
+        // Honour HTTP Range so audio/video stream and seek correctly in the packaged app.
+        const range = req.headers.range;
+        if (range) {
+          const m = /bytes=(\d*)-(\d*)/.exec(range);
+          let start = m && m[1] ? parseInt(m[1], 10) : 0;
+          let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
+          if (isNaN(start)) start = 0;
+          if (isNaN(end) || end >= total) end = total - 1;
+          if (start > end || start >= total) {
+            res.statusCode = 416; res.setHeader('Content-Range', `bytes */${total}`); return res.end();
+          }
+          res.statusCode = 206;
+          res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+          res.setHeader('Content-Length', end - start + 1);
+          if (req.method === 'HEAD') return res.end();
+          return fs.createReadStream(file, { start, end }).pipe(res);
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Length', total);
+        if (req.method === 'HEAD') return res.end();
+        fs.createReadStream(file).pipe(res);
       } catch (e) { res.statusCode = 500; res.end('server error'); }
     });
     server.on('error', reject);
