@@ -490,6 +490,16 @@ function scenarioForTab(tab){
   if (tab === "woodcutting" || tab === "foraging") return "forest";
   return "general";
 }
+const AUDIO_CACHE_BUST = 'm2';
+// Self-heal: purge any audio a stale service worker cached (broken pointers, wrong
+// bytes) so the real MP3s can load fresh. Fire-and-forget, runs once at startup.
+try{
+  if (typeof caches !== 'undefined' && caches.keys){
+    caches.keys().then(keys => keys.forEach(k => caches.open(k).then(c => c.keys().then(reqs =>
+      reqs.forEach(r => { if (/\.(mp3|ogg|wav|m4a)(\?|$)/i.test(r.url) || r.url.indexOf('/music/') >= 0) c.delete(r); })
+    )))).catch(()=>{});
+  }
+}catch(e){}
 // A file-based playlist engine (HTMLAudioElement). Loops a shuffled bucket; the
 // exclusive radio drives it directly with a single-track playlist.
 const FILEMUSIC = (() => {
@@ -497,7 +507,10 @@ const FILEMUSIC = (() => {
   function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
   function target(){ return Math.max(0, Math.min(1, base * volMult)); }
   function make(src){
-    const a = new Audio(encodeURI('./' + src));
+    // ?v= cache-buster defeats any stale/broken audio a previous service worker cached
+    // (e.g. a 130-byte LFS pointer from before the files were real) — the query makes it
+    // a fresh URL the poisoned cache can't match, so it hits the network.
+    const a = new Audio(encodeURI('./' + src) + '?v=' + AUDIO_CACHE_BUST);
     a.preload = 'auto'; a.loop = (list.length <= 1);
     a.volume = 0; (a as any)._fadeTimer = null;
     a.addEventListener('ended', () => { if (list.length > 1 && el === a) advance(); });
