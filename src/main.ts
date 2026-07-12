@@ -4085,9 +4085,11 @@ function _scatterGrass(ctx, x, y, c, r){
     if (_thash(c, r, 20 + k) < 0.60) continue;   // most tiles stay sparse
     const ox = x + 3 + _thash(c, r, 30 + k) * 16, oy = y + 4 + _thash(c, r, 40 + k) * 15;
     const kind = _thash(c, r, 50 + k);
-    if (kind < 0.20){          // tuft of taller grass
+    if (kind < 0.20){          // tuft of taller grass — its tips lean with the wind
+      const ln = Math.round(_windX * 1.3);
       ctx.fillStyle = _thash(c,r,60+k) < 0.5 ? "#7abd6f" : "#6fb265";
-      ctx.fillRect(ox, oy-4, 2, 6); ctx.fillRect(ox+3, oy-2, 2, 5);
+      ctx.fillRect(ox+ln, oy-4, 2, 3); ctx.fillRect(ox, oy-1, 2, 3);
+      ctx.fillRect(ox+3+ln, oy-2, 2, 3); ctx.fillRect(ox+3, oy+1, 2, 2);
     } else if (kind < 0.37){   // clover
       ctx.fillStyle = "#5fae57"; ctx.fillRect(ox,oy,2,2); ctx.fillRect(ox+2,oy,2,2); ctx.fillRect(ox+1,oy+2,2,2);
     } else if (kind < 0.55){   // flower
@@ -4104,6 +4106,85 @@ function _scatterGrass(ctx, x, y, c, r){
       ctx.fillStyle = "#6fb466"; ctx.fillRect(ox,oy-3,1,5); ctx.fillRect(ox+2,oy-2,1,4);
     }
   }
+}
+// Global slow-varying wind (−~2..+2 px). Drives grass lean, smoke + particle drift.
+let _windX = 0;
+// Cloud shadows drifting over the ground (world space, drawn under buildings).
+function drawCloudShadows(ctx, t){
+  const worldW = VCOLS*TILE;
+  for (let i=0;i<3;i++){
+    const cx = ((t*(6+i*3) + i*640) % (worldW + 640)) - 320;
+    const cy = 130 + i*190 + Math.sin(t*0.08 + i)*22;
+    ctx.fillStyle = "rgba(16,34,24,0.05)";
+    ctx.beginPath(); ctx.ellipse(cx, cy, 170+i*44, 82+i*22, 0, 0, 7); ctx.fill();
+  }
+}
+// Chimney smoke rising from ~half the houses (world space, over buildings).
+function drawChimneySmoke(ctx, t){
+  for (const o of V_OBJECTS){
+    if (o.kind !== "bld") continue;
+    const r = objRect(o);
+    if (_thash(r.x|0, r.y|0, 11) > 0.45) continue;                       // only some chimneys smoke
+    if (r.x+r.w < CAM.x-20 || r.x > CAM.x+VIEW_W+20 || r.y+r.h < CAM.y-50 || r.y > CAM.y+VIEW_H+20) continue;
+    const smx = r.x + r.w*0.72, smy = r.y - 3;
+    for (let p=0;p<3;p++){
+      const ph = (t*0.35 + p*0.34 + (r.x%9)*0.08) % 1;
+      const py = smy - ph*24, px = smx + Math.sin(ph*7+p)*3 + _windX*ph*7;
+      ctx.fillStyle = `rgba(212,212,218,${(0.24*(1-ph)).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(px, py, 2 + ph*3.4, 0, 7); ctx.fill();
+    }
+  }
+}
+// Sky/air ambience in SCREEN space (birds, butterflies, drifting petals/leaves/snow).
+function drawSkyAmbience(ctx, t){
+  const season = getSeason();
+  // butterflies (skip in winter) — two flapping wing pixels
+  if (season !== "winter"){
+    for (let i=0;i<4;i++){
+      const bx = VIEW_W*0.12 + ((t*(9+i*4) + i*190) % (VIEW_W*0.78));
+      const by = VIEW_H*0.42 + Math.sin(t*1.5 + i*2)*28 + i*38;
+      const fl = Math.sin(t*11 + i)*1.4;
+      ctx.fillStyle = ["#ffd24a","#ff8ac0","#8ac6ff","#c79bff"][i%4];
+      ctx.fillRect(bx-2, by-fl, 2, 2); ctx.fillRect(bx+1, by+fl, 2, 2);
+    }
+  }
+  // birds gliding across the upper area (occasional, both directions)
+  for (let i=0;i<2;i++){
+    const period = 26 + i*11, ph = ((t + i*13) % period) / period;
+    if (ph < 0.04 || ph > 0.96) continue;
+    const dir = i%2 ? 1 : -1;
+    const bx = dir>0 ? ph*(VIEW_W+120)-60 : VIEW_W - (ph*(VIEW_W+120)-60);
+    const by = 30 + i*44 + Math.sin(t*1.1 + i)*7;
+    const flap = Math.abs(Math.sin(t*7 + i))*3;
+    ctx.strokeStyle = "rgba(46,46,58,.5)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(bx-5, by+flap); ctx.lineTo(bx, by); ctx.lineTo(bx+5, by+flap); ctx.stroke();
+  }
+  ctx.lineWidth = 1;
+  // drifting particles — season-tinted (petals / pollen / leaves / snow)
+  const cols = season==="autumn" ? ["#d98a3a","#c9702a","#e0a850"]
+             : season==="winter" ? ["#eef4ff","#dce8ff"]
+             : season==="spring" ? ["#ffc0d0","#ffd8e4"]
+             : ["#eeecb6","#e6dc9c"];
+  const N = season==="autumn" ? 16 : season==="winter" ? 22 : season==="spring" ? 12 : 8;
+  for (let i=0;i<N;i++){
+    const fall = ((t*(7 + (i%5)*4) + i*97) % (VIEW_H + 40)) - 20;
+    const drift = Math.sin(t*0.8 + i)*16 + _windX*20;
+    let px = ((i*137) % VIEW_W) + drift; px = ((px % VIEW_W) + VIEW_W) % VIEW_W;
+    ctx.fillStyle = cols[i % cols.length];
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(px, fall, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+}
+function _strHash(s){ let h = 0; for (let i=0;i<s.length;i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0; return h; }
+// A brief, purely-visual activity emote above a stationary villager (coffee, chat,
+// looking around, shopping…). Deterministic + staggered so it never all fires at once.
+// Does NOT change any villager AI, movement or gameplay.
+function _villagerEmote(v, t){
+  const h = _strHash(v.id || "x");
+  const off = (h % 1000) / 1000 * 18;
+  if (((t + off) % 18) > 3) return "";        // ~3s emote per ~18s, per villager
+  return ["☕","💬","👀","🎵","😊","🛍️"][(h + Math.floor((t + off) / 18)) % 6];
 }
 function drawTiles(ctx, t){
   const tier = villageTierLvl();
@@ -5037,9 +5118,12 @@ function drawVillage(t){
   ctx.fillStyle=SEASON_DEFS[getSeason()].grass; ctx.fillRect(0,0,VIEW_W,VIEW_H);
   ctx.save();
   ctx.translate(-Math.round(CAM.x), -Math.round(CAM.y));
+  _windX = Math.sin(t*0.5)*1.2 + Math.sin(t*0.17)*0.7;   // slow ambient wind
   drawTiles(ctx, t);
+  drawCloudShadows(ctx, t);       // soft drifting cloud shadows on the ground
   drawSeasonalBillboard(ctx, t); // billboard must be behind buildings
   drawObjects(ctx, t);
+  drawChimneySmoke(ctx, t);       // smoke from house chimneys
   drawExtras(ctx, t);
   const nowD = Date.now();
   for (let i=DUST.length-1;i>=0;i--){
@@ -5055,6 +5139,7 @@ function drawVillage(t){
   for (const v of VILLAGER_STATE){
     if (v.phase === "sleep" || v.indoor) continue;
     drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female, 1.0, 'none', '#2a1a0a', { shoes: v.shoes });
+    if (!v.moving){ const _em = _villagerEmote(v, t); if (_em) drawEmojiC(ctx, _em, v.x, v.y - 22, 11); }
   }
   for (const c of CHILDREN_STATE){
     if (c.phase==="sleep" || c.phase==="school") continue;
@@ -5083,6 +5168,7 @@ function drawVillage(t){
   }
   drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
   ctx.restore();
+  drawSkyAmbience(ctx, t);   // birds, butterflies, drifting petals/leaves/snow (screen space)
   // HTML overlay: player name tag + nearest-interactable tooltip (crisp text, no canvas blurriness)
   const overlay = document.getElementById("village-overlay");
   if (overlay){
