@@ -8161,9 +8161,9 @@ function _drawTitlePreview(){
   for(let _fi=0;_fi<4;_fi++){ ctx2.fillStyle=["#e84060","#ffd666","#f86040","#6fb7ff"][_fi]; ctx2.beginPath(); ctx2.arc(16+_fi*28,H2*0.74,4,0,7); ctx2.fill(); }
   // player character — zooms to the face for head-detail steps, walks full-body otherwise
   const _face = _wizFocus === 'face';
-  const _scale = _face ? 6.6 : 3.2;
+  const _scale = _face ? 9 : 4.7;
   const _cx = W2/2;
-  const _cy = _face ? Math.round(H2*0.42 + 11*_scale) : H2*0.72;
+  const _cy = _face ? Math.round(H2*0.40 + 11*_scale) : Math.round(H2*0.70);
   drawPerson(ctx2, _cx, _cy, plHair(), plShirt(), t2, _rmPrev ? false : !_face, 1, null, "down", plSkin(), plTrousers(), null, plGender()==='female', _scale, plHat(), plHatColor(), {...plOpts(), stride:2.4});
   _titlePreviewRaf = requestAnimationFrame(_drawTitlePreview);
 }
@@ -8199,6 +8199,7 @@ function focusGameInput(){
 function showTitle(){
   const tEl = document.getElementById("title");
   tEl.style.display = "flex";
+  document.body.classList.add("title-open");
   // typewriter subtitle
   const _tagline = "A cosy supply-chain life sim · Featherstone Valley";
   const _twEl = document.getElementById("title-typewriter") as HTMLElement;
@@ -8223,30 +8224,35 @@ function showTitle(){
   const _dotsEl  = document.getElementById("wiz-dots") as HTMLElement;
   const _backBtn = document.getElementById("wiz-back") as HTMLButtonElement;
   const _nextBtn = document.getElementById("wiz-next") as HTMLButtonElement;
+  const _progEl  = document.getElementById("wiz-progress") as HTMLElement;
+  const _pvName  = document.getElementById("cc-pv-name") as HTMLElement;
+  const _panelEl = document.querySelector(".cc-panel") as HTMLElement;
+  const STEP_LABELS = ['Appearance', 'Background', 'Start Life'];
 
   const _swHtml  = (arr, field, ap) => `<div class="cust-swatches">${arr.map(c=>`<button class="swatch${ap[field]===c.v?' sel':''}" style="background:${c.v||'rgba(120,90,60,.25)'}" data-cf="${field}" data-cv="${c.v}" title="${c.label}"></button>`).join('')}</div>`;
   const _txtHtml = (arr, field, ap) => `<div class="cust-swatches" style="flex-wrap:wrap;gap:5px">${arr.map(c=>`<button class="swatch-txt${ap[field]==c.v?' sel':''}" data-cf="${field}" data-cv="${c.v}">${c.label}</button>`).join('')}</div>`;
+  const _field = (label, inner) => `<div class="cc-field"><div class="cc-field-label">${label}</div>${inner}</div>`;
 
-  // Three screens instead of 13 one-field steps. Each screen shows a group of
-  // fields at once; selections live in S.appearance so nothing is lost between
-  // screens. Screen 3 is a confirm/summary with a large preview.
-  const _grp = (label, inner) => `<div class="cust-sub" style="margin-top:8px">${label}</div>${inner}`;
+  // 3-step console wizard: Appearance → Background → Starting Life. Same appearance
+  // data/handlers as before; only the presentation and grouping changed.
   const _screens: any[] = [
-    { id:'identity', label:'Identity', focus:'face', build:(ap)=>
-        _grp('Body type', `<div class="cust-swatches"><button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cf="gender" data-cv="male" aria-label="Male body">♂ Male</button><button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cf="gender" data-cv="female" aria-label="Female body">♀ Female</button></div>`)
-      + _grp('Skin tone',   _swHtml(SKIN_TONES,'skin',ap))
-      + _grp('Hair style',  _txtHtml(HAIR_STYLE_LABELS,'hairStyle',ap))
-      + _grp('Hair colour', _swHtml(HAIR_COLOURS,'hair',ap))
-      + (ap.gender!=='female' ? _grp('Facial hair', _txtHtml(FACIAL_HAIR_STYLES,'facialHair',ap)) : '')
-      + _grp('Eye colour',  _swHtml(EYE_COLOURS,'eyeColor',ap)) },
-    { id:'outfit', label:'Outfit', focus:'body', build:(ap)=>
-        _grp('Shirt',    _swHtml(SHIRT_COLOURS,'shirt',ap))
-      + _grp('Jacket',   _swHtml(JACKET_COLOURS,'jacket',ap))
-      + _grp('Trousers', _swHtml(TROUSER_COLOURS,'trousers',ap))
-      + _grp('Shoes',    _swHtml(SHOE_COLOURS,'shoes',ap))
-      + _grp('Accessory',_txtHtml(ACCESSORY_STYLES,'accessory',ap) + (ap.accessory==='scarf' ? _grp('Scarf colour', _swHtml(SCARF_COLOURS,'scarfColor',ap)) : ''))
-      + _grp('Hat',      _txtHtml(HAT_STYLES,'hat',ap) + ((ap.hat&&ap.hat!=='none') ? _grp('Hat colour', _swHtml(HAT_COLOURS,'hatColor',ap)) : '')) },
-    { id:'confirm', label:'Confirm', focus:'body', confirm:true },
+    { id:'appearance', label:'Appearance', focus:'face', build:(ap)=> `<div class="cc-fields">`
+      + _field('Body type', `<div class="cust-swatches"><button class="swatch-txt${ap.gender==='male'?' sel':''}" data-cf="gender" data-cv="male" aria-label="Male body">♂ Male</button><button class="swatch-txt${ap.gender==='female'?' sel':''}" data-cf="gender" data-cv="female" aria-label="Female body">♀ Female</button></div>`)
+      + _field('Skin tone',   _swHtml(SKIN_TONES,'skin',ap))
+      + _field('Hair style',  _txtHtml(HAIR_STYLE_LABELS,'hairStyle',ap))
+      + _field('Hair colour', _swHtml(HAIR_COLOURS,'hair',ap))
+      + _field('Eye colour',  _swHtml(EYE_COLOURS,'eyeColor',ap))
+      + (ap.gender!=='female' ? _field('Facial hair', _txtHtml(FACIAL_HAIR_STYLES,'facialHair',ap)) : '')
+      + `</div>` },
+    { id:'background', label:'Background', focus:'body', build:(ap)=> `<div class="cc-fields">`
+      + _field('Shirt',    _swHtml(SHIRT_COLOURS,'shirt',ap))
+      + _field('Jacket',   _swHtml(JACKET_COLOURS,'jacket',ap))
+      + _field('Trousers', _swHtml(TROUSER_COLOURS,'trousers',ap))
+      + _field('Shoes',    _swHtml(SHOE_COLOURS,'shoes',ap))
+      + _field('Accessory',_txtHtml(ACCESSORY_STYLES,'accessory',ap) + (ap.accessory==='scarf' ? _swHtml(SCARF_COLOURS,'scarfColor',ap) : ''))
+      + _field('Hat',      _txtHtml(HAT_STYLES,'hat',ap) + ((ap.hat&&ap.hat!=='none') ? _swHtml(HAT_COLOURS,'hatColor',ap) : ''))
+      + `</div>` },
+    { id:'startlife', label:'Starting Life', focus:'body', confirm:true },
   ];
   let _wizStep = 0;
 
@@ -8256,37 +8262,59 @@ function showTitle(){
     const ap = S.appearance;
     _wizFocus = scr.focus;
     _stepLbl.textContent = scr.label;
-    _stepCnt.textContent = `${_wizStep+1} / ${_screens.length}`;
-    const _tools = `<div class="cust-swatches" style="gap:6px;margin-bottom:2px"><button class="swatch-txt" data-wiz-random aria-label="Randomise appearance">🎲 Randomise</button><button class="swatch-txt" data-wiz-reset aria-label="Reset to default">↺ Reset</button></div>`;
+    _stepCnt.textContent = `Step ${_wizStep+1} of ${_screens.length}`;
+    // ---- named-step progress bar ----
+    if (_progEl){
+      _progEl.innerHTML = _screens.map((s,i)=>{
+        const cls = i < _wizStep ? 'done' : i === _wizStep ? 'on' : '';
+        const node = i < _wizStep ? '✓' : i === _wizStep ? '●' : '○';
+        const conn = i > 0 ? `<span class="cc-conn ${i <= _wizStep ? 'done' : ''}"></span>` : '';
+        return conn + `<button class="cc-step ${cls}" data-step="${i}" ${i > _wizStep ? 'disabled' : ''}><span class="cc-node">${node}</span><span class="cc-slabel">${STEP_LABELS[i]}</span></button>`;
+      }).join('');
+      _progEl.querySelectorAll('[data-step]').forEach(b=>(b as HTMLElement).onclick=()=>{ const t=+(b as HTMLElement).dataset.step!; if (t <= _wizStep){ _wizStep = t; _renderWizard(); } });
+    }
+    // ---- panel content ----
     if (scr.confirm){
-      const _sum = `<div style="font-size:11px;color:var(--dim);line-height:1.7;margin-top:4px">
-        Body: <b>${ap.gender==='female'?'Female':'Male'}</b> · Hair: <b>${(HAIR_STYLE_LABELS.find(h=>h.v==ap.hairStyle)||{label:'—'}).label}</b><br>
-        Outfit set · Accessory: <b>${(ACCESSORY_STYLES.find(a=>a.v===ap.accessory)||{label:'None'}).label}</b> · Hat: <b>${(HAT_STYLES.find(h=>h.v===ap.hat)||{label:'None'}).label}</b>
-      </div>`;
+      const nm = esc(_input.value.trim() || 'Founder');
       const _stCur = (S.settings && S.settings.soundtrack === 'chiptune') ? 'chiptune' : 'frosty';
-      const _stBtn = (v,label,desc) => `<button data-st-mode="${v}" style="flex:1;background:${_stCur===v?'#3a6a8a':'#33333c'};color:#fff;border:1px solid ${_stCur===v?'#8ac0ff':'#44444e'};border-radius:5px;padding:7px 8px;font-size:11px;cursor:pointer;text-align:left"><b>${label}</b><br><span style="font-size:9px;color:${_stCur===v?'#cfe6ff':'var(--dim)'}">${desc}</span></button>`;
-      const _stPick = `<div style="margin-top:8px"><div style="font-size:11px;margin-bottom:4px">🎵 Soundtrack <span style="color:var(--dim)">(change any time in Settings)</span></div>
-        <div style="display:flex;gap:6px">${_stBtn('frosty','Frosty Original','The loaded soundtrack')}${_stBtn('chiptune','Classic Chiptune','Retro built-in tunes')}</div></div>`;
-      _optsEl.innerHTML = `<p style="font-size:12px;margin:2px 0 4px">Looking good, <b>${esc(_input.value.trim()||'Founder')}</b>! Ready to begin?</p>${_sum}${_stPick}${_tools}`;
-      _optsEl.style.display=''; _nameBlk.style.display='none';
+      const _sBtn = (v,label,desc) => `<button class="cc-sound-btn ${_stCur===v?'sel':''}" data-st-mode="${v}" type="button"><b>${label}</b><span>${desc}</span></button>`;
+      _optsEl.innerHTML = `<div class="cc-card">
+          <div class="cc-rule"></div>
+          <div class="cc-cname">${nm}</div>
+          <div class="cc-ctitle">Future Entrepreneur</div>
+          <div class="cc-cmeta">
+            <span class="m">📍 <b>Featherstone Valley</b></span>
+            <span class="m">Age <b>18</b></span>
+            <span class="m">Reputation <b>Neutral</b></span>
+          </div>
+          <div class="cc-rule bottom"></div>
+          <div class="cc-sound">
+            <div class="cc-sound-lab">🎵 Soundtrack <span style="text-transform:none;color:var(--dim)">— change any time in Settings</span></div>
+            <div class="cc-sound-row">${_sBtn('frosty','Frosty Original','The loaded soundtrack')}${_sBtn('chiptune','Classic Chiptune','Retro built-in tunes')}</div>
+          </div>
+        </div>`;
+      _nameBlk.style.display='none';
       _optsEl.querySelectorAll('[data-st-mode]').forEach(b=>(b as HTMLElement).onclick=()=>{
         if(!S.settings) S.settings = Object.assign({}, DEFAULT_SETTINGS);
         S.settings.soundtrack = (b as HTMLElement).dataset.stMode === 'chiptune' ? 'chiptune' : 'frosty';
         save();
-        if (MUSIC.unlocked && S.settings.music){ MUSIC.stop(); updateMusicZone(); MUSIC.setVol(volLevel()); }  // preview the chosen mode on the title theme
+        if (MUSIC.unlocked && S.settings.music){ MUSIC.stop(); updateMusicZone(); MUSIC.setVol(volLevel()); }
         _renderWizard();
       });
     } else {
-      _optsEl.innerHTML = _tools + scr.build(ap) + (scr.id==='identity' ? '' : '');
-      _optsEl.style.display=''; _nameBlk.style.display = scr.id==='identity' ? '' : 'none';
+      _optsEl.innerHTML = scr.build(ap);
+      _nameBlk.style.display = scr.id==='appearance' ? '' : 'none';
     }
-    _dotsEl.innerHTML = _screens.map((s,i)=>`<span class="wiz-dot${i===_wizStep?' on':''}${i<_wizStep?' done':''}" title="${s.label}"></span>`).join('');
+    // ---- live preview name ----
+    if (_pvName) _pvName.textContent = (_input.value.trim() || 'Founder');
+    // ---- footer nav ----
+    _dotsEl.innerHTML = '';
     _backBtn.style.visibility = _wizStep===0 ? 'hidden' : 'visible';
     const _last = _wizStep === _screens.length-1;
     _nextBtn.style.display = _last ? 'none' : '';
     _btnStart.style.display = _last ? '' : 'none';
-    _btnStart.textContent = 'Start New Life ▶';
-    if (scr.id==='identity') setTimeout(()=>{ try{ if(!_input.value) _input.focus(); }catch(e){} }, 30);
+    _btnStart.textContent = 'Start Life ▶';
+    // ---- wire controls ----
     _optsEl.querySelectorAll("[data-cf]").forEach(b=>{
       (b as HTMLElement).onclick = ()=>{
         const _f=(b as HTMLElement).dataset.cf!, _v=(b as HTMLElement).dataset.cv!;
@@ -8294,9 +8322,16 @@ function showTitle(){
         _renderWizard();
       };
     });
-    const _rnd=_optsEl.querySelector('[data-wiz-random]'); if(_rnd)(_rnd as HTMLElement).onclick=()=>{ const _nm=S.playerName; S.appearance=randomAppearance(); _renderWizard(); };
-    const _rst=_optsEl.querySelector('[data-wiz-reset]'); if(_rst)(_rst as HTMLElement).onclick=()=>{ S.appearance=Object.assign({},DEFAULT_APPEARANCE); _renderWizard(); };
+    // ---- animated step entry ----
+    if (_panelEl){ _panelEl.classList.remove('stepin'); void _panelEl.offsetWidth; _panelEl.classList.add('stepin'); }
+    if (scr.id==='appearance') setTimeout(()=>{ try{ if(!_input.value) _input.focus(); }catch(e){} }, 30);
   }
+  // Randomise / Reset tools live beside the preview (persist across steps).
+  const _rndBtn = document.querySelector('[data-wiz-random]') as HTMLElement;
+  const _rstBtn = document.querySelector('[data-wiz-reset]') as HTMLElement;
+  if (_rndBtn) _rndBtn.onclick = ()=>{ S.appearance = randomAppearance(); _renderWizard(); };
+  if (_rstBtn) _rstBtn.onclick = ()=>{ S.appearance = Object.assign({}, DEFAULT_APPEARANCE); _renderWizard(); };
+  if (_input) _input.oninput = ()=>{ if (_pvName) _pvName.textContent = _input.value.trim() || 'Founder'; };
   _backBtn.onclick = ()=>{ if(_wizStep>0){ _wizStep--; _renderWizard(); } };
   _nextBtn.onclick = ()=>{
     // moving off the Identity screen validates the name so Confirm can trust it
@@ -8311,11 +8346,11 @@ function showTitle(){
     _errEl.style.display = "none";
     S.playerName = name;
     cancelAnimationFrame(_titlePreviewRaf);
-    const badge = document.getElementById("name-badge");
-    const badgeVal = document.getElementById("badge-name-val");
-    if (badge && badgeVal){ badgeVal.textContent = name.toUpperCase(); badge.classList.add("show"); }
+    const _ccBox = document.querySelector("#title .box") as HTMLElement;
+    if (_ccBox){ _ccBox.style.transition = "transform .5s ease, opacity .5s ease"; _ccBox.style.transform = "scale(.94)"; _ccBox.style.opacity = "0"; }
     setTimeout(()=>{
       tEl.style.display = "none";
+      document.body.classList.remove("title-open");
       MUSIC.unlocked = true; updateMusicZone();
       const stat = document.getElementById("hud-name-stat");
       if (stat){ stat.classList.add("named","named-anim"); setTimeout(()=>stat.classList.remove("named-anim"),500); }
@@ -8346,7 +8381,7 @@ function showTitle(){
     toast(`⚡ Quick start! Welcome, ${_n}.`);
     _launch(_n, 500);
   };
-  _input.onkeydown = e => { if (e.key==="Enter") _btnStart.click(); };
+  _input.onkeydown = e => { if (e.key==="Enter"){ e.preventDefault(); if (_wizStep < _screens.length-1) _nextBtn.click(); else _btnStart.click(); } };
   const box = tEl.querySelector(".box") as HTMLElement;
   tEl.onmousemove = (e) => {
     const r = tEl.getBoundingClientRect();
@@ -13878,7 +13913,7 @@ document.getElementById("btn-about")?.addEventListener("click", () => openRoadma
   if (sum && row && info){
     row.style.display=""; info.style.display="";
     info.innerHTML = `<b>${esc(sum.name)}</b> · Total Lv ${sum.totalLevel} · ${fmt(sum.coins)} coins${sum.chapter?` · ${sum.chapter}`:''}${sum.date?` · saved ${sum.date}`:''}`;
-    document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; focusGameInput(); };
+    document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; document.body.classList.remove("title-open"); focusGameInput(); };
   }
 })();
 document.getElementById("version-label")?.addEventListener("keydown", (e:any) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openRoadmap(); } });
@@ -13982,7 +14017,7 @@ function _topModal(){
   return vis.length ? vis[vis.length - 1] : null;
 }
 function _isVisible(el: HTMLElement){ return !!(el && el.offsetParent !== null && el.getClientRects().length); }
-function _focusScope(){ return _topModal() || document.body; }
+function _focusScope(){ const m = _topModal(); if (m) return m; const t = document.getElementById("title"); if (t && t.style.display !== "none") return t; return document.body; }
 function _focusables(){
   const scope = _focusScope();
   return (Array.from(scope.querySelectorAll(FOCUS_SEL)) as HTMLElement[]).filter(_isVisible);

@@ -288,7 +288,7 @@ body.fullscreen-mode main{ max-width:100%; padding:10px clamp(8px, 2vw, 28px); }
 #play-hint button:hover{ filter:brightness(1.08); }
 .btn:disabled{ opacity:.4; cursor:not-allowed; }
 /* M4: 3-screen character creator — scrollable option groups + visible keyboard focus */
-#wiz-options{ max-height:250px; overflow-y:auto; padding-right:4px; }
+#wiz-options{ padding-right:2px; }   /* console creator — no internal scrolling */
 .swatch:focus-visible, .swatch-txt:focus-visible, #wiz-back:focus-visible, #wiz-next:focus-visible, #name-input:focus-visible, #btn-start:focus-visible, #btn-quick:focus-visible{ outline:2px solid #ffd666; outline-offset:2px; }
 /* M5: collapsible activity log (keeps it from hogging the screen) */
 #log.collapsed{ max-height:0; overflow:hidden; padding-top:0; padding-bottom:0; margin:0; }
@@ -352,9 +352,14 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 /* ---------- title screen ---------- */
 #title{
   position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
-  background:linear-gradient(180deg, var(--sky) 0 45%, var(--bg) 45% 100%); padding:16px; overflow:hidden;
+  background:radial-gradient(120% 90% at 50% -10%, #1c2b4d 0%, #111a30 42%, var(--bg) 100%); padding:14px; overflow:hidden;
 }
-#titlefx{ position:absolute; inset:0; width:100%; height:100%; }
+#titlefx{ position:absolute; inset:0; width:100%; height:100%; opacity:.34; }
+/* dark vignette so the dusk-toned meadow reads behind the console box */
+#title::after{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(120% 100% at 50% 40%, rgba(11,16,32,.15), rgba(11,16,32,.72) 100%); }
+#title .box{ position:relative; z-index:1; }
+body.title-open{ overflow:hidden; }   /* no page scrollbar behind the creator */
 @keyframes boxIn{ from{ transform:translateY(70px) scale(.72); opacity:0; } }
 @keyframes bobY{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-6px); } }
 @keyframes pulseBtn{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
@@ -405,6 +410,100 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 .wiz-dot{ width:7px; height:7px; border-radius:50%; background:var(--edge); transition:transform .12s,background .12s; }
 .wiz-dot.done{ background:#7cb46b; }
 .wiz-dot.on{ background:var(--amber); transform:scale(1.35); }
+
+/* ===================== Console character creator ===================== */
+#title .box.cc-box{
+  max-width:960px; width:100%; max-height:96vh; padding:16px 22px 18px; text-align:center;
+  background:linear-gradient(180deg, rgba(28,37,60,.96), rgba(17,24,42,.97));
+  border:1px solid var(--edge); border-top:2px solid var(--amber);
+  border-radius:16px; box-shadow:0 24px 70px rgba(0,0,0,.55);
+  display:flex; flex-direction:column; gap:10px;
+}
+.cc-topbar{ display:flex; flex-direction:column; align-items:center; gap:2px; }
+.cc-brand{ display:flex; align-items:center; gap:10px; }
+.cc-brand h1{ font-size:17px; }
+.cc-heading{ font-family:'Press Start 2P',monospace; font-size:11px; color:var(--dim); letter-spacing:2px; text-transform:uppercase; }
+#title .box.cc-box .sub{ margin:0; min-height:12px; }
+/* named-step progress bar: Appearance ── Background ── Start Life */
+.cc-steps{ display:flex; align-items:center; justify-content:center; gap:0; margin:2px auto 4px; max-width:640px; width:100%; }
+.cc-step{ display:flex; flex-direction:column; align-items:center; gap:5px; background:none; border:none; cursor:pointer; padding:2px 6px; flex:0 0 auto; }
+.cc-step:disabled{ cursor:default; }
+.cc-node{ width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:var(--panel2); border:2px solid var(--edge); color:var(--dim); font-size:12px; font-weight:800; transition:all .18s; }
+.cc-slabel{ font-family:'Press Start 2P',monospace; font-size:8px; letter-spacing:1px; color:var(--dim); white-space:nowrap; transition:color .18s; }
+.cc-step.done .cc-node{ background:var(--teal); border-color:var(--teal); color:#08201d; }
+.cc-step.done .cc-slabel{ color:var(--teal); }
+.cc-step.on .cc-node{ background:var(--amber); border-color:#ffe0a0; color:#3a2600; box-shadow:0 0 0 4px rgba(255,200,97,.18); transform:scale(1.08); }
+.cc-step.on .cc-slabel{ color:var(--amber); }
+.cc-conn{ flex:1 1 auto; height:3px; min-width:26px; border-radius:2px; background:var(--edge); margin:0 2px 16px; transition:background .2s; }
+.cc-conn.done{ background:var(--teal); }
+/* body: large preview stage + step panel */
+.cc-body{ display:flex; gap:20px; align-items:stretch; text-align:left; min-height:322px; }
+.cc-stage{ flex:0 0 246px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.cc-pedestal{ position:relative; border-radius:14px; padding:8px; background:radial-gradient(80% 70% at 50% 30%, rgba(53,214,193,.10), rgba(0,0,0,0) 70%);
+  border:1px solid var(--edge); box-shadow:inset 0 0 40px rgba(0,0,0,.35); }
+#title-preview{ image-rendering:pixelated; display:block; border:1px solid var(--edge); border-radius:10px; background:#9fd6a8; width:216px; height:300px; }
+.cc-pv-name{ font-family:'Press Start 2P',monospace; font-size:14px; color:var(--text); letter-spacing:1px; text-align:center; word-break:break-word; max-width:230px; }
+.cc-tools{ display:flex; gap:8px; }
+.cc-tool{ background:var(--panel2); border:1px solid var(--edge); color:var(--dim); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:6px 12px; border-radius:8px; cursor:pointer; transition:all .12s; }
+.cc-tool:hover{ border-color:var(--amber); color:var(--amber); }
+.cc-panel{ flex:1; min-width:0; display:flex; flex-direction:column; }
+#wiz-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:8px; }
+#wiz-step-label{ font-family:'Press Start 2P',monospace; font-size:11px; color:var(--amber); }
+#wiz-count{ font-size:10px; color:var(--dim); }
+#title-cust{ flex:1; }
+/* animated step entry */
+@keyframes ccStepIn{ from{ opacity:0; transform:translateX(14px); } to{ opacity:1; transform:translateX(0); } }
+.cc-panel.stepin #wiz-options, .cc-panel.stepin #wiz-name{ animation:ccStepIn .22s ease-out; }
+/* compact fields: two-up grid so everything fits with no scroll */
+#title-cust .cust-sub{ font-size:8px; }
+.cc-fields{ display:grid; grid-template-columns:1fr 1fr; gap:4px 18px; }
+.cc-fields .cc-field{ min-width:0; }
+.cc-field-label{ display:block; font-size:9px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin:2px 0 5px; }
+/* name field */
+#title .box.cc-box input#name-input{ width:100%; }
+/* footer nav */
+.cc-nav{ display:flex; align-items:center; gap:10px; margin-top:6px; }
+.cc-nav #wiz-back, .cc-nav #wiz-next{ background:var(--panel2); border:1px solid var(--edge); color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:8px 16px; border-radius:9px; cursor:pointer; transition:all .12s; }
+.cc-nav #wiz-back:hover, .cc-nav #wiz-next:hover{ border-color:var(--amber); color:var(--amber); }
+.cc-nav #btn-start{ font-size:14px; padding:9px 22px; }
+.cc-prompts{ flex:1; text-align:center; font-size:11px; color:var(--dim); }
+.cc-prompts b{ color:var(--text); }
+.cc-footer{ display:flex; align-items:center; gap:10px; justify-content:center; flex-wrap:wrap; border-top:1px solid rgba(255,255,255,.06); padding-top:10px; }
+.cc-footer #btn-quick{ font-size:13px; }
+.cc-quick-note{ font-size:10px; color:var(--dim); }
+.cc-secondary{ display:inline-flex; gap:6px; margin-left:auto; }
+.cc-secondary .btn.alt{ font-size:11px; padding:6px 11px; }
+/* premium character summary card (step 3) */
+.cc-card{ background:linear-gradient(180deg, rgba(53,214,193,.06), rgba(164,121,255,.06)); border:1px solid var(--edge);
+  border-radius:12px; padding:14px 16px; }
+.cc-card .cc-rule{ height:2px; border-radius:2px; background:linear-gradient(90deg, transparent, var(--teal), var(--purple), transparent); margin:0 0 10px; }
+.cc-card .cc-rule.bottom{ margin:10px 0 0; }
+.cc-card .cc-cname{ font-family:'Press Start 2P',monospace; font-size:18px; color:var(--text); word-break:break-word; }
+.cc-card .cc-ctitle{ font-size:12px; color:var(--amber); margin-top:6px; letter-spacing:1px; }
+.cc-card .cc-cmeta{ display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:10px; }
+.cc-card .cc-cmeta .m{ font-size:11px; color:var(--dim); }
+.cc-card .cc-cmeta .m b{ color:var(--text); font-weight:700; }
+.cc-sound{ margin-top:12px; }
+.cc-sound-lab{ font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+.cc-sound-row{ display:flex; gap:8px; }
+.cc-sound-btn{ flex:1; text-align:left; background:var(--panel2); border:1px solid var(--edge); border-radius:9px; padding:9px 11px; cursor:pointer; color:var(--text); transition:all .12s; }
+.cc-sound-btn.sel{ border-color:var(--cyan); background:rgba(55,200,255,.12); }
+.cc-sound-btn b{ font-size:12px; } .cc-sound-btn span{ display:block; font-size:9px; color:var(--dim); margin-top:2px; }
+.cc-sound-btn.sel span{ color:#bfe6ff; }
+/* focus ring for creator controls (controller/keyboard) */
+#title .swatch.gp-focus, #title .swatch-txt.gp-focus, #title .cc-step.gp-focus, #title .cc-tool.gp-focus,
+#title .cc-sound-btn.gp-focus, #title #wiz-back.gp-focus, #title #wiz-next.gp-focus, #title .btn.gp-focus{ outline:3px solid var(--cyan) !important; outline-offset:2px; }
+/* fit smaller / shorter screens */
+@media (max-height:760px){
+  #title .box.cc-box{ padding:12px 18px 14px; gap:7px; }
+  .cc-body{ min-height:0; }
+  #title-preview{ width:180px; height:250px; } .cc-stage{ flex-basis:210px; }
+}
+@media (max-width:720px){
+  .cc-body{ flex-direction:column; align-items:center; }
+  .cc-panel{ width:100%; } .cc-slabel{ font-size:7px; }
+}
 .btn.big{ font-size:15px; padding:13px 24px; }
 
 /* ---------- Task 5: readability on small screens & touch ---------- */
@@ -795,62 +894,70 @@ footer.credit{ text-align:center; font-size:10px; color:var(--text); padding:8px
 
 <div id="title" style="display:none;">
   <canvas id="titlefx"></canvas>
-  <div class="box">
-    <div style="text-align:center;margin-bottom:12px;">
-      <div class="logo-wrap" style="display:inline-flex;">
-        <svg width="64" height="64" viewBox="0 0 32 32" aria-hidden="true" style="image-rendering:pixelated;">
-          <rect x="4" y="8" width="24" height="20" rx="2" fill="#d9a86a"/><rect x="14" y="8" width="4" height="20" fill="#f6ecd2"/>
-          <circle cx="16" cy="19" r="6" fill="#5db3d8"/><rect x="12" y="16" width="4" height="3" fill="#3aa66a"/><rect x="17" y="19" width="4" height="3" fill="#3aa66a"/>
-          <rect x="3" y="4" width="11" height="5" fill="#c9955a"/><rect x="18" y="4" width="11" height="5" fill="#c9955a"/>
-        </svg>
-        <span class="orbit-arrow" aria-hidden="true">🚛</span>
+  <div class="box cc-box">
+    <div class="cc-topbar">
+      <div class="cc-brand">
+        <span class="logo-wrap" style="display:inline-flex;">
+          <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true" style="image-rendering:pixelated;">
+            <rect x="4" y="8" width="24" height="20" rx="2" fill="#d9a86a"/><rect x="14" y="8" width="4" height="20" fill="#f6ecd2"/>
+            <circle cx="16" cy="19" r="6" fill="#5db3d8"/><rect x="12" y="16" width="4" height="3" fill="#3aa66a"/><rect x="17" y="19" width="4" height="3" fill="#3aa66a"/>
+            <rect x="3" y="4" width="11" height="5" fill="#c9955a"/><rect x="18" y="4" width="11" height="5" fill="#c9955a"/>
+          </svg>
+        </span>
+        <h1>BUYRWORLD</h1>
       </div>
-      <h1>BUYRWORLD</h1>
+      <div class="cc-heading">Create your Founder</div>
       <div class="sub" id="title-typewriter"></div>
     </div>
-    <div class="title-cols">
-      <div class="title-left">
-        <canvas id="title-preview" width="130" height="170"></canvas>
-        <p style="font-size:10px;color:var(--dim);text-align:center;margin-top:5px;font-family:'Press Start 2P',monospace;line-height:1.5">Featherstone<br>Valley</p>
+    <!-- named-step progress (rendered by the wizard) -->
+    <div id="wiz-progress" class="cc-steps" role="list" aria-label="Character creation steps"></div>
+    <!-- stage: large central preview + current-step panel -->
+    <div class="cc-body">
+      <div class="cc-stage">
+        <div class="cc-pedestal"><canvas id="title-preview" width="216" height="300"></canvas></div>
+        <div class="cc-pv-name" id="cc-pv-name">Founder</div>
+        <div class="cc-tools">
+          <button class="cc-tool" data-wiz-random type="button" aria-label="Randomise appearance">🎲 Randomise</button>
+          <button class="cc-tool" data-wiz-reset type="button" aria-label="Reset to default">↺ Reset</button>
+        </div>
       </div>
-      <div class="title-right">
+      <div class="cc-panel">
         <div id="wiz-head">
-          <span id="wiz-step-label">Choose your character</span>
+          <span id="wiz-step-label"></span>
           <span id="wiz-count"></span>
         </div>
         <div id="title-cust">
           <div id="wiz-options"></div>
           <div id="wiz-name" style="display:none">
-            <p style="font-size:11px;color:var(--dim);margin-bottom:6px">Who are you, boss?</p>
+            <label class="cc-field-label" for="name-input">Founder name</label>
             <input id="name-input" maxlength="16" placeholder="Your name…" autocomplete="off">
             <div id="name-err">You'll need a name around here.</div>
           </div>
         </div>
-        <div id="wiz-nav">
-          <button id="wiz-back" type="button">‹ Back</button>
-          <div id="wiz-dots"></div>
-          <button id="wiz-next" type="button">Next ›</button>
-        </div>
       </div>
     </div>
-    <div id="name-badge" aria-hidden="true" style="margin-top:10px;">
-      <div class="bhi">HI, MY NAME IS</div>
-      <div class="bnm" id="badge-name-val">FOUNDER</div>
+    <!-- footer navigation + controller prompts -->
+    <div id="wiz-nav" class="cc-nav">
+      <button id="wiz-back" type="button">‹ Back</button>
+      <div id="wiz-dots" style="display:none"></div>
+      <span class="cc-prompts" aria-hidden="true"><b>Ⓐ</b> Select&nbsp;&nbsp;<b>Ⓑ</b> Back&nbsp;&nbsp;<b>✥</b> Move</span>
+      <button id="wiz-next" type="button">Next ›</button>
+      <button class="btn" id="btn-start" type="button" style="display:none;">Start Life ▶</button>
     </div>
-    <div class="row" id="continue-row" style="justify-content:center;margin-top:10px;display:none;">
-      <button class="btn big" id="btn-continue" style="background:#2a6a3a;color:#fff8e6;border-color:#1a4a28">▶ Continue</button>
+    <div class="cc-footer">
+      <button class="btn quickstart" id="btn-quick" type="button" title="Random character, jump straight in">▶ Play Now</button>
+      <span class="cc-quick-note">Quick Start — jump straight in; customise later.</span>
+      <span class="cc-secondary">
+        <button class="btn alt" id="btn-preview" type="button">♪ Theme</button>
+        <button class="btn alt" id="btn-settings" type="button">⚙️ Settings</button>
+        <button class="btn alt" id="btn-about" type="button">📖 About</button>
+      </span>
+    </div>
+    <div class="row" id="continue-row" style="justify-content:center;margin-top:8px;display:none;">
+      <button class="btn big" id="btn-continue" type="button">▶ Continue your save</button>
     </div>
     <div id="continue-info" style="text-align:center;font-size:11px;color:var(--dim);margin-top:4px;display:none"></div>
-    <div class="row" style="justify-content:center;margin-top:12px;">
-      <button class="btn big quickstart" id="btn-quick" title="Random character, jump straight in">▶ PLAY NOW</button>
-    </div>
-    <div style="text-align:center;font-size:11px;color:var(--dim);margin-top:5px;">Quick Start — jump straight into Featherstone. You can customise your character later.</div>
-    <div class="row" style="justify-content:center;margin-top:10px;gap:8px;flex-wrap:wrap;">
-      <button class="btn" id="btn-start" style="display:none;">Use my custom character ▶</button>
-      <button class="btn alt" id="btn-preview">♪ Theme</button>
-      <button class="btn alt" id="btn-settings">⚙️ Settings</button>
-      <button class="btn alt" id="btn-about">📖 About</button>
-    </div>
+    <div id="name-badge" aria-hidden="true" style="display:none"><div class="bnm" id="badge-name-val">FOUNDER</div></div>
   </div>
 </div>
 
