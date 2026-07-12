@@ -4160,21 +4160,21 @@ function drawSkyAmbience(ctx, t){
     ctx.beginPath(); ctx.moveTo(bx-5, by+flap); ctx.lineTo(bx, by); ctx.lineTo(bx+5, by+flap); ctx.stroke();
   }
   ctx.lineWidth = 1;
-  // drifting particles — season-tinted (petals / pollen / leaves / snow)
-  const cols = season==="autumn" ? ["#d98a3a","#c9702a","#e0a850"]
-             : season==="winter" ? ["#eef4ff","#dce8ff"]
-             : season==="spring" ? ["#ffc0d0","#ffd8e4"]
-             : ["#eeecb6","#e6dc9c"];
-  const N = season==="autumn" ? 16 : season==="winter" ? 22 : season==="spring" ? 12 : 8;
-  for (let i=0;i<N;i++){
-    const fall = ((t*(7 + (i%5)*4) + i*97) % (VIEW_H + 40)) - 20;
-    const drift = Math.sin(t*0.8 + i)*16 + _windX*20;
-    let px = ((i*137) % VIEW_W) + drift; px = ((px % VIEW_W) + VIEW_W) % VIEW_W;
-    ctx.fillStyle = cols[i % cols.length];
+  // drifting petals (spring) / pollen (summer) — autumn leaves & winter snow are
+  // handled by the existing seasonal particle system, so don't duplicate them here.
+  if (season === "spring" || season === "summer"){
+    const cols = season === "spring" ? ["#ffc0d0","#ffd8e4"] : ["#eeecb6","#e6dc9c"];
+    const N = season === "spring" ? 12 : 8;
     ctx.globalAlpha = 0.7;
-    ctx.fillRect(px, fall, 2, 2);
+    for (let i=0;i<N;i++){
+      const fall = ((t*(7 + (i%5)*4) + i*97) % (VIEW_H + 40)) - 20;
+      const drift = Math.sin(t*0.8 + i)*16 + _windX*20;
+      let px = ((i*137) % VIEW_W) + drift; px = ((px % VIEW_W) + VIEW_W) % VIEW_W;
+      ctx.fillStyle = cols[i % cols.length];
+      ctx.fillRect(px, fall, 2, 2);
+    }
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
 }
 function _strHash(s){ let h = 0; for (let i=0;i<s.length;i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0; return h; }
 // A brief, purely-visual activity emote above a stationary villager (coffee, chat,
@@ -4185,6 +4185,13 @@ function _villagerEmote(v, t){
   const off = (h % 1000) / 1000 * 18;
   if (((t + off) % 18) > 3) return "";        // ~3s emote per ~18s, per villager
   return ["☕","💬","👀","🎵","😊","🛍️"][(h + Math.floor((t + off) / 18)) % 6];
+}
+// Golden-hour warm wash: morning sun from the east (dir 1), evening from the west
+// (dir −1). A subtle directional gradient that reads as the low sun's angle.
+function _goldenHour(h){
+  if (h >= 6 && h < 9){    const p = 1 - Math.abs(h - 7.5) / 1.5; return { alpha: Math.max(0, 0.15*p), warm: '255,184,98',  dir: 1 }; }
+  if (h >= 16.5 && h < 19.5){ const p = 1 - Math.abs(h - 18) / 1.5; return { alpha: Math.max(0, 0.22*p), warm: '255,142,74', dir: -1 }; }
+  return { alpha: 0, warm: '255,255,255', dir: 1 };
 }
 function drawTiles(ctx, t){
   const tier = villageTierLvl();
@@ -5345,6 +5352,14 @@ function drawVillage(t){
     if (_efy2 > _efy1 && _efx2 > _efx1) ctx.fillRect(_efx1, _efy1, _efx2-_efx1, _efy2-_efy1);
     ctx.restore();
   }
+  // golden-hour warm directional wash (distinct morning & evening light, sun angle)
+  const _gh = _goldenHour(gameHour());
+  if (_gh.alpha > 0.004){
+    const _gg = ctx.createLinearGradient(_gh.dir>0?0:VIEW_W, 0, _gh.dir>0?VIEW_W:0, 0);
+    _gg.addColorStop(0, `rgba(${_gh.warm},${_gh.alpha.toFixed(3)})`);
+    _gg.addColorStop(1, `rgba(${_gh.warm},${(_gh.alpha*0.22).toFixed(3)})`);
+    ctx.fillStyle = _gg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
   if (alpha > 0.08){
     const mAlpha = Math.min(1, (alpha - 0.08) / 0.22);
     const moonX = VIEW_W - 54, moonY = 28;
@@ -5404,6 +5419,29 @@ function drawVillage(t){
       rg.addColorStop(0.45, `rgba(255,200,80,${(glow*0.28).toFixed(2)})`);
       rg.addColorStop(1, 'rgba(255,180,60,0)');
       ctx.fillStyle = rg; ctx.fillRect(lx-80, ly-80, 160, 160);
+    }
+    // house-window glow (warm) + nightclub neon (pulsing colour) — only on-screen buildings
+    const _gm = Math.min(1, glow*1.4);
+    for (const o of V_OBJECTS){
+      if (o.kind !== "bld") continue;
+      const r = objRect(o);
+      if (r.x+r.w < CAM.x-60 || r.x > CAM.x+VIEW_W+60 || r.y+r.h < CAM.y-60 || r.y > CAM.y+VIEW_H+40) continue;
+      if (o.id === "nightclub" || o.tab === "nightclub"){
+        const cx = r.x + r.w/2, cy = r.y + r.h*0.45, pulse = 0.55 + 0.45*Math.sin(t*3.2), rad = 82;
+        const rg2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+        rg2.addColorStop(0, `rgba(255,90,205,${(0.60*pulse*_gm).toFixed(2)})`);
+        rg2.addColorStop(0.5, `rgba(140,80,255,${(0.30*pulse*_gm).toFixed(2)})`);
+        rg2.addColorStop(1, 'rgba(60,200,255,0)');
+        ctx.fillStyle = rg2; ctx.fillRect(cx-rad, cy-rad, rad*2, rad*2);
+      } else {
+        if (_thash(r.x|0, r.y|0, 13) > 0.72) continue;   // ~72% of homes show a lit window
+        const wx = r.x + r.w*0.5, wy = r.y + r.h*0.42, rad = 34;
+        const rg2 = ctx.createRadialGradient(wx, wy, 0, wx, wy, rad);
+        rg2.addColorStop(0, `rgba(255,206,120,${Math.min(0.46, glow*0.46).toFixed(2)})`);
+        rg2.addColorStop(0.55, `rgba(255,190,90,${(glow*0.18).toFixed(2)})`);
+        rg2.addColorStop(1, 'rgba(255,180,70,0)');
+        ctx.fillStyle = rg2; ctx.fillRect(wx-rad, wy-rad, rad*2, rad*2);
+      }
     }
     // bike light — warm radial glow around player when equipped
     if (S.bike?.equipped && S.bike?.hasLight){

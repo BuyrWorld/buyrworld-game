@@ -25,7 +25,7 @@ export function isNight(now = Date.now()): boolean {
 
 /** Alpha for the night overlay (0–0.20) — capped so the world always stays readable. */
 export function nightAlpha(now = Date.now()): number {
-  return Math.min(0.20, (1 - dayFraction(now)) * 0.42);
+  return Math.min(0.26, (1 - dayFraction(now)) * 0.52);
 }
 
 /** Lamp warm-glow intensity [0, 1]; 0 during daytime. */
