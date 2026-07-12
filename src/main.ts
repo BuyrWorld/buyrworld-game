@@ -4069,6 +4069,42 @@ function getTreePalette(tType){
   if (tType===1) return { layers:["#4a8038","#5a9248","#69a856","#78b860"], bare:false };
   return { layers:["#2e6828","#3a7832","#4a8840","#5a9848"], bare:false };
 }
+// Deterministic per-tile pseudo-random in [0,1) with high entropy (no visible
+// repetition across a 10×10 area). Used to scatter grass/road detail so the world
+// varies naturally without changing the map, collision or object positions.
+function _thash(c, r, s){
+  let n = (Math.imul(c|0, 374761393) + Math.imul(r|0, 668265263) + Math.imul(s|0, 1274126177)) >>> 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0;
+  n = (n ^ (n >>> 16)) >>> 0;
+  return n / 4294967296;
+}
+// Weighted, naturally-scattered ground cover on a grass tile (flowers, clover,
+// weeds, stones, fallen leaves, tufts). Static per-tile so it never flickers.
+function _scatterGrass(ctx, x, y, c, r){
+  for (let k = 0; k < 2; k++){
+    if (_thash(c, r, 20 + k) < 0.60) continue;   // most tiles stay sparse
+    const ox = x + 3 + _thash(c, r, 30 + k) * 16, oy = y + 4 + _thash(c, r, 40 + k) * 15;
+    const kind = _thash(c, r, 50 + k);
+    if (kind < 0.20){          // tuft of taller grass
+      ctx.fillStyle = _thash(c,r,60+k) < 0.5 ? "#7abd6f" : "#6fb265";
+      ctx.fillRect(ox, oy-4, 2, 6); ctx.fillRect(ox+3, oy-2, 2, 5);
+    } else if (kind < 0.37){   // clover
+      ctx.fillStyle = "#5fae57"; ctx.fillRect(ox,oy,2,2); ctx.fillRect(ox+2,oy,2,2); ctx.fillRect(ox+1,oy+2,2,2);
+    } else if (kind < 0.55){   // flower
+      const fc = _thash(c,r,70+k);
+      ctx.fillStyle = fc < 0.32 ? "#ff9db0" : fc < 0.6 ? "#ffe58a" : fc < 0.82 ? "#e8ecff" : "#c79bff";
+      ctx.fillRect(ox,oy,3,3); ctx.fillStyle = "#ffd94a"; ctx.fillRect(ox+1,oy+1,1,1);
+    } else if (kind < 0.68){   // dandelion
+      ctx.fillStyle = "#ffd94a"; ctx.fillRect(ox,oy,2,2); ctx.fillStyle = "#7fb457"; ctx.fillRect(ox,oy+2,1,3);
+    } else if (kind < 0.82){   // small stone
+      ctx.fillStyle = "#9a9aa0"; ctx.fillRect(ox,oy,3,2); ctx.fillStyle = "#bcbcc2"; ctx.fillRect(ox,oy,1,1);
+    } else if (kind < 0.92){   // fallen leaf
+      ctx.fillStyle = _thash(c,r,80+k) < 0.5 ? "#c98a3a" : "#b0662a"; ctx.fillRect(ox,oy,3,2); ctx.fillRect(ox+1,oy-1,1,1);
+    } else {                   // weed sprig
+      ctx.fillStyle = "#6fb466"; ctx.fillRect(ox,oy-3,1,5); ctx.fillRect(ox+2,oy-2,1,4);
+    }
+  }
+}
 function drawTiles(ctx, t){
   const tier = villageTierLvl();
   const c0 = Math.max(0, Math.floor(CAM.x/TILE)), c1 = Math.min(VCOLS, c0+VIEW_W/TILE+2);
@@ -4102,17 +4138,32 @@ function drawTiles(ctx, t){
       // vertical crack line for geological detail
       if ((c*9+r*11)%5===0){ ctx.strokeStyle="#6e7480"; ctx.lineWidth=0.5; ctx.beginPath(); ctx.moveTo(x+10,y+2); ctx.lineTo(x+8,y+14); ctx.stroke(); }
     } else if (ch==="P"){
+      const _gN = r>0 && VMAP[r-1][c]==="G", _gS = r<VROWS-1 && VMAP[r+1][c]==="G";
+      const _gW = c>0 && VMAP[r][c-1]==="G", _gE = c<VCOLS-1 && VMAP[r][c+1]==="G";
+      const pv = _thash(c, r, 3);
       if (tier>=2){
-        ctx.fillStyle="#cfc5b0"; ctx.fillRect(x,y,TILE,TILE);
-        ctx.strokeStyle="#bdb29c"; ctx.lineWidth=1;
+        // laid cobblestone — warm stone, worn joints + a little moss
+        ctx.fillStyle="#cfc5ad"; ctx.fillRect(x,y,TILE,TILE);
+        ctx.fillStyle="#c4b99e"; ctx.fillRect(x+4,y+4,TILE-8,TILE-8);
+        ctx.strokeStyle="#a89e86"; ctx.lineWidth=1;
         ctx.strokeRect(x+2,y+2,9,9); ctx.strokeRect(x+13,y+2,9,9); ctx.strokeRect(x+2,y+13,9,9); ctx.strokeRect(x+13,y+13,9,9);
-        ctx.fillStyle="#d9cfba"; ctx.fillRect(x+3,y+3,3,3); ctx.fillRect(x+14,y+14,3,3);
+        ctx.fillStyle="#dbd1ba"; ctx.fillRect(x+4,y+4,3,3); ctx.fillRect(x+15,y+14,3,3);
+        if (pv>0.72){ ctx.fillStyle="rgba(108,150,78,.35)"; ctx.fillRect(x+11,y+10,3,3); }
       } else {
-        ctx.fillStyle="#e5cf9a"; ctx.fillRect(x,y,TILE,TILE);
-        ctx.fillStyle="#d4ba7e"; if ((c*7+r*13)%5===0) ctx.fillRect(x+6,y+8,4,4);
-        // wheel ruts on dirt path
-        if (c*7%3===0){ ctx.fillStyle="#ccad72"; ctx.fillRect(x+5,y,2,TILE); }
+        // trodden dirt track — warm base, darker worn centre, stones, cracks, footprints
+        ctx.fillStyle="#d9bd82"; ctx.fillRect(x,y,TILE,TILE);
+        ctx.fillStyle="rgba(120,88,46,.20)"; ctx.fillRect(x+3,y+3,TILE-6,TILE-6);
+        if (c*7%3===0){ ctx.fillStyle="rgba(150,116,66,.40)"; ctx.fillRect(x+5,y,2,TILE); ctx.fillRect(x+16,y,2,TILE); }
+        if (pv<0.30){ ctx.fillStyle="#b7996a"; ctx.fillRect(x+5+pv*22,y+7+pv*20,3,2); }
+        if (pv>0.50 && pv<0.62){ ctx.strokeStyle="rgba(110,82,46,.42)"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x+4,y+6); ctx.lineTo(x+10,y+17); ctx.stroke(); }
+        if (pv>0.86){ ctx.fillStyle="rgba(110,82,46,.22)"; ctx.fillRect(x+7,y+8,3,4); ctx.fillRect(x+12,y+13,3,4); }
       }
+      // grass creeping in from any grass-adjacent edge (both tiers)
+      ctx.fillStyle="#86c47d";
+      if (_gN){ ctx.fillRect(x+3,y,2,3); ctx.fillRect(x+13,y,2,4); ctx.fillRect(x+19,y,2,3); }
+      if (_gS){ ctx.fillRect(x+6,y+TILE-3,2,3); ctx.fillRect(x+16,y+TILE-4,2,4); }
+      if (_gW){ ctx.fillRect(x,y+5,3,2); ctx.fillRect(x,y+15,3,2); }
+      if (_gE){ ctx.fillRect(x+TILE-3,y+8,3,2); ctx.fillRect(x+TILE-3,y+17,3,2); }
     } else if (ch==="F"){
       ctx.fillStyle=(c+r)%2 ? "#4a7a3a" : "#426e34"; ctx.fillRect(x,y,TILE,TILE);
       const hf=(c*7+r*13)%17;
@@ -4120,20 +4171,27 @@ function drawTiles(ctx, t){
       if (hf===3){ ctx.fillStyle="#5a9048"; ctx.fillRect(x+10,y+10,3,8); }
       if (hf===6){ ctx.fillStyle="#3e5e2a"; ctx.fillRect(x+2,y+14,5,4); ctx.fillRect(x+14,y+10,4,4); }
     } else {
-      ctx.fillStyle=(c+r)%2 ? "#9fd6a8" : "#95cf9e"; ctx.fillRect(x,y,TILE,TILE);
-      const h=(c*7+r*13)%29;
-      if (ch==="G" && h===0){ ctx.fillStyle="#ff9db0"; ctx.fillRect(x+9,y+9,4,4); ctx.fillStyle="#ffd666"; ctx.fillRect(x+10,y+10,2,2); }
-      else if (ch==="G" && h===1){ ctx.fillStyle="#ffffc0"; ctx.fillRect(x+14,y+5,3,3); ctx.fillStyle="#ffd666"; ctx.fillRect(x+15,y+6,1,1); }
-      else if (ch==="G" && h===2){ ctx.fillStyle="#ffffff"; ctx.fillRect(x+5,y+14,2,2); ctx.fillRect(x+7,y+13,2,2); ctx.fillRect(x+6,y+15,2,2); }
-      else if (ch==="G" && h===7){ ctx.fillStyle="#7cbf86"; ctx.fillRect(x+6,y+12,3,6); ctx.fillRect(x+14,y+9,3,9); }
-      else if (ch==="G" && h===8){ ctx.fillStyle="#6ab576"; ctx.fillRect(x+10,y+6,2,8); ctx.fillRect(x+13,y+8,2,6); }
-      else if (ch==="G" && h===14){ ctx.fillStyle="#9a9a9a"; ctx.fillRect(x+8,y+12,3,2); ctx.fillStyle="#b8b8b8"; ctx.fillRect(x+9,y+12,1,1); }
-      else if (ch==="G" && h===15 && r>12 && c<9){ ctx.fillStyle="#8a6a45"; ctx.fillRect(x+2,y+16,20,3); ctx.fillStyle="#63b573"; ctx.fillRect(x+4,y+10,3,6); ctx.fillRect(x+11,y+9,3,7); ctx.fillRect(x+17,y+11,3,5); }
+      // ---- procedural grass: warm multi-tone base + subtle height/tint variation ----
+      const g = _thash(c, r, 1);
+      ctx.fillStyle = g < 0.26 ? "#a8db9a" : g < 0.52 ? "#98d089" : g < 0.78 ? "#8ecb80" : "#b0e0a0";
+      ctx.fillRect(x,y,TILE,TILE);
+      // subtle per-tile height shading (hash-based, so no grid/checker pattern)
+      ctx.fillStyle = _thash(c,r,2) < 0.5 ? "rgba(255,255,255,.04)" : "rgba(20,60,20,.05)"; ctx.fillRect(x,y,TILE,TILE);
+      if (ch==="G"){
+        // occasional pale earth/dirt patch worn into the grass
+        if (g > 0.94){ ctx.fillStyle = "rgba(150,120,80,.32)"; ctx.beginPath(); ctx.ellipse(x+TILE*(0.3+_thash(c,r,7)*0.4), y+TILE*(0.35+_thash(c,r,8)*0.35), 6+_thash(c,r,9)*4, 4+_thash(c,r,9)*3, 0, 0, 7); ctx.fill(); }
+        _scatterGrass(ctx, x, y, c, r);
+      }
     }
     if (ch==="T"){
       const tType = (c*13+r*7)%3; // 0=pine, 1=oak, 2=hardwood
       const sway = Math.sin(t*0.8 + c*0.7 + r*0.5) * 1.2;
       const _tp = getTreePalette(tType);
+      // per-tree canopy size (small→large) so no two trees look identical
+      const _tsz = 0.80 + _thash(c, r, 5) * 0.46;
+      // soft ground shadow under the trunk
+      ctx.fillStyle = "rgba(24,44,22,.16)"; ctx.beginPath(); ctx.ellipse(x+12, y+21, 9*_tsz, 3.4, 0, 0, 7); ctx.fill();
+      ctx.save(); ctx.translate(x+12, y+20); ctx.scale(_tsz, _tsz); ctx.translate(-(x+12), -(y+20));
       if (_tp.bare){
         // winter bare deciduous — trunk and bare branch strokes
         ctx.fillStyle=_tp.trunkCol; ctx.fillRect(x+8, y+10, tType===1?8:10, 12);
@@ -4178,6 +4236,7 @@ function drawTiles(ctx, t){
         ctx.fillStyle=c2; ctx.beginPath(); ctx.arc(x+20+sw*0.9,y+7,8,0,7); ctx.fill();
         ctx.fillStyle=c3; ctx.beginPath(); ctx.arc(x+11+sw*0.6,y+0,8,0,7); ctx.fill();
       }
+      ctx.restore();
     }
   }
 }
