@@ -42,4 +42,4 @@ export type TextScale = typeof TEXT_SCALES[number];
 export function textScaleValue(scale: string): number {
   return scale === 'small' ? 0.9 : scale === 'large' ? 1.15 : 1.0;
 }
-export const DEFAULT_SETTINGS = { music: true, vol: 'med', sfx: true, motion: true, textScale: 'normal' as TextScale };
+export const DEFAULT_SETTINGS = { music: true, vol: 'med', sfx: true, motion: true, textScale: 'normal' as TextScale, couch: false };

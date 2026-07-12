@@ -22,6 +22,7 @@ import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDeclin
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
+import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph } from './data/ui.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
 import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMult, autoYieldChance } from './data/automatons.ts';
@@ -529,7 +530,11 @@ const FILEMUSIC = (() => {
     // Start (or keep) a scenario playlist. key guards against needless restarts.
     playList(newKey, srcs){
       if (!srcs || !srcs.length){ this.stop(); return; }
-      if (key === newKey && el){ if (el.volume < target() - 0.02 && !el._fadeTimer) fadeEl(el, target()); return; }
+      if (key === newKey && el){
+        if (el.paused){ const a=el; a.play().then(()=>fadeEl(a, target())).catch(()=>{}); }   // resume if an earlier autoplay was blocked
+        else if (el.volume < target() - 0.02 && !el._fadeTimer) fadeEl(el, target());
+        return;
+      }
       key = newKey; list = shuffle(srcs.slice()); idx = 0; swapTo(list[0]);
     },
     stop(){ if (el){ const old = el; fadeEl(old, 0, () => { try{ old.pause(); old.src = ''; }catch(e){} }); } el = null; key = null; },
@@ -762,8 +767,9 @@ function openSettings(){
     ${seg('Sound effects', [{v:'on',l:'On'},{v:'off',l:'Off'}], st.sfx===false?'off':'on', 'sfx')}
     ${seg('Text size', [{v:'small',l:'A'},{v:'normal',l:'A'},{v:'large',l:'A'}], st.textScale||'normal', 'text')}
     ${seg('Reduced motion', [{v:'off',l:'On anim'},{v:'on',l:'Reduced'}], st.motion===false?'on':'off', 'motion')}
+    ${seg('Couch / TV mode', [{v:'off',l:'Off'},{v:'on',l:'On'}], st.couch?'on':'off', 'couch')}
     <div style="display:flex;gap:6px;margin-top:10px"><button id="set-full" style="flex:1;background:#3a4a6a;color:#fff;border:none;border-radius:5px;padding:7px;cursor:pointer;font-size:12px">⛶ Fullscreen</button></div>
-    <p style="font-size:10px;color:var(--dim);margin:9px 0 0">Controls — Move: click/tap, WASD, arrows or controller. Interact: click, or Ⓐ. Work faster: Space or interact during a job. All settings save automatically.</p>
+    <p style="font-size:10px;color:var(--dim);margin:9px 0 0">Controls — Move: left stick / WASD. Focus: D-pad / arrows / Tab. Ⓐ Enter confirm · Ⓑ Esc back · Ⓧ Journey · Ⓨ Inventory · LB/RB category · ☰ menu. Couch/TV mode enlarges everything for the Steam Deck & big screens. All settings save automatically.</p>
   </div>`;
   document.body.appendChild(el);
   el.addEventListener('click',e=>{ if(e.target===el) el.remove(); });
@@ -776,6 +782,7 @@ function openSettings(){
     else if(k==='sfx') st.sfx=(v==='on');
     else if(k==='text'){ st.textScale=v; applyTextScale(); }
     else if(k==='motion'){ st.motion=(v==='off'); }   // 'on' = reduced → motion:false
+    else if(k==='couch'){ st.couch=(v==='on'); applyCouchMode(); }
     save(); el.remove(); openSettings();
   });
 }
@@ -7617,7 +7624,20 @@ function openLegal(){
 }
 (globalThis as any).openLegal = openLegal;
 // modal buttons are re-bound each render via delegation on the modal container
+// Collapsible section toggle (warehouse / objectives / any collapsible header).
+function _toggleCollapse(head){
+  const key = head.dataset.collapse; if (!key) return;
+  if (!S.uiCollapsed) S.uiCollapsed = {};
+  const now = !S.uiCollapsed[key]; S.uiCollapsed[key] = now;
+  head.setAttribute("aria-expanded", String(!now));
+  const caret = head.querySelector(".ch-caret"); if (caret) caret.textContent = now ? "▸ show" : "▾ hide";
+  const body = document.querySelector(`[data-collapse-body="${CSS.escape(key)}"]`);
+  if (body) body.classList.toggle("collapsed", now);
+  save();
+}
 document.addEventListener("click", (e:any) => {
+  const head = e.target?.closest?.("[data-collapse]");
+  if (head){ _toggleCollapse(head); return; }
   const t = e.target?.closest?.("[data-pay-fine],[data-pay-comp],[data-community-start],[data-community-unit]");
   if (!t) return;
   if (t.dataset.payFine){ payJusticeDebt(+t.dataset.payFine, 'fine'); renderLegalModal(); }
@@ -8427,6 +8447,7 @@ function freshState(){
     court: { cases:[], nextId:1 },
     legalKnowledge: 0,
     frostyRadio: { announced:[] as string[], selected:null as string|null, volume:"med" },
+    uiCollapsed: {} as Record<string,boolean>,
   };
 }
 let S = freshState();
@@ -8536,6 +8557,8 @@ function load(){
       if (!("sfx" in S.settings)) S.settings.sfx = true;
       if (!("motion" in S.settings)) S.settings.motion = true;
       if (!("textScale" in S.settings)) S.settings.textScale = 'normal';
+      if (!("couch" in S.settings)) S.settings.couch = false;   // Steam Deck / couch mode (opt-in)
+      if (!S.uiCollapsed || typeof S.uiCollapsed !== "object") S.uiCollapsed = {};   // collapsible section state
       if (!("prod" in parsed)) S.prod = {};
       if (!("tut" in parsed)) S.tut = { step:99, done:true };
       if (!("ach" in parsed)) S.ach = {};
@@ -10145,12 +10168,44 @@ function syncTabUnlocks(silent){
   if (changed && !silent) renderNav();
   return changed;
 }
+function tabsInGroup(gid){ return TABS.filter(t => groupOf(t.id) === gid); }
+function unlockedTabsInGroup(gid){ return tabsInGroup(gid).filter(t => tabUnlocked(t.id)); }
+function availableGroupIds(){ return NAV_GROUPS.filter(g => unlockedTabsInGroup(g.id).length > 0).map(g => g.id); }
+function firstTabInGroup(gid){ const u = unlockedTabsInGroup(gid); return u.length ? u[0].id : null; }
+function activeNavGroup(){ const g = groupOf(S.tab); return availableGroupIds().includes(g) ? g : (availableGroupIds()[0] || 'world'); }
+// Central tab switch — used by mouse, keyboard, category strip and shoulder buttons.
+function goTab(id){
+  if (!tabUnlocked(id)) return;
+  S.tab = id;
+  _clearUiFocus();
+  renderNav(); renderMain();
+}
+function selectNavGroup(gid){ const t = firstTabInGroup(gid); if (t) goTab(t); }
+function switchNavCategory(dir){ const avail = availableGroupIds(); selectNavGroup(cycleGroup(activeNavGroup(), dir, avail)); }
 function renderNav(){
+  const active = activeNavGroup();
+  const avail = availableGroupIds();
+  // ---- category strip ----
+  const cat = document.getElementById("navcat");
+  if (cat){
+    cat.innerHTML = "";
+    NAV_GROUPS.forEach(g => {
+      if (!avail.includes(g.id)) return;
+      const b = document.createElement("button");
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", g.id === active ? "true" : "false");
+      b.innerHTML = `<span class="cat-ic">${g.ic}</span>${g.label}`;
+      if (g.id === active) b.classList.add("active");
+      b.onclick = () => selectNavGroup(g.id);
+      cat.appendChild(b);
+    });
+  }
+  // ---- tabs within the active category ----
   const nav = $("#nav"); nav.innerHTML = "";
   let shownLocked = 0;
-  TABS.forEach(t => {
+  tabsInGroup(active).forEach(t => {
     if (!tabUnlocked(t.id)){
-      // show just the next locked tab as a progression hint; hide the rest
+      // one locked-tab hint per category so progression stays discoverable
       if (shownLocked >= 1 || !TAB_UNLOCK_HINT[t.id]) return;
       shownLocked++;
       const lb = document.createElement("button");
@@ -10162,16 +10217,18 @@ function renderNav(){
       return;
     }
     const b = document.createElement("button");
+    b.setAttribute("role", "tab");
     let label = `${t.ic} ${t.n}`;
     if (t.skill) label += ` <span class="lvl">${skillLvl(t.id)}</span>`;
     if (t.id==="contracts") label += ` <span class="lvl">Log ${skillLvl("logistics")}</span>`;
     if (t.id==="trade") label += ` <span class="lvl">${skillLvl("trading")}</span>`;
     b.innerHTML = label;
-    if (S.tab === t.id) b.classList.add("active");
+    if (S.tab === t.id){ b.classList.add("active"); b.setAttribute("aria-selected","true"); }
     if (S.action && S.action.skill === t.id) b.classList.add("working");
-    b.onclick = () => { S.tab = t.id; renderNav(); renderMain(); };
+    b.onclick = () => goTab(t.id);
     nav.appendChild(b);
   });
+  updateGpPrompts();
 }
 
 function xpBarHtml(skill){
@@ -10350,17 +10407,32 @@ function warehouseGaugeHtml(){
     <div style="text-align:right;margin-top:5px">${expand}</div>
   </div>`;
 }
+// Collapsible section (warehouse / objectives / log) with persisted open state.
+function _collapsed(key){ return !!(S.uiCollapsed && S.uiCollapsed[key]); }
+function collapsible(key, title, bodyHtml){
+  const c = _collapsed(key);
+  return `<div class="collapse-sect">
+    <div class="collapse-head" data-collapse="${key}" role="button" tabindex="0" aria-expanded="${!c}">
+      <span>${title}</span><span class="ch-caret" aria-hidden="true">${c?'▸ show':'▾ hide'}</span>
+    </div>
+    <div class="collapse-body${c?' collapsed':''}" data-collapse-body="${key}">${bodyHtml}</div>
+  </div>`;
+}
 function renderInventoryPanel(){
   const entries = Object.entries(S.items).filter(([,q])=>q>0);
-  let html = `<div class="panel"><h2>📦 Warehouse</h2>${tutObjectiveHtml()}${welcomeObjectiveHtml()}${warehouseGaugeHtml()}<div class="inv">`;
-  if (!entries.length) html += `<span style="color:var(--dim);font-size:12px;">Empty. The auditors would approve. Go mine something.</span>`;
+  const objs = `${tutObjectiveHtml()}${welcomeObjectiveHtml()}`;
+  let inv = `<div class="inv">`;
+  if (!entries.length) inv += `<span style="color:var(--dim);font-size:12px;">Empty. The auditors would approve. Go mine something.</span>`;
   entries.forEach(([id,q])=>{
-    // highlight the item the current objective wants, so progress is obvious
     const _hl = (!S.tut || S.tut.done) ? false
       : (S.tut.step===0 && id==="iron_ore") || (S.tut.step===1 && id==="iron_bar") || (S.tut.step===2 && id==="bracket");
-    html += `<span class="chip${_hl?' chip-obj':''}">${ITEMS[id].ic} ${ITEMS[id].n} <b>${fmt(q)}</b></span>`;
+    inv += `<span class="chip${_hl?' chip-obj':''}">${ITEMS[id].ic} ${ITEMS[id].n} <b>${fmt(q)}</b></span>`;
   });
-  html += `</div></div>`;
+  inv += `</div>`;
+  let html = `<div class="panel"><h2>📦 Warehouse</h2>`;
+  if (objs.trim()) html += collapsible('objectives', '🎯 Objectives', objs);
+  html += collapsible('warehouse', '📦 Storage & stock', `${warehouseGaugeHtml()}${inv}`);
+  html += `</div>`;
   return html;
 }
 function _fmtCountdown(ms){
@@ -10473,6 +10545,7 @@ function _econNewsHtml(limit){
     ${_econMoversHtml()}
   </div>`;
 }
+const _tradeQty: Record<string, number> = {};   // per-item chosen quantity for the Buy/Sell selector
 function renderTrade(){
   ensureMarket();
   const tLvl = skillLvl("trading");
@@ -10485,15 +10558,20 @@ function renderTrade(){
     if (!locked){
       npc.stock.forEach(it=>{
         const d = S.market.drift[npc.id][it];
+        const _qk = `${npc.id}|${it}`;
+        const _qv = clampQty(_tradeQty[_qk] || 1, 9999);
         html += `<div class="contract">
           <div class="who">${ITEMS[it].ic} ${ITEMS[it].n} <span style="font-size:11px;">${trendArrow(d)}</span></div>
           <div class="pay">Buy ${fmt(buyPrice(npc,it))} · Sell ${fmt(sellPrice(npc,it))} <span style="color:var(--dim)">· you have ${fmt(itemCount(it))}</span></div>
-          <div class="row" style="margin-top:0;width:100%;">
-            <button class="btn alt" data-trade="${npc.id}|${it}|1|buy">Buy 1</button>
-            <button class="btn alt" data-trade="${npc.id}|${it}|10|buy">Buy 10</button>
-            <button class="btn" data-trade="${npc.id}|${it}|1|sell" ${itemCount(it)<1?'disabled':''}>Sell 1</button>
-            <button class="btn" data-trade="${npc.id}|${it}|10|sell" ${itemCount(it)<10?'disabled':''}>Sell 10</button>
-            <button class="btn deliver" data-trade="${npc.id}|${it}|max|sell" ${itemCount(it)<1?'disabled':''}>Sell all</button>
+          <div class="row" style="margin-top:0;width:100%;align-items:center;gap:8px;">
+            <div class="qty-sel" role="group" aria-label="Quantity for ${ITEMS[it].n}">
+              <button class="btn alt" data-qstep="${_qk}|-1" aria-label="Fewer">−</button>
+              <input type="number" min="1" step="1" inputmode="numeric" data-qin="${_qk}" value="${_qv}" aria-label="Quantity">
+              <button class="btn alt" data-qstep="${_qk}|1" aria-label="More">+</button>
+            </div>
+            <button class="btn alt" data-tradeq="${_qk}|buy">Buy</button>
+            <button class="btn" data-tradeq="${_qk}|sell" ${itemCount(it)<1?'disabled':''}>Sell</button>
+            <button class="btn deliver" data-trade="${npc.id}|${it}|max|sell" ${itemCount(it)<1?'disabled':''} title="Sell your entire stock">Max</button>
           </div>
         </div>`;
       });
@@ -12700,7 +12778,7 @@ function renderMain(){
           <div id="village-overlay"></div>
           <div id="village-clock"></div>
         </div>
-        <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD/arrows also work</div>
+        <div class="vhint">Tap to walk · tap rocks, buildings, stalls and villagers to interact · WASD or left stick to walk · arrows / D-pad move focus</div>
       </div>
       <div class="village-sidebar" id="village-sidebar">${renderInventoryPanel()}</div>
     </div>`;
@@ -13084,6 +13162,20 @@ function bindMain(){
   document.querySelectorAll("[data-trade]").forEach(b=> b.onclick = ()=>{
     const [npc, it, q, mode] = b.dataset.trade.split("|");
     doTrade(npc, it, q==="max" ? "max" : +q, mode);
+  });
+  // Quantity selector: ± steppers, typed input, and Buy/Sell using the chosen amount.
+  document.querySelectorAll("[data-qstep]").forEach(b=> b.onclick = ()=>{
+    const [key, dir] = b.dataset.qstep.split("|");
+    _tradeQty[key] = stepQty(_tradeQty[key] || 1, +dir, 9999);
+    const inp = document.querySelector(`[data-qin="${CSS.escape(key)}"]`) as HTMLInputElement;
+    if (inp) inp.value = String(_tradeQty[key]);
+  });
+  document.querySelectorAll("[data-qin]").forEach(inp=>{
+    (inp as HTMLInputElement).onchange = ()=>{ const key=(inp as HTMLElement).dataset.qin!; const v=clampQty((inp as HTMLInputElement).value as any, 9999); _tradeQty[key]=v; (inp as HTMLInputElement).value=String(v); };
+  });
+  document.querySelectorAll("[data-tradeq]").forEach(b=> b.onclick = ()=>{
+    const [npc, it, mode] = b.dataset.tradeq.split("|");
+    doTrade(npc, it, clampQty(_tradeQty[`${npc}|${it}`] || 1, 9999), mode);
   });
   document.querySelectorAll("[data-deliver]").forEach(b=> b.onclick = ()=> deliverContract(+b.dataset.deliver));
   document.querySelectorAll("[data-reroll]").forEach(b=> b.onclick = ()=> rerollContract(+b.dataset.reroll));
@@ -13719,6 +13811,10 @@ document.getElementById("btn-journal")?.addEventListener("click", () => openJour
 document.getElementById("version-label")?.addEventListener("click", () => openRoadmap());
 // M4: settings + title menu wiring
 applyTextScale();
+applyCouchMode();   // Steam Deck / couch-TV mode from saved settings
+// If a controller is already plugged in at load, reflect it (connect event may have fired pre-init).
+try{ const _pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : []; if (_pads.length){ setGamepadActive(true); const _gi=document.getElementById('gp-indicator'); if(_gi) _gi.style.display='flex'; } }catch(e){}
+updateGpPrompts();
 document.getElementById("btn-settings")?.addEventListener("click", () => openSettings());
 document.getElementById("btn-settings-hud")?.addEventListener("click", () => openSettings());
 document.getElementById("btn-about")?.addEventListener("click", () => openRoadmap());
@@ -13741,19 +13837,40 @@ document.getElementById("btn-about")?.addEventListener("click", () => openRoadma
 document.getElementById("version-label")?.addEventListener("keydown", (e:any) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openRoadmap(); } });
 syncJourneyBtn(); syncJournalBtn();
 window.addEventListener("keydown", e => {
-  if ((e.key==="j"||e.key==="J") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ openJourney(); return; }
-  if ((e.key==="i"||e.key==="I") && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){ toggleInventory(); return; }
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as any)?.tagName||"");
+  // ---- controller-equivalent keyboard nav (works everywhere, incl. modals) ----
+  if (!typing){
+    if (e.key==="ArrowUp" || e.key==="ArrowLeft"){ e.preventDefault(); moveUiFocus(-1); return; }
+    if (e.key==="ArrowDown" || e.key==="ArrowRight"){ e.preventDefault(); moveUiFocus(1); return; }
+    if (e.key==="Tab"){ e.preventDefault(); moveUiFocus(e.shiftKey ? -1 : 1); return; }
+    if (e.key==="Enter"){ if (uiConfirm()){ e.preventDefault(); return; } }
+    if (e.key==="Escape" || e.key==="Backspace"){ if (uiBack()){ e.preventDefault(); return; } if (e.key==="Escape" && !_topModal() && !_titleUp()){ e.preventDefault(); openPauseMenu(); return; } }
+  }
+  if (typing) return;
+  if ((e.key==="j"||e.key==="J")){ openJourney(); return; }
+  if ((e.key==="i"||e.key==="I")){ toggleInventory(); return; }
   // M3: Space swings the current gathering action (keyboard/accessibility for Active Swing)
-  if (e.key===" " && !/^(INPUT|TEXTAREA)$/.test((e.target as any)?.tagName||"")){
+  if (e.key===" "){
     if (S.action && SWING_SKILLS.has(S.action.skill)){ e.preventDefault(); swing(); return; }
   }
+  // WASD walks the avatar in world views (arrows are reserved for UI focus above).
+  if (_topModal() || _paused) return;
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
-  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","a","d","w","s"].includes(e.key)){
-    VKEYS[e.key] = true;
-    if (e.key.startsWith("Arrow")) e.preventDefault();
-  }
+  if (["a","d","w","s"].includes(e.key)) VKEYS[e.key] = true;
 });
 window.addEventListener("keyup", e => { VKEYS[e.key] = false; });
+// Autoplay-safe audio bootstrap. HTMLAudio needs a user activation to start, and a
+// rejected play() is never retried — so returning players (who skip the title) and
+// any deferred start would get silence. On the FIRST real gesture, unlock + start the
+// zone music (respecting the music setting); retry on later gestures until it takes.
+let _audioBootstrapped = false;
+function _bootstrapAudio(){
+  if (_audioBootstrapped) return;
+  if (!(S.settings && S.settings.music)) return;   // music off: try again on a later gesture
+  try{ MUSIC.unlocked = true; MUSIC.setVol(volLevel()); updateMusicZone(); _audioBootstrapped = true; }
+  catch(e){ _audioBootstrapped = false; }
+}
+["pointerdown","keydown","touchstart"].forEach(ev => window.addEventListener(ev, _bootstrapAudio, { passive:true }));
 requestAnimationFrame(villageFrame);
 if (!S.playerName){
   showTitle();
@@ -13807,19 +13924,113 @@ document.addEventListener('fullscreenchange', ()=>{
   if (btn) btn.textContent = fs ? '✕FS' : '⛶';
 });
 
+/* ================= Controller / keyboard UI focus + couch mode ================= */
+const FOCUS_SEL = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], .collapse-head, [data-gpfocus]:not([disabled]), [tabindex]:not([tabindex="-1"])';
+var _uiFocusEl: any = null;   // var (not let): read by updateGpPrompts() during early init — avoid TDZ
+var _paused = false;
+// Topmost open modal/overlay, if any (so focus + Back scope to it).
+function _topModal(){
+  const nodes = Array.from(document.querySelectorAll('[id$="-modal"], [role="dialog"], #play-hint-overlay, #radio-modal, #pause-modal')) as HTMLElement[];
+  const vis = nodes.filter(n => n && n.offsetParent !== null && getComputedStyle(n).display !== 'none');
+  return vis.length ? vis[vis.length - 1] : null;
+}
+function _isVisible(el: HTMLElement){ return !!(el && el.offsetParent !== null && el.getClientRects().length); }
+function _focusScope(){ return _topModal() || document.body; }
+function _focusables(){
+  const scope = _focusScope();
+  return (Array.from(scope.querySelectorAll(FOCUS_SEL)) as HTMLElement[]).filter(_isVisible);
+}
+function _setUiFocus(el: HTMLElement){
+  if (_uiFocusEl && _uiFocusEl !== el) _uiFocusEl.classList.remove('gp-focus');
+  _uiFocusEl = el;
+  if (el){ el.classList.add('gp-focus'); try{ el.focus({ preventScroll:true }); }catch(e){} try{ el.scrollIntoView({ block:'nearest', inline:'nearest' }); }catch(e){} }
+  updateGpPrompts();
+}
+function _clearUiFocus(){ if (_uiFocusEl){ _uiFocusEl.classList.remove('gp-focus'); _uiFocusEl = null; } updateGpPrompts(); }
+function moveUiFocus(dir){
+  const els = _focusables();
+  if (!els.length){ _clearUiFocus(); return; }
+  let idx = _uiFocusEl ? els.indexOf(_uiFocusEl) : -1;
+  idx = wrapIndex(idx, els.length, dir);
+  _setUiFocus(els[idx]);
+}
+function uiConfirm(){
+  if (_uiFocusEl && _isVisible(_uiFocusEl)){ const el = _uiFocusEl; el.click(); return true; }
+  const m = _topModal();
+  if (m){ const els = _focusables(); if (els.length){ _setUiFocus(els[0]); return true; } }
+  return false;
+}
+function uiBack(){
+  const m = _topModal();
+  if (m){
+    const close = m.querySelector('[id$="-close"], [aria-label="Close"], .modal-close') as HTMLElement;
+    if (close){ close.click(); } else { m.remove(); }
+    _clearUiFocus();
+    return true;
+  }
+  if (_uiFocusEl){ _clearUiFocus(); return true; }
+  return false;
+}
+// Controller-prompt footer, context-aware.
+function updateGpPrompts(){
+  const bar = document.getElementById('gp-prompts'); if (!bar) return;
+  const ctx = _topModal() ? 'modal' : (_uiFocusEl ? 'menu' : 'world');
+  bar.innerHTML = controllerPrompts(ctx as any).map(p =>
+    `<span class="gp-hint"><span class="gp-btn">${p.btn}</span>${p.label}</span>`).join('');
+}
+// Couch / TV mode + gamepad presence body classes.
+function applyCouchMode(){ document.body.classList.toggle('couch-mode', !!(S.settings && S.settings.couch)); updateGpPrompts(); }
+function setGamepadActive(on){ document.body.classList.toggle('gpad', !!on); updateGpPrompts(); }
+// Pause menu (Menu / Start button, Esc-from-world).
+function openPauseMenu(){
+  if (document.getElementById('pause-modal')) return;
+  _paused = true;
+  const el = document.createElement('div'); el.id = 'pause-modal'; el.setAttribute('role','dialog'); el.setAttribute('aria-modal','true');
+  el.style.cssText = 'position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px';
+  const row = (id,label,ic) => `<button data-pause="${id}" style="display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:#2a2f38;color:#eee;border:1px solid #444;border-radius:7px;padding:11px 14px;margin-bottom:8px;font-size:15px;cursor:pointer"><span style="font-size:18px">${ic}</span>${label}</button>`;
+  el.innerHTML = `<div class="panel" style="padding:16px;max-width:340px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0;font-size:16px">⏸️ Paused</h2><button aria-label="Close" class="modal-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer">✕</button></div>
+    ${row('resume','Resume','▶')}
+    ${row('settings','Settings & accessibility','⚙️')}
+    ${row('couch','Toggle Couch / TV mode','🛋️')}
+    ${row('fullscreen','Toggle fullscreen','⛶')}
+    ${row('controls','Controls & buttons','🎮')}
+    <p style="font-size:10px;color:var(--dim);margin:8px 0 0;text-align:center">Idle income keeps counting — the world simply waits for you.</p>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) closePauseMenu(); });
+  (el.querySelector('.modal-close') as HTMLElement).onclick = closePauseMenu;
+  el.querySelectorAll('[data-pause]').forEach(b => (b as HTMLElement).onclick = () => {
+    const a = (b as HTMLElement).dataset.pause;
+    if (a === 'resume') closePauseMenu();
+    else if (a === 'settings'){ closePauseMenu(); openSettings(); }
+    else if (a === 'couch'){ if(!S.settings) S.settings={}; S.settings.couch = !S.settings.couch; applyCouchMode(); save(); }
+    else if (a === 'fullscreen'){ toggleFullscreen(); }
+    else if (a === 'controls'){ closePauseMenu(); if (typeof showPlayHint === 'function') showPlayHint(); }
+  });
+  _setUiFocus(el.querySelector('[data-pause="resume"]') as HTMLElement);
+}
+function closePauseMenu(){ _paused = false; const e = document.getElementById('pause-modal'); if (e) e.remove(); _clearUiFocus(); lastTick = Date.now(); }
+(globalThis as any).openPauseMenu = openPauseMenu;
+
 /* ---- Gamepad ---- */
 const _gpLastBtns: boolean[] = [];
+let _gpNavRepeatAt = 0;
 function pollGamepad(){
   const pads = navigator.getGamepads ? navigator.getGamepads() : ([] as (Gamepad|null)[]);
   const pad = Array.from(pads).find(p => p && p.connected) as Gamepad | undefined;
   GPKEYS.ArrowLeft = false; GPKEYS.ArrowRight = false;
   GPKEYS.ArrowUp   = false; GPKEYS.ArrowDown  = false;
   if (!pad) return;
-  const lx = (pad.axes[0]||0), ly = (pad.axes[1]||0), dead = 0.20;
-  if (lx < -dead || pad.buttons[14]?.pressed) GPKEYS.ArrowLeft  = true;
-  if (lx >  dead || pad.buttons[15]?.pressed) GPKEYS.ArrowRight = true;
-  if (ly < -dead || pad.buttons[12]?.pressed) GPKEYS.ArrowUp    = true;
-  if (ly >  dead || pad.buttons[13]?.pressed) GPKEYS.ArrowDown  = true;
+  const lx = (pad.axes[0]||0), ly = (pad.axes[1]||0), dead = 0.28;
+  // LEFT STICK always walks the avatar in world views; D-PAD drives UI focus (below).
+  // Only a modal/pause blocks walking — a focused nav button does not.
+  if (!_topModal() && !_paused){
+    if (lx < -dead) GPKEYS.ArrowLeft  = true;
+    if (lx >  dead) GPKEYS.ArrowRight = true;
+    if (ly < -dead) GPKEYS.ArrowUp    = true;
+    if (ly >  dead) GPKEYS.ArrowDown  = true;
+  }
   const prev = _gpLastBtns;
   // M2: while decorating, the controller drives the placement cursor (A place / B
   // cancel / X rotate / Y style) instead of the world — no pointer needed.
@@ -13838,11 +14049,24 @@ function pollGamepad(){
     for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
     return;
   }
-  if (pad.buttons[0]?.pressed  && !prev[0])  gpInteract();
-  if (pad.buttons[1]?.pressed  && !prev[1])  gpBack();
+  // ---- D-pad → UI focus ring (edge-press + hold-repeat) ----
+  const now = (typeof performance!=="undefined"?performance.now():Date.now());
+  const dEdge = (i:number)=> pad.buttons[i]?.pressed && !prev[i];
+  const dHeld = pad.buttons[12]?.pressed||pad.buttons[13]?.pressed||pad.buttons[14]?.pressed||pad.buttons[15]?.pressed;
+  const dFresh = dEdge(12)||dEdge(13)||dEdge(14)||dEdge(15);
+  if (dFresh || (dHeld && now > _gpNavRepeatAt)){
+    _gpNavRepeatAt = now + (dFresh ? 320 : 150);
+    if (pad.buttons[12]?.pressed || pad.buttons[14]?.pressed) moveUiFocus(-1);   // up / left → prev
+    else if (pad.buttons[13]?.pressed || pad.buttons[15]?.pressed) moveUiFocus(1); // down / right → next
+  }
+  // ---- Face + system buttons ----
+  if (pad.buttons[9]?.pressed  && !prev[9]){ if (document.getElementById('pause-modal')) closePauseMenu(); else if (!_titleUp()) openPauseMenu(); }  // ☰ Menu → pause
+  if (pad.buttons[0]?.pressed  && !prev[0]){ if (!uiConfirm()) gpInteract(); }   // A — confirm focus, else interact
+  if (pad.buttons[1]?.pressed  && !prev[1]){ if (!uiBack()) gpBack(); }          // B — back / close
   if (pad.buttons[3]?.pressed  && !prev[3])  toggleInventory();   // Y — inventory
   if (pad.buttons[2]?.pressed  && !prev[2])  openJourney();       // X — Founder's Journey
-  if (pad.buttons[9]?.pressed  && !prev[9])  toggleFullscreen();
+  if (pad.buttons[4]?.pressed  && !prev[4])  switchNavCategory(-1);  // LB — prev category
+  if (pad.buttons[5]?.pressed  && !prev[5])  switchNavCategory(1);   // RB — next category
   for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
 }
 function gpInteract(){
@@ -13869,19 +14093,22 @@ function gpBack(){
   if (INTERIOR_TABS.has(S.tab)||S.tab!=="village"){ S.tab="village"; renderNav(); renderMain(); }
 }
 window.addEventListener('gamepadconnected', ()=>{
-  toast('🎮 Controller connected!');
+  toast('🎮 Controller connected! D-pad moves focus · Ⓐ confirm · Ⓑ back · LB/RB category · ☰ menu.');
   const el = document.getElementById('gp-indicator');
   if (el) el.style.display='flex';
+  setGamepadActive(true);
 });
 window.addEventListener('gamepaddisconnected', ()=>{
   const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
-  if (!pads.length){ const el=document.getElementById('gp-indicator'); if (el) el.style.display='none'; }
+  if (!pads.length){ const el=document.getElementById('gp-indicator'); if (el) el.style.display='none'; setGamepadActive(false); }
 });
 
 function _titleUp(){ const tl = document.getElementById("title"); return !!(tl && tl.style.display !== "none"); }
 let lastTick = Date.now();
 setInterval(()=>{
   const now = Date.now();
+  // Pause menu genuinely halts the sim — keep lastTick current so no dt accrues.
+  if (_paused){ lastTick = now; return; }
   const dt = now - lastTick; lastTick = now;
   // M4: no world simulation runs behind the title screen — clock, contracts,
   // cleanliness, production, automation, deliveries and NPC schedules all pause.
