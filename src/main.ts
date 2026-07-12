@@ -21,7 +21,7 @@ import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, foot
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
-import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
+import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, radioDefaultTrack, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
@@ -508,7 +508,7 @@ const FILEMUSIC = (() => {
     // a fresh URL the poisoned cache can't match, so it hits the network.
     const a = new Audio(encodeURI('./' + src) + '?v=' + AUDIO_CACHE_BUST);
     a.preload = 'auto'; a.loop = (list.length <= 1);
-    a.volume = 0; (a as any)._fadeTimer = null;
+    a.volume = target();
     a.addEventListener('ended', () => { if (list.length > 1 && el === a) advance(); });
     // If a real MP3 can't load (missing from the build, blocked, decode error), don't
     // go silent — fall back to the procedural chiptune for the current zone.
@@ -521,27 +521,16 @@ const FILEMUSIC = (() => {
     });
     return a;
   }
-  // Per-element fade so a fade-out and a fade-in can run at once without clobbering
-  // each other (the old track always completes its fade and pauses).
-  function fadeEl(a, to, done){
-    if (!a) return;
-    if (a._fadeTimer){ clearInterval(a._fadeTimer); a._fadeTimer = null; }
-    const step = (to - a.volume) / 12;
-    if (Math.abs(step) < 0.0001){ try{ a.volume = to; }catch(e){} if (done) done(); return; }
-    a._fadeTimer = setInterval(() => {
-      try{ a.volume = Math.max(0, Math.min(1, a.volume + step)); }catch(e){}
-      if ((step >= 0 && a.volume >= to - 0.01) || (step < 0 && a.volume <= to + 0.01)){
-        try{ a.volume = to; }catch(e){}
-        clearInterval(a._fadeTimer); a._fadeTimer = null; if (done) done();
-      }
-    }, 45);
-  }
+  // Hard-cut the current element. INSTANT (no setInterval fade) — a fade-then-pause
+  // could be throttled on mobile so the old track never actually stopped and played
+  // over the other engine. Reliability beats a crossfade here.
+  function killEl(){ if (el){ try{ el.pause(); el.src = ''; }catch(e){} } el = null; }
   function swapTo(src){
-    const old = el;
-    if (old){ fadeEl(old, 0, () => { try{ old.pause(); old.src = ''; }catch(e){} }); }
+    killEl();
     el = make(src);
     const a = el;
-    a.play().then(() => fadeEl(a, target())).catch(() => { try{ a.volume = target(); }catch(e){} });
+    a.volume = target();
+    a.play().catch(() => {});
   }
   function advance(){ if (!list.length) return; idx = (idx + 1) % list.length; swapTo(list[idx]); }
   return {
@@ -549,15 +538,14 @@ const FILEMUSIC = (() => {
     playList(newKey, srcs){
       if (!srcs || !srcs.length){ this.stop(); return; }
       if (key === newKey && el){
-        if (el.paused){ const a=el; a.play().then(()=>fadeEl(a, target())).catch(()=>{}); }   // resume if an earlier autoplay was blocked
-        else if (el.volume < target() - 0.02 && !el._fadeTimer) fadeEl(el, target());
+        try{ el.volume = target(); if (el.paused) el.play().catch(()=>{}); }catch(e){}   // keep playing; resume if a prior autoplay was blocked
         return;
       }
       key = newKey; list = shuffle(srcs.slice()); idx = 0; swapTo(list[0]);
     },
-    stop(){ if (el){ const old = el; fadeEl(old, 0, () => { try{ old.pause(); old.src = ''; }catch(e){} }); } el = null; key = null; },
-    setVol(v){ base = v; if (el && !el._fadeTimer) { try{ el.volume = target(); }catch(e){} } },
-    setVolMult(m){ volMult = m; if (el && !el._fadeTimer) { try{ el.volume = target(); }catch(e){} } },
+    stop(){ killEl(); key = null; },
+    setVol(v){ base = v; if (el){ try{ el.volume = target(); }catch(e){} } },
+    setVolMult(m){ volMult = m; if (el){ try{ el.volume = target(); }catch(e){} } },
     playing(k){ return key === k && !!el; },
   };
 })();
@@ -580,9 +568,14 @@ const MUSIC = {
   setVolMult(m){ FILEMUSIC.setVolMult(m); CHIP.setVolMult(m); },
   start(){ this.unlocked = true; updateMusicZone(); },
 };
+let _musicPrevTab: any = null;   // tracks tab transitions for the radio auto-on
 function updateMusicZone(){
-  // The radio is house-only and never auto-resumes: leaving Frosty's House switches it off.
-  if (S.tab !== "frost_lodge" && _radioOn) _radioOn = false;
+  // Frosty's Radio auto-plays when you first arrive in his house (default: Life In
+  // Blackburn; quests unlock more). Turning it off inside stays off until you re-enter;
+  // leaving the house switches it off so the global soundtrack resumes.
+  if (S.tab === "frost_lodge"){ if (_musicPrevTab !== "frost_lodge") _radioOn = true; }
+  else if (_radioOn){ _radioOn = false; }
+  _musicPrevTab = S.tab;
   if (!(MUSIC.unlocked && S.settings && S.settings.music)) return;
   // PRIORITY 1 — Frosty radio: plays the unlocked exclusive file in EITHER mode
   // (a deliberate in-world interaction). It never changes the saved soundtrack pref.

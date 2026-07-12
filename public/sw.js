@@ -1,7 +1,7 @@
 // BuyrWorld service worker — offline-capable app shell + runtime caching.
 // Bump CACHE when the caching strategy changes; hashed build assets are cached
 // at runtime, so their new names are picked up automatically on deploy.
-const CACHE = 'buyrworld-v3';   // v3: new app icon (activate clears the old cached seedling icons)
+const CACHE = 'buyrworld-v4';   // v4: updated app icon artwork (evicts the previous cached icons)
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
