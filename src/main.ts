@@ -8,6 +8,11 @@ import { PETS } from './data/pets.ts';
 import { CLIENTS, CONTRACT_POOL, rollContract, tierById, repRank, repSlotBonus, repDeltaOnDeliver, repDeltaOnExpire, isExpired } from './data/contracts.ts';
 import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS, NORTH_EXT } from './world/map.ts';
+// Horizontal world-stretch factor. The map (VMAP) and every object tx in
+// map.ts were widened by this factor; the handful of features whose world-X
+// is still hardcoded here (NPC spawns, dock, pier, park, fences) are scaled by
+// SX so they line up with the widened tiles. Y/rows are unchanged.
+const SX = 1.4;
 import { nightAlpha, lampGlow, isNight, skyTint, gameHour, DAY_DURATION_MS } from './world/daynight.ts';
 import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_COLOURS, TROUSER_COLOURS, FACIAL_HAIR_STYLES, EYE_COLOURS, JACKET_COLOURS, SHOE_COLOURS, ACCESSORY_STYLES, SCARF_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
@@ -1095,27 +1100,27 @@ function achCheck(){
   }
 }
 const WANDERERS = [
-  { id:"frost", n:"Frosty", hair:"#17161a", shirt:"#bfe8f7", x:11*TILE, y:26*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
-    area:[10,25,25,29], home:[10,29,20,29], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
-    // patrols the path by the furnace/quarry (avoids the pond at tx14–17,ty27–28)
-    route:[[11,26],[18,26],[24,26],[24,29],[18,29],[11,29]],
+  { id:"frost", n:"Frosty", hair:"#17161a", shirt:"#bfe8f7", x:15*TILE, y:26*TILE, tx:null, ty:null, wait:2, moving:false, facing:1, pending:null,
+    area:[14,25,35,29], home:[14,29,28,29], tips:FROST_TIPS, tee:"STAYFROSTY", ri:-1, benchIdx:5,
+    // patrols the path by the furnace/quarry (avoids the pond)
+    route:[[15,26],[25,26],[34,26],[34,29],[25,29],[15,29]],
     profile:{ job:"Supply Chain Professional", home:"Frosty's House", children:["Harison (6)"] } },
-  { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:5*TILE, y:(14+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
-    area:[2,12+NORTH_EXT,8,16+NORTH_EXT], home:[2,12+NORTH_EXT,5,13+NORTH_EXT], tips:[
+  { id:"poppy", n:"Poppy", hair:"#b0574f", shirt:"#ffd666", x:7*TILE, y:(14+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
+    area:[3,12+NORTH_EXT,11,16+NORTH_EXT], home:[3,12+NORTH_EXT,7,13+NORTH_EXT], tips:[
       "Morning! My turnips go by lorry now. Fancy that.",
       "Frosty says you're the new founder. Don't work too hard!",
       "The market stalls pay best on green-arrow days.",
     ],
     profile:{ job:"Turnip Farmer", home:"Poppy's Farm" } },
-  { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:27*TILE, y:(17.5+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
-    area:[26,17+NORTH_EXT,37,17.8+NORTH_EXT], home:[27,17+NORTH_EXT,35,17.8+NORTH_EXT], tips:[
+  { id:"sam", n:"Sam", hair:"#3a3a3a", shirt:"#4a6ea9", x:38*TILE, y:(17.5+NORTH_EXT)*TILE, tx:null, ty:null, wait:3, moving:false, facing:1, pending:null,
+    area:[36,17+NORTH_EXT,52,17.8+NORTH_EXT], home:[38,17+NORTH_EXT,49,17.8+NORTH_EXT], tips:[
       "One day ships'll dock here. Port Salvo, they'll call it.",
       "See that boat? Doesn't leak much anymore.",
       "Heaviest thing I ever lifted? A Cargo Turtle. True story.",
     ],
     profile:{ job:"Harbour Warden", home:"Dockside Hut" } },
 ];
-const VP = { x: 75*TILE, y: 28*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
+const VP = { x: 105*TILE, y: 28*TILE, tx: null, ty: null, pending: null, facing: 1, moving: false, dir:"down", enterCooldown: 0 };
 let _lastIActionId = null;   // tracks the last interior action so the player re-walks to a new station
 let _fishCatchT = 0;         // timestamp of the last fish caught, for the reel-up animation
 let _fishCastT = 0;          // timestamp of the last cast (new fishing station), for the cast animation
@@ -1129,7 +1134,7 @@ let _intVfx = [];               // interior completion rewards (floating +item p
 let _comboCount = 0, _comboAt = 0, _comboSkill = null;   // consecutive-action streak (addictive feedback)
 let _fishSpot = null;            // where the bobber has been cast (interior coords) — click the water to set it
 let _fishAnchor = { x:0, y:0 };  // where the angler stood when they cast (for the retract/snap distance)
-let _cat = { x:29*TILE, y:28*TILE, tx:29*TILE, ty:28*TILE, pauseT:0, facing:1, moving:false };
+let _cat = { x:41*TILE, y:28*TILE, tx:41*TILE, ty:28*TILE, pauseT:0, facing:1, moving:false };
 let _bflies = [];            // ambient butterflies (warm seasons)
 let _homeVil = null;         // wandering home-villager state (per home)
 let _homeVilLbl = null;      // {x,y,name} for the crisp home-villager label this frame
@@ -1141,8 +1146,8 @@ const TRESPASS_CURIOUS = ["Oh — hello? Can I help you?","Who are you? This is 
 const TRESPASS_ANNOYED = ["{p}?! What are you doing in my house?","{p}, we're friends, but — out, please.","Oi {p}, you can't just wander in!","Really, {p}? In my kitchen?","{p}… why are you in here?"];
 const IP = { x: VIEW_W/2, y: VIEW_H*0.68, tx: null, ty: null, facing: 1, moving: false, dir:"down" };
 const BEACH_BIRDS = [
-  { x:6*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
-  { x:34*TILE, y:(17.4+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:1.4 },
+  { x:8*TILE, y:(17.2+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:0 },
+  { x:48*TILE, y:(17.4+NORTH_EXT)*TILE, vx:0, vy:0, state:"sit", flap:1.4 },
 ];
 // M6: villager runtime state (positions, phase, quip cycling)
 const VILLAGER_STATE = VILLAGERS.map(v => {
@@ -1150,7 +1155,7 @@ const VILLAGER_STATE = VILLAGERS.map(v => {
   const workObj = V_OBJECTS.find(o => o.id === v.workId);
   const homePos = homeObj
     ? { x: (homeObj.tx + (homeObj.w||2)/2)*TILE, y: (homeObj.ty + (homeObj.h||2))*TILE + 10 }
-    : { x: 52*TILE, y: 5*TILE };
+    : { x: 73*TILE, y: 5*TILE };
   const workPos = workObj
     ? (workObj.kind === "stall"
         // stall vendors stand BEHIND the counter (north side of the stall) facing south
@@ -1273,19 +1278,19 @@ const CHILDREN_DATA = [
 ];
 const CHILDREN_STATE = CHILDREN_DATA.map((c,i) => {
   const homeObj = V_OBJECTS.find(o => o.id === c.homeId);
-  const homePos = homeObj ? { x:(homeObj.tx+(homeObj.w||2)/2)*TILE, y:(homeObj.ty+(homeObj.h||2))*TILE+10 } : { x:60*TILE, y:5*TILE };
-  const parkPos = { x:(78+(i%6))*TILE, y:(7+NORTH_EXT+Math.floor(i/6)*1.5)*TILE };
+  const homePos = homeObj ? { x:(homeObj.tx+(homeObj.w||2)/2)*TILE, y:(homeObj.ty+(homeObj.h||2))*TILE+10 } : { x:84*TILE, y:5*TILE };
+  const parkPos = { x:(109+(i%6))*TILE, y:(7+NORTH_EXT+Math.floor(i/6)*1.5)*TILE };
   return { ...c, homePos, parkPos, x:homePos.x, y:homePos.y, phase:"sleep",
            tx:null, ty:null, facing:1, moving:false, dir:"down", wTarget:null, wanderTimer:Math.random()*3 };
 });
 // Night wildlife
-const FOX = { x:42*TILE, y:(8+NORTH_EXT)*TILE, tx:null, ty:null, facing:1, moving:false, dir:"right", wait:0 };
+const FOX = { x:59*TILE, y:(8+NORTH_EXT)*TILE, tx:null, ty:null, facing:1, moving:false, dir:"right", wait:0 };
 const OWLS = [
-  { x:41.4*TILE, y:(1.8+NORTH_EXT)*TILE, blink:0 },
-  { x:44.3*TILE, y:(2.8+NORTH_EXT)*TILE, blink:0.7 },
-  { x:44.6*TILE, y:(9.8+NORTH_EXT)*TILE, blink:1.4 },
+  { x:58*TILE, y:(1.8+NORTH_EXT)*TILE, blink:0 },
+  { x:62*TILE, y:(2.8+NORTH_EXT)*TILE, blink:0.7 },
+  { x:63*TILE, y:(9.8+NORTH_EXT)*TILE, blink:1.4 },
 ];
-const SHARK = { x:28*TILE, y:(21.5+NORTH_EXT)*TILE, vx:0.35 };
+const SHARK = { x:39*TILE, y:(21.5+NORTH_EXT)*TILE, vx:0.35 };
 const SEASONAL_EVENTS = [
   { id:"xmas_market",    n:"Christmas Market",  msg:"The village Christmas market is open — festive spending is up!",     affects:null,                                       mult:1.28, months:[11,0] },
   { id:"summer_fete",    n:"Summer Fete",        msg:"The summer fete is on — everyone's in a spending mood.",            affects:["sardine","mackerel","bass","wood","plank"], mult:1.20, months:[5,6,7] },
@@ -2185,12 +2190,12 @@ function solidAt(px, py){
   // picket fences along forest edges — solid except path gates
   {
     const _fr = Math.floor(py/TILE);
-    // west forest west fence (col 39)
-    if (px >= 39*TILE-4 && px <= 39*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
-    // west forest east fence (col 47)
-    if (px >= 47*TILE-4 && px <= 47*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
-    // east forest west fence (col 87)
-    if (px >= 87*TILE-4 && px <= 87*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
+    // west forest west fence (col 55, widened from 39)
+    if (px >= 55*TILE-4 && px <= 55*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
+    // west forest east fence (col 66, widened from 47)
+    if (px >= 66*TILE-4 && px <= 66*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
+    // east forest west fence (col 122, widened from 87)
+    if (px >= 122*TILE-4 && px <= 122*TILE+8 && _fr >= 22 && _fr <= 36 && _fr!==25 && _fr!==26 && _fr!==30 && _fr!==31) return true;
   }
   const t = tileAt(px, py);
   if (t==="T" || t==="W" || t==="C") return true;
@@ -4720,7 +4725,7 @@ function drawObjects(ctx, t){
 }
 function drawSeasonalBillboard(ctx, t){
   const _curSeason = getSeason();
-  const _billX = 40*TILE, _billY = 2*TILE;
+  const _billX = 56*TILE, _billY = 2*TILE;
   const THEMES = {
     summer: { post:"#5a3a1a", bg:"#e8d090", edge:"#c8a860", fg:"#a83020", sub:"#5a3010", title:"☀ SUMMER FETE",  dates:"Jun – Aug" },
     autumn: { post:"#5a3a1a", bg:"#e0a050", edge:"#b87838", fg:"#3a2010", sub:"#5a3010", title:"🍂 HARVEST FEST", dates:"Sep – Nov" },
@@ -4774,17 +4779,17 @@ function drawExtras(ctx, t){
       ctx.fillStyle="#d9d2c2"; ctx.fillRect(_fx-3, fy+6, 22, 3); ctx.fillRect(_fx-3, fy+13, 22, 3);
     }
   };
-  _drawFence(39*TILE, [25,26,30,31]); // west forest west fence
-  _drawFence(47*TILE, [25,26,30,31]); // west forest east fence
-  _drawFence(87*TILE, [25,26,30,31]); // east forest west fence
+  _drawFence(55*TILE, [25,26,30,31]); // west forest west fence
+  _drawFence(66*TILE, [25,26,30,31]); // west forest east fence
+  _drawFence(122*TILE, [25,26,30,31]); // east forest west fence
   // Retail high street — clean shopfronts (bunting/seasonal clutter removed so
   // the post office and shops read clearly; the fete lives in the clear gap east).
   {
     const _ryBase = 4*TILE;  // retail HIGH STREET row y pixel (VMAP row 4)
-    const _rx0 = 5*TILE;
-    const _rx1 = 33*TILE;
+    const _rx0 = 7*TILE;
+    const _rx1 = 46*TILE;
     // "HIGH STREET" sign on a post at tx≈35
-    const _signX = 35*TILE, _signY = 3*TILE;
+    const _signX = 49*TILE, _signY = 3*TILE;
     ctx.fillStyle="#3a2010"; ctx.fillRect(_signX-1, _signY, 3, TILE*2);
     ctx.fillStyle="#c8a060"; ctx.fillRect(_signX-24, _signY+8, 50, 14);
     ctx.fillStyle="#1a0c00";
@@ -4795,10 +4800,10 @@ function drawExtras(ctx, t){
     // street (between the furniture shop @tx37 and the pub @tx52) so nothing
     // overlays a shopfront. Laid out symmetrically around a central marquee.
     if (_curSeason === "summer"){
-      const _feteCx = 45*TILE;       // centre of the tx39-51 gap
+      const _feteCx = 63*TILE;       // centre of the widened tx55-71 gap
       const _topY   = 2*TILE + 2;    // row 2 grass, tidy above the street
       // neat bunting swag strung across the clear stretch only
-      const _bx0 = 40*TILE, _bx1 = 50*TILE, _bDip = 5;
+      const _bx0 = 56*TILE, _bx1 = 70*TILE, _bDip = 5;
       ctx.strokeStyle="#8a6a4a"; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(_bx0, _topY-2); ctx.quadraticCurveTo(_feteCx, _topY-2+_bDip, _bx1, _topY-2); ctx.stroke();
       const _fc = ["#e84060","#ffd666","#4a8ae8","#68cc68","#e86040","#c840e8"];
@@ -4872,7 +4877,7 @@ function drawExtras(ctx, t){
     }
     // ---- Elias's monument — raised on the green once the Founder's Trail is complete ----
     if (isStoryComplete(S.story?.done||0)){
-      const mnx = 7*TILE, mny = 2*TILE;   // upper plaza, clear of the marquee/street
+      const mnx = 10*TILE, mny = 2*TILE;   // upper plaza, clear of the marquee/street
       ctx.fillStyle="rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(mnx+8, mny+34, 18, 5, 0, 0, 7); ctx.fill();
       // stepped stone plinth
       ctx.fillStyle="#b9b2a2"; ctx.fillRect(mnx-6, mny+28, 28, 6);
@@ -4892,7 +4897,7 @@ function drawExtras(ctx, t){
   // park (tx:79-89, ty:6-10): traditional manicured park — shifted east so its
   // tarmac perimeter no longer clips the player's cottage at tx74-75.
   {
-    const pkX = 79*TILE, pkY = (6+NORTH_EXT)*TILE, pkW = 10*TILE, pkH = 4*TILE;
+    const pkX = 111*TILE, pkY = (6+NORTH_EXT)*TILE, pkW = 14*TILE, pkH = 4*TILE;
     const pcy = pkY + pkH/2;
     // rich grass base with mowed stripe texture
     ctx.fillStyle="#4e9e3a"; ctx.fillRect(pkX, pkY, pkW, pkH);
@@ -5006,12 +5011,13 @@ function drawExtras(ctx, t){
   for (let col = 50; col < 86; col += 5){
     const colors = ["#ff9db0","#ffd666","#b48ad9","#7cd0a8"];
     const fc = colors[Math.floor(col/5)%4];
-    ctx.fillStyle=fc; ctx.fillRect(col*TILE+10, (4+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, (4+NORTH_EXT)*TILE+18, 2, 3);
-    ctx.fillStyle=colors[(Math.floor(col/5)+2)%4]; ctx.fillRect(col*TILE+10, (9+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(col*TILE+11, (9+NORTH_EXT)*TILE+18, 2, 3);
+    const _cx = Math.round(col*SX)*TILE;   // widened world: scale the home column to match
+    ctx.fillStyle=fc; ctx.fillRect(_cx+10, (4+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(_cx+11, (4+NORTH_EXT)*TILE+18, 2, 3);
+    ctx.fillStyle=colors[(Math.floor(col/5)+2)%4]; ctx.fillRect(_cx+10, (9+NORTH_EXT)*TILE+14, 4, 4); ctx.fillStyle="#3aa66a"; ctx.fillRect(_cx+11, (9+NORTH_EXT)*TILE+18, 2, 3);
   }
   // North forest clearing — light dappled circle near the lore stone (tx:20, ty:13)
   {
-    const _clx = 20*TILE + TILE/2, _cly = 13*TILE + TILE/2;
+    const _clx = 28*TILE + TILE/2, _cly = 13*TILE + TILE/2;
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#c8e890";
@@ -5069,12 +5075,12 @@ function drawExtras(ctx, t){
     }
   }
   ctx.fillStyle="#8c6947";
-  for (let i=0;i<5;i++) ctx.fillRect(28*TILE, (17.5+NORTH_EXT)*TILE+i*10, 2*TILE, 7);
-  ctx.fillStyle="#7a5a3a"; ctx.fillRect(28*TILE+4, (17.5+NORTH_EXT)*TILE, 4, 52); ctx.fillRect(30*TILE-8, (17.5+NORTH_EXT)*TILE, 4, 52);
+  for (let i=0;i<5;i++) ctx.fillRect(39*TILE, (17.5+NORTH_EXT)*TILE+i*10, 2*TILE, 7);
+  ctx.fillStyle="#7a5a3a"; ctx.fillRect(39*TILE+4, (17.5+NORTH_EXT)*TILE, 4, 52); ctx.fillRect(42*TILE-8, (17.5+NORTH_EXT)*TILE, 4, 52);
   const bob = Math.sin(t*1.6)*2;
-  { const bx = 31.4*TILE, by = (19.6+NORTH_EXT)*TILE + bob;
+  { const bx = 44*TILE, by = (19.6+NORTH_EXT)*TILE + bob;
     ctx.strokeStyle="#6a4a2f"; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(30*TILE+6, (18.6+NORTH_EXT)*TILE+8); ctx.quadraticCurveTo(bx-6, by-4, bx+4, by+3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(42*TILE+6, (18.6+NORTH_EXT)*TILE+8); ctx.quadraticCurveTo(bx-6, by-4, bx+4, by+3); ctx.stroke();
     ctx.fillStyle="rgba(20,60,90,.25)"; ctx.beginPath(); ctx.ellipse(bx+27, by+15, 26, 4, 0, 0, 7); ctx.fill();
     ctx.fillStyle="#8a3e34";
     ctx.beginPath(); ctx.moveTo(bx-4, by); ctx.lineTo(bx+50, by); ctx.lineTo(bx+58, by+5); ctx.lineTo(bx+46, by+13); ctx.lineTo(bx+2, by+13); ctx.lineTo(bx-10, by+5); ctx.closePath(); ctx.fill();
@@ -5087,25 +5093,25 @@ function drawExtras(ctx, t){
     ctx.fillStyle="#e8dcc0"; ctx.fillRect(bx+12, by-26, 3, 3);
   }
   if (tier>=2){
-    ctx.strokeStyle="#8c6947"; ctx.beginPath(); ctx.moveTo(12*TILE, (10.7+NORTH_EXT)*TILE); ctx.lineTo(20*TILE, (10.7+NORTH_EXT)*TILE); ctx.stroke();
+    ctx.strokeStyle="#8c6947"; ctx.beginPath(); ctx.moveTo(17*TILE, (10.7+NORTH_EXT)*TILE); ctx.lineTo(28*TILE, (10.7+NORTH_EXT)*TILE); ctx.stroke();
     for (let i=0;i<12;i++){
       ctx.fillStyle=["#ff8a5c","#ffd666","#6fb7d9","#ff9db0"][i%4];
-      const bx = 12*TILE+i*16;
+      const bx = 17*TILE+i*16;
       ctx.beginPath(); ctx.moveTo(bx, (10.7+NORTH_EXT)*TILE); ctx.lineTo(bx+12, (10.7+NORTH_EXT)*TILE); ctx.lineTo(bx+6, (10.7+NORTH_EXT)*TILE+8); ctx.closePath(); ctx.fill();
     }
-    const fx=15.9*TILE, fy=(7.4+NORTH_EXT)*TILE;
+    const fx=22*TILE, fy=(7.4+NORTH_EXT)*TILE;
     ctx.fillStyle="#cfd8dd"; ctx.fillRect(fx-6, fy-2, 12, 8);
     for (let i=0;i<4;i++){ const p=(t*1.4+i*0.25)%1; ctx.fillStyle="rgba(255,255,255,"+(0.8*(1-p)).toFixed(2)+")"; ctx.fillRect(fx-2+Math.sin(p*7+i)*6, fy-4-p*14, 3, 3); }
   }
   if (tier>=3){
-    const sx=30.5*TILE, sy=(13+NORTH_EXT)*TILE;
+    const sx=43*TILE, sy=(13+NORTH_EXT)*TILE;
     ctx.fillStyle="#cfc5b0"; ctx.fillRect(sx-10, sy+6, 20, 8);
     ctx.fillStyle="#e8c14e"; ctx.fillRect(sx-6, sy-14, 12, 20); ctx.fillRect(sx-9, sy-8, 3, 8); ctx.fillRect(sx+6, sy-8, 3, 8);
     ctx.fillStyle="#c9a02e"; ctx.fillRect(sx-4, sy-20, 8, 6);
     if (Math.floor(t*2)%2) drawEmojiC(ctx,"✨", sx+10, sy-18, 9);
   }
   if (S.upgrades.fleet1 && !S.upgrades.fleet2){
-    const vx=22.2*TILE, vy=(3.4+NORTH_EXT)*TILE;
+    const vx=31*TILE, vy=(3.4+NORTH_EXT)*TILE;
     ctx.fillStyle="#e8e2d2"; ctx.fillRect(vx, vy, 30, 14);
     ctx.fillStyle="#6fb7d9"; ctx.fillRect(vx+20, vy+2, 8, 6);
     ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(vx+7,vy+15,4,0,7); ctx.arc(vx+24,vy+15,4,0,7); ctx.fill();
@@ -5129,7 +5135,7 @@ function drawExtras(ctx, t){
   const stock = Object.values(S.items).reduce((a,b)=>a+b,0);
   const crates = Math.min(6, Math.floor(stock/40));
   for (let i=0;i<crates;i++){
-    const cx=22.1*TILE+(i%2)*11, cy=(4.2+NORTH_EXT)*TILE-Math.floor(i/2)*10;
+    const cx=31*TILE+(i%2)*11, cy=(4.2+NORTH_EXT)*TILE-Math.floor(i/2)*10;
     ctx.fillStyle=["#d9a86a","#c98a5a","#e8c94e"][i%3]; ctx.fillRect(cx, cy, 10, 9);
     ctx.strokeStyle="#8c6947"; ctx.strokeRect(cx, cy, 10, 9);
   }
@@ -5168,8 +5174,8 @@ function drawExtras(ctx, t){
   // Harbour District dock — jetty planks + mooring posts + anchored boat
   {
     const _dockY = 36*TILE - CAM.y;
-    const _dockX1 = 53*TILE - CAM.x;
-    const _dockW  = 18*TILE;
+    const _dockX1 = 74*TILE - CAM.x;
+    const _dockW  = 25*TILE;
     if (_dockY > -40 && _dockY < VIEW_H + 40){
       // horizontal dock planks on sand row
       ctx.fillStyle="#7a5a38";
@@ -5179,7 +5185,7 @@ function drawExtras(ctx, t){
         ctx.fillStyle="#7a5a38";
       }
       // mooring posts
-      for(const _mx of [53,57,61,65,69,71]){
+      for(const _mx of [74,80,85,91,97,99]){
         const _mpx = _mx*TILE - CAM.x;
         ctx.fillStyle="#5a3a1e"; ctx.fillRect(_mpx, _dockY-8, 5, 16);
         ctx.fillStyle="#7a5a38"; ctx.fillRect(_mpx, _dockY-10, 5, 4);
@@ -5188,13 +5194,13 @@ function drawExtras(ctx, t){
       // rope lines between posts
       ctx.strokeStyle="#8c6a3a"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       for(let ri=0; ri<3; ri++){
-        const _rx1 = (53+ri*6)*TILE - CAM.x + 2;
-        const _rx2 = (59+ri*6)*TILE - CAM.x + 2;
+        const _rx1 = (74+ri*8)*TILE - CAM.x + 2;
+        const _rx2 = (84+ri*8)*TILE - CAM.x + 2;
         ctx.beginPath(); ctx.moveTo(_rx1, _dockY-8); ctx.lineTo(_rx2, _dockY-8); ctx.stroke();
       }
       ctx.setLineDash([]);
       // small anchored dingy near boat hire
-      const _bx = 62*TILE - CAM.x, _by = 37.5*TILE - CAM.y;
+      const _bx = 87*TILE - CAM.x, _by = 37.5*TILE - CAM.y;
       if (_by > -30 && _by < VIEW_H+30){
         ctx.fillStyle="#c9a86a"; ctx.fillRect(_bx-14, _by, 28, 10);
         ctx.fillStyle="#b09050"; ctx.fillRect(_bx-12, _by+2, 24, 6);
@@ -5508,11 +5514,11 @@ function drawVillage(t){
     if (_nfy2 > _nfy1) ctx.fillRect(0, _nfy1, VIEW_W, _nfy2 - _nfy1);
     // West forest strip (rows 22-36, cols 39-47)
     const _wfy1 = Math.max(0, 22*TILE - CAM.y), _wfy2 = Math.min(VIEW_H, 36*TILE - CAM.y);
-    const _wfx1 = Math.max(0, 39*TILE - CAM.x), _wfx2 = Math.min(VIEW_W, 47*TILE - CAM.x);
+    const _wfx1 = Math.max(0, 55*TILE - CAM.x), _wfx2 = Math.min(VIEW_W, 66*TILE - CAM.x);
     if (_wfy2 > _wfy1 && _wfx2 > _wfx1) ctx.fillRect(_wfx1, _wfy1, _wfx2-_wfx1, _wfy2-_wfy1);
     // East forest strip (rows 22-36, cols 87-94)
     const _efy1 = _wfy1, _efy2 = _wfy2;
-    const _efx1 = Math.max(0, 87*TILE - CAM.x), _efx2 = Math.min(VIEW_W, 95*TILE - CAM.x);
+    const _efx1 = Math.max(0, 122*TILE - CAM.x), _efx2 = Math.min(VIEW_W, 133*TILE - CAM.x);
     if (_efy2 > _efy1 && _efx2 > _efx1) ctx.fillRect(_efx1, _efy1, _efx2-_efx1, _efy2-_efy1);
     ctx.restore();
   }
@@ -9390,7 +9396,7 @@ function updateBeachBirds(){
     const b = BEACH_BIRDS[Math.floor(Math.random()*BEACH_BIRDS.length)];
     if (b.state==="sit"){
       let nx=0,tr=0;
-      do{ nx=(3+Math.floor(Math.random()*42))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-(17+NORTH_EXT)*TILE)<6*TILE && tr<20);
+      do{ nx=(4+Math.floor(Math.random()*59))*TILE; tr++; } while(Math.hypot(VP.x-nx,VP.y-(17+NORTH_EXT)*TILE)<6*TILE && tr<20);
       b.x=nx; b.y=(13+NORTH_EXT)*TILE; b.vx=(Math.random()-0.5)*1.5; b.vy=-2; b.state="fly";
     }
   }
@@ -10077,7 +10083,7 @@ function updateNightWildlife(dt){
   }
   // shark drifts horizontally in water
   SHARK.x += SHARK.vx;
-  if (SHARK.x > 44*TILE || SHARK.x < 4*TILE) SHARK.vx = -SHARK.vx;
+  if (SHARK.x > 62*TILE || SHARK.x < 6*TILE) SHARK.vx = -SHARK.vx;
 }
 function payMult(){
   let m = 1;
@@ -11325,7 +11331,7 @@ function renderBoatHire(){
     <h3 style="margin:0 0 8px;font-size:13px">Boat Hire</h3>
     <p style="color:var(--dim);font-size:12px;margin:0">Unlocks at total level 100. Current: <b>${totalLvl()}</b> / 100</p>
   </div>`;
-  const _atPier = Math.hypot(VP.x - 22.5*TILE, VP.y - 38*TILE) < 200;
+  const _atPier = Math.hypot(VP.x - 31.5*TILE, VP.y - 38*TILE) < 200;
   return `<div class="panel" style="padding:10px">
     <h3 style="margin:0 0 6px;font-size:13px">⛵ Featherstone Boat Hire</h3>
     <p style="color:var(--dim);font-size:11px;margin:0 0 10px">10 coins per crossing. Cross the bay to the Pier and back instantly.</p>
@@ -13956,11 +13962,11 @@ function bindMain(){
       if (!S.harbour) S.harbour = { boatTrips:0 };
       S.harbour.boatTrips = (S.harbour.boatTrips||0) + 1;
       if (_dest === "pier"){
-        VP.x = 22.5*TILE; VP.y = 38.4*TILE;
+        VP.x = 31.5*TILE; VP.y = 38.4*TILE;
         toast("⛵ Crossing complete! You step off at the Pier.");
         log("⛵ <b>Boat trip</b> — crossed to the Pier. -10 coins.", "good");
       } else {
-        VP.x = 61*TILE; VP.y = 35.4*TILE;
+        VP.x = 85*TILE; VP.y = 35.4*TILE;
         toast("⛵ Crossing complete! You step off at the Harbour.");
         log("⛵ <b>Boat trip</b> — returned to the Harbour. -10 coins.", "good");
       }
