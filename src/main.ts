@@ -4698,23 +4698,44 @@ function drawObjects(ctx, t){
       if (locked) drawEmojiC(ctx,"🔒",r.x+12,r.y-4,10);
     }
     if (o.kind==="fountain"){
-      const fx = r.x + r.w/2, fy = r.y + r.h/2;
-      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.beginPath(); ctx.ellipse(fx, fy+r.h/2-2, r.w/2, 4, 0, 0, 7); ctx.fill();
-      ctx.fillStyle="#b8b0a0"; ctx.beginPath(); ctx.arc(fx, fy, r.w/2-2, 0, 7); ctx.fill();
-      ctx.fillStyle="#8f887a"; ctx.beginPath(); ctx.arc(fx, fy, r.w/2-2, 0, 7); ctx.lineWidth=3; ctx.strokeStyle="#8f887a"; ctx.stroke();
-      ctx.fillStyle="#5db3d8"; ctx.beginPath(); ctx.arc(fx, fy, r.w/2-7, 0, 7); ctx.fill();
-      ctx.fillStyle="#8ed0ea"; ctx.fillRect(fx-9+((t*14)%14), fy-2, 6, 2);
-      ctx.fillStyle="#cfc8ba"; ctx.fillRect(fx-3, fy-9, 6, 9);
-      ctx.fillStyle="#e3dccc"; ctx.beginPath(); ctx.arc(fx, fy-10, 4, 0, 7); ctx.fill();
-      for (let i=0;i<5;i++){ const p=(t*1.5+i*0.2)%1; ctx.fillStyle=`rgba(255,255,255,${(0.85*(1-p)).toFixed(2)})`; ctx.fillRect(fx-1+Math.sin(p*7+i*2)*8, fy-10-p*10+p*p*14, 2, 2); }
+      const fx = r.x + r.w/2, fy = r.y + r.h/2, R = r.w/2;
+      ctx.fillStyle="rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(fx, fy+R-2, R+2, 5, 0, 0, 7); ctx.fill();
+      // outer stone basin (lip + inner shadow)
+      ctx.fillStyle="#9a9184"; ctx.beginPath(); ctx.ellipse(fx, fy, R, R*0.7, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#b6ad9e"; ctx.beginPath(); ctx.ellipse(fx, fy-1.5, R, R*0.7, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#7f776b"; ctx.beginPath(); ctx.ellipse(fx, fy, R-3, R*0.7-2, 0, 0, 7); ctx.fill();
+      // basin water + concentric ripples
+      const wr = R-5;
+      ctx.fillStyle="#4fb0d6"; ctx.beginPath(); ctx.ellipse(fx, fy, wr, wr*0.66, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#68c3e6"; ctx.beginPath(); ctx.ellipse(fx, fy-1, wr, wr*0.62, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.4)"; ctx.lineWidth=1;
+      for (let i=0;i<2;i++){ const rp=((t*0.6+i*0.5)%1); ctx.globalAlpha=0.45*(1-rp); ctx.beginPath(); ctx.ellipse(fx, fy, 3+rp*wr, (3+rp*wr)*0.64, 0, 0, 7); ctx.stroke(); }
+      ctx.globalAlpha=1;
+      // central pedestal + raised upper bowl
+      ctx.fillStyle="#8f877a"; ctx.fillRect(fx-3, fy-14, 6, 14);
+      ctx.fillStyle="#a79f90"; ctx.beginPath(); ctx.ellipse(fx, fy-14, 9, 3.4, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#7f776b"; ctx.beginPath(); ctx.ellipse(fx, fy-13, 8, 3, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#68c3e6"; ctx.beginPath(); ctx.ellipse(fx, fy-14, 6, 2.1, 0, 0, 7); ctx.fill();
+      ctx.fillStyle="#8f877a"; ctx.fillRect(fx-1.5, fy-22, 3, 8);
+      // arcing water jets + droplets
+      ctx.strokeStyle="rgba(190,236,248,.85)"; ctx.lineWidth=1.5;
+      for (let s=-1;s<=1;s+=2){ ctx.beginPath(); ctx.moveTo(fx, fy-22); ctx.quadraticCurveTo(fx+s*10, fy-27, fx+s*13, fy-14); ctx.stroke(); }
+      for (let i=0;i<6;i++){ const p=(t*1.6+i*0.16)%1, s=(i%2?1:-1); ctx.fillStyle=`rgba(214,242,251,${(0.85*(1-p)).toFixed(2)})`; ctx.fillRect(fx+s*(2+p*12), fy-22+p*p*16-4, 2, 2); }
       continue;
     }
     if (o.kind==="bench"){
-      ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(r.x+2, r.y+r.h-3, r.w-4, 3);
-      ctx.fillStyle="#7a5a38"; ctx.fillRect(r.x+3, r.y+2, r.w-6, 4);
-      ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+2, r.y+7, r.w-4, 7);
-      ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+2, r.y+9, r.w-4, 2);
-      ctx.fillStyle="#5a3e26"; ctx.fillRect(r.x+4, r.y+14, 3, 6); ctx.fillRect(r.x+r.w-7, r.y+14, 3, 6);
+      ctx.fillStyle="rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(r.x+r.w/2, r.y+r.h-2, r.w*0.42, 3, 0, 0, 7); ctx.fill();
+      const x0=r.x+3, x1=r.x+r.w-3, seatY=r.y+9;
+      // cast-iron end frames, armrests and legs
+      ctx.fillStyle="#33322f";
+      ctx.fillRect(x0-1, r.y+1, 3, 19); ctx.fillRect(x1-2, r.y+1, 3, 19);
+      ctx.fillRect(x0-2, seatY-1, 5, 2); ctx.fillRect(x1-3, seatY-1, 5, 2);
+      ctx.fillRect(x0-1, seatY, 2, 11); ctx.fillRect(x1-1, seatY, 2, 11);
+      // varnished wooden slats — backrest (2) + seat, with edge shading for depth
+      const slat=(yy,h)=>{ ctx.fillStyle="#9a6f43"; ctx.fillRect(x0, yy, x1-x0, h);
+        ctx.fillStyle="rgba(255,240,210,.20)"; ctx.fillRect(x0, yy, x1-x0, 1);
+        ctx.fillStyle="rgba(0,0,0,.16)"; ctx.fillRect(x0, yy+h-1, x1-x0, 1); };
+      slat(r.y+2, 3); slat(r.y+6, 3); slat(seatY, 4);
       continue;
     }
     if (o.kind==="plant"){
@@ -4859,13 +4880,20 @@ function drawObjects(ctx, t){
     }
     if (o.kind==="lamp"){
       const lx = r.x + r.w/2, ly = r.y;
-      const _g = lampGlow();
-      ctx.fillStyle="rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(lx, ly+2, 6, 2, 0, 0, 7); ctx.fill();
-      ctx.fillStyle='#3a3230'; ctx.fillRect(lx-2, ly-30, 4, 32);
-      ctx.fillStyle='#2c2624'; ctx.fillRect(lx-6, ly-42, 12, 10);
-      ctx.fillStyle = _g > 0.05 ? `rgba(255,214,102,${(0.35+0.65*_g).toFixed(2)})` : '#5a6470';
-      ctx.fillRect(lx-4, ly-40, 8, 6);
-      ctx.fillStyle='#2c2624'; ctx.fillRect(lx-7, ly-45, 14, 3);
+      const _g = lampGlow(), lit = _g > 0.05;
+      ctx.fillStyle="rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(lx, ly+3, 7, 2.5, 0, 0, 7); ctx.fill();
+      // moulded base + tapered wrought-iron post with a highlight edge
+      ctx.fillStyle="#2b2622"; ctx.fillRect(lx-4, ly-3, 8, 5); ctx.fillRect(lx-3, ly-5, 6, 3);
+      ctx.fillStyle="#3a332e"; ctx.fillRect(lx-2, ly-34, 4, 31);
+      ctx.fillStyle="#4c443c"; ctx.fillRect(lx-2, ly-34, 1, 31);
+      // decorative scroll bracket
+      ctx.strokeStyle="#2b2622"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(lx, ly-33); ctx.quadraticCurveTo(lx+6, ly-37, lx+4, ly-40); ctx.stroke();
+      // glass lantern housing with peaked cap
+      const warm = lit ? `rgba(255,216,116,${(0.42+0.58*_g).toFixed(2)})` : '#67717d';
+      ctx.fillStyle="#241f1c"; ctx.beginPath(); ctx.moveTo(lx-6,ly-44); ctx.lineTo(lx+6,ly-44); ctx.lineTo(lx+3,ly-49); ctx.lineTo(lx-3,ly-49); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=warm; ctx.fillRect(lx-4, ly-44, 8, 10);
+      ctx.fillStyle="#241f1c"; ctx.fillRect(lx-1, ly-44, 2, 10); ctx.fillRect(lx-4, ly-40, 8, 1); ctx.fillRect(lx-5, ly-34, 10, 2);
+      if (lit){ ctx.fillStyle=`rgba(255,228,156,${(0.55*_g).toFixed(2)})`; ctx.fillRect(lx-2, ly-43, 3, 8); }
       continue;
     }
     if (o.kind==="sign"){
