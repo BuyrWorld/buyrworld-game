@@ -1892,7 +1892,6 @@ function homeColsCached(id: string){
 const VKEYS = {};
 const GPKEYS: Record<string,boolean> = {}; // gamepad movement, kept separate so keyboard keys never get cleared
 const VFX = [];
-const DUST = [];
 let vLastT = 0, lastDust = 0;
 
 function objRect(o){
@@ -4087,6 +4086,28 @@ function _thash(c, r, s){
   n = (n ^ (n >>> 16)) >>> 0;
   return n / 4294967296;
 }
+// Smooth value noise (bilinear + smoothstep over a coarse grid of _thash samples).
+// `cell` = tiles per noise cell; larger = broader, slower variation. Returns 0..1.
+// Used to give terrain a large-scale, grid-free colour drift so flat tiles stop
+// reading as a checkerboard.
+function _vnoise(c, r, cell, seed){
+  const gc=Math.floor(c/cell), gr=Math.floor(r/cell);
+  const fx=(c/cell)-gc, fy=(r/cell)-gr;
+  const sx=fx*fx*(3-2*fx), sy=fy*fy*(3-2*fy);
+  const s00=_thash(gc,gr,seed), s10=_thash(gc+1,gr,seed), s01=_thash(gc,gr+1,seed), s11=_thash(gc+1,gr+1,seed);
+  return (s00*(1-sx)+s10*sx)*(1-sy) + (s01*(1-sx)+s11*sx)*sy;
+}
+// Linear-interpolate two #rrggbb colours (f: 0→a, 1→b). Cached per (a,b,quantised f).
+const _lerpHexCache = new Map();
+function _lerpHex(a, b, f){
+  f = f<0?0:f>1?1:f;
+  const key = a+b+((f*24)|0);
+  let v = _lerpHexCache.get(key); if (v) return v;
+  const ai=parseInt(a.slice(1),16), bi=parseInt(b.slice(1),16);
+  const ar=ai>>16, ag=(ai>>8)&255, ab=ai&255, br=bi>>16, bg=(bi>>8)&255, bb=bi&255;
+  const r=(ar+(br-ar)*f)|0, g=(ag+(bg-ag)*f)|0, bl=(ab+(bb-ab)*f)|0;
+  v = `rgb(${r},${g},${bl})`; _lerpHexCache.set(key, v); return v;
+}
 // Weighted, naturally-scattered ground cover on a grass tile (flowers, clover,
 // weeds, stones, fallen leaves, tufts). Static per-tile so it never flickers.
 function _scatterGrass(ctx, x, y, c, r){
@@ -4216,6 +4237,116 @@ function drawSkyAmbience(ctx, t){
     ctx.globalAlpha = 1;
   }
 }
+// ================= Unified world-space particle system =================
+// Presentation ONLY — never touches gameplay/collision/state. Particle
+// positions are integrated analytically from their spawn time, so the system
+// is frame-rate independent and needs no per-frame dt. The pool is capped and
+// auto-culled so it stays cheap. Drawn in two layers: 0 = ground (under people),
+// 1 = air (over people). All spawns are subtle (low alpha, short life).
+const WP: any[] = [];
+let _wpT = 0;
+let _lastCoinsSeen = -1;   // coin-gain delta watch (see renderMain)
+function spawnWP(x, y, shape, o:any={}){
+  if (WP.length > 170) return;   // hard cap — drop rather than grow unbounded
+  WP.push({ x, y, shape,
+    vx:o.vx??0, vy:o.vy??0, g:o.g??0, born:_wpT, max:o.max??1.2,
+    size:o.size??2, col:o.col||'#ffffff', a0:o.a0??0.7, layer:o.layer??1,
+    drift:o.drift??0, dph:Math.random()*6.283, dfr:o.dfr??3,
+    spin:o.spin??0, wind:o.wind??0, grow:o.grow??0 });
+}
+function cullWP(t){ _wpT = t; for (let i=WP.length-1;i>=0;i--){ if (t-WP[i].born >= WP[i].max) WP.splice(i,1); } }
+function drawWP(ctx, t, layer){
+  for (const p of WP){
+    if (p.layer!==layer) continue;
+    const age=t-p.born; if (age<0) continue; const k=age/p.max; if (k>=1) continue;
+    const x=p.x + p.vx*age + (p.drift?Math.sin(age*p.dfr+p.dph)*p.drift:0) + _windX*p.wind*age;
+    const y=p.y + p.vy*age + 0.5*p.g*age*age;
+    const a=p.a0*(1-k), sz=Math.max(0.4, p.size + p.grow*age);
+    ctx.globalAlpha = a<0?0:a;
+    switch(p.shape){
+      case 'dust': case 'steam': case 'smoke': case 'mote': case 'splash':
+        ctx.fillStyle=p.col; ctx.beginPath(); ctx.arc(x,y,sz,0,7); ctx.fill(); break;
+      case 'leaf':
+        ctx.save(); ctx.translate(x,y); ctx.rotate(age*p.spin+p.dph); ctx.fillStyle=p.col;
+        ctx.beginPath(); ctx.ellipse(0,0,sz*1.4,sz*0.7,0,0,7); ctx.fill(); ctx.restore(); break;
+      case 'petal':
+        ctx.save(); ctx.translate(x,y); ctx.rotate(age*p.spin+p.dph); ctx.fillStyle=p.col;
+        ctx.beginPath(); ctx.ellipse(0,0,sz,sz*0.55,0,0,7); ctx.fill(); ctx.restore(); break;
+      case 'coin':
+        ctx.save(); ctx.translate(x,y); ctx.scale(Math.abs(Math.cos(age*9+p.dph))*0.7+0.3, 1);
+        ctx.fillStyle=p.col; ctx.beginPath(); ctx.arc(0,0,sz,0,7); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,.7)'; ctx.fillRect(-sz*0.35,-sz*0.55,sz*0.3,sz*1.1); ctx.restore(); break;
+      case 'xp':
+        ctx.fillStyle=p.col; ctx.fillRect(x-sz*0.4,y-sz,sz*0.8,sz*2); ctx.fillRect(x-sz,y-sz*0.4,sz*2,sz*0.8); break;
+      case 'star':
+        ctx.save(); ctx.translate(x,y); ctx.rotate(age*p.spin); ctx.fillStyle=p.col;
+        for(let s=0;s<4;s++){ ctx.rotate(Math.PI/2); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(sz*0.5,-sz*0.5); ctx.lineTo(0,-sz*1.7); ctx.lineTo(-sz*0.5,-sz*0.5); ctx.closePath(); ctx.fill(); } ctx.restore(); break;
+      case 'ring':
+        ctx.strokeStyle=p.col; ctx.lineWidth=Math.max(0.6, 2*(1-k)); ctx.beginPath(); ctx.arc(x,y,sz,0,7); ctx.stroke(); break;
+      case 'sparkle':
+        ctx.fillStyle=p.col; ctx.fillRect(x-0.6,y-sz,1.2,sz*2); ctx.fillRect(x-sz,y-0.6,sz*2,1.2); break;
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+// Cached emitter buildings (found once; presentation only).
+const _emCafe = V_OBJECTS.find(o=>o.id==='cafe');
+const _emFurn = V_OBJECTS.find(o=>o.id==='furnace');
+const _emClub = V_OBJECTS.find(o=>o.id==='nightclub');
+const _wpOn = (r)=> !(r.x+r.w<CAM.x-30 || r.x>CAM.x+VIEW_W+30 || r.y+r.h<CAM.y-40 || r.y>CAM.y+VIEW_H+30);
+// Ambient environmental emitters — called once per village frame. Rates are
+// probability-per-frame so density stays low and even; nothing spawns off-screen.
+function emitAmbient(t){
+  const season = getSeason();
+  for (const o of V_OBJECTS){
+    if (o.kind==="tree"){
+      if (Math.random()<0.008){ const r=objRect(o); if(_wpOn(r)){
+        const lc = season==="autumn" ? ["#c87020","#b06030","#d09028","#a05018"] : ["#5a9a48","#4a8a3a","#6aaa50"];
+        spawnWP(r.x+r.w*0.5+(Math.random()-0.5)*22, r.y-26+Math.random()*12, 'leaf',
+          { vy:8+Math.random()*7, g:2, max:2.6+Math.random(), size:2.3, col:lc[(Math.random()*lc.length)|0], a0:0.62, drift:9, dfr:2.2, spin:1.8, wind:0.7, layer:0 }); } }
+    } else if (o.kind==="plant" || o.kind==="fountain"){
+      if (Math.random()<0.010){ const r=objRect(o); if(_wpOn(r)){
+        const pc = ["#ff9db0","#ffd0dc","#ffc14a","#c79bff","#ff8ac0"];
+        spawnWP(r.x+r.w*0.5+(Math.random()-0.5)*14, r.y+6, 'petal',
+          { vy:-5-Math.random()*4, g:1.4, max:2.4, size:1.9, col:pc[(Math.random()*pc.length)|0], a0:0.7, drift:7, dfr:3, spin:2.6, wind:0.5, layer:1 }); } }
+    }
+  }
+  // water sparkles on a couple of random visible tiles
+  for (let s=0;s<2;s++){ if(Math.random()<0.5){
+    const wx=CAM.x+Math.random()*VIEW_W, wy=CAM.y+Math.random()*VIEW_H;
+    const c=Math.floor(wx/TILE), rr=Math.floor(wy/TILE);
+    if (VMAP[rr] && VMAP[rr][c]==='W') spawnWP(wx, wy, 'sparkle', { max:0.85, size:1.6, col:'#e2f4ff', a0:0.85, layer:1 }); } }
+  // fine dust motes catching the light (very faint, slow)
+  if (Math.random()<0.12) spawnWP(CAM.x+Math.random()*VIEW_W, CAM.y+Math.random()*VIEW_H*0.72, 'mote',
+    { vx:(Math.random()-0.5)*4, vy:-2, max:3.4, size:1.3, col:'#fff6d8', a0:0.22, drift:6, dfr:1.4, wind:1.1, layer:1 });
+  // coffee steam curling off the café
+  if (_emCafe && Math.random()<0.5){ const r=objRect(_emCafe); if(_wpOn(r))
+    spawnWP(r.x+r.w*0.5+(Math.random()-0.5)*6, r.y-2, 'steam',
+      { vy:-14, max:2.1, size:2.6, grow:5, col:'#f4ede2', a0:0.42, drift:5, dfr:2, wind:0.9, layer:1 }); }
+  // furnace / factory smoke
+  if (_emFurn && Math.random()<0.55){ const r=objRect(_emFurn); if(_wpOn(r))
+    spawnWP(r.x+r.w*0.72+(Math.random()-0.5)*4, r.y-6, 'smoke',
+      { vy:-16, max:2.9, size:3.6, grow:7, col:'#8c8c94', a0:0.3, drift:6, dfr:1.5, wind:1.2, layer:1 }); }
+  // nightclub floor sparkles after dark
+  const _gl = lampGlow();
+  if (_emClub && _gl>0.3 && Math.random()<0.6){ const r=objRect(_emClub); if(_wpOn(r)){
+    const nc=['#ff5acd','#8c50ff','#40c8ff','#5affc8'];
+    spawnWP(r.x+Math.random()*r.w, r.y+r.h*0.4+Math.random()*10, 'sparkle',
+      { vy:-10-Math.random()*8, max:1.3, size:2, col:nc[(Math.random()*nc.length)|0], a0:0.85*_gl, drift:6, dfr:5, layer:1 }); } }
+}
+// Event bursts (presentation only).
+function doorFx(o){ if(!o) return; const r=objRect(o); const dx=r.x+r.w/2, dy=r.y+r.h-6;
+  spawnWP(dx, dy-2, 'ring', { size:4, grow:26, max:0.55, col:'rgba(255,224,150,0.9)', a0:0.5, layer:1 });
+  spawnWP(dx, dy-5, 'sparkle', { vy:-8, max:0.7, size:3, col:'#ffe6a0', a0:0.8, layer:1 });
+  for(let i=0;i<6;i++) spawnWP(dx+(Math.random()-0.5)*14, dy, 'dust',
+    { vx:(Math.random()-0.5)*10, vy:-5-Math.random()*7, g:18, max:0.6, size:1.9, grow:3, col:'#d8c8a8', a0:0.45, layer:1 }); }
+function coinBurstAt(x,y,n){ for(let i=0;i<n;i++) spawnWP(x+(Math.random()-0.5)*10, y-6, 'coin',
+  { vx:(Math.random()-0.5)*26, vy:-26-Math.random()*16, g:66, max:0.9+Math.random()*0.3, size:2.6, col:'#ffcf3a', a0:0.95, spin:6, layer:1 }); }
+function xpMotesAt(x,y,n){ for(let i=0;i<n;i++) spawnWP(x+(Math.random()-0.5)*12, y-4, 'xp',
+  { vx:(Math.random()-0.5)*8, vy:-18-Math.random()*8, g:6, max:1.0, size:2, col:'#8ef0a0', a0:0.8, drift:5, dfr:4, layer:1 }); }
+function levelBurstAt(x,y){ spawnWP(x, y-8, 'ring', { size:6, grow:64, max:0.8, col:'rgba(255,224,120,0.9)', a0:0.7, layer:1 });
+  for(let i=0;i<12;i++){ const ang=i/12*6.283; spawnWP(x, y-8, 'star',
+    { vx:Math.cos(ang)*42, vy:Math.sin(ang)*42-10, g:32, max:1.1, size:3, col:['#ffe14a','#ffd0f0','#8ef0ff'][i%3], a0:0.95, spin:8, layer:1 }); } }
 function _strHash(s){ let h = 0; for (let i=0;i<s.length;i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0; return h; }
 // A brief, purely-visual activity emote above a stationary villager (coffee, chat,
 // looking around, shopping…). Deterministic + staggered so it never all fires at once.
@@ -4240,16 +4371,27 @@ function drawTiles(ctx, t){
   for (let r=r0;r<r1;r++) for (let c=c0;c<c1;c++){
     const ch = VMAP[r][c], x=c*TILE, y=r*TILE;
     if (ch==="W"){
-      // depth tint: deeper rows slightly darker blue
-      ctx.fillStyle = r < 20 ? "#4da8cc" : "#5db3d8"; ctx.fillRect(x,y,TILE,TILE);
+      // depth tint with a smooth drift so open water isn't one flat blue
+      const wd=_vnoise(c,r,6,21);
+      ctx.fillStyle = _lerpHex(r<20?"#3f97bf":"#48a6cf", r<20?"#57b6da":"#64c1e3", wd); ctx.fillRect(x,y,TILE,TILE);
+      // shallows — a lighter rim wherever water meets land, so ponds/lakes get a
+      // shoreline instead of a hard rectangular edge
+      const _lN=r>0&&VMAP[r-1][c]!=="W", _lS=r<VROWS-1&&VMAP[r+1][c]!=="W", _lW=c>0&&VMAP[r][c-1]!=="W", _lE=c<VCOLS-1&&VMAP[r][c+1]!=="W";
+      if (_lN||_lS||_lW||_lE){ ctx.fillStyle="rgba(158,226,236,.32)";
+        if(_lN)ctx.fillRect(x,y,TILE,5); if(_lS)ctx.fillRect(x,y+TILE-5,TILE,5); if(_lW)ctx.fillRect(x,y,5,TILE); if(_lE)ctx.fillRect(x+TILE-5,y,5,TILE); }
       // two staggered wave layers for parallax shimmer
-      ctx.fillStyle="rgba(255,255,255,0.38)";
+      ctx.fillStyle="rgba(255,255,255,0.34)";
       if ((c+r+Math.floor(t*2.2))%4===0) ctx.fillRect(x+2,y+7,14,2);
       if ((c*2+r+Math.floor(t*1.6)+2)%5===0) ctx.fillRect(x+5,y+15,10,2);
       // foam where water meets sand
       if (r>0 && VMAP[r-1][c]==="S"){ ctx.fillStyle="rgba(255,255,255,.75)"; ctx.fillRect(x, y+Math.sin(t*2+c)*2, TILE, 3); }
     } else if (ch==="S"){
-      ctx.fillStyle="#efdfae"; ctx.fillRect(x,y,TILE,TILE);
+      const sn=_vnoise(c,r,6,31);
+      ctx.fillStyle=_lerpHex("#e6d49e","#f2e4b6",sn); ctx.fillRect(x,y,TILE,TILE);
+      // damp darker sand along the waterline
+      if (r<VROWS-1 && VMAP[r+1][c]==="W"){ ctx.fillStyle="rgba(150,128,86,.20)"; ctx.fillRect(x,y+TILE-8,TILE,8); }
+      // grassy fringe where sand meets grass above (soft biome transition, not a hard line)
+      if (r>0 && VMAP[r-1][c]==="G"){ ctx.fillStyle="rgba(120,180,110,.32)"; ctx.fillRect(x,y,TILE,4); ctx.fillStyle="#86c47d"; ctx.fillRect(x+4,y,2,3); ctx.fillRect(x+13,y,2,3); ctx.fillRect(x+19,y,2,3); }
       const h=(c*7+r*13)%23;
       if (h===0){ ctx.fillStyle="#dcc98e"; ctx.fillRect(x+8,y+10,5,3); }
       if (h===4){ ctx.fillStyle="#e0cc99"; ctx.fillRect(x+3,y+5,4,2); }
@@ -4300,21 +4442,31 @@ function drawTiles(ctx, t){
       if (_gW){ ctx.fillRect(x,y+5,4,2); ctx.fillRect(x,y+15,4,2); }
       if (_gE){ ctx.fillRect(x+TILE-4,y+8,4,2); ctx.fillRect(x+TILE-4,y+17,4,2); }
     } else if (ch==="F"){
-      ctx.fillStyle=(c+r)%2 ? "#4a7a3a" : "#426e34"; ctx.fillRect(x,y,TILE,TILE);
+      // forest floor — smooth deep-green drift (no more (c+r)%2 checkerboard)
+      const fn=_vnoise(c,r,5,11)*0.6 + _vnoise(c,r,10,17)*0.4;
+      ctx.fillStyle=_lerpHex("#365f28","#4e8038",fn); ctx.fillRect(x,y,TILE,TILE);
+      if (_thash(c,r,9)>0.86){ ctx.fillStyle="rgba(20,44,18,.18)"; ctx.beginPath(); ctx.ellipse(x+TILE*0.5,y+TILE*0.5,10,7,0,0,7); ctx.fill(); }
       const hf=(c*7+r*13)%17;
       if (hf===0){ ctx.fillStyle="#3a6028"; ctx.fillRect(x+4,y+8,4,10); ctx.fillRect(x+14,y+6,3,12); }
       if (hf===3){ ctx.fillStyle="#5a9048"; ctx.fillRect(x+10,y+10,3,8); }
       if (hf===6){ ctx.fillStyle="#3e5e2a"; ctx.fillRect(x+2,y+14,5,4); ctx.fillRect(x+14,y+10,4,4); }
     } else {
-      // ---- procedural grass: warm multi-tone base + subtle height/tint variation ----
-      const g = _thash(c, r, 1);
-      ctx.fillStyle = g < 0.26 ? "#a8db9a" : g < 0.52 ? "#98d089" : g < 0.78 ? "#8ecb80" : "#b0e0a0";
+      // ---- procedural grass: SMOOTH low-frequency colour drift so the field never
+      //      reads as a grid of flat tiles, plus soft in-tile dapples for texture ----
+      const gn = _vnoise(c, r, 5, 1)*0.62 + _vnoise(c, r, 11, 5)*0.38;   // two octaves
+      ctx.fillStyle = _lerpHex("#79ba6b", "#9cd486", gn);
       ctx.fillRect(x,y,TILE,TILE);
-      // subtle per-tile height shading (hash-based, so no grid/checker pattern)
-      ctx.fillStyle = _thash(c,r,2) < 0.5 ? "rgba(255,255,255,.04)" : "rgba(20,60,20,.05)"; ctx.fillRect(x,y,TILE,TILE);
+      // broad meadow patches (very subtle, span several tiles → no per-tile grid)
+      const mp = _vnoise(c, r, 7, 14);
+      if (mp > 0.66){ ctx.fillStyle = `rgba(180,224,150,${((mp-0.66)*0.5).toFixed(3)})`; ctx.fillRect(x,y,TILE,TILE); }
+      else if (mp < 0.34){ ctx.fillStyle = `rgba(40,90,45,${((0.34-mp)*0.34).toFixed(3)})`; ctx.fillRect(x,y,TILE,TILE); }
+      // one soft organic dapple per some tiles (rounded, so no square edges show)
+      const d = _thash(c, r, 2);
+      if (d > 0.80){ ctx.fillStyle = "rgba(255,255,240,.05)"; ctx.beginPath(); ctx.ellipse(x+TILE*(0.3+_thash(c,r,6)*0.4), y+TILE*(0.35+_thash(c,r,7)*0.35), 9, 6, 0, 0, 7); ctx.fill(); }
+      else if (d < 0.18){ ctx.fillStyle = "rgba(24,60,26,.06)"; ctx.beginPath(); ctx.ellipse(x+TILE*(0.35+_thash(c,r,6)*0.35), y+TILE*(0.4+_thash(c,r,7)*0.3), 8, 5, 0, 0, 7); ctx.fill(); }
       if (ch==="G"){
         // occasional pale earth/dirt patch worn into the grass
-        if (g > 0.94){ ctx.fillStyle = "rgba(150,120,80,.32)"; ctx.beginPath(); ctx.ellipse(x+TILE*(0.3+_thash(c,r,7)*0.4), y+TILE*(0.35+_thash(c,r,8)*0.35), 6+_thash(c,r,9)*4, 4+_thash(c,r,9)*3, 0, 0, 7); ctx.fill(); }
+        if (_thash(c,r,1) > 0.94){ ctx.fillStyle = "rgba(150,120,80,.32)"; ctx.beginPath(); ctx.ellipse(x+TILE*(0.3+_thash(c,r,7)*0.4), y+TILE*(0.35+_thash(c,r,8)*0.35), 6+_thash(c,r,9)*4, 4+_thash(c,r,9)*3, 0, 0, 7); ctx.fill(); }
         _scatterGrass(ctx, x, y, c, r);
       }
     }
@@ -5294,19 +5446,19 @@ function drawVillage(t){
   ctx.save();
   ctx.translate(-Math.round(CAM.x), -Math.round(CAM.y));
   _windX = Math.sin(t*0.5)*1.2 + Math.sin(t*0.17)*0.7;   // slow ambient wind
+  // coin sparkle when your balance rises (delta-watched so every earn source is
+  // covered without touching the 40+ `S.coins +=` sites). Presentation only.
+  if (_lastCoinsSeen >= 0 && S.coins > _lastCoinsSeen)
+    coinBurstAt(VP.x, VP.y, Math.min(6, 2 + Math.floor(Math.log2((S.coins - _lastCoinsSeen) + 1))));
+  _lastCoinsSeen = S.coins;
   drawTiles(ctx, t);
   drawCloudShadows(ctx, t);       // soft drifting cloud shadows on the ground
   drawSeasonalBillboard(ctx, t); // billboard must be behind buildings
   drawObjects(ctx, t);
   drawChimneySmoke(ctx, t);       // smoke from house chimneys
   drawExtras(ctx, t);
-  const nowD = Date.now();
-  for (let i=DUST.length-1;i>=0;i--){
-    const d = DUST[i], age = (nowD-d.born)/450;
-    if (age>=1){ DUST.splice(i,1); continue; }
-    ctx.fillStyle = "rgba(214,196,158,"+(0.5*(1-age)).toFixed(2)+")";
-    ctx.beginPath(); ctx.arc(d.x, d.y, 2+age*4, 0, 7); ctx.fill();
-  }
+  cullWP(t); emitAmbient(t);
+  drawWP(ctx, t, 0);   // ground-layer particles (walking dust, falling leaves) under people
   const playerTool = drawWorkerAndVfx(ctx, t);
   for (const w of WANDERERS){
     drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir, null, w.trouser||null, null, !!w.female, WORLD_PPL, 'none', '#2a1a0a', { shoes: w.shoes || '#2a2a30' });
@@ -5343,6 +5495,7 @@ function drawVillage(t){
     ctx.restore();
   }
   drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', WORLD_PPL, plHat(), plHatColor(), plOpts());
+  drawWP(ctx, t, 1);   // air-layer particles (steam, smoke, coins, xp, sparkles) over people
   ctx.restore();
   drawWorldDepth(ctx, t);    // screen-space atmosphere: far haze up top, foreground vignette below
   drawSkyAmbience(ctx, t);   // birds, butterflies, drifting petals/leaves/snow (screen space)
@@ -5557,6 +5710,16 @@ function drawVillage(t){
       const _rx = (((_ri*73 + Math.floor(t*140)) % (VIEW_W+40)) + VIEW_W+40) % (VIEW_W+40) - 20;
       const _ry = (((_ri*47 + Math.floor(t*180)) % (VIEW_H+20)) + VIEW_H+20) % (VIEW_H+20) - 10;
       ctx.beginPath(); ctx.moveTo(_rx, _ry); ctx.lineTo(_rx-2, _ry+6); ctx.stroke();
+    }
+    // ground splashes — small expanding rings that pop where drops land, so rain
+    // reads as hitting the ground rather than just streaking past.
+    for (let _si=0; _si<14; _si++){
+      const _bucket = Math.floor(t*3 + _si*0.5);
+      const _sx = ((_si*137 + _bucket*89) % VIEW_W + VIEW_W) % VIEW_W;
+      const _sy = VIEW_H*0.42 + (((_si*211 + _bucket*53) % Math.floor(VIEW_H*0.58)));
+      const _sp = (t*3 + _si*0.5) % 1;
+      ctx.globalAlpha = 0.4*(1-_sp);
+      ctx.beginPath(); ctx.arc(_sx, _sy, 1+_sp*4, Math.PI*1.05, Math.PI*1.95); ctx.stroke();
     }
     ctx.restore();
   }
@@ -8326,8 +8489,8 @@ function villageFrame(ts){
     }
     if (VP.moving && t-lastDust > 0.16){
       lastDust = t;
-      DUST.push({ x:VP.x+(Math.random()*6-3), y:VP.y+9, born:Date.now() });
-      if (DUST.length > 14) DUST.shift();
+      // soft kicked-up dust at the feet (ground layer, behind the player)
+      spawnWP(VP.x+(Math.random()*6-3), VP.y+9, 'dust', { vy:-3, g:16, max:0.5, size:1.8, grow:4, col:'#d6c49e', a0:0.4, layer:0 });
     }
     updateWanderers(dt);
     updateBeachBirds();
@@ -8377,6 +8540,7 @@ function villageFrame(ts){
       if (S.trespass?.active){ S.trespass = { active: false, homeId: null }; S.fleeUntil = 0; }
       if (S.caught?.active && !_cellLocked){ S.caught = { active: false, cellUntil: 0, maxTime: 0 }; }
       VP.enterCooldown = 90;
+      try{ doorFx(V_OBJECTS.find(o => o.id === S.roomObjId)); }catch(e){}   // door puff as you step back out
       S.tab = "village"; renderNav(); renderMain();
     } else {
       drawInterior(t);
@@ -10169,7 +10333,10 @@ function grantXp(skill, xp){
   const before = skillLvl(skill);
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
+  // world-space feedback for xp gained in the open village (gathering skills)
+  if (S.tab === "village"){ try{ xpMotesAt(VP.x, VP.y, xp >= 50 ? 4 : xp >= 15 ? 3 : 2); }catch(e){} }
   if (after > before){
+    if (S.tab === "village"){ try{ levelBurstAt(VP.x, VP.y); }catch(e){} }
     showLevelBurst(skill, after);
     if (typeof SFX !== "undefined") SFX.levelUp();
     endLogGroup();   // a level-up is its own distinct log line, not part of a ×N run
