@@ -906,6 +906,10 @@ function closeRadio(){ if(_radioKey){ window.removeEventListener('keydown',_radi
 (globalThis as any).openRadio = openRadio;
 /* ================= VILLAGE WORLD ================= */
 const CAM = { x:0, y:0 };
+// In-world human render scale. People are drawn a touch smaller than a tile so
+// the buildings and trees read at a believable size next to them — pure
+// presentation, collision/interaction still use full VP/villager coords.
+const WORLD_PPL = 0.82;
 // Derive player colours from S.appearance (falls back to defaults for legacy saves)
 const plHair      = () => (S.appearance && S.appearance.hair)     || DEFAULT_APPEARANCE.hair;
 const plShirt     = () => (S.appearance && S.appearance.shirt)    || DEFAULT_APPEARANCE.shirt;
@@ -4136,6 +4140,37 @@ function drawChimneySmoke(ctx, t){
   }
 }
 // Sky/air ambience in SCREEN space (birds, butterflies, drifting petals/leaves/snow).
+// Screen-space depth cues that keep the scene top-down but give it a sense of
+// distance: a pale atmospheric haze fading down from the top (far ground), a
+// weighted vignette + darker band along the bottom (near ground), and a couple
+// of soft, out-of-focus foliage clumps hugging the lower corners so the camera
+// reads as looking *past* nearby greenery. Gradients are cached (built once).
+let _dpTop=null, _dpBot=null, _dpVin=null;
+function drawWorldDepth(ctx, t){
+  if (!_dpTop){
+    _dpTop = ctx.createLinearGradient(0, 0, 0, VIEW_H*0.44);
+    _dpTop.addColorStop(0, "rgba(210,228,230,0.17)"); _dpTop.addColorStop(1, "rgba(210,228,230,0)");
+    _dpBot = ctx.createLinearGradient(0, VIEW_H*0.58, 0, VIEW_H);
+    _dpBot.addColorStop(0, "rgba(16,32,20,0)"); _dpBot.addColorStop(1, "rgba(16,32,20,0.20)");
+    _dpVin = ctx.createRadialGradient(VIEW_W/2, VIEW_H*0.5, VIEW_H*0.40, VIEW_W/2, VIEW_H*0.56, VIEW_H*0.98);
+    _dpVin.addColorStop(0, "rgba(8,18,12,0)"); _dpVin.addColorStop(1, "rgba(8,18,12,0.20)");
+  }
+  ctx.fillStyle=_dpTop; ctx.fillRect(0, 0, VIEW_W, VIEW_H*0.44);
+  ctx.fillStyle=_dpBot; ctx.fillRect(0, VIEW_H*0.58, VIEW_W, VIEW_H*0.42);
+  ctx.fillStyle=_dpVin; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  // out-of-focus foreground foliage in the two bottom corners (blurred = stacked
+  // translucent ellipses); a slow sway sells the "near the lens" parallax.
+  const sway = Math.sin(t*0.6)*4;
+  for (const [ox, sgn] of [[0, 1],[VIEW_W, -1]]){
+    for (let i=0;i<4;i++){
+      const a = 0.05 + i*0.015;
+      ctx.fillStyle = i%2 ? `rgba(28,58,30,${a})` : `rgba(20,44,24,${a})`;
+      ctx.beginPath();
+      ctx.ellipse(ox + sgn*(30+i*34) + sway*(0.4+i*0.2), VIEW_H - 6 + i*10, 70+i*26, 46+i*20, 0, 0, 7);
+      ctx.fill();
+    }
+  }
+}
 function drawSkyAmbience(ctx, t){
   const season = getSeason();
   // butterflies (skip in winter) — two flapping wing pixels
@@ -4246,12 +4281,19 @@ function drawTiles(ctx, t){
         if (pv>0.50 && pv<0.62){ ctx.strokeStyle="rgba(110,82,46,.42)"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x+4,y+6); ctx.lineTo(x+10,y+17); ctx.stroke(); }
         if (pv>0.86){ ctx.fillStyle="rgba(110,82,46,.22)"; ctx.fillRect(x+7,y+8,3,4); ctx.fillRect(x+12,y+13,3,4); }
       }
-      // grass creeping in from any grass-adjacent edge (both tiers)
+      // grass verge creeping in from any grass-adjacent edge (both tiers). A soft
+      // translucent fringe first widens the green shoulder (roads read narrower,
+      // gardens wider), then brighter blades sit on top for texture.
+      ctx.fillStyle="rgba(120,180,110,.45)";
+      if (_gN) ctx.fillRect(x, y, TILE, 5);
+      if (_gS) ctx.fillRect(x, y+TILE-5, TILE, 5);
+      if (_gW) ctx.fillRect(x, y, 5, TILE);
+      if (_gE) ctx.fillRect(x+TILE-5, y, 5, TILE);
       ctx.fillStyle="#86c47d";
-      if (_gN){ ctx.fillRect(x+3,y,2,3); ctx.fillRect(x+13,y,2,4); ctx.fillRect(x+19,y,2,3); }
-      if (_gS){ ctx.fillRect(x+6,y+TILE-3,2,3); ctx.fillRect(x+16,y+TILE-4,2,4); }
-      if (_gW){ ctx.fillRect(x,y+5,3,2); ctx.fillRect(x,y+15,3,2); }
-      if (_gE){ ctx.fillRect(x+TILE-3,y+8,3,2); ctx.fillRect(x+TILE-3,y+17,3,2); }
+      if (_gN){ ctx.fillRect(x+3,y,2,4); ctx.fillRect(x+13,y,2,5); ctx.fillRect(x+19,y,2,4); }
+      if (_gS){ ctx.fillRect(x+6,y+TILE-4,2,4); ctx.fillRect(x+16,y+TILE-5,2,5); }
+      if (_gW){ ctx.fillRect(x,y+5,4,2); ctx.fillRect(x,y+15,4,2); }
+      if (_gE){ ctx.fillRect(x+TILE-4,y+8,4,2); ctx.fillRect(x+TILE-4,y+17,4,2); }
     } else if (ch==="F"){
       ctx.fillStyle=(c+r)%2 ? "#4a7a3a" : "#426e34"; ctx.fillRect(x,y,TILE,TILE);
       const hf=(c*7+r*13)%17;
@@ -4275,8 +4317,9 @@ function drawTiles(ctx, t){
       const tType = (c*13+r*7)%3; // 0=pine, 1=oak, 2=hardwood
       const sway = Math.sin(t*0.8 + c*0.7 + r*0.5) * 1.2;
       const _tp = getTreePalette(tType);
-      // per-tree canopy size (small→large) so no two trees look identical
-      const _tsz = 0.80 + _thash(c, r, 5) * 0.46;
+      // per-tree canopy size (small→large) so no two trees look identical.
+      // Scaled up so mature trees tower over the (deliberately smaller) villagers.
+      const _tsz = 0.98 + _thash(c, r, 5) * 0.58;
       // soft ground shadow under the trunk
       ctx.fillStyle = "rgba(24,44,22,.16)"; ctx.beginPath(); ctx.ellipse(x+12, y+21, 9*_tsz, 3.4, 0, 0, 7); ctx.fill();
       ctx.save(); ctx.translate(x+12, y+20); ctx.scale(_tsz, _tsz); ctx.translate(-(x+12), -(y+20));
@@ -4579,7 +4622,7 @@ function drawObjects(ctx, t){
       // vendor bobs gently; turns to face the player when nearby
       const _bob = Math.sin(t*2 + o.tx)*1.2;
       const _near = Math.hypot(VP.x-scx, VP.y-(r.y+r.h)) < 80;
-      drawPerson(ctx, scx, r.y+r.h-16+_bob, o.hair, o.shirt, t+o.tx, false, _near ? (VP.x>=scx?1:-1) : 1, null, "down");
+      drawPerson(ctx, scx, r.y+r.h-16+_bob, o.hair, o.shirt, t+o.tx, false, _near ? (VP.x>=scx?1:-1) : 1, null, "down", null, null, null, false, WORLD_PPL);
       // slim counter with this trader's actual goods on display
       ctx.fillStyle="#8c6947"; ctx.fillRect(r.x+1, r.y+r.h-12, r.w-2, 10);
       ctx.fillStyle="#a97f52"; ctx.fillRect(r.x+1, r.y+r.h-14, r.w-2, 3);
@@ -4604,7 +4647,12 @@ function drawObjects(ctx, t){
         ctx.fillStyle=o.ore==="pine"?"#4aaa3a":"#6a9850"; ctx.beginPath(); ctx.arc(cx, r.y+r.h-18, 6, 0, Math.PI*2); ctx.fill();
         continue;
       }
-      // Full tree
+      // Full tree — drawn scaled about the trunk base so the canopy reads large
+      // while the choppable trunk (the interaction point) stays exactly on its tile.
+      const _tScale = 1.12 + _thash(o.tx|0, o.ty|0, 5) * 0.34;
+      ctx.save();
+      ctx.fillStyle="rgba(24,44,22,.17)"; ctx.beginPath(); ctx.ellipse(cx, r.y+r.h-2, 10*_tScale, 3.6, 0, 0, 7); ctx.fill();
+      ctx.translate(cx, r.y+r.h); ctx.scale(_tScale, _tScale); ctx.translate(-cx, -(r.y+r.h));
       const treeActive = S.action?.skill==="woodcutting" && S.action?.objId===o.id;
       const locked = skillLvl("woodcutting") < o.lvl;
       const sway = Math.sin(t*0.8 + o.tx*0.5);
@@ -4649,6 +4697,7 @@ function drawObjects(ctx, t){
       }
       if (locked){ ctx.fillStyle="rgba(0,0,0,.22)"; ctx.beginPath(); ctx.arc(cx+sway, r.y+r.h-28, 22, 0, Math.PI*2); ctx.fill(); }
       if (treeActive) drawEmojiC(ctx, "🪓", cx+Math.sin(t*10)*4, r.y+r.h-22, 13);
+      ctx.restore();
       continue;
     }
     if (o.kind==="lamp"){
@@ -5254,11 +5303,11 @@ function drawVillage(t){
   }
   const playerTool = drawWorkerAndVfx(ctx, t);
   for (const w of WANDERERS){
-    drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir, null, w.trouser||null, null, !!w.female, 1.0, 'none', '#2a1a0a', { shoes: w.shoes || '#2a2a30' });
+    drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir, null, w.trouser||null, null, !!w.female, WORLD_PPL, 'none', '#2a1a0a', { shoes: w.shoes || '#2a2a30' });
   }
   for (const v of VILLAGER_STATE){
     if (v.phase === "sleep" || v.indoor) continue;
-    drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female, 1.0, 'none', '#2a1a0a', { shoes: v.shoes });
+    drawPerson(ctx, v.x, v.y, v.hair, v.shirt, t, v.moving, v.facing, null, v.dir, null, v.trouser, null, v.female, WORLD_PPL, 'none', '#2a1a0a', { shoes: v.shoes });
     if (!v.moving){ const _em = _villagerEmote(v, t); if (_em) drawEmojiC(ctx, _em, v.x, v.y - 22, 11); }
   }
   for (const c of CHILDREN_STATE){
@@ -5276,6 +5325,7 @@ function drawVillage(t){
     const _bc = S.bike.color || '#e84040';
     const _bx = VP.x, _by = VP.y + 8;
     ctx.save();
+    ctx.translate(_bx, _by); ctx.scale(WORLD_PPL, WORLD_PPL); ctx.translate(-_bx, -_by);
     ctx.strokeStyle = _bc; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(_bx-10, _by, 7, 0, Math.PI*2); ctx.stroke();
     ctx.beginPath(); ctx.arc(_bx+10, _by, 7, 0, Math.PI*2); ctx.stroke();
@@ -5286,8 +5336,9 @@ function drawVillage(t){
     ctx.beginPath(); ctx.moveTo(_bx+10,_by-3); ctx.lineTo(_bx+14,_by-3); ctx.lineTo(_bx+14,_by-7); ctx.stroke();
     ctx.restore();
   }
-  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', 1.0, plHat(), plHatColor(), plOpts());
+  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', WORLD_PPL, plHat(), plHatColor(), plOpts());
   ctx.restore();
+  drawWorldDepth(ctx, t);    // screen-space atmosphere: far haze up top, foreground vignette below
   drawSkyAmbience(ctx, t);   // birds, butterflies, drifting petals/leaves/snow (screen space)
   // HTML overlay: player name tag + nearest-interactable tooltip (crisp text, no canvas blurriness)
   const overlay = document.getElementById("village-overlay");
