@@ -4328,6 +4328,155 @@ function drawTiles(ctx, t){
     }
   }
 }
+// ---- premium procedural buildings (drawing only — door/size/collision untouched) ----
+function _shade(hex, f){
+  let c = (hex || "#888888").replace('#',''); if (c.length===3) c = c.split('').map(ch=>ch+ch).join('');
+  const r = parseInt(c.slice(0,2),16), g = parseInt(c.slice(2,4),16), b = parseInt(c.slice(4,6),16);
+  const a = v => Math.max(0, Math.min(255, Math.round(f<0 ? v*(1+f) : v + (255-v)*f)));
+  return `rgb(${a(r)},${a(g)},${a(b)})`;
+}
+function _bldCat(o){
+  const tb = o.tab;
+  if (tb==='cafe') return 'cafe';
+  if (tb==='pub') return 'pub';
+  if (tb==='bank'||tb==='exchange'||tb==='university'||tb==='estateagent') return 'grand';
+  if (tb==='nightclub') return 'club';
+  if (tb==='police_station') return 'police';
+  if (tb==='home'||tb==='myhome') return 'home';
+  if (tb==='steelworks'||tb==='manufacturing'||tb==='woodcutting'||tb==='robotics_lab'||tb==='data_centre'||o.id==='sawmill'||o.id==='furnace'||o.id==='workshop'||o.id==='depot') return 'industrial';
+  return 'shop';
+}
+function drawBuilding(ctx, o, r, t){
+  const cat = _bldCat(o), wall = o.wall || '#d9c8b0', roof = o.roof || '#8a5a3c';
+  const x=r.x, y=r.y, w=r.w, h=r.h, cxm=x+w/2;
+  const roofH=Math.round(h*0.44), wallY=y+roofH-3, wallH=(y+h)-wallY, eave=5, glow=lampGlow();
+
+  // ---------- walls ----------
+  ctx.fillStyle=_shade(wall,-0.30); ctx.fillRect(x, y+h-5, w, 5);                   // stone foundation
+  ctx.fillStyle=wall; ctx.fillRect(x, wallY, w, wallH);
+  ctx.fillStyle=_shade(wall,0.12); ctx.fillRect(x, wallY, w, 3);                    // sunlit top band
+  ctx.fillStyle=_shade(wall,0.06); ctx.fillRect(x, wallY, 3, wallH-5);             // left highlight
+  ctx.fillStyle=_shade(wall,-0.15); ctx.fillRect(x+w-4, wallY, 4, wallH-5);         // right-side shadow
+
+  // ---------- roof (pitched, tiled, sunlit face + eave shadow) ----------
+  ctx.fillStyle=roof;
+  ctx.beginPath(); ctx.moveTo(x-eave, wallY+2); ctx.lineTo(cxm, y-2); ctx.lineTo(x+w+eave, wallY+2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=_shade(roof,0.15);
+  ctx.beginPath(); ctx.moveTo(x-eave, wallY+2); ctx.lineTo(cxm, y-2); ctx.lineTo(cxm, wallY+2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=_shade(roof,0.26); ctx.fillRect(cxm-1, y-2, 2, 5);                  // ridge cap
+  ctx.strokeStyle=_shade(roof,-0.22); ctx.lineWidth=1;                             // tile courses
+  for (let k=1;k<=3;k++){ const ly=(y-2)+((wallY+2)-(y-2))*(k/4), lw=(eave*2+w)*(k/4)/2; ctx.beginPath(); ctx.moveTo(cxm-lw, ly); ctx.lineTo(cxm+lw, ly); ctx.stroke(); }
+  ctx.fillStyle='rgba(0,0,0,.20)'; ctx.fillRect(x-eave, wallY+2, w+eave*2, 2);      // under-eave shadow
+
+  // ---------- windows (framed, sill, mullions, warm glow at night) ----------
+  const winLit = glow>0.05 && _thash(x|0,y|0,13)<0.75;
+  const drawWin=(wx,wy,ww,wh)=>{
+    ctx.fillStyle=_shade(wall,-0.34); ctx.fillRect(wx-1, wy-1, ww+2, wh+2);
+    ctx.fillStyle= winLit ? '#ffdf9a' : (cat==='club' ? '#37205c' : '#bfe0f2'); ctx.fillRect(wx, wy, ww, wh);
+    ctx.fillStyle= winLit ? 'rgba(255,225,160,.55)' : 'rgba(255,255,255,.5)'; ctx.fillRect(wx, wy, ww, 2);
+    ctx.strokeStyle=_shade(wall,-0.34); ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(wx+ww/2,wy); ctx.lineTo(wx+ww/2,wy+wh); ctx.moveTo(wx,wy+wh/2); ctx.lineTo(wx+ww,wy+wh/2); ctx.stroke();
+    ctx.fillStyle=_shade(wall,-0.2); ctx.fillRect(wx-2, wy+wh, ww+4, 2);
+  };
+  const wy0=wallY+6, ww=Math.max(8,Math.round(w*0.20)), wh=Math.max(7,Math.round(wallH*0.34));
+  drawWin(x+5, wy0, ww, wh); drawWin(x+w-5-ww, wy0, ww, wh);
+
+  // ---------- door (centre-bottom — position preserved) ----------
+  const dw=Math.max(11,Math.round(w*0.2)), dx=cxm-dw/2, dy=y+h-17;
+  ctx.fillStyle=_shade(roof,-0.3); ctx.fillRect(dx-2, dy-3, dw+4, 20);
+  const dcol = cat==='grand'?'#5a4a2a':cat==='club'?'#141020':cat==='police'?'#24406a':'#6a4326';
+  ctx.fillStyle=dcol; ctx.fillRect(dx, dy, dw, 17);
+  ctx.fillStyle=_shade(dcol,0.16); ctx.fillRect(dx+1, dy+1, dw-2, 2);
+  ctx.fillStyle=_shade(dcol,-0.28); ctx.fillRect(dx+dw/2-0.5, dy, 1, 17);
+  ctx.fillStyle='#e8c060'; ctx.fillRect(dx+dw-4, dy+8, 2, 2);
+  ctx.fillStyle=_shade(wall,-0.32); ctx.fillRect(dx-3, y+h-2, dw+6, 3);
+
+  _bldPersonality(ctx, o, r, cat, t, { wallY, wall, roof, glow, cxm, dx, dy, dw, winLit });
+  _bldGround(ctx, o, r, cat, cxm);
+  _bldSign(ctx, o, r, cat, wallY, cxm);
+}
+function _bldPersonality(ctx, o, r, cat, t, P){
+  const { wallY, wall, roof, glow, cxm, dx, dy, dw } = P;
+  const x=r.x, y=r.y, w=r.w, h=r.h, roofH=Math.round(h*0.44), wallH=(y+h)-wallY;
+  if (cat==='grand'){
+    // classical facade — pediment, columns, gold cornice, wide steps (prestigious)
+    ctx.fillStyle=_shade(wall,0.16); ctx.beginPath(); ctx.moveTo(x+4,wallY+3); ctx.lineTo(cxm,wallY-6); ctx.lineTo(x+w-4,wallY+3); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#d8b048'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x+3,wallY+4); ctx.lineTo(x+w-3,wallY+4); ctx.stroke();
+    const nCol = w>=3*TILE?4:3;
+    for (let i=0;i<nCol;i++){ const px=x+6+i*((w-12)/(nCol-1))-2;
+      ctx.fillStyle=_shade(wall,0.24); ctx.fillRect(px, wallY+6, 4, (y+h-6)-(wallY+6));
+      ctx.fillStyle=_shade(wall,-0.12); ctx.fillRect(px+3, wallY+6, 1, (y+h-6)-(wallY+6));
+      ctx.fillStyle=_shade(wall,0.32); ctx.fillRect(px-1, wallY+5, 6, 2); ctx.fillRect(px-1, y+h-8, 6, 2);
+    }
+    ctx.fillStyle=_shade(wall,-0.10); ctx.fillRect(cxm-15, y+h-2, 30, 2); ctx.fillStyle=_shade(wall,-0.22); ctx.fillRect(cxm-11, y+h, 22, 2);
+  } else if (cat==='cafe'){
+    // cosy café — red-and-cream awning, planter, drifting steam
+    const ay=wallY+4, n=Math.max(3,Math.floor(w/8));
+    for (let s=0;s<n;s++){ ctx.fillStyle=s%2?'#f4ece0':'#c0402e'; ctx.fillRect(x+s*(w/n), ay, w/n+0.5, 5); }
+    ctx.fillStyle='rgba(0,0,0,.18)'; ctx.fillRect(x, ay+5, w, 2);
+    for (let s=0;s<n;s++){ ctx.fillStyle=s%2?'#f4ece0':'#c0402e'; ctx.beginPath(); ctx.moveTo(x+s*(w/n),ay+5); ctx.lineTo(x+(s+0.5)*(w/n),ay+9); ctx.lineTo(x+(s+1)*(w/n),ay+5); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle='#7a4a28'; ctx.fillRect(x+w-9, y+h-8, 6, 6); ctx.fillStyle='#4f8a44'; ctx.fillRect(x+w-8, y+h-11, 2, 3); ctx.fillRect(x+w-6, y+h-12, 2, 4);
+    for (let p=0;p<2;p++){ const ph=((t*0.5+p*0.5)%1); ctx.fillStyle=`rgba(240,240,245,${(0.28*(1-ph)).toFixed(2)})`; ctx.beginPath(); ctx.arc(x+8+Math.sin(ph*6)*2, wallY-2-ph*10, 1.5+ph*2, 0,7); ctx.fill(); }
+  } else if (cat==='pub'){
+    // timber-framed pub — dark beams, warm feel, a barrel out front
+    ctx.strokeStyle=_shade(roof,-0.28); ctx.lineWidth=2; ctx.strokeRect(x+3, wallY+4, w-6, (y+h-5)-(wallY+4));
+    ctx.beginPath(); ctx.moveTo(x+3,wallY+4); ctx.lineTo(x+w-3,y+h-5); ctx.moveTo(x+w-3,wallY+4); ctx.lineTo(x+3,y+h-5); ctx.stroke();
+    ctx.fillStyle='#7a4a28'; ctx.fillRect(x-6, y+h-9, 6, 8); ctx.fillStyle='#5a3418'; ctx.fillRect(x-6, y+h-7, 6, 1); ctx.fillRect(x-6, y+h-4, 6, 1);
+  } else if (cat==='club'){
+    // exciting nightclub — pulsing neon strips + marquee bulbs around the door
+    const pulse=0.5+0.5*Math.sin(t*3.5);
+    ctx.fillStyle=`rgba(255,80,200,${(0.45+0.4*pulse).toFixed(2)})`; ctx.fillRect(x+4, wallY+4, w-8, 2);
+    ctx.fillStyle=`rgba(90,200,255,${(0.4+0.4*(1-pulse)).toFixed(2)})`; ctx.fillRect(x+4, wallY+7, w-8, 1);
+    for (let i=0;i<5;i++){ const on=(Math.floor(t*4)+i)%2; ctx.fillStyle=on?'#ffe36a':'#5a4a28'; ctx.fillRect(dx-5+i*((dw+10)/4), dy-6, 2, 2); }
+  } else if (cat==='police'){
+    // official station — blue lamp (pulsing), chequer band
+    ctx.fillStyle='#0a1a3a'; ctx.fillRect(cxm-4, wallY-6, 8, 5);
+    const bl=0.5+0.5*Math.sin(t*4); ctx.fillStyle=`rgba(70,120,255,${(0.5+0.5*bl).toFixed(2)})`; ctx.fillRect(cxm-3, wallY-5, 6, 3);
+    for (let i=0;i<Math.floor(w/6);i++){ ctx.fillStyle=i%2?'#2a4a8a':'#e8ecf4'; ctx.fillRect(x+3+i*6, y+h-9, 6, 3); }
+  } else if (cat==='home'){
+    // cosy home — chimney with a wisp of smoke + a window flower box
+    const chX=x+w-13; ctx.fillStyle=_shade(roof,-0.2); ctx.fillRect(chX, y-2, 6, 9); ctx.fillStyle=_shade(roof,-0.4); ctx.fillRect(chX-1, y-3, 8, 2);
+    for (let p=0;p<2;p++){ const ph=((t*0.35+p*0.5+(x%5)*0.1)%1); ctx.fillStyle=`rgba(190,190,196,${(0.20*(1-ph)).toFixed(2)})`; ctx.beginPath(); ctx.arc(chX+3+Math.sin(ph*6)*2, y-4-ph*12, 1.4+ph*2, 0,7); ctx.fill(); }
+    const wh=Math.max(7,Math.round(wallH*0.34)), ww=Math.max(8,Math.round(w*0.20)), bxy=wallY+6+wh;
+    ctx.fillStyle='#7a4a28'; ctx.fillRect(x+4, bxy, ww+2, 3);
+    for (let f=0;f<3;f++){ ctx.fillStyle=['#e05a80','#ffd666','#f86040'][f]; ctx.fillRect(x+6+f*4, bxy-3, 2, 3); }
+  } else if (cat==='industrial'){
+    // functional — corrugated roof + a metal vent pipe
+    ctx.strokeStyle=_shade(roof,-0.28); ctx.lineWidth=1;
+    for (let i=1;i<w/6;i++){ ctx.beginPath(); ctx.moveTo(x+i*6-2, y+(wallY-y)*0.5); ctx.lineTo(x+i*6, wallY); ctx.stroke(); }
+    ctx.fillStyle='#7a7e86'; ctx.fillRect(x+6, y-4, 4, roofH); ctx.fillStyle='#9aa0aa'; ctx.fillRect(x+6, y-6, 4, 2);
+  }
+}
+function _bldGround(ctx, o, r, cat, cxm){
+  const x=r.x, y=r.y, w=r.w, h=r.h;
+  ctx.fillStyle='#cdbb92'; ctx.fillRect(cxm-5, y+h-1, 10, 9);                         // path to door
+  ctx.fillStyle='rgba(120,95,55,.18)'; ctx.fillRect(cxm-5, y+h+3, 10, 2);
+  if (cat==='home'||cat==='cafe'||cat==='grand'){                                     // front hedge (gap at door)
+    ctx.fillStyle='#4f8a44'; ctx.fillRect(x-2, y+h+1, (w/2)-6, 3); ctx.fillRect(cxm+6, y+h+1, (w/2)-2, 3);
+    ctx.fillStyle='#5fa050'; ctx.fillRect(x-2, y+h+1, (w/2)-6, 1); ctx.fillRect(cxm+6, y+h+1, (w/2)-2, 1);
+  } else {                                                                            // low picket fence
+    ctx.strokeStyle='#c8b89a'; ctx.lineWidth=1;
+    for (let px=x-1; px<cxm-7; px+=4) ctx.strokeRect(px, y+h+1, 1, 3);
+    for (let px=cxm+7; px<x+w+1; px+=4) ctx.strokeRect(px, y+h+1, 1, 3);
+  }
+  if (_thash(x|0,y|0,17)<0.5){                                                        // mailbox
+    ctx.fillStyle='#6a5a4a'; ctx.fillRect(x-9, y+h-4, 2, 8);
+    ctx.fillStyle=cat==='police'?'#2a4a8a':'#b04040'; ctx.fillRect(x-12, y+h-9, 8, 5);
+    ctx.fillStyle='#e8d8b0'; ctx.fillRect(x-11, y+h-7, 2, 1);
+  } else {                                                                            // bin
+    ctx.fillStyle='#565b66'; ctx.fillRect(x-10, y+h-6, 6, 8); ctx.fillStyle='#666c78'; ctx.fillRect(x-11, y+h-7, 8, 2);
+  }
+  if (cat==='cafe'||cat==='grand'||cat==='pub'){                                      // a bench
+    const bx=x+w+3; ctx.fillStyle='#7a5a3a'; ctx.fillRect(bx, y+h-4, 10, 2); ctx.fillRect(bx, y+h-8, 10, 2); ctx.fillStyle='#5a4028'; ctx.fillRect(bx, y+h-2, 1, 2); ctx.fillRect(bx+9, y+h-2, 1, 2);
+  }
+}
+function _bldSign(ctx, o, r, cat, wallY, cxm){
+  if (cat==='home') return;   // homes have no shop sign — just the cosy house
+  const x=r.x, sy=wallY+2;
+  ctx.fillStyle='#4a3320'; ctx.fillRect(x-2, sy, 2, 6);
+  ctx.fillStyle=cat==='club'?'#20132e':cat==='police'?'#20304e':'#3a2a1a'; ctx.fillRect(x-13, sy+5, 15, 12);
+  ctx.strokeStyle='#5a4330'; ctx.lineWidth=1; ctx.strokeRect(x-13, sy+5, 15, 12);
+  drawEmojiC(ctx, o.ic, x-5.5, sy+11, 10);
+}
 function drawObjects(ctx, t){
   for (const o of V_OBJECTS){
     const r = objRect(o);
@@ -4385,58 +4534,22 @@ function drawObjects(ctx, t){
       continue;
     }
     if (o.kind==="bld"){
-      // drop shadow
-      ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x+4, r.y+r.h, r.w-2, 5);
-      // try Kenney sprite; fall back to procedural canvas building
-      // normalise: cap sprite height so tall assets can't dwarf the village
+      // soft ground shadow
+      ctx.fillStyle="rgba(20,30,20,.16)"; ctx.beginPath(); ctx.ellipse(r.x+r.w/2+3, r.y+r.h+2, r.w*0.56, 5, 0, 0, 7); ctx.fill();
+      // try Kenney sprite; else the premium procedural building
       let _dw = r.w + 14;
       const _bimg = getSprite(`bld_${o.id}`);
-      if (_bimg){
-        const _asp = _bimg.naturalHeight / _bimg.naturalWidth;
-        const _maxH = r.h + 26;
-        if (_dw * _asp > _maxH) _dw = _maxH / _asp;
-      }
+      if (_bimg){ const _asp = _bimg.naturalHeight / _bimg.naturalWidth; const _maxH = r.h + 26; if (_dw * _asp > _maxH) _dw = _maxH / _asp; }
       const _spriteDrawn = drawSprite(ctx, `bld_${o.id}`, r.x+r.w/2, r.y+r.h+4, _dw);
-      if (!_spriteDrawn){
-        // stone foundation strip
-        ctx.fillStyle="#5a4030"; ctx.fillRect(r.x, r.y+r.h-5, r.w, 5);
-        ctx.fillStyle=o.wall; ctx.fillRect(r.x, r.y+10, r.w, r.h-15);
-        ctx.fillStyle=o.roof;
-        ctx.beginPath(); ctx.moveTo(r.x-4, r.y+12); ctx.lineTo(r.x+r.w/2, r.y-4); ctx.lineTo(r.x+r.w+4, r.y+12); ctx.closePath(); ctx.fill();
-        // door with knob
-        ctx.fillStyle="#6a4a2f"; ctx.fillRect(r.x+r.w/2-6, r.y+r.h-18, 12, 18);
-        ctx.fillStyle="#c8a060"; ctx.fillRect(r.x+r.w/2-1, r.y+r.h-12, 2, 2);
-        if (r.w >= 3*TILE){
-          ctx.fillStyle="#bfe8f7"; ctx.fillRect(r.x+8, r.y+20, 10, 8); ctx.fillRect(r.x+r.w-18, r.y+20, 10, 8);
-          ctx.strokeStyle="#8c6947"; ctx.lineWidth=1; ctx.strokeRect(r.x+8, r.y+20, 10, 8); ctx.strokeRect(r.x+r.w-18, r.y+20, 10, 8);
-          ctx.fillStyle="rgba(255,255,255,0.65)"; ctx.fillRect(r.x+9, r.y+21, 3, 2); ctx.fillRect(r.x+r.w-17, r.y+21, 3, 2);
-        }
-        // shops get a striped awning + hanging sign so they read distinctly from houses
-        if (BUILDING_FLAVOUR[o.tab]){
-          const _awY = r.y + r.h - 24, _n = Math.max(3, Math.floor(r.w/8));
-          for (let s=0; s<_n; s++){ ctx.fillStyle = s%2 ? "#f4ece0" : (o.roof||"#c04060"); ctx.fillRect(r.x + s*(r.w/_n), _awY, r.w/_n + 0.5, 6); }
-          ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(r.x, _awY+6, r.w, 2);
-          for (let s=0; s<_n; s++){ ctx.fillStyle=(o.roof||"#c04060"); ctx.beginPath(); ctx.moveTo(r.x+s*(r.w/_n),_awY+6); ctx.lineTo(r.x+(s+0.5)*(r.w/_n),_awY+10); ctx.lineTo(r.x+(s+1)*(r.w/_n),_awY+6); ctx.closePath(); ctx.fill(); }
-          // hanging signboard on the left
-          ctx.fillStyle="#4a3320"; ctx.fillRect(r.x-1, r.y+9, 2, 7);
-          ctx.fillStyle="#e8d8b0"; ctx.fillRect(r.x-8, r.y+15, 14, 10);
-          ctx.strokeStyle="#4a3320"; ctx.lineWidth=1; ctx.strokeRect(r.x-8, r.y+15, 14, 10);
-        }
-      }
-      // Always draw emoji label and dynamic effects on top of sprite or canvas building
-      drawEmojiC(ctx, o.ic, r.x+r.w/2, r.y+16, 13);
-      // YOUR cottage stands out from the neighbours: a pennant, window flowers, a mat
+      if (!_spriteDrawn) drawBuilding(ctx, o, r, t);
+      else drawEmojiC(ctx, o.ic, r.x+r.w/2, r.y+16, 13);   // sprite path keeps the emoji label
+      // YOUR cottage stands out: a heart pennant + welcome mat (flower box drawn by drawBuilding)
       if (o.id === "player_home"){
         const _cx = r.x + r.w/2;
-        ctx.fillStyle="#6a4a2f"; ctx.fillRect(_cx-1, r.y-17, 2, 17);                          // flag pole
-        ctx.fillStyle="#e05a80"; ctx.beginPath(); ctx.moveTo(_cx+1, r.y-17); ctx.lineTo(_cx+15, r.y-13); ctx.lineTo(_cx+1, r.y-9); ctx.closePath(); ctx.fill();  // pennant
+        ctx.fillStyle="#6a4a2f"; ctx.fillRect(_cx-1, r.y-17, 2, 17);
+        ctx.fillStyle="#e05a80"; ctx.beginPath(); ctx.moveTo(_cx+1, r.y-17); ctx.lineTo(_cx+15, r.y-13); ctx.lineTo(_cx+1, r.y-9); ctx.closePath(); ctx.fill();
         ctx.fillStyle="#fff8e6"; ctx.font="6px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("♥", _cx+5, r.y-13); ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-        // flower boxes under the windows
-        for (const _bx of [r.x+7, r.x+r.w-19]){
-          ctx.fillStyle="#6a4a2f"; ctx.fillRect(_bx, r.y+28, 12, 3);
-          for (let f=0; f<3; f++){ ctx.fillStyle=["#e05a80","#ffd666","#f86040"][f]; ctx.fillRect(_bx+2+f*4, r.y+25, 2, 3); }
-        }
-        ctx.fillStyle="#c0603a"; ctx.fillRect(_cx-9, r.y+r.h-3, 18, 3);                        // welcome mat
+        ctx.fillStyle="#c0603a"; ctx.fillRect(_cx-9, r.y+r.h-3, 18, 3);
       }
       if (o.chimney){
         const _swLvl = skillLvl("steelworks");
