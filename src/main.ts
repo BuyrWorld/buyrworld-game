@@ -4137,6 +4137,36 @@ function _scatterGrass(ctx, x, y, c, r){
     }
   }
 }
+// Sparse, larger landscape features scattered thinly across open grass so wide
+// fields don't read as empty. Static per-tile, low + soft so the player still
+// reads them as walk-past ground cover, not obstacles (they never collide).
+function _scatterFeature(ctx, x, y, c, r){
+  if (_thash(c, r, 15) <= 0.955) return;           // ~4.5% of open grass tiles
+  const kind = _thash(c, r, 16);
+  const bx = x + 4 + _thash(c, r, 17)*12, by = y + 12 + _thash(c, r, 18)*8;
+  ctx.fillStyle = "rgba(20,44,20,.14)"; ctx.beginPath(); ctx.ellipse(bx, by+2, 9, 3, 0, 0, 7); ctx.fill();
+  if (kind < 0.34){            // leafy bush (two-tone) with a few berries
+    ctx.fillStyle="#3f7a38"; ctx.beginPath(); ctx.ellipse(bx, by, 9, 7, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#4f9147"; ctx.beginPath(); ctx.ellipse(bx-2, by-2, 7, 5, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#63a758"; ctx.beginPath(); ctx.ellipse(bx-3, by-3, 3.5, 2.6, 0, 0, 7); ctx.fill();
+    if (_thash(c,r,19)>0.5){ ctx.fillStyle="#d0456a"; ctx.fillRect(bx+2,by-1,2,2); ctx.fillRect(bx-4,by+2,2,2); ctx.fillRect(bx+4,by+3,2,2); }
+  } else if (kind < 0.58){     // mossy boulder cluster
+    ctx.fillStyle="#8a8f96"; ctx.beginPath(); ctx.ellipse(bx, by, 8, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#a2a7ae"; ctx.beginPath(); ctx.ellipse(bx-2, by-2, 5, 4, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#6f757c"; ctx.fillRect(bx-6, by+2, 12, 2);
+    ctx.fillStyle="rgba(96,150,78,.5)"; ctx.fillRect(bx-5, by+1, 4, 2); ctx.fillRect(bx+3, by, 3, 2);
+  } else if (kind < 0.80){     // wildflower clump (denser cluster on stems)
+    const cols=["#ff9db0","#ffe58a","#e8ecff","#c79bff","#ff8a5c"];
+    for (let i=0;i<6;i++){ const fx=bx-6+ (i*2.4), fy=by-2-((i%3)*3); ctx.fillStyle="#4f9147"; ctx.fillRect(fx, fy, 1, 5);
+      ctx.fillStyle=cols[(i+((c+r)|0))%cols.length]; ctx.fillRect(fx-1, fy-2, 3, 3); ctx.fillStyle="#ffd94a"; ctx.fillRect(fx, fy-1, 1, 1); }
+  } else {                     // fallen mossy log
+    ctx.fillStyle="#6a4a2f"; ctx.fillRect(bx-9, by-2, 18, 6);
+    ctx.fillStyle="#7d5a3a"; ctx.fillRect(bx-9, by-2, 18, 2);
+    ctx.fillStyle="#8a6a45"; ctx.beginPath(); ctx.ellipse(bx-9, by+1, 2.5, 3, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="#5a3f28"; ctx.beginPath(); ctx.ellipse(bx-9, by+1, 1.2, 1.6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle="rgba(96,150,78,.55)"; ctx.fillRect(bx-4, by-2, 5, 2); ctx.fillRect(bx+3, by-1, 4, 2);
+  }
+}
 // Global slow-varying wind (−~2..+2 px). Drives grass lean, smoke + particle drift.
 let _windX = 0;
 // Cloud shadows drifting over the ground (world space, drawn under buildings).
@@ -4468,6 +4498,7 @@ function drawTiles(ctx, t){
         // occasional pale earth/dirt patch worn into the grass
         if (_thash(c,r,1) > 0.94){ ctx.fillStyle = "rgba(150,120,80,.32)"; ctx.beginPath(); ctx.ellipse(x+TILE*(0.3+_thash(c,r,7)*0.4), y+TILE*(0.35+_thash(c,r,8)*0.35), 6+_thash(c,r,9)*4, 4+_thash(c,r,9)*3, 0, 0, 7); ctx.fill(); }
         _scatterGrass(ctx, x, y, c, r);
+        _scatterFeature(ctx, x, y, c, r);
       }
     }
     if (ch==="T"){
