@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+# First-hour release gate. Blocks the push if `npm run gate`
+# (Vitest data invariants + the Playwright first-hour E2E gate) fails.
+#
+# Skip a single push with:  git push --no-verify
+# Skip via env (e.g. CI does its own run):  BUYR_SKIP_GATE=1 git push
+if [ "$BUYR_SKIP_GATE" = "1" ]; then
+  echo "↷ release gate skipped (BUYR_SKIP_GATE=1)"
+  exit 0
+fi
+
+# Node/npm are usually on PATH in a normal shell; fall back to the default
+# Windows install dir if not (matches this repo's setup).
+if ! command -v npm >/dev/null 2>&1; then
+  export PATH="/c/Program Files/nodejs:$PATH"
+fi
+if ! command -v npm >/dev/null 2>&1; then
+  echo "✖ pre-push: npm not found on PATH — cannot run the release gate." >&2
+  echo "  Install Node, or push with:  git push --no-verify" >&2
+  exit 1
+fi
+
+echo "▶ release gate: npm run gate  (Vitest + Playwright first-hour gate — a few minutes)…"
+npm run gate
+status=$?
+if [ $status -ne 0 ]; then
+  echo "✖ release gate FAILED — push blocked. Fix it, or override with:  git push --no-verify" >&2
+fi
+exit $status

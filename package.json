@@ -14,6 +14,7 @@
     "e2e:report": "playwright show-report",
     "e2e:install": "playwright install chromium",
     "gate": "vitest run && playwright test",
+    "prepare": "node scripts/install-hooks.mjs",
     "check:data": "node scripts/check-data.js",
     "gen:icons": "node scripts/gen-icons.mjs",
     "electron": "vite build && electron .",
