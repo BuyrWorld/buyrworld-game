@@ -14905,3 +14905,70 @@ document.addEventListener("visibilitychange", ()=>{ if (document.visibilityState
     if (ld) { ld.classList.add('done'); setTimeout(() => ld.remove(), 550); }
   }, 280);
 })();
+
+/* ============================================================================
+ * DEV-ONLY release-gate test bridge (window.__gate)
+ * ----------------------------------------------------------------------------
+ * Read-only state snapshots + a faithful first-hour tutorial-chain runner used
+ * by the automated Playwright "first hour release gate" (e2e/). It calls the
+ * SAME production functions the UI does, so it exercises real behaviour rather
+ * than a mock. Guarded by `import.meta.env.DEV`: Vite statically replaces that
+ * with `false` in `vite build`, so this whole block is dead-code-eliminated and
+ * NEVER ships in the production bundle (verified in the gate by grepping dist).
+ * It never mutates a real player's save beyond the isolated test browser
+ * context, and adds no test controls to production.
+ * ==========================================================================*/
+if (import.meta.env.DEV) {
+  const walletDisplayed = () => {
+    const el = document.getElementById('hud-coins');
+    return el ? (parseInt((el.textContent || '0').replace(/[^0-9-]/g, ''), 10) || 0) : null;
+  };
+  const findAct = (id) => {
+    for (const sk in SKILLS) for (const a of (SKILLS[sk].actions || [])) if (a.id === id) return { skill: sk, act: a };
+    return null;
+  };
+  const inv = () => ({ iron_ore: itemCount('iron_ore'), iron_bar: itemCount('iron_bar'), bracket: itemCount('bracket') });
+  (window as any).__gate = {
+    // Wipe ONLY this browser context's save (Playwright uses isolated contexts,
+    // so a real player's localStorage is untouched) and hard-reload to the title.
+    resetAndReload(){ try { localStorage.removeItem(SAVE_KEY); } catch (e) {} location.reload(); },
+    // Enter the starter cottage exactly as walking into it does (real interactObj),
+    // so the E2E can then exercise the genuine exit affordances.
+    enterCottage(){ const o = V_OBJECTS.find(o => o.id === 'player_home'); if (o) interactObj(o); return S.tab; },
+    // Authoritative snapshot of everything the gate asserts.
+    state(){
+      achCheck();
+      const q = _frostyQuests();
+      return {
+        tab: S.tab,
+        coins: S.coins,
+        walletDisplayed: walletDisplayed(),
+        items: inv(),
+        tut: S.tut ? { step: S.tut.step, done: !!S.tut.done } : null,
+        festivalGoerUnlocked: !!(S.ach && S.ach.festival_goer),
+        festivalAttended: (S.festival && S.festival.attended && S.festival.attended.length) || 0,
+        frostyQuests: q,
+        frostyRadioUnlocked: radioUnlocked(q),
+        unlockedTrackIds: unlockedTracks(q).map(t => t.id),
+        lockedExclusiveIds: FROSTY_TRACKS.filter(t => !isTrackUnlocked(t.id, q)).map(t => t.id),
+        allExclusiveIds: FROSTY_TRACKS.map(t => t.id),
+      };
+    },
+    // Faithful first-hour chain through the real production functions. Returns a
+    // wallet snapshot after every reward so the gate asserts displayed === real.
+    runChain(){
+      const snaps = [];
+      const snap = (label) => { updateHud(); snaps.push({ label, coins: S.coins, walletDisplayed: walletDisplayed(), items: inv(), tutStep: S.tut ? S.tut.step : null, tutDone: !!(S.tut && S.tut.done) }); };
+      snap('start');
+      const m = findAct('iron_ore'); for (let i = 0; i < 6; i++) completeAction(m.act, m.skill, true); tutCheck(); snap('mine');
+      const s = findAct('iron_bar'); for (let i = 0; i < 3; i++) completeAction(s.act, s.skill, true); tutCheck(); snap('smelt');
+      const p = findAct('bracket');  for (let i = 0; i < 3; i++) completeAction(p.act, p.skill, true); tutCheck(); snap('press');
+      ensureTutorialContract();
+      const ci = S.contracts.findIndex(c => c.tutorial);
+      if (ci >= 0) deliverContract(ci);
+      tutCheck(); snap('deliver');
+      save();
+      return snaps;
+    },
+  };
+}

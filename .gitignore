@@ -26,3 +26,7 @@ Kenney Game Assets All-in-1*.zip
 *.log
 .DS_Store
 Thumbs.db
+
+# Playwright
+test-results/
+playwright-report/
