@@ -20,10 +20,12 @@ async function cleanLoad(page: Page) {
   // (music mp3s, sprites) whose full load can exceed the timeout and stall goto.
   // The very first navigation of a run can hang/abort on Vite's cold graph; retry.
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      await expect(page.locator('#title')).toBeVisible({ timeout: 20_000 });
+      // 'commit' resolves as soon as the navigation commits (before load), so a
+      // slow/detaching first load can't hang or abort the goto itself.
+      await page.goto('/', { waitUntil: 'commit', timeout: 30_000 });
+      await expect(page.locator('#title')).toBeVisible({ timeout: 30_000 });
       return;
     } catch (e) { lastErr = e; }
   }

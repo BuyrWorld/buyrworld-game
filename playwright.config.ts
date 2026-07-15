@@ -27,5 +27,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 300_000,   // Vite's first serve on this OneDrive-synced repo can be very slow to cold-start
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // hasTouch must be set at project level: the Desktop Chrome device sets it
+  // false, and the project `use` overrides the top-level `use`.
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], hasTouch: true } }],
 });
