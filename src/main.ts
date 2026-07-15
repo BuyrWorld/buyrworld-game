@@ -2599,7 +2599,12 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   const _scf = opts.scarfColor|| '#c04040';
   const _fem = female || false;
   const _stride = +(opts.stride) || 1;   // >1 exaggerates the walk cycle (used by the big previews)
-  const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2)*0.6;
+  // Per-character phase from world position so idle villagers don't all breathe
+  // in sync (the robotic tell). Centred previews (x=y=0) get phase 0 → unchanged.
+  const _idlePh = x*0.7 + y*0.35;
+  const bob = moving ? Math.sin(t*10)*1.5 : Math.sin(t*2 + _idlePh)*0.6;
+  // gentle idle weight-shift (sub-pixel) so standing characters read as alive
+  const _sway = moving ? 0 : Math.sin(t*0.8 + _idlePh)*0.7;
   // ---- activity detection: which activity (if any) the character is performing ----
   // The tool-side arm is REPLACED by an animated activity arm so the character
   // visibly does the work rather than a prop moving next to a static body.
@@ -2610,7 +2615,7 @@ function drawPerson(ctx, x, y, hair, shirt, t, moving, facing, tool, dir, skin, 
   const _activity = _swingType ? "swing" : _fishing ? "fish" : _forage ? "forage" : _manu ? "manu" : null;
   let _fPhase = 0, _fBend = 0;
   if (_forage){ const FP = 1.3; _fPhase = (((t % FP) + FP) % FP) / FP; _fBend = _fPhase < 0.65 ? Math.sin(_fPhase/0.65*Math.PI) : 0; }
-  ctx.save(); ctx.translate(Math.round(x), Math.round(y+bob));
+  ctx.save(); ctx.translate(Math.round(x + _sway), Math.round(y+bob));
   if (scale !== 1.0) ctx.scale(scale, scale);
   // shadow (drawn before the crouch so it stays planted on the ground)
   ctx.fillStyle="rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(0, 10-bob, 8, 3, 0, 0, 7); ctx.fill();
