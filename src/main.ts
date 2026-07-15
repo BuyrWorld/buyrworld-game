@@ -21,7 +21,7 @@ import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRe
 import { PUBLIC_COLS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
-import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery } from './data/tutorial.ts';
+import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery, TUTORIAL_STAGES, TUTORIAL_GUIDE, TUTORIAL_COMPLETE_BONUS, NAV_HINT, fillTemplate } from './data/tutorial.ts';
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
@@ -237,20 +237,27 @@ function frostSvg(size){
 // Deterministic tutorial chain — conditions read live INVENTORY (not cumulative
 // production) so each stage guarantees exactly the right amount: 6 ore → 3 bars →
 // 3 brackets → deliver 3 brackets via the guaranteed Tutorial Order.
-const TUT = [
-  { say:()=>`Hey ${pName()}! Frosty here — I keep things cool around the valley. Follow the path <b>west</b> into the quarry canyon and tap the <b>Iron Rock</b> to mine <b>6 Iron Ore</b>. It'll stop on its own when you've got enough.`,
-    obj:"Mine 6 Iron Ore", cond:()=> itemCount("iron_ore") >= 6, reward:TUTORIAL_REWARDS.mine,
-    target:"rock_iron4", where:"Quarry (far west)", cur:()=>itemCount("iron_ore"), max:6 },
-  { say:()=>`Nice swing, ${pName()}! Ore's no good raw. Walk to the <b>Furnace</b> (the building with the chimney, west of the quarry) and smelt <b>3 Iron Bars</b> — exactly what your 6 ore makes.`,
-    obj:"Smelt 3 Iron Bars", cond:()=> itemCount("iron_bar") >= 3, reward:TUTORIAL_REWARDS.smelt,
-    target:"furnace", where:"The Furnace", cur:()=>itemCount("iron_bar"), max:3 },
-  { say:()=>`Toasty! Now make something someone will pay for — pop into the <b>Workshop</b> next door and press <b>3 Brackets</b> from your 3 bars.`,
-    obj:"Press 3 Brackets", cond:()=> itemCount("bracket") >= 3, reward:TUTORIAL_REWARDS.make,
-    target:"workshop", where:"The Workshop", cur:()=>itemCount("bracket"), max:3 },
-  { say:()=>`Last step: head to the <b>Depot</b> and deliver the <b>Tutorial Order</b> — it wants exactly your 3 Brackets, pinned to the top of your contracts.`,
-    obj:"Deliver the Tutorial Order", cond:()=> !!S.tutContractDone, reward:TUTORIAL_REWARDS.deliver,
-    target:"depot", where:"The Depot", cur:()=>(S.tutContractDone?1:0), max:1 },
-];
+// The runtime tutorial is DERIVED from the single authoritative TUTORIAL_STAGES
+// config (src/data/tutorial.ts) — dialogue, objective text, destination, reward,
+// quantities and completion condition all come from there, so nothing can drift.
+const _stageDone = (st) => st.completion.metric === 'flag'
+  ? !!S[st.completion.flag]
+  : itemCount(st.completion.item) >= st.completion.count;
+const _stageCur = (st) => st.completion.metric === 'flag'
+  ? (S[st.completion.flag] ? 1 : 0)
+  : itemCount(st.completion.item);
+const _stageMax = (st) => st.completion.metric === 'flag' ? 1 : st.completion.count;
+const TUT = TUTORIAL_STAGES.map((st, i) => ({
+  id: st.id,
+  say: () => fillTemplate(st.dialogue, { name: pName(), n: st.quantity, prev: i > 0 ? TUTORIAL_STAGES[i-1].quantity : st.quantity }),
+  obj: fillTemplate(st.objective, { n: st.quantity }),
+  cond: () => _stageDone(st),
+  reward: st.reward.coins,
+  target: st.destination.id,
+  where: st.destination.name,
+  cur: () => _stageCur(st),
+  max: _stageMax(st),
+}));
 // Current tutorial objective + live progress (for the Warehouse panel & banner).
 function tutObjectiveHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
@@ -300,7 +307,7 @@ function showTutorialSummary(){
     <h2 style="margin:0 0 4px;font-size:18px">🏭 Your First Supply Chain</h2>
     <p style="font-size:12px;color:var(--dim);margin:0 0 10px">You took raw ore all the way to a paid customer order — the heart of BuyrWorld.</p>
     <div style="text-align:left;font-size:12px;line-height:1.9;background:rgba(255,255,255,.04);border-radius:6px;padding:8px 12px;margin-bottom:10px">
-      ✅ Gathered <b>6 Iron Ore</b><br>✅ Smelted <b>3 Iron Bars</b><br>✅ Manufactured <b>3 Brackets</b><br>✅ Delivered your first customer contract</div>
+      ${TUT.map(t=>`✅ ${t.obj}`).join('<br>')}</div>
     <div style="font-size:12px;line-height:1.8;margin-bottom:10px">
       Contract payment: <b>${fmt(TUTORIAL_CONTRACT.coins)} coins</b><br>
       Tutorial bonus: <b>${fmt(TUTORIAL_REWARDS.completeBonus)} coins</b><br>
@@ -325,7 +332,7 @@ function tutBannerHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
   const st = TUT[S.tut.step];
   return `<div class="frost">${frostSvg(64)}
-    <div class="say"><div class="who">FROSTY — YOUR GUIDE (${S.tut.step+1}/${TUT.length})</div>
+    <div class="say"><div class="who">${TUTORIAL_GUIDE.toUpperCase()} — YOUR GUIDE (${S.tut.step+1}/${TUT.length})</div>
     <p>${st.say()}</p><div class="obj">▸ Objective: ${st.obj} · Reward: ${st.reward} coins</div></div>
   </div>`;
 }
@@ -334,18 +341,17 @@ function tutBannerHtml(){
 // Only shows during the opening objective, so it never nags experienced players.
 function firstRunHintHtml(){
   if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step > 0) return "";
-  if ((S.prod.iron_ore||0) >= 5) return "";
+  if ((S.prod.iron_ore||0) >= (TUTORIAL_TARGETS.iron_ore || 6)) return "";
   return `<div class="firstrun-hint">🎮 Move with <b>WASD</b> / arrow keys — or <b>tap</b> where to go. Head <b>west ◀</b> to the quarry ⛏️ and tap the Iron Rock.</div>`;
 }
 // Task 4: a quest marker guiding the player to the CURRENT objective's location —
 // a floating label when it's on screen, or an edge arrow pointing toward it when not.
-const QUEST_TARGET_LABEL = {
-  rock_iron: "⛏️ Iron Rock — tap to mine!",
-  rock_iron4: "⛏️ Iron Rock — tap to mine!",
-  furnace:   "🔥 Furnace — smelt here",
-  workshop:  "🏭 Workshop — craft here",
-  depot:     "📦 Depot — deliver here",
-};
+// Derived from the tutorial stages' destinations, plus a rock_iron alias so the
+// marker resolves whichever iron rock the mine stage points at.
+const QUEST_TARGET_LABEL = Object.fromEntries([
+  ["rock_iron", TUTORIAL_STAGES[0].destination.marker],
+  ...TUTORIAL_STAGES.map(s => [s.destination.id, s.destination.marker]),
+]);
 function questMarkerHtml(){
   if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
   const st = TUT[S.tut.step];
@@ -741,8 +747,8 @@ function showPlayHint(){
     <div class="ph-row"><span class="ph-ic">🕹️</span><span><b>Move</b> — tap or click where you want to go, or use <b>WASD</b> / arrow keys / a gamepad.</span></div>
     <div class="ph-row"><span class="ph-ic">👆</span><span><b>Interact</b> — click a person, building or resource to use it.</span></div>
     <div class="ph-row"><span class="ph-ic">🪓</span><span><b>Swing</b> — while mining or chopping, tap the resource (or press Space) to speed it up.</span></div>
-    <div class="ph-row"><span class="ph-ic">🎒</span><span><b>Tabs & bag</b> — your skills and inventory sit along the bottom; more unlock as you play.</span></div>
-    <div class="ph-goal">🎯 <b>First job:</b> head <b>west</b> to the Quarry and mine <b>5 Iron Ore</b>. Follow Frost and watch the objective tracker.</div>
+    <div class="ph-row"><span class="ph-ic">🎒</span><span><b>Tabs & bag</b> — ${NAV_HINT}</span></div>
+    <div class="ph-goal">🎯 <b>First job:</b> head <b>west</b> to the Quarry and mine <b>${TUTORIAL_STAGES[0].quantity} Iron Ore</b>. Follow ${TUTORIAL_GUIDE} and watch the objective tracker.</div>
     <button id="ph-go" type="button">Let's go! ▶</button>
   </div>`;
   document.body.appendChild(ov);
@@ -9282,6 +9288,13 @@ function load(){
       if (!S.uiCollapsed || typeof S.uiCollapsed !== "object") S.uiCollapsed = {};   // collapsible section state
       if (!("prod" in parsed)) S.prod = {};
       if (!("tut" in parsed)) S.tut = { step:99, done:true };
+      // Defensive: keep an in-progress tutorial step within the current stage
+      // list. A step at/after the last stage means the chain is already finished
+      // (so a save from any earlier stage layout still resumes or completes safely).
+      if (S.tut && !S.tut.done){
+        S.tut.step = Math.max(0, Math.min(TUT.length, (S.tut.step|0)));
+        if (S.tut.step >= TUT.length) S.tut.done = true;
+      }
       if (!("ach" in parsed)) S.ach = {};
       if (!("coinsEarned" in S.counters)) S.counters.coinsEarned = 0;
       if (!("trades" in S.counters)) S.counters.trades = 0;

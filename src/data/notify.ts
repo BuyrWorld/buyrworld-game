@@ -1,6 +1,7 @@
 // Milestone 5 — reward pacing & communication cleanup. Pure/testable notification
 // priority + queue model, activity-log grouping, and the audited tutorial reward
 // budget. The DOM toast/log/summary live in main.ts and use these.
+import { stageById, TUTORIAL_CONTRACT, TUTORIAL_COMPLETE_BONUS } from './tutorial.ts';
 
 // ---- Priority categories -------------------------------------------------
 export type NotifyPriority = 'critical' | 'important' | 'routine';
@@ -64,9 +65,18 @@ export function logMatchesFilter(cat: string, filter: LogFilter): boolean {
 }
 
 // ---- Audited tutorial reward budget --------------------------------------
-// Target ~400–650 coins across the whole opening tutorial (Frost + contract +
+// Target ~400–650 coins across the whole opening tutorial (Frosty + contract +
 // bonus + kept achievements). No duplicated large coin rewards for one action.
-export const TUTORIAL_REWARDS = { mine: 40, smelt: 50, make: 60, deliver: 60, contract: 150, completeBonus: 100 };
+// Derived from the ONE authoritative tutorial config so the budget can never
+// drift from the per-stage rewards the player actually receives.
+export const TUTORIAL_REWARDS = {
+  mine: stageById('mine')!.reward.coins,
+  smelt: stageById('smelt')!.reward.coins,
+  make: stageById('make')!.reward.coins,
+  deliver: stageById('deliver')!.reward.coins,
+  contract: TUTORIAL_CONTRACT.coins,
+  completeBonus: TUTORIAL_COMPLETE_BONUS,
+};
 export const TUTORIAL_ACHIEVEMENT_COINS = 110;   // first_swing 10 + hot_stuff 25 + made_here 25 + first_run 50 (kept, earned)
 export const TUTORIAL_COIN_MIN = 400, TUTORIAL_COIN_MAX = 650;
 export function tutorialCoinTotal(includeAchievements = true): number {

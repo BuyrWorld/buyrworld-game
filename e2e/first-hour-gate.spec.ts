@@ -125,6 +125,27 @@ test.describe('First-hour release gate', () => {
     if (canvasBox) expect(navBox.y).toBeLessThan(canvasBox.y);
   });
 
+  // 4b -----------------------------------------------------------------------
+  test('4b. welcome MODAL copy is config-derived: Frosty / 6 Iron Ore / tabs at TOP', async ({ page }) => {
+    await cleanLoad(page);
+    await page.locator('#btn-quick').click();
+    // inspect the one-time "How to Play" modal BEFORE dismissing it
+    const hint = page.locator('#play-hint-overlay');
+    await expect(hint).toBeVisible({ timeout: 10000 });
+    const text = await hint.innerText();
+    // the guide is "Frosty", never the old "Frost"
+    expect(text).toMatch(/Frosty/i);
+    expect(text).not.toMatch(/Follow Frost\b(?!y)/);
+    // the first job is 6 Iron Ore, never 5
+    expect(text).toMatch(/6\s*Iron Ore/i);
+    expect(text).not.toMatch(/5\s*Iron Ore/i);
+    // navigation is described as the TOP category tabs, never "bottom"
+    expect(text).toMatch(/top/i);
+    expect(text).not.toMatch(/bottom/i);
+    await hint.locator('button').first().click();
+    await expect(hint).toBeHidden();
+  });
+
   // 5 ------------------------------------------------------------------------
   test('5. enters the starter cottage', async ({ page }) => {
     await quickStart(page);

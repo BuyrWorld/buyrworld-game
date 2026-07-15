@@ -4,7 +4,10 @@ import { fileURLToPath } from 'url';
 import {
   TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT,
   tutorialShouldStop, isTutorialItem, tutorialRecovery,
+  TUTORIAL_STAGES, TUTORIAL_GUIDE, TUTORIAL_COMPLETE_BONUS, NAV_HINT,
+  fillTemplate, stageById, stageIndex,
 } from '../src/data/tutorial.ts';
+import { TUTORIAL_REWARDS } from '../src/data/notify.ts';
 import { ITEMS } from '../src/data/items.ts';
 
 describe('Deterministic tutorial — chain arithmetic', () => {
@@ -57,6 +60,99 @@ describe('Deterministic tutorial — old-save recovery (minimum, once)', () => {
   });
   it('the mining step needs no recovery (the player simply mines)', () => {
     expect(tutorialRecovery(0, {})).toEqual({});
+  });
+});
+
+describe('Authoritative config — one source of truth', () => {
+  it('every stage carries a complete, well-formed definition', () => {
+    for (const s of TUTORIAL_STAGES) {
+      expect(typeof s.id).toBe('string');
+      expect(s.guide).toBe('Frosty');                          // guide is Frosty everywhere
+      expect(s.dialogue.length).toBeGreaterThan(0);
+      expect(s.objective.length).toBeGreaterThan(0);
+      expect(s.destination.id && s.destination.name && s.destination.marker).toBeTruthy();
+      expect(s.quantity).toBeGreaterThan(0);
+      expect(s.reward.coins).toBeGreaterThan(0);
+      expect(Array.isArray(s.unlocks)).toBe(true);
+      expect(['inventory', 'flag']).toContain(s.completion.metric);
+    }
+  });
+
+  it('the four stages form a single forward chain (mine→smelt→make→deliver→end)', () => {
+    expect(TUTORIAL_STAGES.map(s => s.id)).toEqual(['mine', 'smelt', 'make', 'deliver']);
+    expect(stageById('mine')!.next).toBe('smelt');
+    expect(stageById('smelt')!.next).toBe('make');
+    expect(stageById('make')!.next).toBe('deliver');
+    expect(stageById('deliver')!.next).toBeNull();             // last stage
+    // every next-id resolves to the following stage (no dangling transitions)
+    for (const s of TUTORIAL_STAGES) {
+      if (s.next) expect(stageIndex(s.next)).toBe(stageIndex(s.id) + 1);
+    }
+  });
+
+  it('recipes make the chain balance with nothing wasted', () => {
+    const smelt = stageById('smelt')!, make = stageById('make')!;
+    // 6 ore, smelt 2:1 → exactly 3 bars
+    expect(smelt.recipe!.in.iron_ore * smelt.quantity).toBe(TUTORIAL_TARGETS.iron_ore);
+    expect(smelt.recipe!.out.iron_bar * smelt.quantity).toBe(3);
+    // 3 bars, press 1:1 → exactly 3 brackets
+    expect(make.recipe!.in.iron_bar * make.quantity).toBe(TUTORIAL_TARGETS.iron_bar);
+    expect(make.recipe!.out.bracket * make.quantity).toBe(3);
+    // mine & deliver have no recipe
+    expect(stageById('mine')!.recipe).toBeNull();
+    expect(stageById('deliver')!.recipe).toBeNull();
+  });
+
+  it('completion conditions match the stage targets', () => {
+    expect(stageById('mine')!.completion).toEqual({ metric: 'inventory', item: 'iron_ore', count: 6 });
+    expect(stageById('smelt')!.completion).toEqual({ metric: 'inventory', item: 'iron_bar', count: 3 });
+    expect(stageById('make')!.completion).toEqual({ metric: 'inventory', item: 'bracket', count: 3 });
+    expect(stageById('deliver')!.completion).toEqual({ metric: 'flag', flag: 'tutContractDone' });
+  });
+
+  it('no player-facing copy says "Frost" instead of "Frosty"', () => {
+    expect(TUTORIAL_GUIDE).toBe('Frosty');
+    for (const s of TUTORIAL_STAGES) {
+      for (const copy of [s.dialogue, s.objective]) {
+        // any "Frost" must be immediately followed by "y"
+        for (const m of copy.matchAll(/Frost(.?)/g)) expect(m[1]).toBe('y');
+      }
+    }
+  });
+
+  it('objective/dialogue numbers come from the stage quantity (no stray "5")', () => {
+    // mine stage objective interpolates to 6, never 5
+    expect(fillTemplate(stageById('mine')!.objective, { n: stageById('mine')!.quantity })).toBe('Mine 6 Iron Ore');
+    expect(fillTemplate('{name} mines {n}, keeps {prev}', { name: 'Ada', n: 6, prev: 3 })).toBe('Ada mines 6, keeps 3');
+  });
+
+  it('the navigation hint describes the TOP tabs, never the bottom', () => {
+    expect(NAV_HINT).toMatch(/top/i);
+    expect(NAV_HINT).not.toMatch(/bottom/i);
+  });
+
+  it('the Tutorial Order is pinned, deadline-free and reputation-safe', () => {
+    expect(TUTORIAL_CONTRACT.tutorial).toBe(true);
+    expect(TUTORIAL_CONTRACT.pinned).toBe(true);
+    expect(TUTORIAL_CONTRACT.deadlineFree).toBe(true);
+    expect(TUTORIAL_CONTRACT.reputationSafe).toBe(true);
+    expect(TUTORIAL_CONTRACT.item).toBe('bracket');
+    expect(TUTORIAL_CONTRACT.qty).toBe(stageById('deliver')!.quantity);
+  });
+
+  it('notify.ts reward budget is derived from the stage rewards (single source)', () => {
+    expect(TUTORIAL_REWARDS.mine).toBe(stageById('mine')!.reward.coins);
+    expect(TUTORIAL_REWARDS.smelt).toBe(stageById('smelt')!.reward.coins);
+    expect(TUTORIAL_REWARDS.make).toBe(stageById('make')!.reward.coins);
+    expect(TUTORIAL_REWARDS.deliver).toBe(stageById('deliver')!.reward.coins);
+    expect(TUTORIAL_REWARDS.contract).toBe(TUTORIAL_CONTRACT.coins);
+    expect(TUTORIAL_REWARDS.completeBonus).toBe(TUTORIAL_COMPLETE_BONUS);
+  });
+
+  it('back-compat TUTORIAL_STEPS stays derived from the stages', () => {
+    expect(TUTORIAL_STEPS.map(s => s.key)).toEqual(TUTORIAL_STAGES.map(s => s.id));
+    expect(TUTORIAL_STEPS.map(s => s.need)).toEqual(TUTORIAL_STAGES.map(s => s.quantity));
+    expect(TUTORIAL_STEPS.map(s => s.target)).toEqual(TUTORIAL_STAGES.map(s => s.destination.id));
   });
 });
 
