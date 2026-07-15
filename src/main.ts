@@ -785,13 +785,10 @@ function applyTextScale(){ const s = S.settings?.textScale || 'normal'; document
 function openSettings(){
   if (!S.settings) S.settings = Object.assign({}, DEFAULT_SETTINGS);
   const st = S.settings;
-  if (document.getElementById('settings-modal')) return;
   const seg = (label:string, opts:{v:string;l:string}[], cur:string, act:string) =>
     `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0"><span style="font-size:12px">${label}</span><span style="display:flex;gap:4px">${opts.map(o=>`<button data-set="${act}:${o.v}" style="background:${cur===o.v?'#3a6a8a':'#33333c'};color:#fff;border:none;border-radius:4px;padding:4px 9px;font-size:11px;cursor:pointer">${o.l}</button>`).join('')}</span></div>`;
-  const el=document.createElement('div'); el.id='settings-modal';
-  el.style.cssText='position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);padding:16px';
-  el.innerHTML=`<div class="panel" style="padding:14px;max-width:380px;width:100%">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 style="margin:0;font-size:16px">⚙️ Settings</h2><button id="set-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
+  const inner = () => `<div class="panel" style="padding:14px;max-width:380px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 style="margin:0;font-size:16px">⚙️ Settings</h2><button id="set-close" aria-label="Close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
     ${seg('Soundtrack', [{v:'frosty',l:'Frosty'},{v:'chiptune',l:'Chiptune'}], st.soundtrack==='chiptune'?'chiptune':'frosty', 'soundtrack')}
     <div style="font-size:10px;color:var(--dim);margin:-3px 0 4px">Frosty = the loaded original soundtrack · Chiptune = the classic built-in tunes.</div>
     ${seg('Music', [{v:'on',l:'On'},{v:'off',l:'Off'}], st.music?'on':'off', 'music')}
@@ -803,21 +800,25 @@ function openSettings(){
     <div style="display:flex;gap:6px;margin-top:10px"><button id="set-full" style="flex:1;background:#3a4a6a;color:#fff;border:none;border-radius:5px;padding:7px;cursor:pointer;font-size:12px">⛶ Fullscreen</button></div>
     <p style="font-size:10px;color:var(--dim);margin:9px 0 0">Controls — Move: left stick / WASD. Focus: D-pad / arrows / Tab. Ⓐ Enter confirm · Ⓑ Esc back · Ⓧ Journey · Ⓨ Inventory · LB/RB category · ☰ menu. Couch/TV mode enlarges everything for the Steam Deck & big screens. All settings save automatically.</p>
   </div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click',e=>{ if(e.target===el) el.remove(); });
-  document.getElementById('set-close')!.onclick=()=>el.remove();
-  document.getElementById('set-full')!.onclick=()=>{ try{ toggleFullscreen(); }catch(e){} };
-  el.querySelectorAll('[data-set]').forEach(b=>(b as HTMLElement).onclick=()=>{
-    const [k,v]=(b as HTMLElement).dataset.set!.split(':');
-    if(k==='music') setMusic(v==='on');
-    else if(k==='soundtrack'){ st.soundtrack=(v==='chiptune'?'chiptune':'frosty'); MUSIC.stop(); if(st.music){ MUSIC.unlocked=true; updateMusicZone(); MUSIC.setVol(volLevel()); } }
-    else if(k==='vol'){ st.vol=v; if(st.music){ MUSIC.setVol(volLevel()); } syncMusicButton(); }
-    else if(k==='sfx') st.sfx=(v==='on');
-    else if(k==='text'){ st.textScale=v; applyTextScale(); }
-    else if(k==='motion'){ st.motion=(v==='off'); }   // 'on' = reduced → motion:false
-    else if(k==='couch'){ st.couch=(v==='on'); applyCouchMode(); }
-    save(); el.remove(); openSettings();
-  });
+  const wire = (el:HTMLElement) => {
+    (el.querySelector('#set-close') as HTMLElement).onclick = () => closeModal('settings-modal');
+    (el.querySelector('#set-full') as HTMLElement).onclick = () => { try{ toggleFullscreen(); }catch(e){} };
+    el.querySelectorAll('[data-set]').forEach(b=>(b as HTMLElement).onclick=()=>{
+      const [k,v]=(b as HTMLElement).dataset.set!.split(':');
+      if(k==='music') setMusic(v==='on');
+      else if(k==='soundtrack'){ st.soundtrack=(v==='chiptune'?'chiptune':'frosty'); MUSIC.stop(); if(st.music){ MUSIC.unlocked=true; updateMusicZone(); MUSIC.setVol(volLevel()); } }
+      else if(k==='vol'){ st.vol=v; if(st.music){ MUSIC.setVol(volLevel()); } syncMusicButton(); }
+      else if(k==='sfx') st.sfx=(v==='on');
+      else if(k==='text'){ st.textScale=v; applyTextScale(); }
+      else if(k==='motion'){ st.motion=(v==='off'); }   // 'on' = reduced → motion:false
+      else if(k==='couch'){ st.couch=(v==='on'); applyCouchMode(); }
+      save();
+      // re-render the panel in place (keeps the modal, scroll lock & focus — no reopen)
+      el.innerHTML = inner(); wire(el);
+      const f = el.querySelector('#set-close') as HTMLElement; if (f) _setUiFocus(f);
+    });
+  };
+  openModal('settings-modal', inner, { label:'Settings', initialFocus:'#set-close', wire });
 }
 // ================= Frosty's Radio (diegetic, house-only) =================
 let _radioOn = false;   // runtime only — never persisted playing (no autoplay on re-entry)
@@ -2208,6 +2209,9 @@ function solidAt(px, py){
 }
 function moveActor(a, dt, speed, free=false){
   let dx=0, dy=0;
+  // Freeze the player entirely while a blocking modal is open (covers a movement
+  // key held BEFORE the modal opened, and any pending click/tap walk target).
+  if ((a===VP||a===IP) && (modalIsOpen() || _paused)){ a.tx=null; a.ty=null; if (a.pending!==undefined) a.pending=null; return; }
   if ((a===VP||a===IP) && (VKEYS.ArrowLeft||VKEYS.a||GPKEYS.ArrowLeft))  dx-=1;
   if ((a===VP||a===IP) && (VKEYS.ArrowRight||VKEYS.d||GPKEYS.ArrowRight)) dx+=1;
   if ((a===VP||a===IP) && (VKEYS.ArrowUp||VKEYS.w||GPKEYS.ArrowUp))    dy-=1;
@@ -14660,6 +14664,66 @@ document.addEventListener('fullscreenchange', ()=>{
 const FOCUS_SEL = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], .collapse-head, [data-gpfocus]:not([disabled]), [tabindex]:not([tabindex="-1"])';
 var _uiFocusEl: any = null;   // var (not let): read by updateGpPrompts() during early init — avoid TDZ
 var _paused = false;
+/* ===== Authoritative modal/overlay controller =====
+   Every controller-managed modal lives in #modal-layer (see index.html CSS):
+   guaranteed top stacking (above the title/HUD/other overlays), a backdrop,
+   working pointer events, initial focus, focus trapping (via _focusScope) and
+   focus restoration, plus a body scroll lock. On close it is fully removed, so
+   nothing lingers to intercept input. Opening an id that's already open is a
+   no-op, so rapid open/close can never create duplicate overlays. */
+// var (not const): _topModal()/modalIsOpen() are reachable from updateGpPrompts()
+// during early init — a const here would throw a TDZ error and crash boot.
+var _MODAL_STACK: { id:string; el:HTMLElement; prevFocus:Element|null; onClose?:()=>void }[] = [];
+function _modalLayer(){
+  let l = document.getElementById('modal-layer');
+  if (!l){ l = document.createElement('div'); l.id = 'modal-layer'; document.body.appendChild(l); }
+  return l;
+}
+function modalIsOpen(){ return !!(_MODAL_STACK && _MODAL_STACK.length); }
+function _firstFocusable(scope: HTMLElement){
+  return (Array.from(scope.querySelectorAll(FOCUS_SEL)) as HTMLElement[]).find(_elVisible) || null;
+}
+function openModal(id: string, buildInner: ()=>string, opts: any = {}){
+  // idempotent: never stack a duplicate of the same modal
+  const existing = _MODAL_STACK.find(m => m.id === id);
+  if (existing) return existing.el;
+  if (document.getElementById(id)) return document.getElementById(id) as HTMLElement;
+  const el = document.createElement('div');
+  el.id = id; el.className = 'bw-modal';
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+  if (opts.label) el.setAttribute('aria-label', opts.label);
+  if (opts.backdrop) el.style.background = opts.backdrop;
+  el.innerHTML = buildInner();
+  const prevFocus = document.activeElement;
+  _modalLayer().appendChild(el);
+  document.body.classList.add('modal-open');
+  _MODAL_STACK.push({ id, el, prevFocus, onClose: opts.onClose });
+  if (opts.backdropClose !== false) el.addEventListener('mousedown', e => { if (e.target === el) closeModal(id); });
+  if (typeof opts.wire === 'function') opts.wire(el);
+  const focusEl = (opts.initialFocus && el.querySelector(opts.initialFocus)) || _firstFocusable(el);
+  if (focusEl) _setUiFocus(focusEl as HTMLElement);
+  updateGpPrompts();
+  return el;
+}
+function closeModal(id: string){
+  const idx = _MODAL_STACK.findIndex(m => m.id === id);
+  if (idx < 0){ const e = document.getElementById(id); if (e) e.remove(); return; }
+  const entry = _MODAL_STACK[idx];
+  _MODAL_STACK.splice(idx, 1);
+  entry.el.remove();
+  if (entry.onClose){ try{ entry.onClose(); }catch(e){} }
+  _clearUiFocus();
+  if (_MODAL_STACK.length){
+    const top = _MODAL_STACK[_MODAL_STACK.length - 1].el;   // hand input to the new topmost modal
+    const f = _firstFocusable(top); if (f) _setUiFocus(f);
+  } else {
+    document.body.classList.remove('modal-open');           // release the scroll lock
+    const p = entry.prevFocus as HTMLElement | null;        // restore focus to the opener
+    if (p && typeof p.focus === 'function' && _elVisible(p)){ try{ p.focus({ preventScroll:true }); }catch(e){} }
+  }
+  updateGpPrompts();
+}
+function closeTopModal(){ if (!_MODAL_STACK.length) return false; closeModal(_MODAL_STACK[_MODAL_STACK.length - 1].id); return true; }
 // Topmost open modal/overlay, if any (so focus + Back scope to it).
 // Fixed-position modals (Pause, Settings, etc.) always report offsetParent === null,
 // so the old offsetParent test hid them from the focus/Back system — leaving
@@ -14671,6 +14735,7 @@ function _elVisible(n: HTMLElement){
   return cs.display !== 'none' && cs.visibility !== 'hidden' && n.getClientRects().length > 0;
 }
 function _topModal(){
+  if (_MODAL_STACK && _MODAL_STACK.length) return _MODAL_STACK[_MODAL_STACK.length - 1].el;   // controller-managed wins
   const nodes = Array.from(document.querySelectorAll('[id$="-modal"], [role="dialog"], #play-hint-overlay, #radio-modal, #pause-modal')) as HTMLElement[];
   const vis = nodes.filter(_elVisible);
   return vis.length ? vis[vis.length - 1] : null;
@@ -14702,7 +14767,8 @@ function uiConfirm(){
   return false;
 }
 function uiBack(){
-  const m = _topModal();
+  if (closeTopModal()) return true;   // controller-managed modal (Settings, Pause, …)
+  const m = _topModal();              // legacy DOM-created modal fallback
   if (m){
     const close = m.querySelector('[id$="-close"], [aria-label="Close"], .modal-close') as HTMLElement;
     if (close){ close.click(); } else { m.remove(); }
@@ -14724,12 +14790,9 @@ function applyCouchMode(){ document.body.classList.toggle('couch-mode', !!(S.set
 function setGamepadActive(on){ document.body.classList.toggle('gpad', !!on); updateGpPrompts(); }
 // Pause menu (Menu / Start button, Esc-from-world).
 function openPauseMenu(){
-  if (document.getElementById('pause-modal')) return;
   _paused = true;
-  const el = document.createElement('div'); el.id = 'pause-modal'; el.setAttribute('role','dialog'); el.setAttribute('aria-modal','true');
-  el.style.cssText = 'position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px';
   const row = (id,label,ic) => `<button data-pause="${id}" style="display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:#2a2f38;color:#eee;border:1px solid #444;border-radius:7px;padding:11px 14px;margin-bottom:8px;font-size:15px;cursor:pointer"><span style="font-size:18px">${ic}</span>${label}</button>`;
-  el.innerHTML = `<div class="panel" style="padding:16px;max-width:340px;width:100%">
+  const inner = () => `<div class="panel" style="padding:16px;max-width:340px;width:100%">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0;font-size:16px">⏸️ Paused</h2><button aria-label="Close" class="modal-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer">✕</button></div>
     ${row('resume','Resume','▶')}
     ${row('settings','Settings & accessibility','⚙️')}
@@ -14738,20 +14801,22 @@ function openPauseMenu(){
     ${row('controls','Controls & buttons','🎮')}
     <p style="font-size:10px;color:var(--dim);margin:8px 0 0;text-align:center">Idle income keeps counting — the world simply waits for you.</p>
   </div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) closePauseMenu(); });
-  (el.querySelector('.modal-close') as HTMLElement).onclick = closePauseMenu;
-  el.querySelectorAll('[data-pause]').forEach(b => (b as HTMLElement).onclick = () => {
-    const a = (b as HTMLElement).dataset.pause;
-    if (a === 'resume') closePauseMenu();
-    else if (a === 'settings'){ closePauseMenu(); openSettings(); }
-    else if (a === 'couch'){ if(!S.settings) S.settings={}; S.settings.couch = !S.settings.couch; applyCouchMode(); save(); }
-    else if (a === 'fullscreen'){ toggleFullscreen(); }
-    else if (a === 'controls'){ closePauseMenu(); if (typeof showPlayHint === 'function') showPlayHint(); }
-  });
-  _setUiFocus(el.querySelector('[data-pause="resume"]') as HTMLElement);
+  const wire = (el:HTMLElement) => {
+    (el.querySelector('.modal-close') as HTMLElement).onclick = () => closeModal('pause-modal');
+    el.querySelectorAll('[data-pause]').forEach(b => (b as HTMLElement).onclick = () => {
+      const a = (b as HTMLElement).dataset.pause;
+      if (a === 'resume') closeModal('pause-modal');
+      else if (a === 'settings'){ closeModal('pause-modal'); openSettings(); }
+      else if (a === 'couch'){ if(!S.settings) S.settings={}; S.settings.couch = !S.settings.couch; applyCouchMode(); save(); }
+      else if (a === 'fullscreen'){ toggleFullscreen(); }
+      else if (a === 'controls'){ closeModal('pause-modal'); if (typeof showPlayHint === 'function') showPlayHint(); }
+    });
+  };
+  openModal('pause-modal', inner, { label:'Paused', backdrop:'rgba(0,0,0,.62)', initialFocus:'[data-pause="resume"]', wire,
+    onClose: () => { _paused = false; lastTick = Date.now(); } });
 }
-function closePauseMenu(){ _paused = false; const e = document.getElementById('pause-modal'); if (e) e.remove(); _clearUiFocus(); lastTick = Date.now(); }
+// Kept as a named alias: several call sites (gamepad ☰, jail release, etc.) close the pause menu by name.
+function closePauseMenu(){ closeModal('pause-modal'); }
 (globalThis as any).openPauseMenu = openPauseMenu;
 
 /* ---- Gamepad ---- */

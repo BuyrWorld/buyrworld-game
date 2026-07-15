@@ -824,6 +824,16 @@ body.title-open{ overflow:hidden; }   /* no page scrollbar behind the creator */
 .ks-bonus { font-size:11px; color:var(--mint); margin-bottom:20px; }
 .ks-close { background:var(--amber); color:#1a1208; border:none; border-radius:6px; padding:9px 22px; font-family:'Press Start 2P',monospace; font-size:10px; cursor:pointer; transition:filter .15s; }
 .ks-close:hover { filter:brightness(1.12); }
+
+/* ===== Authoritative modal layer =====
+   One fixed container hosts every controller-managed modal ABOVE everything
+   (title, HUD, other overlays). It is fully inert when empty (pointer-events
+   none + display:none via :empty), so a closed modal can never intercept
+   input. Each .bw-modal carries its own backdrop + pointer events. */
+#modal-layer{ position:fixed; inset:0; z-index:10000; pointer-events:none; }
+#modal-layer:empty{ display:none; }
+#modal-layer > .bw-modal{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.6); pointer-events:auto; }
+body.modal-open{ overflow:hidden; }
 </style>
 </head>
 <body>
