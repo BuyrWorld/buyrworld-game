@@ -4320,6 +4320,12 @@ function drawWP(ctx, t, layer){
         ctx.strokeStyle=p.col; ctx.lineWidth=Math.max(0.6, 2*(1-k)); ctx.beginPath(); ctx.arc(x,y,sz,0,7); ctx.stroke(); break;
       case 'sparkle':
         ctx.fillStyle=p.col; ctx.fillRect(x-0.6,y-sz,1.2,sz*2); ctx.fillRect(x-sz,y-0.6,sz*2,1.2); break;
+      case 'firefly': {
+        const pulse=0.35+0.65*Math.abs(Math.sin(age*4+p.dph));
+        ctx.globalAlpha=(a*pulse)<0?0:a*pulse;
+        ctx.fillStyle='rgba(180,255,140,0.5)'; ctx.beginPath(); ctx.arc(x,y,sz*2.4,0,7); ctx.fill();
+        ctx.fillStyle=p.col; ctx.beginPath(); ctx.arc(x,y,sz*0.8,0,7); ctx.fill();
+        break; }
     }
   }
   ctx.globalAlpha = 1;
@@ -4362,8 +4368,14 @@ function emitAmbient(t){
   if (_emFurn && Math.random()<0.55){ const r=objRect(_emFurn); if(_wpOn(r))
     spawnWP(r.x+r.w*0.72+(Math.random()-0.5)*4, r.y-6, 'smoke',
       { vy:-16, max:2.9, size:3.6, grow:7, col:'#8c8c94', a0:0.3, drift:6, dfr:1.5, wind:1.2, layer:1 }); }
-  // nightclub floor sparkles after dark
+  // fireflies drifting over open grass & forest after dark (skip winter)
   const _gl = lampGlow();
+  if (_gl>0.35 && getSeason()!=="winter" && Math.random()<0.45){
+    const wx=CAM.x+Math.random()*VIEW_W, wy=CAM.y+Math.random()*VIEW_H;
+    const c2=Math.floor(wx/TILE), r2=Math.floor(wy/TILE), ch2=VMAP[r2]&&VMAP[r2][c2];
+    if (ch2==="G"||ch2==="F") spawnWP(wx, wy, 'firefly', { vx:(Math.random()-0.5)*7, vy:(Math.random()-0.5)*5-1.5, max:3.2, size:1.5, col:'#eaff9a', a0:0.9, drift:9, dfr:1.5, layer:1 });
+  }
+  // nightclub floor sparkles after dark
   if (_emClub && _gl>0.3 && Math.random()<0.6){ const r=objRect(_emClub); if(_wpOn(r)){
     const nc=['#ff5acd','#8c50ff','#40c8ff','#5affc8'];
     spawnWP(r.x+Math.random()*r.w, r.y+r.h*0.4+Math.random()*10, 'sparkle',
@@ -5767,6 +5779,18 @@ function drawVillage(t){
     const _efy1 = _wfy1, _efy2 = _wfy2;
     const _efx1 = Math.max(0, 122*TILE - CAM.x), _efx2 = Math.min(VIEW_W, 133*TILE - CAM.x);
     if (_efy2 > _efy1 && _efx2 > _efx1) ctx.fillRect(_efx1, _efy1, _efx2-_efx1, _efy2-_efy1);
+    ctx.restore();
+    // Deepen + cool the ambient a touch so it reads as night, not dusk — then add
+    // soft directional MOONLIGHT from the top-right so open ground isn't dead.
+    // (Lamp/window/neon glows are drawn later, so they pop against this.)
+    const _nd = Math.min(1, alpha/0.26);
+    ctx.fillStyle = `rgba(12,18,42,${(0.16*_nd).toFixed(3)})`; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const _mg = ctx.createRadialGradient(VIEW_W-54, 28, 16, VIEW_W-54, 28, VIEW_H*1.15);
+    _mg.addColorStop(0, `rgba(150,178,224,${(0.12*_nd).toFixed(3)})`);
+    _mg.addColorStop(0.5, `rgba(120,150,205,${(0.05*_nd).toFixed(3)})`);
+    _mg.addColorStop(1, 'rgba(120,150,205,0)');
+    ctx.fillStyle=_mg; ctx.fillRect(0,0,VIEW_W,VIEW_H);
     ctx.restore();
   }
   // golden-hour warm directional wash (distinct morning & evening light, sun angle)
