@@ -9,8 +9,8 @@ export default async function globalSetup() {
   const page = await browser.newPage();
   const t = Date.now();
   try {
-    await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded', timeout: 150_000 });
-    await page.locator('#title').waitFor({ state: 'visible', timeout: 150_000 });
+    await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded', timeout: 300_000 });
+    await page.locator('#title').waitFor({ state: 'visible', timeout: 300_000 });
   } finally {
     // eslint-disable-next-line no-console
     console.log(`[gate] dev server warmed in ${Date.now() - t}ms`);

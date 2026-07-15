@@ -18,8 +18,16 @@ async function cleanLoad(page: Page) {
   await page.addInitScript((k) => { try { localStorage.removeItem(k); } catch (e) {} }, SAVE_KEY);
   // domcontentloaded, not the default 'load': the game streams many assets
   // (music mp3s, sprites) whose full load can exceed the timeout and stall goto.
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#title')).toBeVisible({ timeout: 20000 });
+  // The very first navigation of a run can hang/abort on Vite's cold graph; retry.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await expect(page.locator('#title')).toBeVisible({ timeout: 20_000 });
+      return;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
 }
 
 /** Dismiss the one-time "How to Play" hint if it appears after launch. */
