@@ -9690,12 +9690,22 @@ function updateFestivalNotification(){
     const _fKey = _fst.season + new Date().getFullYear();
     if (S.festival.notified !== _fKey){
       S.festival.notified = _fKey;
-      if (!S.festival.attended.includes(_fst.season)) S.festival.attended.push(_fst.season);
+      // NOTE: the festival merely being in-season does NOT count as attending —
+      // that's recorded via attendFestival() when the player actually takes part,
+      // so Festival Goer can't unlock on a brand-new save.
       toast(`🎪 The ${_fst.n} has begun! ${daysLeftInFestival()} days of double friendship XP!`);
       log(`🎪 <b>${_fst.n}</b> is on in Featherstone! Visit the Seasonal Market for festival activities.`, "good");
-      achCheck(); save();
+      save();
     }
   }
+}
+// Genuine festival participation — visiting the Seasonal Market or playing a
+// fairground game during an active festival. This (not the passive "it's on"
+// notification) is what records attendance and can unlock Festival Goer.
+function attendFestival(){
+  const fst = isFestivalActive(); if (!fst || !S.festival) return;
+  if (!Array.isArray(S.festival.attended)) S.festival.attended = [];
+  if (!S.festival.attended.includes(fst.season)){ S.festival.attended.push(fst.season); achCheck(); save(); }
 }
 function updateWorldEvents(){
   const _now = Date.now();
@@ -13082,6 +13092,7 @@ function _festivalTurnout(){
 function openFairground(){
   if(document.getElementById("fair-modal")) return;
   const fst=isFestivalActive(); if(!fst){ toast("The fairground only opens during a festival."); return; }
+  attendFestival();   // playing the fairground = attending the festival
   _fair={ power:0, dir:1, phase:'ready', puck:0, lockedPower:0, result:null, bell:false, raffleItems:fst.raffleItems, raf:0 };
   const el=document.createElement("div"); el.id="fair-modal"; el.className="dd-modal";
   el.innerHTML=`<div class="dd-card" style="max-width:420px">
@@ -13193,6 +13204,7 @@ function renderFurnitureShop(): string {
 function renderSeasonalMarket(): string {
   const _sd = SEASON_DEFS[getSeason()];
   const _fst = isFestivalActive();
+  if (_fst) attendFestival();   // visiting the market during a festival = attending
   const _sitems = _sd.items.map(id=>({ id, it:ITEMS[id], qty:(S.items[id]||0) }));
   const _hasSome = _sitems.some(x=>x.qty>0);
   const _craftedList = _sd.items.map(id=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:20px">${ITEMS[id].ic}</span><div style="flex:1;font-size:11px"><b>${ITEMS[id].n}</b><br><span style="color:var(--dim)">In stock: ${S.items[id]||0} &nbsp;·&nbsp; Crafted: ${S.prod[id]||0} &nbsp;·&nbsp; Sell: ${fmt(Math.round(ITEMS[id].v*1.5))}c each</span></div></div>`).join('');
@@ -14649,12 +14661,21 @@ const FOCUS_SEL = 'button:not([disabled]), input:not([disabled]), select:not([di
 var _uiFocusEl: any = null;   // var (not let): read by updateGpPrompts() during early init — avoid TDZ
 var _paused = false;
 // Topmost open modal/overlay, if any (so focus + Back scope to it).
+// Fixed-position modals (Pause, Settings, etc.) always report offsetParent === null,
+// so the old offsetParent test hid them from the focus/Back system — leaving
+// controller/keyboard Back unable to dismiss them. getClientRects() works for
+// fixed elements and is still empty for display:none.
+function _elVisible(n: HTMLElement){
+  if (!n) return false;
+  const cs = getComputedStyle(n);
+  return cs.display !== 'none' && cs.visibility !== 'hidden' && n.getClientRects().length > 0;
+}
 function _topModal(){
   const nodes = Array.from(document.querySelectorAll('[id$="-modal"], [role="dialog"], #play-hint-overlay, #radio-modal, #pause-modal')) as HTMLElement[];
-  const vis = nodes.filter(n => n && n.offsetParent !== null && getComputedStyle(n).display !== 'none');
+  const vis = nodes.filter(_elVisible);
   return vis.length ? vis[vis.length - 1] : null;
 }
-function _isVisible(el: HTMLElement){ return !!(el && el.offsetParent !== null && el.getClientRects().length); }
+function _isVisible(el: HTMLElement){ return _elVisible(el); }
 function _focusScope(){ const m = _topModal(); if (m) return m; const t = document.getElementById("title"); if (t && t.style.display !== "none") return t; return document.body; }
 function _focusables(){
   const scope = _focusScope();
