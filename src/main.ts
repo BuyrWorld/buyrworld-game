@@ -4409,6 +4409,14 @@ function drawTiles(ctx, t){
       const _lN=r>0&&VMAP[r-1][c]!=="W", _lS=r<VROWS-1&&VMAP[r+1][c]!=="W", _lW=c>0&&VMAP[r][c-1]!=="W", _lE=c<VCOLS-1&&VMAP[r][c+1]!=="W";
       if (_lN||_lS||_lW||_lE){ ctx.fillStyle="rgba(158,226,236,.32)";
         if(_lN)ctx.fillRect(x,y,TILE,5); if(_lS)ctx.fillRect(x,y+TILE-5,TILE,5); if(_lW)ctx.fillRect(x,y,5,TILE); if(_lE)ctx.fillRect(x+TILE-5,y,5,TILE); }
+      // chamfer the OUTER corners with a soft bank wedge so ponds/lakes read as
+      // rounded rather than hard rectangles (drawing only — collision unchanged)
+      { const _bank=(a,b)=> (VMAP[a]&&VMAP[a][b]==="S") ? "#dcc690" : "#83b06d";
+        if(_lN&&_lW){ ctx.fillStyle=_bank(r-1,c); ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+9,y); ctx.lineTo(x,y+9); ctx.closePath(); ctx.fill(); }
+        if(_lN&&_lE){ ctx.fillStyle=_bank(r-1,c); ctx.beginPath(); ctx.moveTo(x+TILE,y); ctx.lineTo(x+TILE-9,y); ctx.lineTo(x+TILE,y+9); ctx.closePath(); ctx.fill(); }
+        if(_lS&&_lW){ ctx.fillStyle=_bank(r+1,c); ctx.beginPath(); ctx.moveTo(x,y+TILE); ctx.lineTo(x+9,y+TILE); ctx.lineTo(x,y+TILE-9); ctx.closePath(); ctx.fill(); }
+        if(_lS&&_lE){ ctx.fillStyle=_bank(r+1,c); ctx.beginPath(); ctx.moveTo(x+TILE,y+TILE); ctx.lineTo(x+TILE-9,y+TILE); ctx.lineTo(x+TILE,y+TILE-9); ctx.closePath(); ctx.fill(); }
+      }
       // two staggered wave layers for parallax shimmer
       ctx.fillStyle="rgba(255,255,255,0.34)";
       if ((c+r+Math.floor(t*2.2))%4===0) ctx.fillRect(x+2,y+7,14,2);
@@ -4450,13 +4458,21 @@ function drawTiles(ctx, t){
         ctx.fillStyle="#dbd1ba"; ctx.fillRect(x+4,y+4,3,3); ctx.fillRect(x+15,y+14,3,3);
         if (pv>0.72){ ctx.fillStyle="rgba(108,150,78,.35)"; ctx.fillRect(x+11,y+10,3,3); }
       } else {
-        // trodden dirt track — warm base, darker worn centre, stones, cracks, footprints
+        // trodden dirt track — warm base, a sunlit worn crown, cart ruts that run
+        // ALONG the road, scattered pebbles and the odd puddle
         ctx.fillStyle="#d9bd82"; ctx.fillRect(x,y,TILE,TILE);
-        ctx.fillStyle="rgba(120,88,46,.20)"; ctx.fillRect(x+3,y+3,TILE-6,TILE-6);
-        if (c*7%3===0){ ctx.fillStyle="rgba(150,116,66,.40)"; ctx.fillRect(x+5,y,2,TILE); ctx.fillRect(x+16,y,2,TILE); }
-        if (pv<0.30){ ctx.fillStyle="#b7996a"; ctx.fillRect(x+5+pv*22,y+7+pv*20,3,2); }
-        if (pv>0.50 && pv<0.62){ ctx.strokeStyle="rgba(110,82,46,.42)"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x+4,y+6); ctx.lineTo(x+10,y+17); ctx.stroke(); }
-        if (pv>0.86){ ctx.fillStyle="rgba(110,82,46,.22)"; ctx.fillRect(x+7,y+8,3,4); ctx.fillRect(x+12,y+13,3,4); }
+        ctx.fillStyle="rgba(120,88,46,.16)"; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+        const _pN=r>0&&VMAP[r-1][c]==="P", _pS=r<VROWS-1&&VMAP[r+1][c]==="P", _pW=c>0&&VMAP[r][c-1]==="P", _pE=c<VCOLS-1&&VMAP[r][c+1]==="P";
+        // paler crown down the middle, then two darker wheel ruts either side of it
+        ctx.fillStyle="rgba(240,214,150,.28)";
+        if (_pN||_pS) ctx.fillRect(x+10,y,4,TILE);
+        if (_pW||_pE) ctx.fillRect(x,y+10,TILE,4);
+        ctx.fillStyle="rgba(116,84,44,.32)";
+        if (_pN||_pS){ ctx.fillRect(x+6,y,3,TILE); ctx.fillRect(x+15,y,3,TILE); }
+        if (_pW||_pE){ ctx.fillRect(x,y+6,TILE,3); ctx.fillRect(x,y+15,TILE,3); }
+        if (pv<0.28){ ctx.fillStyle="#b7996a"; ctx.fillRect(x+5+pv*22,y+7+pv*20,3,2); }
+        if (pv>0.55 && pv<0.63){ ctx.fillStyle="rgba(92,116,136,.35)"; ctx.beginPath(); ctx.ellipse(x+12,y+13,5,3,0,0,7); ctx.fill(); ctx.fillStyle="rgba(205,222,236,.28)"; ctx.fillRect(x+9,y+12,3,1); }
+        if (pv>0.88){ ctx.fillStyle="rgba(110,82,46,.20)"; ctx.fillRect(x+7,y+8,3,4); ctx.fillRect(x+12,y+13,3,4); }
       }
       // grass verge creeping in from any grass-adjacent edge (both tiers). A soft
       // translucent fringe first widens the green shoulder (roads read narrower,
@@ -4671,10 +4687,24 @@ function _bldPersonality(ctx, o, r, cat, t, P){
     ctx.fillStyle='#7a4a28'; ctx.fillRect(x+4, bxy, ww+2, 3);
     for (let f=0;f<3;f++){ ctx.fillStyle=['#e05a80','#ffd666','#f86040'][f]; ctx.fillRect(x+6+f*4, bxy-3, 2, 3); }
   } else if (cat==='industrial'){
-    // functional — corrugated roof + a metal vent pipe
+    // functional works — standing-seam roof, lit skylight, panelled walls, a
+    // roller loading bay with a hazard stripe, and a metal vent stack
     ctx.strokeStyle=_shade(roof,-0.28); ctx.lineWidth=1;
     for (let i=1;i<w/6;i++){ ctx.beginPath(); ctx.moveTo(x+i*6-2, y+(wallY-y)*0.5); ctx.lineTo(x+i*6, wallY); ctx.stroke(); }
-    ctx.fillStyle='#7a7e86'; ctx.fillRect(x+6, y-4, 4, roofH); ctx.fillStyle='#9aa0aa'; ctx.fillRect(x+6, y-6, 4, 2);
+    // roof skylight (glows warm at night)
+    ctx.fillStyle=glow>0.05 ? `rgba(255,222,150,${(0.4+0.5*glow).toFixed(2)})` : 'rgba(150,200,225,.55)';
+    ctx.fillRect(cxm-6, y+Math.round(roofH*0.5), 12, 3);
+    // horizontal metal wall-panel courses
+    ctx.strokeStyle=_shade(wall,-0.16);
+    for (let ly=wallY+9; ly<y+h-6; ly+=6){ ctx.beginPath(); ctx.moveTo(x+2,ly); ctx.lineTo(x+w-2,ly); ctx.stroke(); }
+    // roller loading bay (left side, over the left window)
+    const bdw=Math.min(17, Math.round(w*0.32)), bdx=x+4, bdy=y+h-16;
+    ctx.fillStyle='#6a6f78'; ctx.fillRect(bdx, bdy, bdw, 16);
+    ctx.strokeStyle='#4a4e56'; for (let ly=bdy+2; ly<bdy+16; ly+=3){ ctx.beginPath(); ctx.moveTo(bdx,ly); ctx.lineTo(bdx+bdw,ly); ctx.stroke(); }
+    ctx.fillStyle='#3a3e46'; ctx.fillRect(bdx, bdy-2, bdw, 2);
+    for (let i=0;i<Math.ceil(bdw/4);i++){ ctx.fillStyle=i%2?'#e8b83a':'#2a2a2a'; ctx.fillRect(bdx+i*4, bdy-4, Math.min(4,bdx+bdw-(bdx+i*4)), 2); }
+    // vent stack (right)
+    ctx.fillStyle='#7a7e86'; ctx.fillRect(x+w-10, y-4, 4, roofH+3); ctx.fillStyle='#9aa0aa'; ctx.fillRect(x+w-11, y-6, 6, 2);
   }
 }
 function _bldGround(ctx, o, r, cat, cxm){
