@@ -42,13 +42,15 @@ export const MUSIC_MANIFEST: MusicTrack[] = [
   // --- Holding cell (custody only) ---
   { id: 'holding-unhinged', title: 'Unhinged', artist: 'Frosty', source: `${B}/holding-cell/Frosty - Unhinged [Instrumental].mp3`, scenario: 'holding', enabled: true, loop: true },
 
-  // --- Frosty's Radio (inside Frosty's house). Auto-plays on entry. "Life In Blackburn"
-  //     (his signature tune, also the title theme) is the free default; the Frosty
-  //     Exclusive tracks unlock progressively through Frosty's quests. radioOnly. ---
-  { id: 'radio-life-in-blackburn',     title: 'Life In Blackburn',        artist: 'Frosty', source: `${B}/title/Frosty - Life In Blackburn (Instrumental).mp3`,    scenario: 'frosty-radio', radioOnly: true, radioDefault: true, unlockRequirement: null,               unlockAt: 0, unlockLabel: 'Frosty’s signature tune — free from the start', enabled: true, loop: true },
-  { id: 'exclusive-dead-inside',       title: 'Dead Inside',              artist: 'Frosty', source: `${B}/frosty-exclusive/Frosty - Dead Inside (Game Music).mp3`,     scenario: 'frosty-radio', radioOnly: true, unlockRequirement: 'frosty-quest-1', unlockAt: 1, unlockLabel: "Frosty's first quest",   enabled: true, loop: true },
-  { id: 'exclusive-insatiable-dubstep',title: 'Insatiable (Dubstep Edit)',artist: 'Frosty', source: `${B}/frosty-exclusive/Frosty - Insatiable (Dubstep Edit).mp3`, scenario: 'frosty-radio', radioOnly: true, unlockRequirement: 'frosty-quest-2', unlockAt: 2, unlockLabel: "Frosty's second quest",  enabled: true, loop: true },
-  { id: 'exclusive-stay-frosty',       title: 'Stay Frosty (Main Theme)', artist: 'Frosty', source: `${B}/frosty-exclusive/Frosty - Stay Frosty (Main Theme).mp3`, scenario: 'frosty-radio', radioOnly: true, unlockRequirement: 'frosty-quest-3', unlockAt: 3, unlockLabel: "Frosty's third quest",   enabled: true, loop: true },
+  // --- Frosty's Radio (inside Frosty's house). Every track here is a Frosty
+  //     Exclusive: radioOnly, and each requires its configured Frosty quest, so
+  //     NONE is available on a clean save (unlockAt >= 1). The radio hardware is
+  //     always present, but it has nothing to play until you earn a track. The
+  //     .mp3 files are NOT moved/renamed — only the unlock metadata changed. ---
+  { id: 'radio-life-in-blackburn',     title: 'Life In Blackburn',        artist: 'Frosty', source: `${B}/title/Frosty - Life In Blackburn (Instrumental).mp3`,    scenario: 'frosty-radio', radioOnly: true, unlockRequirement: 'frosty-quest-1', unlockAt: 1, unlockLabel: "Complete Frosty's tutorial", enabled: true, loop: true },
+  { id: 'exclusive-dead-inside',       title: 'Dead Inside',              artist: 'Frosty', source: `${B}/frosty-exclusive/Frosty - Dead Inside (Game Music).mp3`,     scenario: 'frosty-radio', radioOnly: true, unlockRequirement: 'frosty-quest-2', unlockAt: 2, unlockLabel: "Frosty's second quest",  enabled: true, loop: true },
+  { id: 'exclusive-insatiable-dubstep',title: 'Insatiable (Dubstep Edit)',artist: 'Frosty', source: `${B}/frosty-exclusive/Frosty - Insatiable (Dubstep Edit).mp3`, scenario: 'frosty-radio', radioOnly: true, unlockRequirement: 'frosty-quest-3', unlockAt: 3, unlockLabel: "Frosty's third quest",   enabled: true, loop: true },
+  { id: 'exclusive-stay-frosty',       title: 'Stay Frosty (Main Theme)', artist: 'Frosty', source: `${B}/frosty-exclusive/Frosty - Stay Frosty (Main Theme).mp3`, scenario: 'frosty-radio', radioOnly: true, unlockRequirement: 'frosty-quest-4', unlockAt: 4, unlockLabel: "Frosty's fourth quest",  enabled: true, loop: true },
 
   // --- Nightclub — Normal (ordinary venue + themed nights) ---
   { id: 'club-deja-vu',      title: 'Deja Vu',      artist: 'Frosty', source: `${B}/nightclub/normal/Frosty - Deja Vu (Club).mp3`,        scenario: 'nightclub', venueMode: 'normal', enabled: true, loop: true },

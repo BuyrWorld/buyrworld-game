@@ -23,17 +23,19 @@ export const FROSTY_TRACKS: FrostyTrack[] = MUSIC_MANIFEST
 // The "Frosty Exclusive" folder — used by the global engine to refuse these files.
 export const FROSTY_EXCLUSIVE_DIR = 'music/frosty/frosty-exclusive/';
 
-// The radio is available from the start — "Life In Blackburn" (unlockAt 0) is the free
-// default; Frosty's quests unlock the exclusive tracks. So the radio is never locked.
+// The radio HARDWARE is always present in Frosty's house (never "locked"), but
+// every track is a Frosty Exclusive gated behind a quest (unlockAt >= 1), so a
+// clean save has NOTHING to play until the player earns a track.
 export const RADIO_UNLOCK_QUESTS = 0;
 export function radioUnlocked(frostyQuests: number): boolean { return (frostyQuests || 0) >= RADIO_UNLOCK_QUESTS; }
 
 export function unlockedTracks(frostyQuests: number): FrostyTrack[] {
-  return FROSTY_TRACKS.filter(t => (frostyQuests || 0) >= t.unlockAt);
+  return FROSTY_TRACKS.filter(t => t.unlockAt >= 1 && (frostyQuests || 0) >= t.unlockAt);
 }
-// The track the radio plays by default on entering Frosty's house.
-export function radioDefaultTrack(): FrostyTrack | null {
-  return FROSTY_TRACKS.find(t => t.unlockAt <= 0) || FROSTY_TRACKS[0] || null;
+// The track the radio plays by default on entering — the first UNLOCKED track,
+// or null when none is unlocked yet (a clean save plays nothing on the radio).
+export function radioDefaultTrack(frostyQuests: number = 0): FrostyTrack | null {
+  return unlockedTracks(frostyQuests)[0] || null;
 }
 export function isTrackUnlocked(id: string, frostyQuests: number): boolean {
   return unlockedTracks(frostyQuests).some(t => t.id === id);

@@ -22,27 +22,27 @@ describe('Music manifest — folder-authoritative categorisation', () => {
     expect(byScenario('general').every(t => /\/general-game\//.test(t.source))).toBe(true);
     expect(byScenario('forest').every(t => /\/forest\//.test(t.source))).toBe(true);
     expect(byScenario('holding').every(t => /\/holding-cell\//.test(t.source))).toBe(true);
-    // radio tracks come from the frosty-exclusive folder, except the free default
-    // ("Life In Blackburn", also the title theme) which the owner chose as the radio default.
-    expect(byScenario('frosty-radio').every(t => /\/frosty-exclusive\//.test(t.source) || t.radioDefault)).toBe(true);
+    // radio tracks come from the frosty-exclusive folder, except "Life In Blackburn"
+    // (also the title theme) which stays in title/ — files are never moved (req 10).
+    expect(byScenario('frosty-radio').every(t => /\/frosty-exclusive\//.test(t.source) || t.id === 'radio-life-in-blackburn')).toBe(true);
     expect(byScenario('nightclub').every(t => /\/nightclub\//.test(t.source))).toBe(true);
   });
 });
 
 describe('Music manifest — Frosty Exclusive / radio', () => {
-  it('frosty-radio tracks are radioOnly; the default is free (unlockAt 0), the rest need a Frosty quest', () => {
+  it('every frosty-radio track is radioOnly and quest-gated — none free on a clean save (req 9b/9c)', () => {
     for (const t of MUSIC_MANIFEST) {
       if (t.scenario === 'frosty-radio') {
         expect(t.radioOnly).toBe(true);
-        if (t.radioDefault) { expect(t.unlockAt).toBe(0); }
-        else { expect(t.unlockRequirement).toBeTruthy(); expect(t.unlockAt).toBeGreaterThanOrEqual(1); }
+        expect(t.unlockRequirement).toBeTruthy();          // each requires its configured Frosty quest
+        expect(t.unlockAt).toBeGreaterThanOrEqual(1);      // NONE at unlockAt 0
       } else {
         expect(!!t.radioOnly).toBe(false);
       }
     }
     expect(radioTracks().length).toBeGreaterThan(0);
     expect(radioTracks().every(t => isRadioOnly(t.id))).toBe(true);
-    expect(MUSIC_MANIFEST.filter(t => t.radioDefault).length).toBe(1);   // exactly one radio default
+    expect(radioTracks().every(t => (t.unlockAt ?? 0) >= 1)).toBe(true);   // no exclusive available at 0
   });
   it('global Frosty playlists NEVER include radio-only tracks', () => {
     for (const s of ['title','general','forest','holding','nightclub'] as const) {

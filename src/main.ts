@@ -27,6 +27,7 @@ import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDeclin
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, radioDefaultTrack, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
+import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
@@ -195,7 +196,7 @@ function doTrade(npcId, it, qty, mode){
     const unit = buyPrice(npc, it);
     const q = qty === "max" ? Math.floor(S.coins / unit) : Math.min(qty, Math.floor(S.coins / unit));
     if (q <= 0){ toast("Not enough coins."); return; }
-    S.coins -= unit * q; addItem(it, q);
+    debit(unit * q, 'purchase', 'trade:'+it); addItem(it, q);
     _econBuy(it, q);   // LE3: buying tightens the market → cost-push up the chain
     grantXp("trading", Math.max(1, Math.round(unit * q * 0.06)));
     log(`⚖️ Bought ${q}× ${ITEMS[it].n} from ${npc.n} (−${fmt(unit*q)} coins)`);
@@ -203,9 +204,8 @@ function doTrade(npcId, it, qty, mode){
     const unit = sellPrice(npc, it);
     const q = qty === "max" ? itemCount(it) : Math.min(qty, itemCount(it));
     if (q <= 0){ toast("Nothing to sell."); return; }
-    S.items[it] -= q; S.coins += unit * q;
+    S.items[it] -= q; credit(unit * q, 'sale', 'trade:'+it);
     _econSale(it, q);   // LE1: selling saturates the market → your price softens
-    S.counters.coinsEarned = (S.counters.coinsEarned||0) + unit * q;
     grantXp("trading", Math.max(2, Math.round(unit * q * 0.22)));
     rollPet("trading");
     log(`⚖️ Sold ${q}× ${ITEMS[it].n} to ${npc.n} → <b>+${fmt(unit*q)} coins</b>`, "good");
@@ -275,7 +275,7 @@ function tutCheck(){
   let advanced = false;
   while (S.tut.step < TUT.length && TUT[S.tut.step].cond()){
     const st = TUT[S.tut.step];
-    S.coins += st.reward;
+    credit(st.reward, 'tutorial', st.id, 'tut:step:'+st.id);   // idempotent per stage
     endLogGroup();   // an objective completion breaks the grouped-production run
     notify(`❄️ Frosty: nice one! +${st.reward} coins`, 'tutorial_step');
     log(`❄️ Frosty approves — objective complete (<b>+${st.reward} coins</b>).`, "good");
@@ -287,7 +287,7 @@ function tutCheck(){
   if (S.tut.step >= TUT.length && !S.tut.done){
     S.tut.done = true;
     S.action = null;                 // stop any manual tutorial job
-    S.coins += TUTORIAL_REWARDS.completeBonus;   // one-time completion bonus (audited budget)
+    credit(TUTORIAL_REWARDS.completeBonus, 'tutorial', 'complete', 'tut:bonus');   // one-time completion bonus (audited budget)
     endLogGroup();
     log(`❄️ Frosty: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
     try{ SFX.fanfare(); }catch(e){}
@@ -311,7 +311,7 @@ function showTutorialSummary(){
     <div style="font-size:12px;line-height:1.8;margin-bottom:10px">
       Contract payment: <b>${fmt(TUTORIAL_CONTRACT.coins)} coins</b><br>
       Tutorial bonus: <b>${fmt(TUTORIAL_REWARDS.completeBonus)} coins</b><br>
-      Total coins now: <b>${fmt(S.coins)}</b><br>
+      Total coins now: <b id="tut-sum-total">${fmt(S.coins)}</b><br>
       Customer reputation: <b>+${rep}</b> with ${esc(TUTORIAL_CONTRACT.client.replace(' (Tutorial Order)',''))}</div>
     <div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:6px">What next?</div>
     <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
@@ -1093,7 +1093,7 @@ function achCheck(){
     if (!a.id || S.ach[a.id] || !a.n) continue;
     if (a.c()){
       S.ach[a.id] = 1;
-      S.coins += a.r;
+      credit(a.r, 'achievement', a.id, 'ach:'+a.id);   // idempotent per achievement
       const _rp = renownForAch(a.r||0);
       toast(`🏆 AWARD: ${a.n}! +${a.r} COINS · +${_rp} 🎖️`);
       log(`🏆 Award unlocked: <b>${a.n}</b> — ${a.ds} (+${a.r} coins, +${_rp} Renown)`, "rare");
@@ -1511,8 +1511,7 @@ const HEARTBEAT_POOL = [
     if (!S.tut || !S.tut.done) return null;
     if (totalLvl() > 40) return null;
     const amt = 3 + Math.floor(Math.random()*8);
-    S.coins += amt; S.counters.coinsEarned = (S.counters.coinsEarned||0) + amt;
-    updateHud();
+    credit(amt, 'passive', 'found_coins');
     const _where=["by the path","near the fountain","under a market stall","on the quarry track","by the Depot doors"];
     return `🪙 You spotted ${amt} coins ${_where[Math.floor(Math.random()*_where.length)]} — into the purse they go!`;
   }},
@@ -3223,8 +3222,7 @@ function claimJourneyStage(){
   if (!stage){ toast("🏆 The whole journey is complete!"); return; }
   if (!stageComplete(stage, journeyCtx())){ toast("Objective not met yet."); return; }
   S.journey.claimed.push(stage.id);
-  S.coins += stage.reward.coins;
-  S.counters.coinsEarned = (S.counters.coinsEarned || 0) + stage.reward.coins;
+  credit(stage.reward.coins, 'journal', stage.id, 'journey:'+stage.id);
   const titleMsg = stage.reward.title ? ` You are now <b>“${stage.reward.title}”</b>.` : "";
   log(`👑 Founder's Journey: <b>${stage.title}</b> complete! +${fmt(stage.reward.coins)} coins.${titleMsg}`, "rare");
   toast(`👑 ${stage.title} — +${fmt(stage.reward.coins)}c${stage.reward.title ? ` · “${stage.reward.title}”` : ""}`);
@@ -3259,8 +3257,7 @@ function checkWelcome(){
   while (idx < WELCOME_BEATS.length && beatComplete(WELCOME_BEATS[idx], ctx) && granted < 3){
     const b = WELCOME_BEATS[idx];
     S.welcome.claimed.push(b.id);
-    S.coins += b.reward.coins;
-    S.counters.coinsEarned = (S.counters.coinsEarned || 0) + b.reward.coins;
+    credit(b.reward.coins, 'journal', b.id, 'welcome:'+b.id);
     if (b.reward.item && ITEMS[b.reward.item]) S.items[b.reward.item] = (S.items[b.reward.item] || 0) + (b.reward.qty || 1);
     const itemMsg = (b.reward.item && ITEMS[b.reward.item]) ? ` · ${b.reward.qty||1}× ${ITEMS[b.reward.item].n}` : "";
     log(`🌟 Getting Started: <b>${b.title}</b> — +${fmt(b.reward.coins)} coins${itemMsg}.`, "good");
@@ -3383,8 +3380,7 @@ function advanceStory(){
   if (!cc){ toast("📜 The Founder's Trail is complete."); return; }
   if (!chapterComplete(cc, storyCtx())){ toast("That part of the tale isn't ready yet."); return; }
   S.story.done += 1;
-  S.coins += cc.reward.coins;
-  S.counters.coinsEarned = (S.counters.coinsEarned || 0) + cc.reward.coins;
+  credit(cc.reward.coins, 'journal', 'story:'+S.story.done, 'story:chapter:'+S.story.done);
   if (cc.reward.title) S.story.title = cc.reward.title;
   const titleMsg = cc.reward.title ? ` You are honoured as <b>“${cc.reward.title}”</b>.` : "";
   log(`📜 The Founder's Trail: <b>${cc.title}</b> — +${fmt(cc.reward.coins)} coins.${titleMsg}`, "rare");
@@ -3612,8 +3608,7 @@ function checkJournal(){
   for (const j of VALLEY_JOURNAL){
     if (!S.firsts[j.id] && j.cond()){
       S.firsts[j.id] = true;
-      S.coins += j.reward;
-      S.counters.coinsEarned = (S.counters.coinsEarned||0) + j.reward;
+      credit(j.reward, 'journal', j.id, 'firsts:'+j.id);
       toast(`📔 Journal: ${j.ic} ${j.title}! +${fmt(j.reward)} coins`);
       log(`📔 <b>Valley Journal</b> — ${j.title} ✓ (+${fmt(j.reward)} coins)`, "good");
       changed = true;
@@ -3761,7 +3756,7 @@ function checkSchoolTier(){
 function buyLemonade(){
   if (!lemonadeOpen()){ toast("🍋 The stand's shut — it opens for 4 hours after school."); return; }
   if (S.coins < LEMONADE.price){ toast("Not enough coins."); return; }
-  S.coins -= LEMONADE.price;
+  debit(LEMONADE.price, 'purchase', 'lemonade');
   if (!S.school) S.school = { raised:0, notifiedTier:0 };
   S.school.raised += LEMONADE.price;
   addItem("lemonade", 1); S.prod.lemonade = (S.prod.lemonade||0) + 1;
@@ -3811,7 +3806,9 @@ function doPrestige(){
   S.legacy = (S.legacy||0) + 1;
   // reset the economic grind…
   for (const k in S.skills) S.skills[k] = { xp:0 };
-  S.coins = 200; S.items = {}; S.prod = {}; S.action = null;
+  // Prestige wipe: reset the ledger and re-open the balance at 200 as one adjustment.
+  S.ledger = { seen:{}, entries:[] }; S.coins = 0; credit(200, 'adjust', 'prestige_reset');
+  S.items = {}; S.prod = {}; S.action = null;
   S.upgrades = {}; S.automatons = {}; S.grid = { tier:0 };
   S.perks = {}; S.degrees = []; S.studying = null;
   S.contracts = []; S.contractRep = {}; S.exchange = { positions:[] };
@@ -3837,7 +3834,7 @@ function merchantWare(){ return MERCHANT_WARES[Math.abs(_eventDay()) % MERCHANT_
 function buyMerchantWare(){
   const id = merchantWare(), price = Math.round(ITEMS[id].v * 1.3);
   if (S.coins < price){ toast("Not enough coins."); return; }
-  S.coins -= price; addItem(id,1); S.prod[id] = (S.prod[id]||0)+1;
+  debit(price, 'purchase', 'seed_shop:'+id); addItem(id,1); S.prod[id] = (S.prod[id]||0)+1;
   toast(`🚚 Bought a ${ITEMS[id].n} from the pedlar.`); updateHud(); save();
   if (document.getElementById("merchant-modal")) renderMerchant();
 }
@@ -3846,11 +3843,11 @@ function buyMysteryCrate(){
   if (S.counters.crateDay !== day){ S.counters.crateDay = day; S.counters.cratesToday = 0; }
   if ((S.counters.cratesToday||0) >= 3){ toast("The pedlar's out of crates for today."); return; }
   if (S.coins < 50){ toast("A mystery crate costs 50 coins."); return; }
-  S.coins -= 50; S.counters.cratesToday = (S.counters.cratesToday||0)+1;
+  debit(50, 'purchase', 'mystery_crate'); S.counters.cratesToday = (S.counters.cratesToday||0)+1;
   const r = Math.random();
   if (r < 0.06){ addItem("diamond",1); S.prod.diamond=(S.prod.diamond||0)+1; toast("💠 Jackpot — a Diamond in the crate!"); log("🎁 <b>Pedlar's crate jackpot</b> — a Diamond!","rare"); }
   else if (r < 0.5){ const it = MERCHANT_WARES[Math.floor(Math.random()*MERCHANT_WARES.length)]; addItem(it,1); S.prod[it]=(S.prod[it]||0)+1; toast(`🎁 The crate held a ${ITEMS[it].n}!`); }
-  else { const c = 15 + Math.floor(Math.random()*70); S.coins += c; S.counters.coinsEarned=(S.counters.coinsEarned||0)+c; toast(`🎁 The crate held ${fmt(c)} coins.`); }
+  else { const c = 15 + Math.floor(Math.random()*70); credit(c, 'winnings', 'mystery_crate'); toast(`🎁 The crate held ${fmt(c)} coins.`); }
   updateHud(); save();
   if (document.getElementById("merchant-modal")) renderMerchant();
 }
@@ -3882,10 +3879,10 @@ function openMerchant(){ closeMerchant(); renderMerchant(); }
 // --- Village Fair: a tombola ---
 function playTombola(){
   if (S.coins < 10){ toast("A tombola ticket is 10 coins."); return; }
-  S.coins -= 10;
+  debit(10, 'wager', 'tombola');
   const r = Math.random();
   if (r < 0.45){ toast("🎟️ Ah — better luck next time!"); }
-  else if (r < 0.9){ const c = 6 + Math.floor(Math.random()*22); S.coins += c; S.counters.coinsEarned=(S.counters.coinsEarned||0)+c; toast(`🎟️ You won ${fmt(c)} coins!`); }
+  else if (r < 0.9){ const c = 6 + Math.floor(Math.random()*22); credit(c, 'winnings', 'raffle'); toast(`🎟️ You won ${fmt(c)} coins!`); }
   else { const prizes=["gift_basket","honey_cake","carved_bowl","berry_jam","mulled_tea"]; const it=prizes[Math.floor(Math.random()*prizes.length)]; addItem(it,1); S.prod[it]=(S.prod[it]||0)+1; toast(`🎟️ You won a ${ITEMS[it].n}!`); }
   updateHud(); save();
   if (document.getElementById("fair-modal")) renderFair();
@@ -3972,7 +3969,7 @@ function serveMeal(id){
   if ((S.items[id]||0) < 1){ toast("You don't have that meal."); return; }
   S.items[id] -= 1;
   const val = ITEMS[id].v;
-  S.coins += val; S.counters.coinsEarned = (S.counters.coinsEarned||0) + val;
+  credit(val, 'sale', 'cafe:'+id);
   toast(`${r.ic} Served ${r.name} to the café — +${fmt(val)} coins.`);
   log(`${r.ic} Served <b>${r.name}</b> for ${fmt(val)}c.`, "good");
   renderMain(); updateHud(); save();
@@ -5562,8 +5559,8 @@ function drawVillage(t){
   ctx.save();
   ctx.translate(-Math.round(CAM.x), -Math.round(CAM.y));
   _windX = Math.sin(t*0.5)*1.2 + Math.sin(t*0.17)*0.7;   // slow ambient wind
-  // coin sparkle when your balance rises (delta-watched so every earn source is
-  // covered without touching the 40+ `S.coins +=` sites). Presentation only.
+  // coin sparkle when your balance rises (delta-watched off the single wallet
+  // balance, so every credit source is covered in one place). Presentation only.
   if (_lastCoinsSeen >= 0 && S.coins > _lastCoinsSeen)
     coinBurstAt(VP.x, VP.y, Math.min(6, 2 + Math.floor(Math.log2((S.coins - _lastCoinsSeen) + 1))));
   _lastCoinsSeen = S.coins;
@@ -8170,7 +8167,7 @@ function payJusticeDebt(incId, which){
   const owed = which === 'fine' ? (inc.finePaid?0:inc.fine) : (inc.compPaid?0:inc.compensation);
   if (owed <= 0){ toast('Already paid.'); return; }
   if (S.coins < owed){ toast(`Need ${fmt(owed)} coins — the balance stays outstanding until you can pay.`); return; }
-  S.coins -= owed;
+  debit(owed, 'fine', 'justice:'+which);
   if (which === 'fine') inc.finePaid = true; else inc.compPaid = true;
   inc.rehabDays = Math.min(6, (inc.rehabDays||0) + 1);   // paying up aids rehabilitation (doesn't erase the record)
   toast(`⚖️ Paid ${which === 'fine' ? 'fine' : 'compensation'}: ${fmt(owed)}c.`);
@@ -8364,7 +8361,7 @@ function courtStart(caseId){
   const rep = repById(c.rep) || REPRESENTATION.self;
   if (!c.repPaid && rep.cost > 0){
     if (S.coins < rep.cost){ toast(`${rep.name} costs ${fmt(rep.cost)}c — choose a cheaper option (the free duty solicitor is always available).`); return; }
-    S.coins -= rep.cost; c.repCost = rep.cost; updateHud();
+    debit(rep.cost, 'fee', 'contract_rep'); c.repCost = rep.cost; updateHud();
     log(`⚖️ Engaged ${rep.name} for ${fmt(rep.cost)} coins.`, "");
   }
   c.repPaid = true; c.status = 'in_progress'; c.phase = 'charges';
@@ -8445,7 +8442,7 @@ function payCourtOrder(caseId, which){
   const owed = which === 'fine' ? (c.finePaid ? 0 : c.fine) : (c.compPaid ? 0 : c.compensation);
   if (owed <= 0){ toast('Already paid.'); return; }
   if (S.coins < owed){ toast(`Need ${fmt(owed)} coins — the court order stays outstanding until you can pay.`); return; }
-  S.coins -= owed; if (which === 'fine') c.finePaid = true; else c.compPaid = true;
+  debit(owed, 'fine', 'contract_penalty'); if (which === 'fine') c.finePaid = true; else c.compPaid = true;
   toast(`⚖️ Paid court ${which}: ${fmt(owed)}c.`); renderCourtModal(); renderLegalModal(); updateHud(); save();
 }
 // ---- Court hearing modal (phased, keyboard + mouse, subtitled) ----
@@ -8544,7 +8541,7 @@ document.addEventListener('click', (e:any) => {
 function _arrestPlayer(){
   if (S.caught?.active) return;   // idempotency: never double-arrest / double-record
   const _fine = Math.floor(S.coins * 0.20);
-  S.coins = Math.max(0, S.coins - _fine);
+  debit(_fine, 'fine', 'arrest');
   // classify the offence for the cellmate's crime-specific chat + the crime ledger
   const _drunk = !!(S.drunkUntil && Date.now() < S.drunkUntil);
   const _off = S.stolen ? (S.trespass?.homeId ? "burglary" : "theft") : (_drunk ? "drunk_disorderly" : "trespassing");
@@ -9110,7 +9107,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false,
+    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false,
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -9175,6 +9172,58 @@ function freshState(){
 }
 let S = freshState();
 
+// ============================================================================
+// WALLET — the one authoritative coin transaction service (see src/data/wallet.ts).
+// EVERY currency change goes through credit()/debit(); S.coins is the single
+// balance and S.ledger records structured, idempotent transactions. Reward
+// sources pass a STABLE key so a reload, double-click or repeated event dispatch
+// can never grant twice; one-off spends pass no key (they may legitimately repeat).
+// ============================================================================
+function _ledger(){
+  if (!S.ledger || typeof S.ledger !== 'object') S.ledger = { seen:{}, entries:[] };
+  if (!S.ledger.seen || typeof S.ledger.seen !== 'object') S.ledger.seen = {};
+  if (!Array.isArray(S.ledger.entries)) S.ledger.entries = [];
+  return S.ledger;
+}
+const _walletSubs = [];
+function onWallet(fn){ if (typeof fn === 'function') _walletSubs.push(fn); }
+// Which income sources count toward the lifetime "coins earned" stat. Loans,
+// refunds, and fees move the balance but are NOT earnings (matches prior intent).
+const _EARNED_SOURCES = new Set(['quest','contract','journal','achievement','passive','tutorial','sale','winnings']);
+// Apply a signed transaction; returns the wallet.ts result ({applied, duplicate, balance, entry}).
+function walletApply(amount, sourceType, sourceId, key, opts){
+  const L = _ledger();
+  const res = applyTxn({ balance: S.coins|0, seen: L.seen, entries: L.entries },
+    { amount, sourceType: sourceType||'uncategorized', sourceId: sourceId||null, key: key||null, allowNegativeBalance: !!(opts && opts.allowNegative) });
+  if (res.applied){
+    S.coins = res.balance;
+    if (res.entry.amount > 0 && _EARNED_SOURCES.has(res.entry.sourceType)) S.counters.coinsEarned = (S.counters.coinsEarned||0) + res.entry.amount;
+    try{ updateHud(); }catch(e){}
+    for (const fn of _walletSubs){ try{ fn(res.entry); }catch(e){} }
+  }
+  return res;
+}
+// Add coins from a reward/income source. Pass a stable `key` to make it idempotent.
+function credit(amount, sourceType, sourceId, key){
+  return walletApply(Math.max(0, Math.round(+amount||0)), sourceType||'uncategorized', sourceId, key);
+}
+// Remove coins for a spend. Balance clamps at 0 undefined keys never dedupe.
+function debit(amount, sourceType, sourceId, key){
+  return walletApply(-Math.max(0, Math.round(+amount||0)), sourceType||'purchase', sourceId, key);
+}
+// True if a keyed reward was already granted (guards event handlers before work).
+function rewardGranted(key){ const L=_ledger(); return !!(key && L.seen[key]); }
+
+// The completion modal subscribes to the SAME single balance as the header, so
+// its "Total coins now" always shows the actual post-transaction total — never a
+// stale snapshot (fixes the header-says-850 / modal-says-715 discrepancy).
+onWallet(() => {
+  try {
+    const e = document.getElementById('tut-sum-total');
+    if (e) e.textContent = fmt(S.coins);
+  } catch (err) {}
+});
+
 function storageOK(){ try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } }
 const HAS_LS = storageOK();
 let _saveFlashUntil = 0, _lastSaveFlash = 0;
@@ -9196,6 +9245,10 @@ function load(){
     const parsed = JSON.parse(raw);
     if (parsed && parsed.v === 1) {
       S = Object.assign(freshState(), parsed);
+      // Wallet migration: legacy saves have no ledger — seed a valid one from the
+      // existing coin balance (empty seen-keys is safe: completed rewards are
+      // already reflected in S.coins and guarded by their own claimed flags).
+      S.ledger = normalizeLedger(parsed.ledger, typeof parsed.coins === 'number' ? parsed.coins : 0);
       if (!parsed.skills || !parsed.skills.trading) S.skills.trading = { xp:0 };
       if (!S.skills.woodcutting) S.skills.woodcutting = { xp:0 };
       if (!S.skills.fishing) S.skills.fishing = { xp:0 };
@@ -9439,7 +9492,7 @@ function placeOrder(supplierId, item, qty){
   const q = supplierQuote(sup, qty, ITEMS[item]?.v || 1);
   if (!q.moqOk){ toast(`${sup.n} needs a minimum order of ${sup.moq}.`); return; }
   if (S.coins < q.total){ toast(`Need ${fmt(q.total)} coins for that order.`); return; }
-  S.coins -= q.total;                                   // pay on order — a real PO commitment
+  debit(q.total, 'purchase', 'procurement:'+q.item);   // pay on order — a real PO commitment
   const now = Date.now();
   S.procurement.orders.push({
     id: now.toString(36) + Math.floor(Math.random()*1e4),
@@ -9463,7 +9516,7 @@ function updateProcurement(now){
     addItem(o.item, out.delivered);
     if (out.shortfall > 0){
       const refund = out.shortfall * o.unit;
-      S.coins += refund;                               // refund what never arrived
+      credit(refund, 'refund', 'procurement:'+o.item);   // refund what never arrived
       S.counters.ordersShort = (S.counters.ordersShort||0) + 1;
       log(`⚠️ ${sup?sup.n:'Supplier'} short-shipped: ${out.delivered}/${o.qty}× ${ITEMS[o.item].n} arrived (refunded ${fmt(refund)}c). Reliability matters.`, "bad");
       toast(`⚠️ Short delivery: ${out.delivered}/${o.qty}× ${ITEMS[o.item].n}`);
@@ -9554,12 +9607,12 @@ function qcResolve(action){
   if (action === "rework" && p.defects > 0){
     const cost = reworkCost(p.defects, v);
     if (S.coins < cost){ toast(`Need ${fmt(cost)} coins to rework.`); return; }
-    S.coins -= cost; st.reworked = (st.reworked||0) + p.defects;
+    debit(cost, 'fee', 'qc_rework'); st.reworked = (st.reworked||0) + p.defects;
     log(`🔧 Reworked ${p.defects}× ${ITEMS[p.item].n} (−${fmt(cost)}c) — batch saved.`, "good");
   } else if (action === "scrap" && p.defects > 0){
     S.items[p.item] = Math.max(0, (S.items[p.item]||0) - p.defects);
     const refund = scrapRefund(p.defects, v);
-    S.coins += refund; st.scrapped = (st.scrapped||0) + p.defects;
+    credit(refund, 'refund', 'qc_scrap'); st.scrapped = (st.scrapped||0) + p.defects;
     log(`♻️ Scrapped ${p.defects}× ${ITEMS[p.item].n} (+${fmt(refund)}c salvage).`, "dim");
   }
   const before = st.rating;
@@ -9574,7 +9627,7 @@ function qcUpgrade(){
   const nx = nextQCTier(st.tier);
   if (!nx){ toast("The bench is fully calibrated."); return; }
   if (S.coins < nx.cost){ toast(`Need ${fmt(nx.cost)} coins to calibrate.`); return; }
-  S.coins -= nx.cost; st.tier++;
+  debit(nx.cost, 'purchase', 'steelworks_tier'); st.tier++;
   log(`🔬 QC bench upgraded to <b>${nx.n}</b> — fewer defects from here on.`, "good");
   achCheck(); renderMain(); updateHud(); save();
 }
@@ -9662,7 +9715,7 @@ function expandWarehouse(){
   const nx = nextWarehouseTier(S.warehouse.tier);
   if (!nx){ toast("Your warehouse is already the Grand Depot — maxed out."); return; }
   if (S.coins < nx.cost){ toast(`Need ${fmt(nx.cost)} coins to expand storage.`); return; }
-  S.coins -= nx.cost; S.warehouse.tier++;
+  debit(nx.cost, 'purchase', 'warehouse_tier'); S.warehouse.tier++;
   log(`🏗️ Storage expanded to <b>${nx.n}</b> — capacity now ${fmt(nx.cap)}.`, "good");
   toast(`🏗️ Warehouse expanded → ${nx.n}`);
   achCheck(); renderMain(); updateHud(); save();
@@ -9815,8 +9868,7 @@ function deliverReq(){
   if (!S.deliveryReq) return;
   if (itemCount(S.deliveryReq.itemId) < S.deliveryReq.qty){ toast("Not enough " + ITEMS[S.deliveryReq.itemId].n + "."); return; }
   S.items[S.deliveryReq.itemId] = (S.items[S.deliveryReq.itemId]||0) - S.deliveryReq.qty;
-  S.coins += S.deliveryReq.reward;
-  S.counters.coinsEarned = (S.counters.coinsEarned||0) + S.deliveryReq.reward;
+  credit(S.deliveryReq.reward, 'contract', 'delivery_request');
   const _xpSkill = ["iron_ore","copper_ore","coal","bauxite"].includes(S.deliveryReq.itemId) ? "mining"
     : ["iron_bar","steel_bar","copper_wire","alu_ingot","tech_alloy"].includes(S.deliveryReq.itemId) ? "steelworks"
     : ["bracket","wiring_loom","gearbox","chassis","pallet_jack","sensor","servo_unit"].includes(S.deliveryReq.itemId) ? "manufacturing"
@@ -9951,7 +10003,7 @@ function buyPosition(commodityId, qty){
   const totalCost = comm.unit * qty;
   if (S.coins < totalCost){ toast("Not enough coins."); return; }
   const driftAtBuy = avgDrift(commodityId) * eventMult(commodityId);
-  S.coins -= totalCost;
+  debit(totalCost, 'purchase', 'bulk_buy');
   S.exchange.positions.push({ id:Date.now().toString(), commodity:commodityId, qty, costPerUnit:comm.unit, driftAtBuy, boughtAt:Date.now() });
   log("📈 Opened position: " + qty + "× " + comm.n + " @ " + fmt(totalCost) + " coins.");
   renderMain(); updateHud(); save();
@@ -9963,8 +10015,7 @@ function sellPosition(posId){
   const val = positionValue(pos);
   const comm = EXCHANGE_COMMODITIES.find(c=>c.id===pos.commodity);
   S.exchange.positions.splice(idx, 1);
-  S.coins += val;
-  S.counters.coinsEarned = (S.counters.coinsEarned||0) + val;
+  credit(val, 'sale', 'exchange:'+pos.commodity);
   const profit = val - pos.qty * pos.costPerUnit;
   log("📈 Closed position: " + (comm?comm.n:pos.commodity) + " → +" + fmt(val) + " coins (" + (profit>=0?"+":"") + fmt(profit) + ")", profit>=0?"good":"");
   grantXp("trading", Math.round(Math.max(1, Math.abs(profit)*0.1)));
@@ -9990,8 +10041,7 @@ function updateBankInterest(now){
   if (S.coins > 100){
     const _int = Math.floor(S.coins * 0.0005);
     if (_int > 0){
-      S.coins += _int;
-      S.counters.coinsEarned = (S.counters.coinsEarned||0) + _int;
+      credit(_int, 'passive', 'bank_interest');
       log("🏦 Interest: +" + fmt(_int) + " coins on your savings.", "good");
       if (S.tab==="bank") renderMain();
     }
@@ -10013,8 +10063,7 @@ function updateRetail(now){
   const _price = _npc ? Math.round(sellPrice(_npc, _it) * 1.15) : Math.round((ITEMS[_it]?.v || 10) * 0.9);
   _sl.qty--;
   if (_sl.qty <= 0) _sl.itemId = null;
-  S.coins += _price;
-  S.counters.coinsEarned = (S.counters.coinsEarned||0) + _price;
+  credit(_price, 'sale', 'retail_slot:'+_it);
   S.retail.dailySold = (S.retail.dailySold||0) + 1;
   S.retail.lastSale = now;
   grantXp("trading", Math.round(_price * 0.08));
@@ -10030,8 +10079,7 @@ function updateRent(now){
     return sum + (p ? p.rent * _period : 0);
   }, 0) * prestigeRentMult());
   if (_total > 0){
-    S.coins += _total;
-    S.counters.coinsEarned = (S.counters.coinsEarned||0) + _total;
+    credit(_total, 'passive', 'property_rent');
     log("🏘️ Rent collected: +" + fmt(_total) + " coins from " + S.properties.length + " propert" + (S.properties.length===1?"y":"ies") + ".", "good");
     if (S.tab==="estateagent") renderMain();
     updateHud();
@@ -10085,8 +10133,7 @@ function updatePrestigeIncome(now){
   const _cpm = prestigeCoinsPm();
   if (_cpm <= 0) return;
   if (now < (S.prestigeIncomeAt||0)) return;
-  S.coins += _cpm;
-  S.counters.coinsEarned = (S.counters.coinsEarned||0) + _cpm;
+  credit(_cpm, 'passive', 'prestige_income');
   S.prestigeIncomeAt = now + 60000;
   save();
 }
@@ -10117,8 +10164,7 @@ function updateVillagerRequests(now: number){
   if (!req){ toast("No active request."); return; }
   if ((S.items[req.itemId]||0) < req.qty){ toast("You don't have enough " + (ITEMS[req.itemId]?.n||req.itemId) + "."); return; }
   S.items[req.itemId] = (S.items[req.itemId]||0) - req.qty;
-  S.coins += req.reward;
-  S.counters.coinsEarned = (S.counters.coinsEarned||0) + req.reward;
+  credit(req.reward, 'contract', 'villager_request');
   S.counters.requestsFulfilled = (S.counters.requestsFulfilled||0) + 1;
   if (!S.friendships) S.friendships = {};
   if (!S.friendships[npcId]) S.friendships[npcId] = { xp:0, lastChat:0 };
@@ -10157,8 +10203,7 @@ function updateVillagerRequests(now: number){
   const ch = DAILY_CHALLENGE_POOL.find(c=>c.id===S.dailyChallenge.id);
   if (!ch) return;
   S.dailyChallenge.claimed = true;
-  S.coins += ch.reward;
-  S.counters.coinsEarned = (S.counters.coinsEarned||0) + ch.reward;
+  credit(ch.reward, 'quest', 'daily_challenge:'+ch.id);
   S.counters.challengesClaimed = (S.counters.challengesClaimed||0) + 1;
   toast(`🎯 Daily Challenge complete! +${fmt(ch.reward)} coins`);
   log(`🎯 <b>Daily Challenge</b> — "${ch.ds}" Complete! +${fmt(ch.reward)} coins`, "good");
@@ -10172,7 +10217,7 @@ function updateVillagerRequests(now: number){
   if (!crop){ toast("Unknown crop."); return; }
   if (skillLvl('farming') < (crop.lvl||1)){ toast(`🌾 Needs Farming level ${crop.lvl}.`); return; }
   if (S.coins < crop.seedCost){ toast("Not enough coins."); return; }
-  S.coins -= crop.seedCost;
+  debit(crop.seedCost, 'purchase', 'crop_seed');
   const now = Date.now();
   const _gBonus = keepsakeGardenBonus();
   const _ms = Math.round(crop.ms * (1 - _gBonus));
@@ -10187,7 +10232,7 @@ function updateVillagerRequests(now: number){
   if (Date.now() >= g.readyAt){ toast("It's ready to harvest!"); return; }
   if (S.coins < WATER_COST){ toast("Not enough coins."); return; }
   const crop = GARDEN_CROPS.find(c=>c.id===g.cropId); if (!crop) return;
-  S.coins -= WATER_COST;
+  debit(WATER_COST, 'purchase', 'water');
   g.watered = true;
   g.readyAt = Math.max(Date.now()+1000, g.readyAt - waterReductionMs(crop));
   toast(`💧 Watered the ${crop.n} — it'll be ready sooner.`);
@@ -10199,7 +10244,7 @@ function updateVillagerRequests(now: number){
   if (g.fertilised){ toast("Already fertilised."); return; }
   if (S.coins < FERTILISE_COST){ toast("Not enough coins."); return; }
   const crop = GARDEN_CROPS.find(c=>c.id===g.cropId); if (!crop) return;
-  S.coins -= FERTILISE_COST;
+  debit(FERTILISE_COST, 'purchase', 'fertiliser');
   g.fertilised = true;
   toast(`🌱 Fertilised the ${crop.n} — a bigger harvest awaits.`);
   renderMain(); updateHud(); save();
@@ -10705,7 +10750,7 @@ function applyOffline(){
     }
     S.interestAt = cursor;
     if (gained > 0){
-      S.coins += gained; S.counters.coinsEarned = (S.counters.coinsEarned||0) + gained;
+      credit(gained, 'sale', 'retail');
       passiveCoins += gained; passiveLines.push(`🏦 Bank interest: +${fmt(gained)}`);
     }
   }
@@ -10724,7 +10769,7 @@ function applyOffline(){
       const npc = NPCS.find(n => n.stock && n.stock.includes(sl.itemId));
       const price = npc ? Math.round(sellPrice(npc, sl.itemId) * 1.15) : Math.round((ITEMS[sl.itemId]?.v||10) * 0.9);
       sl.qty--; if (sl.qty <= 0){ sl.itemId = null; sl.qty = 0; }
-      S.coins += price; S.counters.coinsEarned = (S.counters.coinsEarned||0) + price;
+      credit(price, 'sale', 'retail');
       S.retail.dailySold = (S.retail.dailySold||0) + 1;
       retailEarned += price; unitsSold++;
     }
@@ -10740,7 +10785,7 @@ function applyOffline(){
     while (cursor <= now){ rentEarned += tickRent; cursor += periodMs; }
     S.rentAt = cursor;
     if (rentEarned > 0){
-      S.coins += rentEarned; S.counters.coinsEarned = (S.counters.coinsEarned||0) + rentEarned;
+      credit(rentEarned, 'passive', 'rent');
       passiveCoins += rentEarned; passiveLines.push(`🏘️ Rental income: +${fmt(rentEarned)}`);
     }
   }
@@ -10826,8 +10871,7 @@ function deliverContract(i){
   if (!c || itemCount(c.item) < c.qty) return;
   S.items[c.item] -= c.qty;
   const payout = Math.round(c.coins * payMult() * qcContractMult());
-  S.coins += payout;
-  S.counters.coinsEarned = (S.counters.coinsEarned||0) + payout;
+  credit(payout, 'contract', c.tutorial ? 'tutorial_order' : ('contract:'+(c.client||c.item)), c.tutorial ? 'contract:tutorial_order' : null);
   grantXp("logistics", c.xp);
   S.counters.contracts++;
   if (c.tutorial){ S.tutContractDone = true; if (!S.contractRep) S.contractRep = {}; S.contractRep[c.client] = 2; }   // completes the tutorial delivery stage + a starter reputation for the summary
@@ -10849,7 +10893,7 @@ function rerollContract(i){
   if (S.contracts[i]?.tutorial){ toast("The Tutorial Order can't be re-tendered — just deliver it."); return; }
   const cost = 25;
   if (S.coins < cost) { toast("Need 25 coins to re-tender."); return; }
-  S.coins -= cost;
+  debit(cost, 'purchase', 'misc');
   S.contracts[i] = genContract();
   log("📋 Contract re-tendered (−25 coins).");
   renderMain(); updateHud(); save();
@@ -11350,7 +11394,7 @@ function checkCommissions(){
   if(C.boardDay!==today){ C.boardDay=today; C.board=rollCommissionBoard(dailySeed(today), C.rep, 3).filter(id=>!C.active.some(a=>a.id===id)); }
   for(let i=C.active.length-1;i>=0;i--){ const a=C.active[i];
     if(((S.prod[a.item]||0)-a.baseline) >= a.qty){
-      S.coins+=a.coins; S.counters.coinsEarned=(S.counters.coinsEarned||0)+a.coins;
+      credit(a.coins, 'contract', 'commission');
       grantXp('crafting', a.xp); C.rep=(C.rep||0)+a.rep; C.done=(C.done||0)+1;
       C.active.splice(i,1);
       try{ SFX.fanfare&&SFX.fanfare(); }catch(e){}
@@ -11522,7 +11566,7 @@ function dispatchVoyage(id){
   if (!routeUnlocked(v.minTier, _tier)){ toast(`🚢 Needs a ${boatTier(v.minTier).n} or better for that route.`); return; }
   if (S.voyages.length >= fleetMaxBoats(_tier)){ toast("All your boats are already at sea."); return; }
   if (S.coins < v.cost){ toast("Not enough coins to charter."); return; }
-  S.coins -= v.cost;
+  debit(v.cost, 'purchase', 'voyage_launch');
   const now = Date.now();
   const _dur = Math.round(voyageDurationMs(v) * fleetSpeedMult(_tier));
   S.voyages.push({ id, startedAt: now, returnsAt: now + _dur });
@@ -11542,7 +11586,7 @@ function checkVoyages(silent){
       if (!v) continue;
       const _cargo = fleetCargoMult(S.fleet?.tier || 0);   // Shipyard: bigger holds pay more
       const _coins = Math.round(v.coins * _cargo);
-      S.coins += _coins; S.counters.coinsEarned = (S.counters.coinsEarned||0) + _coins;
+      credit(_coins, 'winnings', 'voyage');
       S.counters.voyages = (S.counters.voyages||0) + 1;
       const parts = [`${fmt(_coins)}c`];
       for (const [id,q] of Object.entries(v.items)){ const _q = Math.max(q, Math.round(q * _cargo)); addItem(id,_q); S.prod[id]=(S.prod[id]||0)+_q; parts.push(`${_q}× ${ITEMS[id]?.n||id}`); }
@@ -11629,7 +11673,7 @@ function upgradeFleet(){
   const nx = nextBoatTier(_tier);
   if (!nx){ toast("Your fleet is already the finest in Port Salvo."); return; }
   if (S.coins < nx.cost){ toast("Not enough coins for that boat."); return; }
-  S.coins -= nx.cost;
+  debit(nx.cost, 'purchase', 'upgrade_tier');
   S.fleet = { tier: _tier + 1 };
   try{ SFX.fanfare(); }catch(e){}
   toast(`${nx.ic} New boat! You've upgraded to the ${nx.n}.`);
@@ -11824,7 +11868,7 @@ function _decorStore(idx: number){
 function _decorSell(idx: number){
   const p=(S.placedFurniture||[])[idx]; if(!p) return;
   const price=furnitureDef(p.id)?.price||0, refund=Math.round(price*0.5);
-  S.coins+=refund; S.placedFurniture.splice(idx,1);
+  credit(refund, 'refund', 'furniture:'+p.id); S.placedFurniture.splice(idx,1);
   toast(`💰 Sold for ${fmt(refund)} coins.`);
   _decor.itemId=null; _decor.editIdx=-1; renderDecorModal(); updateHud(); save();
 }
@@ -11977,7 +12021,7 @@ function _cottageVisitDirty(){
 function _cleanGoal(id:string){
   const c=_cottage(); if(!c.goals) c.goals={}; if(c.goals[id]) return;   // one-off (no farming)
   c.goals[id]=true; const g=cleanGoalById(id); if(!g) return;
-  S.coins+=g.reward; S.counters.coinsEarned=(S.counters.coinsEarned||0)+g.reward;
+  credit(g.reward, 'winnings', 'arcade');
   toast(`🏅 ${g.label}! +${fmt(g.reward)} coins.`); log(`🏅 Household goal: <b>${g.label}</b> — +${fmt(g.reward)} coins.`,"good");
   updateHud(); save();
 }
@@ -12257,7 +12301,7 @@ function openCueShop(){
   document.body.appendChild(el);
   el.addEventListener("click",e=>{ if(e.target===el) el.remove(); });
   el.querySelectorAll("[data-cue-buy]").forEach(b=> b.onclick=()=>{ const id=b.getAttribute("data-cue-buy"); const c=cueById(id);
-    if(!canBuyCue(S.coins,S.poolCues,id)) return; S.coins-=c.cost; S.poolCues.push(id); S.poolCue=id;
+    if(!canBuyCue(S.coins,S.poolCues,id)) return; debit(c.cost, 'purchase', 'pool_cue:'+id); S.poolCues.push(id); S.poolCue=id;
     try{ SFX.fanfare&&SFX.fanfare(); }catch(e){} toast(`${c.ic} ${c.n} — bought & equipped!`); updateHud(); save(); el.remove(); openCueShop(); });
   el.querySelectorAll("[data-cue-equip]").forEach(b=> b.onclick=()=>{ S.poolCue=b.getAttribute("data-cue-equip"); save(); toast(`${cueById(S.poolCue).ic} ${cueById(S.poolCue).n} equipped.`); el.remove(); openCueShop();
     const cb=document.getElementById("pool-cues"); if(cb) cb.innerHTML=`${cueById(S.poolCue).ic} Cue Rack`; });
@@ -12349,7 +12393,7 @@ function _poolResolve(){
 function _poolEnd(result, msg){
   _pool.over=true; _pool.phase='over'; _poolSetMsg(msg);
   if(result==='win'){
-    const reward=30; S.coins+=reward; S.counters.coinsEarned=(S.counters.coinsEarned||0)+reward;
+    const reward=30; credit(reward, 'winnings', 'pool');
     grantXp('trading', 40);
     try{ SFX.fanfare(); }catch(e){}
     toast(`🎱 You beat Rex at pool! +${reward}c`);
@@ -13031,7 +13075,7 @@ function _dartsEnd(result){
   if(result==='win'){
     if(!S.darts) S.darts={ wins:0, beatRinger:false };
     S.darts.wins=(S.darts.wins||0)+1; if(_darts.diff.id==='ringer') S.darts.beatRinger=true;
-    S.coins+=_darts.diff.reward; S.counters.coinsEarned=(S.counters.coinsEarned||0)+_darts.diff.reward;
+    credit(_darts.diff.reward, 'winnings', 'darts');
     grantXp('trading', 25);
     try{ SFX.fanfare&&SFX.fanfare(); }catch(e){}
     toast(`🎯 Game shot! You beat ${_darts.diff.n} at darts. +${fmt(_darts.diff.reward)}c`);
@@ -13126,7 +13170,7 @@ function openFairground(){
     if(_fair.phase==='result'){ _fair.phase='ready'; _fair.puck=0; _fair.result=null; _fair.bell=false; _fairSetMsg('Tap when the gauge is high — ring the bell!'); return; }
     if(_fair.phase!=='ready') return;
     if(S.coins<STRIKER_FEE){ _fairSetMsg('Not enough coins for a go ('+STRIKER_FEE+'c).'); return; }
-    S.coins-=STRIKER_FEE; updateHud();
+    debit(STRIKER_FEE, 'fee', 'high_striker'); updateHud();
     _fair.phase='rising'; _fair.lockedPower=_fair.power; _fair.puck=0;
     _festivalTurnout();
     try{ SFX.snap&&SFX.snap(); }catch(e){}
@@ -13149,7 +13193,7 @@ function _fairUpdate(){
 function _fairResolve(){
   const rw=strikerReward(Math.round(_fair.lockedPower));
   _fair.phase='result'; _fair.result=rw; _fair.bell=rw.bell;
-  S.coins+=rw.coins; S.counters.coinsEarned=(S.counters.coinsEarned||0)+rw.coins;
+  credit(rw.coins, 'winnings', 'high_striker');
   let extra='';
   if(rw.bell){ const it=_fair.raffleItems[Math.floor(Math.random()*_fair.raffleItems.length)]; addItem(it,1); S.prod[it]=(S.prod[it]||0)+1; extra=` + ${ITEMS[it]?.ic||''} ${ITEMS[it]?.n||it}`;
     if(!S.festival) S.festival={ raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
@@ -13931,7 +13975,7 @@ function bindMain(){
   document.querySelectorAll("[data-buy]").forEach(b=> b.onclick = ()=>{
     const u = UPGRADES.find(x=>x.id===b.dataset.buy);
     if (S.coins < u.cost) return;
-    S.coins -= u.cost; S.upgrades[u.id] = true;
+    debit(u.cost, 'purchase', 'upgrade:'+u.id); S.upgrades[u.id] = true;
     toast(`${u.ic} ${u.n} PURCHASED`); log(`🛒 CapEx approved: <b>${u.n}</b>`, "good");
     achCheck();
     renderMain(); updateHud(); save();
@@ -13940,14 +13984,14 @@ function bindMain(){
     const _ht = S.homeTier||0;
     const _next = HOME_TIERS[_ht+1];
     if (!_next || S.coins < _next.cost){ toast("Not enough coins."); return; }
-    S.coins -= _next.cost; S.homeTier = _ht + 1;
+    debit(_next.cost, 'purchase', 'home_tier'); S.homeTier = _ht + 1;
     toast("🏡 Home upgraded to " + _next.n + "!");
     log("🏡 Home upgrade: <b>" + _next.n + "</b>", "good");
     renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-coffee]").forEach(b=> b.onclick = ()=>{
     if (S.coins < 15){ toast("Not enough coins."); return; }
-    S.coins -= 15;
+    debit(15, 'purchase', 'coffee');
     const _dur = 5*60*1000;
     S.caffBuff = Math.max(S.caffBuff||0, Date.now()) + _dur;
     toast("☕ Coffee! All actions 20% faster for 5 minutes.");
@@ -13998,7 +14042,7 @@ function bindMain(){
       const qty = S.items[id]||0;
       if (qty > 0 && ITEMS[id]){
         const val = Math.round(ITEMS[id].v * 1.5 * _festMult * qty);
-        S.coins += val; S.counters.coinsEarned = (S.counters.coinsEarned||0) + val;
+        credit(val, 'sale', 'seasonal_market:'+id);
         S.items[id] = 0; _total += val;
       }
     });
@@ -14016,13 +14060,13 @@ function bindMain(){
     if (!S.festival) S.festival = { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[], notified:"" };
     if (S.festival.raffleDate !== _today){ S.festival.raffleDate = _today; S.festival.raffleCount = 0; }
     if (S.festival.raffleCount >= 5){ toast("🎟️ No more tickets today — come back tomorrow!"); return; }
-    S.coins -= 25; S.festival.raffleCount++;
+    debit(25, 'wager', 'festival_raffle'); S.festival.raffleCount++;
     // prize pool: seasonal items, 50c, or 20 skill XP
     const _skills = Object.keys(S.skills||{}).filter(sk=>sk!=='logistics'&&sk!=='trading');
     const _pool = [..._fst.raffleItems, ..._fst.raffleItems, '50coins', `xp_${_skills[Math.floor(Math.random()*_skills.length)]}`];
     const _prize = _pool[Math.floor(Math.random()*_pool.length)];
     if (_prize === '50coins'){
-      S.coins += 50; S.counters.coinsEarned = (S.counters.coinsEarned||0)+50;
+      credit(50, 'winnings', 'festival_raffle');
       toast(`🎟️ Raffle: Lucky! You won 50 coins!`); log(`🎟️ Raffle prize: <b>50 coins</b>`, "good");
     } else if (_prize.startsWith('xp_')){
       const _sk = _prize.slice(3); grantXp(_sk, 20);
@@ -14048,7 +14092,7 @@ function bindMain(){
     if (!_ok){ toast("You don't have enough feast items yet."); return; }
     _fst.raffleItems.forEach(id=>{ S.items[id] = Math.max(0,(S.items[id]||0)-_qty); });
     S.festival.feastId = _feastKey;
-    S.coins += 400; S.counters.coinsEarned = (S.counters.coinsEarned||0)+400;
+    credit(400, 'winnings', 'festival_feast');
     grantXp("crafting", 80);
     toast(`🍽️ Grand Feast provided! +400 coins and +80 crafting XP!`);
     log(`🍽️ <b>Grand Feast</b> — the village is grateful! +400 coins, +80 crafting XP`, "good");
@@ -14059,7 +14103,7 @@ function bindMain(){
     const _id = (b as HTMLElement).dataset.buyFurn!;
     const _fd = FURNITURE_DEFS[_id]; if (!_fd){ toast("Unknown item."); return; }
     if (S.coins < _fd.price){ toast("Not enough coins."); return; }
-    S.coins -= _fd.price; addFurniture(_id, 1);
+    debit(_fd.price, 'purchase', 'furniture:'+_id); addFurniture(_id, 1);
     toast(`🛋️ Bought ${_fd.n}! Place it in Your Cottage.`);
     log(`🛋️ <b>${_fd.n}</b> purchased from Nell's Home Store.`, "good");
     achCheck(); renderMain(); updateHud(); save();
@@ -14111,7 +14155,7 @@ function bindMain(){
     if (S.coins < 8){ toast("Not enough coins."); return; }
     const _today = getTodayStr();
     if ((S.pintDate||"") !== _today){ S.pintsTonight = 0; S.pintDate = _today; }
-    S.coins -= 8;
+    debit(8, 'purchase', 'pint');
     S.pintsTonight = (S.pintsTonight||0) + 1;
     S.pintBuff = Math.max(S.pintBuff||0, Date.now()) + 3*60*1000;
     if (S.pintsTonight === 3){
@@ -14166,7 +14210,7 @@ function bindMain(){
   document.querySelectorAll("[data-deal-cell]").forEach(b=> (b as HTMLElement).onclick = ()=>{
     const _dealCost = Math.max(20, Math.round(S.coins * 0.15));
     if (S.coins < _dealCost){ toast("Not enough coins."); return; }
-    S.coins -= _dealCost;
+    debit(_dealCost, 'purchase', 'market_deal');
     const _halfRemaining = Math.round((S.caught.cellUntil - Date.now()) / 2);
     S.caught.cellUntil = Date.now() + _halfRemaining;
     toast(`🤝 Deal struck! ${fmt(_dealCost)} coins to Officer Plonk. Sentence halved.`);
@@ -14189,7 +14233,7 @@ function bindMain(){
   });
   document.querySelectorAll("[data-surrender]").forEach(b=> (b as HTMLElement).onclick = ()=>{
     const _fine = Math.floor(S.coins * 0.10);
-    S.coins = Math.max(0, S.coins - _fine);
+    debit(_fine, 'fine', 'surrender');
     const _dur = CELL_MS_BASE;   // handing yourself in: the shorter, base sentence
     S.caught = { active: true, cellUntil: Date.now() + _dur, maxTime: _dur, offence: "trespassing", acts: [] };
     S.stolen = false; S.trespass = { active: false, homeId: null }; S.fleeUntil = 0;
@@ -14207,7 +14251,7 @@ function bindMain(){
     const tier = S.grid?.tier || 0; const next = gridNext(tier);
     if (!next || !next.cost) return;
     if (S.coins < next.cost.coins || !Object.entries(next.cost.items).every(([id,q])=>itemCount(id)>=(q as number))){ toast("Not enough parts or coins."); return; }
-    S.coins -= next.cost.coins;
+    debit(next.cost.coins, 'purchase', 'beautification_tier');
     for (const [id,q] of Object.entries(next.cost.items)) S.items[id] -= (q as number);
     if (!S.grid) S.grid = { tier:0 };
     S.grid.tier = next.tier;
@@ -14221,7 +14265,7 @@ function bindMain(){
     const a = automatonById(aid); if (!a) return;
     if (S.automatons?.[sk]){ toast("That skill already has an automaton."); return; }
     if (S.coins < a.cost.coins || !Object.entries(a.cost.items).every(([id,q])=>itemCount(id)>=(q as number))){ toast("Not enough parts or coins."); return; }
-    S.coins -= a.cost.coins;
+    debit(a.cost.coins, 'purchase', 'beautification:'+(a.id||'act'));
     for (const [id,q] of Object.entries(a.cost.items)) S.items[id] -= (q as number);
     if (!S.automatons) S.automatons = {};
     S.automatons[sk] = aid;
@@ -14248,7 +14292,7 @@ function bindMain(){
       if (!_proj) return;
       if ((S.beautification||[]).includes(_id)){ toast("Already funded."); return; }
       if (S.coins < _proj.cost){ toast(`Need ${fmt(_proj.cost)} coins.`); return; }
-      S.coins -= _proj.cost;
+      debit(_proj.cost, 'purchase', 'village_fund:'+(_proj.id||'project'));
       if (!S.beautification) S.beautification = [];
       S.beautification.push(_id);
       const _pv = villagePrestige();
@@ -14261,7 +14305,7 @@ function bindMain(){
   document.querySelectorAll("[data-school-donate]").forEach(b=>{
     b.onclick = ()=>{
       if (S.coins < 100){ toast("Need 100 coins to donate supplies."); return; }
-      S.coins -= 100;
+      debit(100, 'purchase', 'school_donation');
       S.schoolBuff = Date.now() + 15*60*1000;
       toast("📚 Supplies donated! +15% XP on all skills for 15 minutes.");
       renderMain(); updateHud(); save();
@@ -14272,7 +14316,7 @@ function bindMain(){
     b.onclick = ()=>{
       if (S.coins < 10){ toast("Not enough coins."); return; }
       const _dest = (b as HTMLElement).dataset.boatTravel;
-      S.coins -= 10;
+      debit(10, 'purchase', 'boat_travel');
       if (!S.harbour) S.harbour = { boatTrips:0 };
       S.harbour.boatTrips = (S.harbour.boatTrips||0) + 1;
       if (_dest === "pier"){
@@ -14296,8 +14340,7 @@ function bindMain(){
       const _premV = Math.round(ITEMS[_fid].v * 1.3);
       const _total = _qty * _premV;
       S.items[_fid] = 0;
-      S.coins += _total;
-      S.counters.coinsEarned = (S.counters.coinsEarned||0) + _total;
+      credit(_total, 'sale', 'warehouse_premium:'+_fid);
       toast(`🐟 Sold ${_qty}× ${ITEMS[_fid].n} for ${fmt(_total)} coins (30% premium)!`);
       log(`🐟 <b>Warehouse sale:</b> ${_qty}× ${ITEMS[_fid].n} → +${fmt(_total)} coins.`, "good");
       renderMain(); updateHud(); save();
@@ -14311,8 +14354,7 @@ function bindMain(){
       if (!_q || _q.done){ toast("Quest not found."); return; }
       if ((S.items[_q.itemId]||0) < _q.qty){ toast("Not enough " + (ITEMS[_q.itemId]?.n||_q.itemId) + "."); return; }
       S.items[_q.itemId] = Math.max(0, (S.items[_q.itemId]||0) - _q.qty);
-      S.coins += _q.reward;
-      S.counters.coinsEarned = (S.counters.coinsEarned||0) + _q.reward;
+      credit(_q.reward, 'quest', 'notice_board:'+_q.id, 'notice:'+_q.id);
       _q.done = true;
       if (!S.friendships[_q.npcId]) S.friendships[_q.npcId] = { xp:0, lastChat:0 };
       const _wasLvl = friendLvl(_q.npcId);
@@ -14350,7 +14392,7 @@ function bindMain(){
   document.querySelectorAll("[data-daily-claim]").forEach(b=> b.onclick = ()=>{
     if (S.dailyReward.lastDate === new Date().toDateString()){ toast("Already collected today."); return; }
     const _r = Math.min(500, 50 + totalLvl() * 3);
-    S.coins += _r; S.counters.coinsEarned = (S.counters.coinsEarned||0) + _r;
+    credit(_r, 'passive', 'daily_reward');
     S.dailyReward.lastDate = new Date().toDateString();
     toast("📮 Daily parcel collected! +" + fmt(_r) + " coins.");
     log("📮 <b>Daily parcel:</b> +" + fmt(_r) + " coins. Come back tomorrow!", "good");
@@ -14383,7 +14425,7 @@ function bindMain(){
     const _p = PROPERTIES.find(pr=>pr.id===_pid);
     if (!_p || S.properties.includes(_pid)){ return; }
     if (S.coins < _p.cost){ toast("Not enough coins."); return; }
-    S.coins -= _p.cost; S.properties.push(_pid);
+    debit(_p.cost, 'purchase', 'property:'+_pid); S.properties.push(_pid);
     toast("🏘️ " + _p.n + " purchased! Earning +" + _p.rent + " coins/min.");
     log("🏘️ Property acquired: <b>" + _p.n + "</b> — +" + _p.rent + " coins/min passive income.", "good");
     renderMain(); updateHud(); save();
@@ -14398,7 +14440,7 @@ function bindMain(){
     const _elig = jobEligibility('money');
     if (!_elig.eligible){ toast(`🏦 Loan refused. ${_elig.reason}`); log(`🏦 <b>Loan refused:</b> ${_elig.reason}`, "bad"); return; }
     const amt=parseInt(b.dataset.loanborrow);
-    S.coins+=amt;
+    credit(amt, 'adjust', 'loan_borrow');
     S.loans.push({amount:amt, borrowed:Date.now(), interestAccrued:0});
     S.counters.loansTotal = (S.counters.loansTotal||0) + 1;
     toast(`🏦 Borrowed ${fmt(amt)} coins — 5% daily interest.`);
@@ -14409,14 +14451,14 @@ function bindMain(){
     if (!ln) return;
     const total=ln.amount+Math.round(ln.interestAccrued);
     if (S.coins<total){ toast("Not enough coins to repay."); return; }
-    S.coins-=total; S.loans.splice(i,1);
+    debit(total, 'adjust', 'loan_repay'); S.loans.splice(i,1);
     toast(`✅ Loan repaid — ${fmt(total)} coins.`);
     renderMain(); updateHud(); save();
   });
   // bike shop handlers
   document.querySelectorAll("[data-bikerent]").forEach(b=> b.onclick = ()=>{
     if (S.coins < 150){ toast("Need 150 coins."); return; }
-    S.coins -= 150; S.bike.owned = true;
+    debit(150, 'purchase', 'bike'); S.bike.owned = true;
     toast("🚲 Bike purchased! Equip it from the Cycle Shop.");
     log("🚲 <b>Bike purchased</b> — 25% faster on roads.", "good");
     renderMain(); updateHud(); save();
@@ -14429,7 +14471,7 @@ function bindMain(){
   document.querySelectorAll("[data-bikeservice]").forEach(b=> b.onclick = ()=>{
     const cost = serviceCost();
     if (S.coins < cost){ toast("Not enough coins."); return; }
-    S.coins -= cost; S.bike.condition = 100;
+    debit(cost, 'purchase', 'bike_repair'); S.bike.condition = 100;
     toast("🔧 Bike serviced — back to 100%!");
     log("🔧 <b>Bike serviced</b> — " + fmt(cost) + " coins.", "good");
     renderMain(); updateHud(); save();
@@ -14438,7 +14480,7 @@ function bindMain(){
     const newCol = b.dataset.bikecolor;
     if ((S.bike.color||'#e84040') === newCol) return;
     if (S.coins < 30){ toast("Need 30 coins for a respray."); return; }
-    S.coins -= 30; S.bike.color = newCol;
+    debit(30, 'purchase', 'bike_color'); S.bike.color = newCol;
     toast("🎨 Bike resprayed!");
     renderMain(); updateHud(); save();
   });
@@ -14447,14 +14489,14 @@ function bindMain(){
     const costs = { sport:200, offroad:300, mountain:500 };
     const cost = costs[wid] || 0;
     if (S.coins < cost){ toast("Not enough coins."); return; }
-    S.coins -= cost; S.bike.wheels = wid;
+    debit(cost, 'purchase', 'bike_wheels:'+wid); S.bike.wheels = wid;
     toast("⬆️ " + BIKE_WHEEL_N[wid] + " installed!");
     log("⬆️ Bike upgraded: <b>" + BIKE_WHEEL_N[wid] + "</b>", "good");
     renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-bikelight]").forEach(b=> b.onclick = ()=>{
     if (S.coins < 150){ toast("Need 150 coins."); return; }
-    S.coins -= 150; S.bike.hasLight = true;
+    debit(150, 'purchase', 'bike_light'); S.bike.hasLight = true;
     toast("💡 Bike light fitted — lights up the night!");
     log("💡 <b>Bike light</b> installed.", "good");
     renderMain(); updateHud(); save();
@@ -14466,7 +14508,7 @@ function bindMain(){
     if (S.degrees.includes(_cid)){ toast("Already completed."); return; }
     if (S.studying){ toast("Already studying: " + (COURSES.find(c=>c.id===S.studying.courseId)?.n||"?") + "."); return; }
     if (S.coins < _c.cost){ toast("Not enough coins."); return; }
-    S.coins -= _c.cost;
+    debit(_c.cost, 'purchase', 'bike_shop');
     S.studying = { courseId:_cid, endsAt:Date.now() + _c.ms };
     toast(_c.ic + " Enrolled in " + _c.n + ". Study time: " + Math.round(_c.ms/60000) + " min.");
     log(_c.ic + " Enrolled in <b>" + _c.n + "</b>.", "good");
@@ -15113,7 +15155,56 @@ if (import.meta.env.DEV) {
         unlockedTrackIds: unlockedTracks(q).map(t => t.id),
         lockedExclusiveIds: FROSTY_TRACKS.filter(t => !isTrackUnlocked(t.id, q)).map(t => t.id),
         allExclusiveIds: FROSTY_TRACKS.map(t => t.id),
+        // First Hello must come from an explicit interaction, never a collision.
+        npcMet: !!S.npcMet,
+        firstHelloReward: rewardGranted('firsts:first_npc'),
+        ledgerSeenKeys: Object.keys(_ledger().seen).length,
       };
+    },
+    // First Hello probes ----------------------------------------------------
+    // Walk the player around the village WITHOUT tapping anyone; collisions alone
+    // must NOT record a meeting. Returns npcMet afterwards (expected false).
+    walkVillageNoTap(){
+      S.tab = 'village';
+      const before = !!S.npcMet;
+      // nudge the player across the map (movement only — never an interaction)
+      for (let i = 0; i < 40; i++){ VP.x += (i % 2 ? 12 : -12); VP.y += 6; }
+      return { before, npcMet: !!S.npcMet };
+    },
+    // The explicit interaction path (what tapping a villager triggers).
+    meetVillagerByTap(){
+      if (typeof VILLAGER_STATE !== 'undefined' && VILLAGER_STATE.length) showVillagerProfile(VILLAGER_STATE[0]);
+      else if (typeof WANDERERS !== 'undefined' && WANDERERS.length) showWandererProfile(WANDERERS[0]);
+      checkJournal();
+      const mdl = document.getElementById('villager-profile-modal'); if (mdl) mdl.remove();
+      return { npcMet: !!S.npcMet, firstHelloReward: rewardGranted('firsts:first_npc') };
+    },
+    // Idempotency probe: first SETTLE any newly-eligible rewards, then re-fire
+    // every reward path again. A reload, double-click or repeated dispatch must
+    // NOT move the balance the second time (req 6).
+    rewardsIdempotent(){
+      achCheck(); tutCheck(); checkJournal();               // settle first-time grants
+      const before = S.coins;
+      achCheck(); achCheck();                               // now everything is a repeat…
+      tutCheck(); tutCheck();
+      checkJournal(); checkJournal();
+      const ci = S.contracts.findIndex(c => c.tutorial);
+      if (ci >= 0) deliverContract(ci);                     // already delivered ⇒ no re-pay
+      return { before, after: S.coins, seenKeys: Object.keys(_ledger().seen).length };
+    },
+    // The number the tutorial completion modal shows as "Total coins now".
+    summaryTotal(){
+      const el = document.getElementById('tut-summary');
+      if (!el) return null;
+      const m = (el.textContent || '').match(/Total coins now:\s*([\d,]+)/);
+      return m ? parseInt(m[1].replace(/[^0-9]/g, ''), 10) : null;
+    },
+    // All balance surfaces read in ONE synchronous pass (same instant) so the
+    // assertion isn't confused by passive income ticking between round-trips.
+    // Proves the header, completion modal and wallet share one balance (req 4/5).
+    walletSurfaces(){
+      const num = (id) => { const e = document.getElementById(id); return e ? parseInt((e.textContent||'0').replace(/[^0-9-]/g,''),10) : null; };
+      return { wallet: S.coins, hud: num('hud-coins'), modal: num('tut-sum-total') };
     },
     // Faithful first-hour chain through the real production functions. Returns a
     // wallet snapshot after every reward so the gate asserts displayed === real.
@@ -15131,5 +15222,24 @@ if (import.meta.env.DEV) {
       save();
       return snaps;
     },
+    // Transaction history developer view — the structured wallet ledger.
+    wallet(n = 40){
+      const L = _ledger();
+      return {
+        balance: S.coins,
+        count: L.entries.length,
+        seenKeys: Object.keys(L.seen).length,
+        bySource: ['quest','contract','journal','achievement','passive','tutorial','purchase','refund','wager','winnings','fee','fine','sale']
+          .reduce((o, k) => { const t = ledgerTotalBySource(L, k as any); if (t) o[k] = t; return o; }, {} as Record<string, number>),
+        recent: ledgerTail(L, n),
+      };
+    },
+  };
+  // Convenience global: `__wallet.history()` / `.balance` for quick debugging.
+  (window as any).__wallet = {
+    get balance(){ return S.coins; },
+    history(n = 40){ return ledgerTail(_ledger(), n); },
+    granted(key){ return rewardGranted(key); },
+    table(n = 40){ try { console.table(ledgerTail(_ledger(), n)); } catch (e) {} },
   };
 }

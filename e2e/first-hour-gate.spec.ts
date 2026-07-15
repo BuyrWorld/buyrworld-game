@@ -215,12 +215,84 @@ test.describe('First-hour release gate', () => {
     for (const s of snaps) expect(s.walletDisplayed, `wallet after "${s.label}"`).toBe(s.coins);
   });
 
+  // 11b — economy: one balance, shown consistently everywhere (defect: 850 vs 715)
+  test('11b. "Total coins now" equals the HUD and the authoritative wallet balance', async ({ page }) => {
+    await quickStart(page);
+    await gate(page, 'runChain');                       // completes the tutorial → summary modal
+    const summary = page.locator('#tut-summary');
+    await expect(summary).toBeVisible();
+    // read every surface in ONE synchronous pass (passive income can tick between
+    // round-trips, so cross-call reads would race; same-instant reads must agree)
+    const s = await gate(page, 'walletSurfaces');
+    expect(s.modal).toBe(s.wallet);                      // completion modal === wallet balance (req 5)
+    expect(s.hud).toBe(s.wallet);                        // header === wallet balance (req 4)
+  });
+
+  // 11c — economy: rewards are idempotent (no double-grant on repeat dispatch, req 6)
+  test('11c. re-firing every reward path does not change the balance', async ({ page }) => {
+    await quickStart(page);
+    await gate(page, 'runChain');
+    const r = await gate(page, 'rewardsIdempotent');    // re-runs achCheck/tutCheck/journal/deliver
+    expect(r.after).toBe(r.before);                      // balance unmoved
+    expect(r.seenKeys).toBeGreaterThan(0);               // stable reward keys are recorded
+  });
+
+  // 11d — economy survives a reload: balance persists, rewards never re-grant (req 6/12)
+  test('11d. after save + reload, the balance persists and rewards are not re-granted', async ({ page }) => {
+    await quickStart(page);                              // cleanLoad handles cold-start + retries
+    const before = await gate(page, 'runChain');         // runChain saves to localStorage
+    const coinsBefore = before[before.length - 1].coins;
+
+    // Reload semantics without the flaky in-place reload: open a FRESH page in the
+    // same context (shares localStorage, and has no save-clearing init script), so
+    // it boots straight from the persisted save — exactly what a reload restores.
+    const page2 = await page.context().newPage();
+    let ok = false, lastErr: unknown;
+    for (let i = 0; i < 4 && !ok; i++) {
+      try {
+        await page2.goto('/', { waitUntil: 'commit', timeout: 30_000 });
+        await expect(page2.locator('#hud-coins')).toBeVisible({ timeout: 30_000 });
+        ok = true;
+      } catch (e) { lastErr = e; }
+    }
+    if (!ok) throw lastErr;
+    await page2.waitForFunction(() => !!(window as any).__gate, null, { timeout: 30_000 });
+    const gate2 = (method: string, ...args: any[]) =>
+      page2.evaluate(([m, a]) => (window as any).__gate[m as string](...(a as any[])), [method, args] as const);
+
+    const st = await gate2('state');
+    // balance persisted (never reset), and NOT re-inflated by a re-grant of the
+    // tutorial rewards (~620) — passive income may legitimately add a little.
+    expect(st.coins).toBeGreaterThanOrEqual(coinsBefore);
+    expect(st.coins).toBeLessThan(coinsBefore + 200);
+    expect(st.tut.done).toBe(true);
+    expect(st.ledgerSeenKeys).toBeGreaterThan(0);        // idempotency set survived the reload
+    const r = await gate2('rewardsIdempotent');          // dispatch rewards again post-reload
+    expect(r.after).toBe(r.before);                      // still no double-grant
+    await page2.close();
+  });
+
   // 12 -----------------------------------------------------------------------
   test('12. Festival Goer does NOT unlock on startup', async ({ page }) => {
     await quickStart(page);
     const st = await gate(page, 'state');
     expect(st.festivalAttended).toBe(0);
     expect(st.festivalGoerUnlocked).toBe(false);
+  });
+
+  // 12b — First Hello needs an explicit interaction, never a collision (req 8)
+  test('12b. First Hello: clean save unmet; walking does not meet; an explicit tap does', async ({ page }) => {
+    await quickStart(page);
+    let st = await gate(page, 'state');
+    expect(st.npcMet).toBe(false);                       // nobody met on a clean save
+    expect(st.firstHelloReward).toBe(false);             // and no reward granted
+
+    const walk = await gate(page, 'walkVillageNoTap');   // movement/collision only
+    expect(walk.npcMet).toBe(false);                     // still unmet — collision never counts
+
+    const met = await gate(page, 'meetVillagerByTap');   // the explicit interaction path
+    expect(met.npcMet).toBe(true);
+    expect(met.firstHelloReward).toBe(true);             // First Hello granted exactly once
   });
 
   // 13 -----------------------------------------------------------------------
