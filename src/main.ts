@@ -14723,7 +14723,69 @@ function closeModal(id: string){
   }
   updateGpPrompts();
 }
-function closeTopModal(){ if (!_MODAL_STACK.length) return false; closeModal(_MODAL_STACK[_MODAL_STACK.length - 1].id); return true; }
+function closeTopModal(){
+  if (!_MODAL_STACK.length) return false;
+  const top = _MODAL_STACK[_MODAL_STACK.length - 1] as any;
+  if (top.adopted){
+    // legacy modal: trigger its OWN close affordance so its bespoke teardown runs;
+    // the observer below un-adopts it once it's removed from the DOM.
+    const close = top.el.querySelector('[id$="-close"], [aria-label="Close"], .modal-close') as HTMLElement;
+    if (close) close.click(); else top.el.remove();
+    return true;
+  }
+  closeModal(top.id);
+  return true;
+}
+/* ===== Universal adoption of legacy modals =====
+   ~two dozen render functions still append their own fixed overlay directly to
+   <body>. Rather than rewrite them all (risking their bespoke logic), a
+   MutationObserver ADOPTS any full-screen blocking overlay into the controller:
+   it joins the stack (so only one modal owns input and gameplay movement freezes
+   — modalIsOpen()), gets a body scroll lock, initial focus + focus restoration,
+   and Back/Escape close it via its own close button. The DOM node is NOT moved
+   and its markup/styling/close logic are untouched — this only ADDS the missing
+   guarantees. */
+const _ADOPT_SEL = '[id$="-modal"], #play-hint-overlay, #radio-modal';
+function _isBlockingOverlay(n: any){
+  if (!n || n.nodeType !== 1) return false;
+  const el = n as HTMLElement;
+  if (el.id === 'modal-layer' || (el.closest && el.closest('#modal-layer'))) return false;   // controller-owned already
+  if (!el.matches || !el.matches(_ADOPT_SEL)) return false;
+  const cs = getComputedStyle(el);
+  if (cs.position !== 'fixed' || cs.display === 'none') return false;
+  const r = el.getBoundingClientRect();
+  return r.width > innerWidth * 0.5 && r.height > innerHeight * 0.5;   // a full-screen blocking overlay
+}
+function _adoptModal(el: HTMLElement){
+  if (_MODAL_STACK.some(m => m.el === el)) return;
+  if (!el.id) el.id = 'adopted-modal-' + Math.random().toString(36).slice(2, 8);
+  _MODAL_STACK.push({ id: el.id, el, prevFocus: document.activeElement, adopted: true } as any);
+  document.body.classList.add('modal-open');
+  if (!el.contains(document.activeElement)){ const f = _firstFocusable(el); if (f) _setUiFocus(f); }
+  updateGpPrompts();
+}
+function _unadoptModal(el: HTMLElement){
+  const idx = _MODAL_STACK.findIndex(m => m.el === el);
+  if (idx < 0) return;
+  const entry = _MODAL_STACK[idx];
+  _MODAL_STACK.splice(idx, 1);
+  _clearUiFocus();
+  if (_MODAL_STACK.length){ const f = _firstFocusable(_MODAL_STACK[_MODAL_STACK.length - 1].el); if (f) _setUiFocus(f); }
+  else {
+    document.body.classList.remove('modal-open');
+    const p = entry.prevFocus as HTMLElement | null;
+    if (p && typeof p.focus === 'function' && _elVisible(p)){ try{ p.focus({ preventScroll:true }); }catch(e){} }
+  }
+  updateGpPrompts();
+}
+if (typeof MutationObserver !== 'undefined' && document.body){
+  new MutationObserver(muts => {
+    for (const m of muts){
+      m.addedNodes.forEach(n => { if (_isBlockingOverlay(n)) _adoptModal(n as HTMLElement); });
+      m.removedNodes.forEach(n => { if ((n as any).nodeType === 1) _unadoptModal(n as HTMLElement); });
+    }
+  }).observe(document.body, { childList: true });
+}
 // Topmost open modal/overlay, if any (so focus + Back scope to it).
 // Fixed-position modals (Pause, Settings, etc.) always report offsetParent === null,
 // so the old offsetParent test hid them from the focus/Back system — leaving

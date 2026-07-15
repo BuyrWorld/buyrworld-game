@@ -175,4 +175,32 @@ test.describe('Modal / overlay / focus controller', () => {
     expect(await gate(page, 'state').then((s: any) => s.tab)).toBe('myhome');                       // did not move/exit
     await page.locator('#settings-modal #set-close').click();
   });
+
+  // reqs 1,3,8 universal: legacy body-level overlays are adopted by the controller
+  test('Any legacy full-screen overlay is adopted (single owner + scroll lock) and inert on close', async ({ page }) => {
+    await quickStart(page);
+    await gate(page, 'enterCottage');
+    // simulate a legacy modal appended straight to <body>, as ~two dozen render fns do
+    await page.evaluate(() => {
+      const d = document.createElement('div'); d.id = 'legacy-probe-modal';
+      d.style.cssText = 'position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.5)';
+      const b = document.createElement('button'); b.className = 'modal-close'; b.textContent = 'x';
+      b.onclick = () => d.remove(); d.appendChild(b); document.body.appendChild(d);
+    });
+    const probe = page.locator('#legacy-probe-modal');
+    await expect(probe).toBeVisible();
+    // adopted: scroll lock on + it owns the viewport centre (single input owner)
+    expect(await page.evaluate(() => document.body.classList.contains('modal-open'))).toBe(true);
+    expect(await centreIsModal(page)).toBe(true);
+    // movement is frozen while it's open
+    await page.keyboard.down('s'); await page.waitForTimeout(1000); await page.keyboard.up('s');
+    expect(await gate(page, 'state').then((s: any) => s.tab)).toBe('myhome');
+    // Escape closes it via its OWN close affordance, and does NOT open Pause
+    await page.keyboard.press('Escape');
+    await expect(probe).toHaveCount(0);
+    await expect(page.locator('#pause-modal')).toHaveCount(0);
+    // fully inert afterwards
+    expect(await page.evaluate(() => document.body.classList.contains('modal-open'))).toBe(false);
+    expect(await centreIsModal(page)).toBe(false);
+  });
 });
