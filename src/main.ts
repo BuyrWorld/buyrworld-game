@@ -30,6 +30,7 @@ import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isT
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
 import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult } from './data/contractToCash.ts';
+import { EXIT_BAND, inExitRegion, validReturn, isInteriorTab } from './data/interiors.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, cycleTab, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, inputPrompts, INPUT_CONTRACT, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
@@ -2150,6 +2151,59 @@ function objApproach(o){
   const r = objRect(o);
   return { x: r.x + r.w/2, y: r.y + r.h + 10 };
 }
+
+// ============================================================================
+// AUTHORITATIVE INTERIOR TRANSITION SYSTEM (see src/data/interiors.ts).
+// One entry (records the exterior return) and one exit (leaveInterior) for EVERY
+// interior. Fixes the flaky bottom-edge exit, provides a non-reload recovery, and
+// safely places the player outside an interior with corrupt/missing return state.
+// ============================================================================
+var _leavingInterior = false;   // guard: exactly one transition per input event
+var _leaveCount = 0;            // instrumentation: successful interior→exterior transitions
+// Record where to put the player back when they leave — the exterior district +
+// the exterior coordinates they entered from (the building's approach point).
+function _recordInteriorReturn(o){
+  const ap = o ? objApproach(o) : { x: VP.x, y: VP.y };
+  S.interiorReturn = { district:'village', x: ap.x, y: ap.y, objId: o ? o.id : (S.roomObjId||null) };
+}
+// The exterior return, validated. Falls back to the entered building's approach,
+// then to a safe world spawn, so a missing/corrupt record can never strand you.
+function _resolveInteriorReturn(){
+  const v = validReturn(S.interiorReturn, VCOLS*TILE, VROWS*TILE);
+  if (v) return v;
+  const oid = S.interiorReturn && S.interiorReturn.objId;
+  const o = oid ? V_OBJECTS.find(x => x.id === oid) : null;
+  if (o){ const ap = objApproach(o); return { district:'village', x: ap.x, y: ap.y, objId: oid }; }
+  return { district:'village', x: 105*TILE, y: 28*TILE, objId: null };   // freshState VP spawn
+}
+// THE single interior→exterior transition. Reused by the exit region, the Exit
+// button, the recovery menu and the controller B / keyboard Escape path.
+function leaveInterior(){
+  if (_leavingInterior) return false;
+  if (!INTERIOR_TABS.has(S.tab) || S.tab === 'village') return false;
+  // a locked police cell is the one interior you can't simply walk out of
+  if (S.tab === 'police_cell' && S.caught?.active && Date.now() < S.caught.cellUntil){ toast("You can't leave the cell yet."); return false; }
+  _leavingInterior = true;
+  try{
+    IP.tx = null; IP.ty = null; IP.moving = false;
+    CHAT_NPC = null; _intChat = null;
+    // preserve existing behaviours: clear trespass + any served sentence on exit
+    if (S.trespass?.active){ S.trespass = { active:false, homeId:null }; S.fleeUntil = 0; }
+    if (S.caught?.active){ S.caught = { active:false, cellUntil:0, maxTime:0 }; }
+    VP.enterCooldown = 90;   // stop an instant re-entry
+    try{ doorFx(V_OBJECTS.find(o => o.id === S.roomObjId)); }catch(e){}
+    const ret = _resolveInteriorReturn();
+    S.tab = ret.district || 'village';
+    VP.x = ret.x; VP.y = ret.y; VP.tx = null; VP.ty = null; VP.moving = false; VP.pending = null;
+    try{ SEL_ID = null; }catch(e){}   // clear any village selection so nothing re-triggers
+    S.interiorReturn = null;
+    try{ closeRecoveryMenu(); }catch(e){}
+    _leaveCount++;
+    renderNav(); renderMain(); updateHud(); save();
+    return true;
+  } finally { _leavingInterior = false; }
+}
+(globalThis as any).leaveInterior = leaveInterior;
 function tileAt(px, py){
   const c = Math.floor(px/TILE), r = Math.floor(py/TILE);
   if (c<0||r<0||c>=VCOLS||r>=VROWS) return "T";
@@ -2697,6 +2751,7 @@ function interactObj(o){
   if (o.tab==="data_centre" && totalLvl() < 200){ toast(`🖥️ The Data Centre opens at total level 200 (you: ${totalLvl()}).`); return; }
   // First visit teaches the system; later visits get the characterful greeting.
   if (!tipOnce(o.tab, SYSTEM_TUTORIAL[o.tab]) && BUILDING_FLAVOUR[o.tab]) toast(BUILDING_FLAVOUR[o.tab]);
+  _recordInteriorReturn(o);   // record the exterior return BEFORE we switch views
   S.tab = o.tab;
   S.roomObjId = o.id;
   if (o.tab === "myhome"){ try{ _cottageIntro(); _cottageVisitDirty(); }catch(e){} }   // M3: household routine
@@ -9009,34 +9064,29 @@ function villageFrame(ts){
       }
     } else if (!S.action) _lastIActionId = null;
     moveActor(IP, dt, 80, true);
-    // push IP out of interior prop collision rects
-    const iCols = S.tab==="home" ? homeColsCached(S.roomObjId) : INTERIOR_COLS[S.tab];
-    if (iCols){
-      const half=6, feet=6;
-      for (const c of iCols){
-        const px=IP.x, cy=IP.y+feet;
-        if (px+half>c.x && px-half<c.x+c.w && cy>c.y && cy<c.y+c.h){
-          const dL=(px+half)-c.x, dR=(c.x+c.w)-(px-half), dU=cy-c.y, dD=(c.y+c.h)-cy;
-          const mn=Math.min(dL,dR,dU,dD);
-          if(mn===dL) IP.x=c.x-half;
-          else if(mn===dR) IP.x=c.x+c.w+half;
-          else if(mn===dU) IP.y=c.y-feet;
-          else IP.y=c.y+c.h-feet;
+    const _cellLocked = S.tab==="police_cell" && S.caught?.active && Date.now() < S.caught.cellUntil;
+    // AUTHORITATIVE EXIT: reaching the bottom exit region leaves reliably. Checked
+    // BEFORE the collision push-out so furniture near the door can never bounce the
+    // player back out of the band, and routed through the ONE leaveInterior().
+    if (!_cellLocked && inExitRegion(IP.y, icanvasH())){
+      leaveInterior();
+    } else {
+      // push IP out of interior prop collision rects
+      const iCols = S.tab==="home" ? homeColsCached(S.roomObjId) : INTERIOR_COLS[S.tab];
+      if (iCols){
+        const half=6, feet=6;
+        for (const c of iCols){
+          const px=IP.x, cy=IP.y+feet;
+          if (px+half>c.x && px-half<c.x+c.w && cy>c.y && cy<c.y+c.h){
+            const dL=(px+half)-c.x, dR=(c.x+c.w)-(px-half), dU=cy-c.y, dD=(c.y+c.h)-cy;
+            const mn=Math.min(dL,dR,dU,dD);
+            if(mn===dL) IP.x=c.x-half;
+            else if(mn===dR) IP.x=c.x+c.w+half;
+            else if(mn===dU) IP.y=c.y-feet;
+            else IP.y=c.y+c.h-feet;
+          }
         }
       }
-    }
-    // exit building if player walks to the bottom door
-    const _cellLocked = S.tab==="police_cell" && S.caught?.active && Date.now() < S.caught.cellUntil;
-    if (IP.y > icanvasH() - 18 && !_cellLocked) {
-      IP.tx = null; IP.ty = null; IP.moving = false;
-      CHAT_NPC = null;
-      // clear trespass on legitimate exit
-      if (S.trespass?.active){ S.trespass = { active: false, homeId: null }; S.fleeUntil = 0; }
-      if (S.caught?.active && !_cellLocked){ S.caught = { active: false, cellUntil: 0, maxTime: 0 }; }
-      VP.enterCooldown = 90;
-      try{ doorFx(V_OBJECTS.find(o => o.id === S.roomObjId)); }catch(e){}   // door puff as you step back out
-      S.tab = "village"; renderNav(); renderMain();
-    } else {
       drawInterior(t);
       // trespass: check NPC proximity at night + flee timer
       if (S.tab==="home" && S.trespass?.active){
@@ -9440,7 +9490,8 @@ if (typeof document !== 'undefined'){
   body.gpad .vchip-ready::before{content:'Ⓐ ';opacity:.9}
   .int-canvas-wrap .ilbl{position:absolute;transform:translate(-50%,0);background:rgba(69,52,35,.92);color:#fff8e6;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 0 rgba(0,0,0,.25)}
   .ilbl-lock{color:#ffd666}
-  .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:3px;transform:translateX(-50%);background:rgba(176,60,50,.95);color:#fff8e6;font:700 11px 'IBM Plex Mono',monospace;padding:3px 10px;border-radius:5px;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.4);animation:exitPulse 1.8s ease-in-out infinite}
+  .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);background:rgba(176,60,50,.96);color:#fff8e6;font:700 12px 'IBM Plex Mono',monospace;padding:5px 14px;border-radius:6px;border:1px solid #ffb0a0;pointer-events:auto;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4);animation:exitPulse 1.8s ease-in-out infinite;z-index:11}
+  .int-canvas-wrap .ilbl-exit:hover{background:rgba(200,70,58,.98)}
   @keyframes exitPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,90,70,.55)}50%{box-shadow:0 0 0 5px rgba(232,90,70,0)}}
   .firstrun-hint{position:absolute;top:28px;left:50%;transform:translateX(-50%);max-width:94%;background:rgba(42,26,10,.93);color:#fff8e6;border:2px solid #e8961e;border-radius:8px;padding:7px 14px;font:600 12px/1.45 'IBM Plex Mono',monospace;text-align:center;pointer-events:none;box-shadow:0 3px 10px rgba(0,0,0,.45);animation:frPulse 2.2s ease-in-out infinite}
   .firstrun-hint b{color:#ffd666}
@@ -14014,7 +14065,7 @@ function interiorHtml(title){
   const depotLbl = S.tab==="contracts" ? `<div class="ilbl" style="left:73%;top:5%;background:rgba(255,248,230,.96);color:#453423;font:700 9px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;pointer-events:none">BUYR FREIGHT</div>` : "";
   return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap" style="max-width:${cw*2}px;margin:0 auto;position:relative;">
     <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
-    ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><div class="ilbl-exit">🚪 Walk south to leave ↓</div>
+    ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><button type="button" class="ilbl-exit" data-gpfocus aria-label="Leave building" onclick="leaveInterior()">🚪 Exit ↓</button>
     <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
     <div id="interior-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
   </div>
@@ -15080,7 +15131,27 @@ syncTabUnlocks(true);   // back-fill tab unlocks for existing saves (never lose 
 checkVoyages(true);     // land voyages that returned while away (offline)
 ensureMarket(); rollMarket(false);
 fillContracts();
-if (!TABS.some(t=>t.id===S.tab)) S.tab = "village";
+// ---- Interior state on load (req 8) --------------------------------------
+// Resolve where the player should be when a save is loaded inside a building:
+//  • a resumable interior (skill/shop — a real nav tab) with sound state → resume
+//    inside, placing the interior player at the safe entry position (IP isn't
+//    persisted, and its village-scale default Y would sit in the exit region → an
+//    instant exit on load);
+//  • a cottage/home (not a nav tab) OR any corrupt/missing state → safely OUTSIDE,
+//    at the recorded exterior return (or a safe default) — never trapped.
+if (isInteriorTab(S.tab, INTERIOR_TABS as any)){
+  const retOk = !!validReturn(S.interiorReturn, VCOLS*TILE, VROWS*TILE);
+  const roomOk = S.roomObjId && V_OBJECTS.some(o => o.id === S.roomObjId);
+  const resumable = TABS.some(t => t.id === S.tab);
+  if (resumable && (retOk || roomOk)){
+    IP.x = icanvasW()/2; IP.y = icanvasH() - 34; IP.tx = null; IP.ty = null; IP.moving = false; IP.dir = "up";
+    if (S.tab === "fishing"){ try{ const a = fishingAnchor(0); IP.x = a.x; IP.y = a.y; IP.dir = a.dir; }catch(e){} }
+  } else {
+    const safe = _resolveInteriorReturn();
+    S.tab = "village"; VP.x = safe.x; VP.y = safe.y; VP.tx = null; VP.ty = null; VP.moving = false; S.interiorReturn = null;
+  }
+}
+if (!TABS.some(t=>t.id===S.tab) && !INTERIOR_TABS.has(S.tab)) S.tab = "village";
 preloadAll();
 renderNav(); renderMain(); updateHud(); syncMusicButton();
 document.getElementById("btn-music").onclick = () => cycleVolume();
@@ -15123,11 +15194,23 @@ window.addEventListener("keydown", e => {
   if (!typing) setInputMethod('keyboard');   // keyboard is now the active input (req 11)
   // ---- controller-equivalent keyboard nav (works everywhere, incl. modals) ----
   if (!typing){
-    if (e.key==="ArrowUp" || e.key==="ArrowLeft"){ e.preventDefault(); moveUiFocus(-1); return; }
-    if (e.key==="ArrowDown" || e.key==="ArrowRight"){ e.preventDefault(); moveUiFocus(1); return; }
+    // In an open-world view (village or an interior) with nothing focused, the
+    // arrow keys WALK the character (so ArrowDown leaves a building — req 3). In
+    // menus / modals / the title, they navigate UI focus instead (never swallowed).
+    const _worldNav = (S.tab==="village" || INTERIOR_TABS.has(S.tab)) && !_topModal() && !_paused && !_uiFocusEl && !_titleUp();
+    if (e.key==="ArrowUp"||e.key==="ArrowDown"||e.key==="ArrowLeft"||e.key==="ArrowRight"){
+      if (_worldNav){ e.preventDefault(); VKEYS[e.key] = true; return; }
+      e.preventDefault(); moveUiFocus((e.key==="ArrowUp"||e.key==="ArrowLeft") ? -1 : 1); return;
+    }
     if (e.key==="Tab"){ e.preventDefault(); moveUiFocus(e.shiftKey ? -1 : 1); return; }
     if (e.key==="Enter"){ if (uiConfirm()){ e.preventDefault(); return; } }
-    if (e.key==="Escape" || e.key==="Backspace"){ if (uiBack()){ e.preventDefault(); return; } if (e.key==="Escape" && !_topModal() && !_titleUp()){ e.preventDefault(); openPauseMenu(); return; } }
+    if (e.key==="Escape" || e.key==="Backspace"){
+      if (uiBack()){ e.preventDefault(); return; }
+      // In an interior, Escape/Back opens the small RECOVERY menu (Resume / Leave
+      // building / Settings) — a guaranteed non-reload way out (req 5/7).
+      if (e.key==="Escape" && INTERIOR_TABS.has(S.tab) && S.tab!=="village" && !_topModal() && !_titleUp()){ e.preventDefault(); openRecoveryMenu(); return; }
+      if (e.key==="Escape" && !_topModal() && !_titleUp()){ e.preventDefault(); openPauseMenu(); return; }
+    }
     // category (LB/RB) + screen (LT/RT) keyboard equivalents, and Objectives (View)
     if (e.key==="["){ e.preventDefault(); switchNavCategory(-1); return; }
     if (e.key==="]"){ e.preventDefault(); switchNavCategory(1); return; }
@@ -15457,6 +15540,35 @@ function openPauseMenu(){
 function closePauseMenu(){ closeModal('pause-modal'); }
 (globalThis as any).openPauseMenu = openPauseMenu;
 
+// Interior recovery menu (Escape / controller B while inside a building). A small,
+// always-available, non-reload way out — Resume / Leave building / Settings (req 5).
+function openRecoveryMenu(){
+  if (document.getElementById('recovery-modal')) return;
+  if (!INTERIOR_TABS.has(S.tab) || S.tab==="village") return;
+  const _o = V_OBJECTS.find(x => x.id === S.roomObjId);
+  const bldName = (_o && _o.name) || (ZONE_TIPS[S.tab] && ZONE_TIPS[S.tab].n) || 'this building';
+  const row = (id,label,ic) => `<button data-rec="${id}" style="display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:#2a2f38;color:#eee;border:1px solid #444;border-radius:7px;padding:11px 14px;margin-bottom:8px;font-size:15px;cursor:pointer"><span style="font-size:18px">${ic}</span>${label}</button>`;
+  const inner = () => `<div class="panel" style="padding:16px;max-width:320px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0;font-size:15px">🚪 ${esc(bldName)}</h2><button aria-label="Close" class="modal-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer">✕</button></div>
+    ${row('resume','Resume','▶')}
+    ${row('leave','Leave building','🚪')}
+    ${row('settings','Settings','⚙️')}
+    <p style="font-size:10px;color:var(--dim);margin:6px 0 0;text-align:center">Walk to the bottom door, or use "Leave building" — you'll never be stuck.</p>
+  </div>`;
+  const wire = (el:HTMLElement) => {
+    (el.querySelector('.modal-close') as HTMLElement).onclick = () => closeRecoveryMenu();
+    el.querySelectorAll('[data-rec]').forEach(b => (b as HTMLElement).onclick = () => {
+      const a = (b as HTMLElement).dataset.rec;
+      if (a === 'resume') closeRecoveryMenu();
+      else if (a === 'leave'){ closeRecoveryMenu(); leaveInterior(); }
+      else if (a === 'settings'){ closeRecoveryMenu(); openSettings(); }
+    });
+  };
+  openModal('recovery-modal', inner, { label:'Building menu', backdrop:'rgba(0,0,0,.55)', initialFocus:'[data-rec="resume"]', wire });
+}
+function closeRecoveryMenu(){ closeModal('recovery-modal'); }
+(globalThis as any).openRecoveryMenu = openRecoveryMenu;
+
 /* ---- Gamepad ---- */
 const _gpLastBtns: boolean[] = [];
 let _gpNavRepeatAt = 0;
@@ -15469,11 +15581,20 @@ function pollGamepad(){
   const lx = (pad.axes[0]||0), ly = (pad.axes[1]||0), dead = 0.28;
   // LEFT STICK always walks the avatar in world views; D-PAD drives UI focus (below).
   // Only a modal/pause blocks walking — a focused nav button does not.
+  const _inInterior = INTERIOR_TABS.has(S.tab) && S.tab!=="village" && !_topModal() && !_paused && !_uiFocusEl;
   if (!_topModal() && !_paused){
     if (lx < -dead) GPKEYS.ArrowLeft  = true;
     if (lx >  dead) GPKEYS.ArrowRight = true;
     if (ly < -dead) GPKEYS.ArrowUp    = true;
     if (ly >  dead) GPKEYS.ArrowDown  = true;
+    // Inside a building the D-PAD also walks (so D-pad-down leaves — req 3);
+    // there are no world targets to cycle in an interior.
+    if (_inInterior){
+      if (pad.buttons[14]?.pressed) GPKEYS.ArrowLeft  = true;
+      if (pad.buttons[15]?.pressed) GPKEYS.ArrowRight = true;
+      if (pad.buttons[12]?.pressed) GPKEYS.ArrowUp    = true;
+      if (pad.buttons[13]?.pressed) GPKEYS.ArrowDown  = true;
+    }
   }
   const prev = _gpLastBtns;
   // M2: while decorating, the controller drives the placement cursor (A place / B
@@ -15500,7 +15621,8 @@ function pollGamepad(){
   const dEdge = (i:number)=> pad.buttons[i]?.pressed && !prev[i];
   const dHeld = pad.buttons[12]?.pressed||pad.buttons[13]?.pressed||pad.buttons[14]?.pressed||pad.buttons[15]?.pressed;
   const dFresh = dEdge(12)||dEdge(13)||dEdge(14)||dEdge(15);
-  if (dFresh || (dHeld && now > _gpNavRepeatAt)){
+  // (skip focus-nav while inside a building — there the D-pad walks the avatar)
+  if (!_inInterior && (dFresh || (dHeld && now > _gpNavRepeatAt))){
     _gpNavRepeatAt = now + (dFresh ? 320 : 150);
     const dir: 1|-1 = (pad.buttons[12]?.pressed || pad.buttons[14]?.pressed) ? -1 : 1;   // up/left prev · down/right next
     const inWorld = S.tab==="village" && !_topModal() && !_paused && !_uiFocusEl;
@@ -15546,7 +15668,10 @@ function gpInteract(){
 }
 function gpBack(){
   if (CHAT_NPC){ CHAT_NPC=null; renderMain(); return; }
-  if (INTERIOR_TABS.has(S.tab)||S.tab!=="village"){ S.tab="village"; renderNav(); renderMain(); }
+  // Inside a building, B opens the small recovery menu (Resume / Leave building /
+  // Settings) — a guaranteed non-reload way out (req 5). Elsewhere, back to village.
+  if (INTERIOR_TABS.has(S.tab) && S.tab!=="village"){ openRecoveryMenu(); return; }
+  if (S.tab!=="village"){ goTab("village"); }
 }
 window.addEventListener('gamepadconnected', ()=>{
   toast('🎮 Controller connected! D-pad moves focus · Ⓐ confirm · Ⓑ back · LB/RB category · ☰ menu.');
@@ -15780,6 +15905,34 @@ if (import.meta.env.DEV) {
     uiFocusMove(dir:number){ moveUiFocus(dir); return (window as any).__gate.uiFocus(); },
     uiOpenObjectives(){ openObjectives(); return { open: !!document.getElementById('journal-modal') || !!document.querySelector('[id*="journal"],[id*="dd-"]') }; },
     uiSetMethod(m:string){ setInputMethod(m as any); return { method:_lastInput, promptsVisible:(()=>{const b=document.getElementById('gp-prompts');return !!(b&&getComputedStyle(b).display!=='none');})() }; },
+    // ---- Interior transition probes ---------------------------------------
+    intEnter(objId:string){ const o = V_OBJECTS.find(x=>x.id===objId); if (o) interactObj(o); return { tab:S.tab, room:S.roomObjId, ret:S.interiorReturn }; },
+    intInfo(){ return { tab:S.tab, isInterior: INTERIOR_TABS.has(S.tab) && S.tab!=='village', ipY:IP.y, ch:icanvasH(), inRegion: inExitRegion(IP.y, icanvasH()), ret:S.interiorReturn, room:S.roomObjId, vpx:VP.x, vpy:VP.y, leaveCount:_leaveCount, recoveryOpen:!!document.getElementById('recovery-modal'), exitBtn:!!document.querySelector('.ilbl-exit') }; },
+    intLeave(){ const ok = leaveInterior(); return { ok, tab:S.tab, vpx:VP.x, vpy:VP.y, leaveCount:_leaveCount }; },
+    intResetLeaveCount(){ _leaveCount = 0; return _leaveCount; },
+    intCorruptReturn(){ S.interiorReturn = { district:'village', x: 999999, y: NaN, objId:'nope' }; S.roomObjId='nope'; save(); return S.interiorReturn; },
+    intOpenRecovery(){ openRecoveryMenu(); return { open:!!document.getElementById('recovery-modal') }; },
+    // Drive the SHARED movement abstraction (GPKEYS) the way the D-pad/left stick
+    // do, then step the same moveActor + exit path the frame loop uses. (A physical
+    // gamepad can't be injected in the test harness, and pollGamepad resets GPKEYS
+    // each frame; this exercises the identical downstream code the controller feeds.)
+    intAbstractWalkDown(steps:number){
+      let n = 0;
+      for (let i=0; i<(steps|0) && INTERIOR_TABS.has(S.tab) && S.tab!=="village"; i++){
+        (GPKEYS as any).ArrowDown = true;
+        moveActor(IP, 0.05, 80, true);
+        if (inExitRegion(IP.y, icanvasH())) leaveInterior();
+        n++;
+      }
+      (GPKEYS as any).ArrowDown = false;
+      return { tab:S.tab, leaveCount:_leaveCount, steps:n };
+    },
+    intSaveNow(){ try{ save(); }catch(e){} return { saved:true, tab:S.tab }; },
+    intSaveRaw(){ return localStorage.getItem(SAVE_KEY); },
+    intDiag(){ return { modalOpen: modalIsOpen(), paused: _paused, stack: (_MODAL_STACK||[]).map((m:any)=>m.id), vkeysS: !!(VKEYS as any).s, vkeysDown: !!(VKEYS as any).ArrowDown, gpDown: !!GPKEYS.ArrowDown, ipY: IP.y }; },
+    intClearHint(){ S.seenControls = true; try{ const el=document.getElementById('play-hint-overlay'); if(el) el.remove(); }catch(e){}
+      let guard=0; while (_MODAL_STACK && _MODAL_STACK.length && guard++<10){ const top=_MODAL_STACK[_MODAL_STACK.length-1]; try{ closeModal(top.id); }catch(e){ _MODAL_STACK.pop(); } }
+      try{ save(); }catch(e){} return { seen:S.seenControls, modalOpen: modalIsOpen() }; },
     // ---- First-session pacing probes --------------------------------------
     pacing(){
       const def = (S.tut && Array.isArray(S.tut.deferred)) ? S.tut.deferred : [];
