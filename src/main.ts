@@ -29,6 +29,7 @@ import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as 
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, radioDefaultTrack, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
+import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult } from './data/contractToCash.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, cycleTab, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, inputPrompts, INPUT_CONTRACT, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
@@ -410,6 +411,164 @@ function maybeShowUnlockGroup(){
   S.lastUnlockAt = now;
   _startUnlockTour();
 }
+
+// ============================================================================
+// CONTRACT-TO-CASH — the authored flagship order (see src/data/contractToCash.ts).
+// A guided flow through the whole commercial pipeline with understandable
+// decisions and a final profit-and-loss review. Reuses the wallet, reputation
+// and QC systems; safe-recovery means a poor call teaches, never wipes the save.
+// ============================================================================
+var _flag: any = null;   // runtime flow state: { step, offerId, orderQty, deliveryId, result }
+const _flagBar = (label:string, frac:number, col:string, val:string) =>
+  `<div style="display:flex;align-items:center;gap:6px;font-size:10px;margin-top:2px">
+     <span style="width:52px;color:var(--dim)">${label}</span>
+     <span style="flex:1;height:7px;background:var(--panel);border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(Math.max(0,Math.min(1,frac))*100)}%;background:${col}"></span></span>
+     <span style="width:64px;text-align:right">${val}</span>
+   </div>`;
+const _flagStars = (n:number) => '★★★★'.slice(0,n) + '☆☆☆☆'.slice(0, 4-n);
+const _flagMoney = (n:number) => `${n<0?'−':''}${fmt(Math.abs(n))}c`;
+
+function flagshipAvailable(){ return !!(S.tut && S.tut.done) && !S.flagshipDone; }
+function openFlagshipOrder(){
+  if (document.getElementById('flagship-modal')) return;
+  _flag = { step:'brief', offerId:null, orderQty:0, deliveryId:'van', result:null };
+  _renderFlagship();
+}
+function _flagClose(){ const e=document.getElementById('flagship-modal'); if (e) e.remove(); _flag=null; try{ if (S.tab==='contracts') renderMain(); }catch(e){} }
+function _renderFlagship(){
+  let el = document.getElementById('flagship-modal');
+  if (!el){ el=document.createElement('div'); el.id='flagship-modal'; el.style.cssText='position:fixed;inset:0;z-index:72;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.66);padding:16px;overflow:auto'; document.body.appendChild(el); }
+  const O = FLAGSHIP_ORDER;
+  const panel = (inner:string) => `<div class="panel" style="padding:16px;max-width:520px;width:100%;max-height:92vh;overflow:auto">${inner}</div>`;
+  const head = (t:string,sub:string) => `<div style="text-align:center;margin-bottom:10px"><h2 style="margin:0;font-size:16px">${t}</h2><p style="font-size:11px;color:var(--dim);margin:3px 0 0">${sub}</p></div>`;
+
+  if (_flag.step==='brief'){
+    el.innerHTML = panel(`${head('⭐ Flagship Order — '+esc(O.client), 'A career-making contract. Source, make, and deliver — for a real margin.')}
+      <div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9">
+        <b>${O.client}</b> wants <b>${O.qty}× ${esc(O.productName)}</b>.<br>
+        They will pay <b style="color:var(--amber)">${fmt(O.quotedRevenue)} coins</b> on delivery.<br>
+        Deadline: <b>${O.deadlineMin} minutes</b> from now (request → their door).<br>
+        You'll need to source <b>${O.qty}× ${esc(ITEMS[O.materialItem]?.n||O.materialItem)}</b>, press them into brackets, pass quality, and ship.</div>
+      <div style="font-size:11px;color:var(--dim);margin:10px 0 8px;text-align:center">The whole pipeline, one order: <b>request → quote → suppliers → PO → inbound → goods-in QC → production → final QC → delivery → invoice → payment → margin</b>.</div>
+      <button data-flag="suppliers" class="btn" style="width:100%;margin-bottom:6px">Compare suppliers ▶</button>
+      <button data-flag="close" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">Not now</button>`);
+  } else if (_flag.step==='suppliers'){
+    const maxPrice = Math.max(...SUPPLIER_OFFERS.map(o=>o.unitPrice));
+    const maxLead = Math.max(...SUPPLIER_OFFERS.map(o=>o.leadMin));
+    const cards = SUPPLIER_OFFERS.map(o=>`
+      <button data-offer="${o.id}" style="display:block;width:100%;text-align:left;background:var(--panel2);border:2px solid var(--edge);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;color:var(--text)">
+        <div style="font-size:13px;font-weight:700">${o.icon} ${esc(o.supplier)}</div>
+        <div style="font-size:10px;color:var(--dim);margin:2px 0 4px">${esc(o.blurb)}</div>
+        ${_flagBar('Price', o.unitPrice/maxPrice, '#d88', o.unitPrice+'c/unit')}
+        ${_flagBar('Lead', o.leadMin/maxLead, '#dc8', o.leadMin+' min')}
+        ${_flagBar('Reliable', o.reliability, '#8c8', _flagStars(o.reliability>=.95?4:o.reliability>=.85?3:o.reliability>=.75?2:1))}
+        ${_flagBar('Quality', o.expectedQuality, '#8bd', Math.round(o.expectedQuality*100)+'%')}
+        <div style="font-size:10px;color:var(--dim);margin-top:4px">Min order ${o.moq} · inbound transport ${o.transportCost}c · terms: ${o.paymentTerms.replace('_',' ')}</div>
+      </button>`).join('');
+    el.innerHTML = panel(`${head('🏭 Compare Suppliers', 'Pick who supplies your iron bars. Weigh price vs speed vs reliability vs quality.')}
+      ${cards}
+      <button data-flag="brief" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">← Back</button>`);
+  } else if (_flag.step==='plan'){
+    const offer = offerById(_flag.offerId)!;
+    const pm = c2cPlanned(O, offer, { offerId:offer.id, orderQty:_flag.orderQty, deliveryId:_flag.deliveryId });
+    const upfront = pm.materialCost + pm.logisticsCost;
+    const canAfford = S.coins >= upfront;
+    const delBtns = DELIVERY_OPTIONS.map(d=>`<button data-del="${d.id}" style="flex:1;background:${_flag.deliveryId===d.id?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${_flag.deliveryId===d.id?'var(--amber)':'var(--edge)'};border-radius:6px;padding:7px;cursor:pointer;color:var(--text);font-size:11px">${d.icon} ${esc(d.name)}<br><span style="color:var(--dim)">${d.cost}c · ${d.timeMin}min</span></button>`).join('');
+    const marginCol = pm.margin>0 ? 'var(--mint)' : '#e08a4a';
+    el.innerHTML = panel(`${head('📝 Quotation & Purchase Order', 'Plan the delivery, then see your margin before you commit.')}
+      <div style="font-size:11px;color:var(--dim);margin-bottom:4px">Supplier: <b style="color:var(--text)">${offer.icon} ${esc(offer.supplier)}</b> · ordering <b style="color:var(--text)">${_flag.orderQty}× ${esc(ITEMS[O.materialItem]?.n||O.materialItem)}</b></div>
+      <div style="font-size:11px;color:var(--dim);margin-bottom:3px">Deliver the finished brackets by:</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px">${delBtns}</div>
+      <div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.8">
+        <div style="display:flex;justify-content:space-between"><span>Customer pays (revenue)</span><b style="color:var(--amber)">${_flagMoney(pm.revenue)}</b></div>
+        <div style="display:flex;justify-content:space-between"><span>− Material (${_flag.orderQty} × ${offer.unitPrice}c)</span><span>${_flagMoney(-pm.materialCost)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span>− Logistics (in + out)</span><span>${_flagMoney(-pm.logisticsCost)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span>− Expected quality/rework</span><span>${_flagMoney(-pm.expectedQualityCost)}</span></div>
+        <hr style="border:none;border-top:1px solid var(--edge);margin:6px 0">
+        <div style="display:flex;justify-content:space-between;font-weight:700"><span>Planned margin</span><b style="color:${marginCol}">${_flagMoney(pm.margin)} (${Math.round(pm.marginPct*100)}%)</b></div>
+      </div>
+      ${pm.warnings.length?`<div style="font-size:10px;color:#e0a45a;margin-top:8px;line-height:1.5">${pm.warnings.map(w=>'⚠️ '+esc(w)).join('<br>')}</div>`:`<div style="font-size:10px;color:var(--mint);margin-top:8px">✓ On paper this plan beats the deadline and fits your warehouse.</div>`}
+      <div style="font-size:10px;color:var(--dim);margin:8px 0 8px">Upfront to source + ship: <b style="color:${canAfford?'var(--text)':'#e0705a'}">${fmt(upfront)}c</b> · you have ${fmt(S.coins)}c${canAfford?'':' — pick a cheaper supplier or smaller order.'}</div>
+      <button data-flag="accept" class="btn" style="width:100%;margin-bottom:6px" ${canAfford?'':'disabled style="width:100%;opacity:.5;cursor:not-allowed;margin-bottom:6px"'}>Accept order & place PO ▶</button>
+      <div style="display:flex;gap:6px">
+        <button data-flag="suppliers" style="flex:1;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">← Suppliers</button>
+        <button data-flag="close" style="flex:1;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">Decline</button>
+      </div>`);
+  } else if (_flag.step==='review'){
+    const r = _flag.result;
+    const gCol = { excellent:'var(--mint)', good:'#8bd', fair:'#dc8', poor:'#e08a4a' }[r.grade];
+    const row = (l:string,v:string,strong=false,col='') => `<div style="display:flex;justify-content:space-between${strong?';font-weight:700':''}"><span>${l}</span><span style="${col?`color:${col}`:''}">${v}</span></div>`;
+    el.innerHTML = panel(`${head('📊 Order Review — '+esc(O.client), 'Request to realised margin, all in one place.')}
+      <div style="text-align:center;margin-bottom:10px"><span style="font-size:13px;font-weight:700;color:${gCol};text-transform:uppercase;letter-spacing:1px">${r.grade}</span>
+        <div style="font-size:11px;color:var(--dim)">Delivered ${r.deliveredToCustomer}/${O.qty} · ${r.onTime?'on time ✓':'late ✗'} · ${r.finishedDefects} defects</div></div>
+      <div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.85;margin-bottom:8px">
+        ${row('Quoted revenue', _flagMoney(r.quotedRevenue))}
+        ${row('Actual revenue (invoiced)', _flagMoney(r.actualRevenue), false, r.actualRevenue<r.quotedRevenue?'#e0a45a':'var(--amber)')}
+        ${row('− Material cost', _flagMoney(-r.materialCost))}
+        ${row('− Logistics cost', _flagMoney(-r.logisticsCost))}
+        ${row('− Quality cost', _flagMoney(-r.qualityCost))}
+        <hr style="border:none;border-top:1px solid var(--edge);margin:6px 0">
+        ${row('Profit', _flagMoney(r.profit), true, r.profit>=0?'var(--mint)':'#e0705a')}
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;font-size:10px;text-align:center">
+        <div style="flex:1;background:var(--panel2);border:1px solid var(--edge);border-radius:5px;padding:6px"><div style="color:var(--dim)">Revenue</div><b>${_flagMoney(r.actualRevenue)}</b></div>
+        <div style="flex:1;background:var(--panel2);border:1px solid var(--edge);border-radius:5px;padding:6px"><div style="color:var(--dim)">Cost</div><b>${_flagMoney(r.totalCost)}</b></div>
+        <div style="flex:1;background:var(--panel2);border:1px solid var(--edge);border-radius:5px;padding:6px"><div style="color:var(--dim)">Cash in hand</div><b>${_flagMoney(r.netCash)}</b></div>
+        <div style="flex:1;background:var(--panel2);border:1px solid var(--edge);border-radius:5px;padding:6px"><div style="color:var(--dim)">Profit</div><b style="color:${r.profit>=0?'var(--mint)':'#e0705a'}">${_flagMoney(r.profit)}</b></div>
+      </div>
+      <div style="font-size:11px;line-height:1.7;margin-bottom:8px">😊 Customer satisfaction: <b>${r.satisfaction}%</b> · reputation ${r.reputationDelta>=0?'+':''}${r.reputationDelta} with ${esc(O.client)}</div>
+      ${r.notes.length?`<div style="font-size:10px;color:var(--dim);line-height:1.6;margin-bottom:8px">${r.notes.map((n:string)=>'• '+esc(n)).join('<br>')}</div>`:''}
+      ${r.learning?`<div style="font-size:11px;color:#8bd;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px">🎓 Lesson learned — a rough order, but you're still standing. Next time, weigh reliability and the deadline before you commit.</div>`:''}
+      <button data-flag="close" class="btn" style="width:100%">Done ▶</button>`);
+  }
+  // wire
+  el.querySelectorAll('[data-flag]').forEach(b=>(b as HTMLElement).onclick=()=>{
+    const a=(b as HTMLElement).dataset.flag;
+    if (a==='close'){ _flagClose(); return; }
+    if (a==='accept'){ _resolveFlagship(); _renderFlagship(); return; }
+    _flag.step=a; _renderFlagship();
+  });
+  el.querySelectorAll('[data-offer]').forEach(b=>(b as HTMLElement).onclick=()=>{
+    const id=(b as HTMLElement).dataset.offer!; _flag.offerId=id; _flag.orderQty=suggestedOrderQty(FLAGSHIP_ORDER, offerById(id)!); _flag.step='plan'; _renderFlagship();
+  });
+  el.querySelectorAll('[data-del]').forEach(b=>(b as HTMLElement).onclick=()=>{ _flag.deliveryId=(b as HTMLElement).dataset.del!; _renderFlagship(); });
+}
+// Resolve the pipeline: roll inbound reliability + quality (reusing the player's QC
+// rating for finished-goods quality), settle the money through the wallet, and
+// update the client relationship. Safe: the upfront cost was affordable, so a bad
+// outcome is a survivable loss, never a wipeout.
+function _resolveFlagship(){
+  const O = FLAGSHIP_ORDER;
+  const offer = offerById(_flag.offerId)!;
+  const plan = { offerId:_flag.offerId, orderQty:_flag.orderQty, deliveryId:_flag.deliveryId };
+  const rng = Math.random;
+  const onTime = rng() <= offer.reliability;
+  const qcRating = (S.qc && typeof S.qc.rating==='number') ? S.qc.rating : 50;
+  const makeBase = Math.max(0.02, 0.06 * (1 - (qcRating-50)/120));    // better QC rating → fewer finished defects (req 9)
+  const rolls = {
+    supplierOnTime: onTime,
+    shortfallFrac: onTime ? 0 : (0.12 + rng()*0.30),
+    incomingDefectFrac: Math.max(0, (1-offer.expectedQuality) * (0.6 + rng()*0.9)),
+    makeDefectFrac: Math.max(0, makeBase + (rng()-0.5)*0.03),
+  };
+  const res = computeOrderResult(O, offer, plan, rolls);
+  // settle money through the wallet (reuse the economy — req 9)
+  if (res.cashOut > 0) debit(res.cashOut, 'purchase', 'flagship_sourcing');
+  if (res.cashIn > 0)  credit(res.cashIn, 'contract', 'flagship_order');
+  // relationship (reuse contractRep)
+  if (!S.contractRep) S.contractRep = {};
+  S.contractRep[O.client] = Math.max(0, (S.contractRep[O.client]||0) + res.reputationDelta);
+  // a standout / botched order nudges the QC rating a touch (reuse QC — req 9)
+  if (S.qc && typeof S.qc.rating==='number') S.qc.rating = Math.max(0, Math.min(100, S.qc.rating + (res.grade==='excellent'?2:res.grade==='poor'?-2:0)));
+  S.counters.contracts = (S.counters.contracts||0) + 1;
+  S.flagshipDone = true;
+  _flag.result = res;
+  _flag.step = 'review';
+  log(`⭐ Flagship order for <b>${esc(O.client)}</b>: ${res.grade.toUpperCase()} — profit <b>${_flagMoney(res.profit)}</b>, satisfaction ${res.satisfaction}%.`, res.profit>=0?'rare':'bad');
+  try{ achCheck(); }catch(e){}
+  updateHud(); save();
+}
+(globalThis as any).openFlagshipOrder = openFlagshipOrder;
 function tutBannerHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
   const st = TUT[S.tut.step];
@@ -11566,6 +11725,13 @@ function renderContracts(){
                     : `📊 ${_mp.name} — orders pay their fair rate.`;
   let html = `<div class="panel"><h2>📋 Open Contracts<small>Deliver on time to build client reputation. Slots: ${contractSlots()}${skillLvl("logistics")<20?" (3rd at Logistics 20)":""}</small></h2>${xpBarHtml("logistics")}
     <div style="font-size:11px;color:var(--dim);margin:2px 0 8px">${_demandHint}</div>`;
+  // The authored flagship order — a full source-to-cash order with a real margin.
+  if (flagshipAvailable()){
+    html += `<button onclick="openFlagshipOrder()" style="display:block;width:100%;text-align:left;background:linear-gradient(90deg,rgba(216,184,74,.18),rgba(216,184,74,.04));border:2px solid var(--amber);border-radius:8px;padding:10px 12px;margin-bottom:10px;cursor:pointer;color:var(--text)">
+      <div style="font-size:13px;font-weight:700;color:var(--amber)">⭐ Flagship Order — ${esc(FLAGSHIP_ORDER.client)}</div>
+      <div style="font-size:11px;color:var(--dim);margin-top:3px">${FLAGSHIP_ORDER.qty}× ${esc(FLAGSHIP_ORDER.productName)} · pays <b>${fmt(FLAGSHIP_ORDER.quotedRevenue)}c</b>. Source it, make it, pass quality, deliver — and see your realised margin. ▶</div>
+    </button>`;
+  }
   const now = Date.now();
   S.contracts.forEach((c,i)=>{
     const have = itemCount(c.item);
@@ -15625,6 +15791,28 @@ if (import.meta.env.DEV) {
     pacingChooseStep(id:string){ (document.querySelector(`#next-step-modal [data-step="${id}"]`) as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
     pacingUnlockLater(){ (document.getElementById('uc-later') as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
     pacingRecommend(){ return recommendNextStep({ brackets:itemCount('bracket'), bars:itemCount('iron_bar'), ore:itemCount('iron_ore'), coins:S.coins, contractsDone:(S.counters?.contracts||0) }); },
+    // ---- Contract-to-Cash probes ------------------------------------------
+    flagAvailable(){ return flagshipAvailable(); },
+    flagGiveCoins(n:number){ credit(n|0, 'adjust', 'test'); return S.coins; },
+    flagStep(){ return { step: _flag?_flag.step:null, modal: !!document.getElementById('flagship-modal') }; },
+    flagResult(){ return _flag && _flag.result ? JSON.parse(JSON.stringify(_flag.result)) : null; },
+    flagState(){ return { coins:S.coins, done:!!S.flagshipDone, rep:(S.contractRep&&S.contractRep[FLAGSHIP_ORDER.client])||0, qc:(S.qc&&S.qc.rating) }; },
+    // Deterministically settle one outcome through the wallet (best/late/defective/loss).
+    flagSim(offerId:string, deliveryId:string, key:string){
+      const O=FLAGSHIP_ORDER, offer=offerById(offerId)!;
+      const plan={ offerId, orderQty:suggestedOrderQty(O,offer), deliveryId };
+      const R:any = {
+        best:  { supplierOnTime:true,  shortfallFrac:0,   incomingDefectFrac:0,    makeDefectFrac:0 },
+        late:  { supplierOnTime:true,  shortfallFrac:0,   incomingDefectFrac:0,    makeDefectFrac:0 },
+        defect:{ supplierOnTime:true,  shortfallFrac:0,   incomingDefectFrac:0.25, makeDefectFrac:0.34 },
+        loss:  { supplierOnTime:false, shortfallFrac:0.8, incomingDefectFrac:0.3,  makeDefectFrac:0.3 },
+      };
+      const res=computeOrderResult(O, offer, plan, R[key]||R.best);
+      const before=S.coins;
+      if (res.cashOut>0) debit(res.cashOut,'purchase','flagship_sourcing');
+      if (res.cashIn>0)  credit(res.cashIn,'contract','flagship_order');
+      return { grade:res.grade, onTime:res.onTime, profit:res.profit, actualRevenue:res.actualRevenue, quotedRevenue:res.quotedRevenue, learning:res.learning, coinDelta:S.coins-before, satisfaction:res.satisfaction };
+    },
     // ---- Interaction-contract probes (village) ----------------------------
     ixTargets(){ return buildVillageTargets().map((t:any) => ({ id:t.id, kind:t.kind, name:t.name, verb:t.verb, box:t.box, approach:t.approach })); },
     ixState(){ return { tab:S.tab, sel:SEL_ID, hover:HOVER_ID, vpx:VP.x, vpy:VP.y, vptx:VP.tx, vpty:VP.ty, pending:!!VP.pending, npcMet:!!S.npcMet, action:S.action?S.action.objId:null }; },
