@@ -4,6 +4,12 @@ import { defineConfig, devices } from '@playwright/test';
 // window.__gate bridge exists (stripped from `vite build` production bundles).
 // A dedicated port keeps it clear of a running `npm run dev`.
 const PORT = Number(process.env.GATE_PORT || 5178);
+// Optional viewport override (e.g. GATE_VP=1920x1080) so the suite can be run at
+// 720p / 1080p / ultrawide for TV-readiness checks. Defaults to the device size.
+const GATE_VP = (() => {
+  const m = /^(\d+)x(\d+)$/.exec(process.env.GATE_VP || '');
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
+})();
 
 export default defineConfig({
   testDir: './e2e',
@@ -29,5 +35,5 @@ export default defineConfig({
   },
   // hasTouch must be set at project level: the Desktop Chrome device sets it
   // false, and the project `use` overrides the top-level `use`.
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], hasTouch: true } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], hasTouch: true, ...(GATE_VP ? { viewport: GATE_VP } : {}) } }],
 });

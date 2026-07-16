@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex,
-  cycleGroup, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph,
+  cycleGroup, cycleTab, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph,
+  INPUT_CONTRACT, inputPrompts,
 } from '../src/data/ui.ts';
 
 describe('UI — nav categories', () => {
@@ -83,5 +84,54 @@ describe('UI — controller prompts & colour-independent status', () => {
     expect(statusGlyph('down')).toBe('▼');
     expect(statusGlyph('good')).toBe('✔');
     expect(statusGlyph('mystery')).toBe('•');          // safe fallback
+  });
+});
+
+describe('UI — screen (tab) cycling within a category (LT/RT)', () => {
+  const tabs = ['mining', 'steelworks', 'manufacturing', 'contracts'];
+  it('cycles forward and wraps', () => {
+    expect(cycleTab(tabs, 'mining', +1)).toBe('steelworks');
+    expect(cycleTab(tabs, 'contracts', +1)).toBe('mining');
+  });
+  it('cycles backward and wraps', () => {
+    expect(cycleTab(tabs, 'mining', -1)).toBe('contracts');
+    expect(cycleTab(tabs, 'steelworks', -1)).toBe('mining');
+  });
+  it('unknown current restarts at the first; empty list is a no-op', () => {
+    expect(cycleTab(tabs, 'zzz', +1)).toBe('steelworks');   // treated as index 0 → next
+    expect(cycleTab([], 'x', +1)).toBe('x');
+  });
+});
+
+describe('UI — documented input contract', () => {
+  it('covers every binding in the controller contract', () => {
+    const actions = INPUT_CONTRACT.map(r => r.action);
+    for (const need of ['Move character', 'Navigate UI focus', 'Confirm / interact', 'Back / close',
+      'Change category', 'Change screen in tab', 'Objectives / Journal', 'Pause']) {
+      expect(actions).toContain(need);
+    }
+    // every row documents BOTH a gamepad and a keyboard binding
+    for (const r of INPUT_CONTRACT) { expect(r.gamepad.length).toBeGreaterThan(0); expect(r.keyboard.length).toBeGreaterThan(0); }
+  });
+  it('LB/RB is category and LT/RT is screen', () => {
+    expect(INPUT_CONTRACT.find(r => r.action === 'Change category')!.gamepad).toBe('LB / RB');
+    expect(INPUT_CONTRACT.find(r => r.action === 'Change screen in tab')!.gamepad).toBe('LT / RT');
+  });
+});
+
+describe('UI — input-method-aware prompts (req 11)', () => {
+  it('gamepad method keeps controller glyphs', () => {
+    const g = inputPrompts('menu', 'gamepad');
+    expect(g.find(p => p.label === 'Confirm')!.btn).toBe('Ⓐ');
+    expect(g.some(p => p.label === 'Screen' && p.btn === 'LT/RT')).toBe(true);
+  });
+  it('keyboard method swaps glyphs for key labels', () => {
+    const k = inputPrompts('menu', 'keyboard');
+    expect(k.find(p => p.label === 'Confirm')!.btn).toBe('Enter');
+    expect(k.find(p => p.label === 'Back')!.btn).toBe('Esc');
+    expect(k.find(p => p.label === 'Category')!.btn).toBe('[ ]');
+  });
+  it('pointer method falls back to controller glyphs (bar is hidden anyway)', () => {
+    expect(inputPrompts('world', 'pointer')).toEqual(controllerPrompts('world'));
   });
 });

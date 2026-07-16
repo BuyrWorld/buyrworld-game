@@ -38,6 +38,16 @@ export function cycleGroup(currentId: string, dir: number, available?: string[])
   return order[(i + step + order.length) % order.length];
 }
 
+// Cycle to the previous/next SCREEN (tab) within the current category — LT/RT.
+// `tabIds` is the ordered list of unlocked tab ids in the active group.
+export function cycleTab(tabIds: string[], currentId: string, dir: number): string {
+  if (!tabIds.length) return currentId;
+  let i = tabIds.indexOf(currentId);
+  if (i < 0) i = 0;
+  const step = dir >= 0 ? 1 : -1;
+  return tabIds[(i + step + tabIds.length) % tabIds.length];
+}
+
 // ---- Quantity selector (Buy / Sell / Max) --------------------------------
 export const QTY_STEPS = [1, 5, 10, 25, 50, 100, 250, 1000];
 export function clampQty(n: number, max: number, min = 1): number {
@@ -67,8 +77,32 @@ export function wrapIndex(cur: number, len: number, dir: number): number {
   return (cur + (dir >= 0 ? 1 : -1) + len) % len;
 }
 
+// ---- The documented input contract (one source of truth) ------------------
+// Rendered in the Controls reference and mirrored by the actual bindings in
+// main.ts (gamepad poll + keydown). Keep this in sync with those bindings.
+export type InputMethod = 'gamepad' | 'keyboard' | 'pointer';
+export interface ContractRow { action: string; gamepad: string; keyboard: string; }
+export const INPUT_CONTRACT: ContractRow[] = [
+  { action: 'Move character',         gamepad: 'Left stick',  keyboard: 'WASD' },
+  { action: 'Navigate UI focus',      gamepad: 'D-pad',       keyboard: 'Arrow keys' },
+  { action: 'Confirm / interact',     gamepad: 'Ⓐ',          keyboard: 'Enter / E' },
+  { action: 'Back / close',           gamepad: 'Ⓑ',          keyboard: 'Esc' },
+  { action: 'Change category',        gamepad: 'LB / RB',     keyboard: '[ / ]' },
+  { action: 'Change screen in tab',   gamepad: 'LT / RT',     keyboard: '- / =' },
+  { action: 'Inventory',              gamepad: 'Ⓨ',          keyboard: 'I' },
+  { action: 'Journey (progress)',     gamepad: 'Ⓧ',          keyboard: 'J' },
+  { action: 'Objectives / Journal',   gamepad: 'View',        keyboard: 'O' },
+  { action: 'Pause',                  gamepad: 'Menu ☰',      keyboard: 'Esc (in world)' },
+];
+
 // ---- Controller prompts (footer hints) -----------------------------------
-export interface Prompt { btn: string; label: string; }
+export interface Prompt { btn: string; label: string; kb?: string }
+// Map a gamepad glyph to the equivalent keyboard key label (for the "keyboard"
+// prompt style, shown when the keyboard was the most recently used input).
+const KB_GLYPH: Record<string, string> = {
+  'Ⓐ': 'Enter', 'Ⓑ': 'Esc', 'Ⓧ': 'J', 'Ⓨ': 'I', '✥': 'Arrows', '🕹': 'WASD',
+  '☰': 'Esc', 'LB/RB': '[ ]', 'LT/RT': '- =', 'View': 'Tab',
+};
 // Base hint set; main.ts swaps a couple of entries by context (world vs menu).
 export function controllerPrompts(ctx: 'world' | 'menu' | 'modal'): Prompt[] {
   if (ctx === 'modal') return [
@@ -78,14 +112,21 @@ export function controllerPrompts(ctx: 'world' | 'menu' | 'modal'): Prompt[] {
   if (ctx === 'menu') return [
     { btn: 'Ⓐ', label: 'Confirm' }, { btn: 'Ⓑ', label: 'Back' },
     { btn: 'Ⓨ', label: 'Inventory' }, { btn: 'LB/RB', label: 'Category' },
-    { btn: '✥', label: 'Focus' }, { btn: '☰', label: 'Menu' },
+    { btn: 'LT/RT', label: 'Screen' }, { btn: '✥', label: 'Focus' }, { btn: '☰', label: 'Menu' },
   ];
   return [
     { btn: 'Ⓐ', label: 'Interact' }, { btn: 'Ⓑ', label: 'Back' },
     { btn: 'Ⓧ', label: 'Journey' }, { btn: 'Ⓨ', label: 'Inventory' },
-    { btn: 'LB/RB', label: 'Category' }, { btn: '✥', label: 'Focus' },
+    { btn: 'LB/RB', label: 'Category' }, { btn: 'LT/RT', label: 'Screen' }, { btn: '✥', label: 'Focus' },
     { btn: '🕹', label: 'Move' }, { btn: '☰', label: 'Menu' },
   ];
+}
+// The same prompt set styled for the most-recently-used input method: gamepad
+// glyphs, or their keyboard-key equivalents. (Pointer/touch hides the bar.)
+export function inputPrompts(ctx: 'world' | 'menu' | 'modal', method: InputMethod): Prompt[] {
+  const base = controllerPrompts(ctx);
+  if (method !== 'keyboard') return base;
+  return base.map(p => ({ ...p, btn: KB_GLYPH[p.btn] || p.btn }));
 }
 
 // ---- Colour-independent status -------------------------------------------

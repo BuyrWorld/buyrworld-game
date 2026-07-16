@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>BuyrWorld – Supply Chain &amp; Business Simulation Game</title>
 <meta name="description" content="Build, trade and expand in BuyrWorld, a free browser supply-chain simulation. Source materials, manufacture goods, fulfil contracts and grow your empire." />
 <link rel="canonical" href="https://buyrworld.com/" />
@@ -87,14 +87,23 @@
   --teal:#35d6c1;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
-html{ -webkit-text-size-adjust:100%; background:var(--bg); }
+html{ -webkit-text-size-adjust:100%; background:var(--bg); height:100%; }
 body{
   background:var(--bg); color:var(--text);
   font-family:'IBM Plex Mono', ui-monospace, monospace;
   font-size:14px; line-height:1.5;
   min-height:100vh; min-height:100dvh; display:flex; flex-direction:column;
   -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  /* TV overscan safe areas (viewport-fit=cover) — the navy ground fills edge to
+     edge, but interactive chrome stays inside the visible area. */
+  padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right);
 }
+/* Req 9: during gameplay the PAGE never scrolls — the shell is pinned to the
+   viewport and the main panel scrolls internally instead (console-style). The
+   title/creator keep their own handling (they set body.title-open). */
+body:not(.title-open){ position:fixed; inset:0; overflow:hidden; }
+body:not(.title-open) #main{ flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  scroll-padding-top:12px; scroll-padding-bottom:64px; overscroll-behavior:contain; }
 /* Pixel-art (canvases + sprite assets) stays crisp-pixelated; HTML text/UI stays smooth & sharp */
 canvas{ image-rendering:pixelated; }
 img.px, .pixel-art{ image-rendering:pixelated; }
@@ -106,7 +115,9 @@ button:focus-visible, [tabindex]:focus-visible{ outline:3px solid var(--amber); 
 /* ---------- header ---------- */
 header{
   background:var(--panel2); border-bottom:2px solid var(--edge);
-  padding:10px 14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:10px 14px; padding-top:calc(10px + env(safe-area-inset-top));
+  padding-left:calc(14px + env(safe-area-inset-left)); padding-right:calc(14px + env(safe-area-inset-right));
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
 }
 header h1{ font-size:14px; color:var(--amber); letter-spacing:1px; }
 header h1 span{ color:var(--dim); font-size:8px; display:block; margin-top:4px; letter-spacing:0; }
@@ -153,8 +164,12 @@ nav button.locked:hover{ opacity:.85; background:rgba(255,248,230,0.3); }
 body.gpad button:focus-visible, body.gpad [tabindex]:focus-visible{ outline:3px solid var(--mint); }
 /* Controller-prompt footer */
 #gp-prompts{ display:none; position:sticky; bottom:0; z-index:40; gap:14px; flex-wrap:wrap;
-  background:var(--panel2); border-top:2px solid var(--edge); padding:6px 12px; font-size:12px; color:var(--dim); align-items:center; }
-body.gpad #gp-prompts, body.couch-mode #gp-prompts{ display:flex; }
+  background:var(--panel2); border-top:2px solid var(--edge); font-size:12px; color:var(--dim); align-items:center;
+  padding:6px 12px; padding-left:calc(12px + env(safe-area-inset-left)); padding-right:calc(12px + env(safe-area-inset-right)); padding-bottom:calc(6px + env(safe-area-inset-bottom)); }
+/* Req 11: prompts follow the most-recently-used input — controller or keyboard —
+   and stay hidden for mouse/touch (unless couch mode is on). */
+body.input-gamepad #gp-prompts, body.input-keyboard #gp-prompts, body.couch-mode #gp-prompts{ display:flex; }
+body.input-pointer:not(.couch-mode) #gp-prompts{ display:none; }
 #gp-prompts .gp-hint{ display:flex; gap:5px; align-items:center; white-space:nowrap; }
 #gp-prompts .gp-btn{ display:inline-flex; min-width:20px; height:20px; padding:0 5px; align-items:center; justify-content:center;
   background:var(--bg); border:1px solid var(--edge); border-radius:4px; color:var(--text); font-weight:700; font-size:12px; }
@@ -170,13 +185,21 @@ body.gpad #gp-prompts, body.couch-mode #gp-prompts{ display:flex; }
 .collapse-body{ overflow:hidden; max-height:4000px; transition:max-height .24s ease; }
 .collapse-body.collapsed{ max-height:0 !important; }
 .collapse-sect{ margin-bottom:8px; }
-/* Couch / TV mode — scaled up for 10-foot legibility */
-body.couch-mode{ font-size:17px; }
-body.couch-mode nav button{ font-size:15px; padding:13px 18px; }
-body.couch-mode #navcat button{ font-size:13px; padding:11px 12px; }
-body.couch-mode .btn, body.couch-mode .action, body.couch-mode .chip{ font-size:15px; }
-body.couch-mode .panel h2{ font-size:14px; }
-body.couch-mode .qty-sel button, body.couch-mode .qty-sel input{ font-size:16px; min-height:40px; }
+/* Couch / TV mode — scaled up for 10-foot legibility. A connected controller
+   (body.input-gamepad) gets the SAME TV-readable sizing automatically (req 7),
+   so text is legible at 1280×720 from the couch and controls are controller-sized. */
+body.couch-mode, body.input-gamepad{ font-size:16px; }
+body.couch-mode nav button, body.input-gamepad nav button{ font-size:15px; padding:13px 18px; min-height:46px; }
+body.couch-mode #navcat button, body.input-gamepad #navcat button{ font-size:13px; padding:11px 12px; min-height:44px; }
+body.couch-mode .btn, body.couch-mode .action, body.couch-mode .chip,
+body.input-gamepad .btn, body.input-gamepad .action, body.input-gamepad .chip{ font-size:15px; }
+body.couch-mode .panel h2, body.input-gamepad .panel h2{ font-size:14px; }
+body.couch-mode .qty-sel button, body.couch-mode .qty-sel input,
+body.input-gamepad .qty-sel button, body.input-gamepad .qty-sel input{ font-size:16px; min-height:44px; }
+/* Req 10: replace tiny controls with controller-sized targets when a pad is used. */
+body.input-gamepad button, body.input-gamepad [tabindex]:not([tabindex="-1"]),
+body.couch-mode button, body.couch-mode [tabindex]:not([tabindex="-1"]){ min-height:40px; }
+body.input-gamepad #gp-prompts .gp-btn, body.couch-mode #gp-prompts .gp-btn{ min-width:26px; height:26px; font-size:13px; }
 /* Larger default hit targets for touch/controller */
 .qty-sel{ display:inline-flex; align-items:center; gap:4px; }
 .qty-sel button{ min-width:34px; min-height:34px; }

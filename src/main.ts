@@ -29,7 +29,7 @@ import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as 
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, radioDefaultTrack, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
-import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph } from './data/ui.ts';
+import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, cycleTab, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, inputPrompts, INPUT_CONTRACT, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
 import { DISTRICTS, isDistrictOpen, districtForBuilding, nextGatedDistrict } from './data/districts.ts';
@@ -11129,7 +11129,49 @@ function goTab(id){
   renderNav(); renderMain();
 }
 function selectNavGroup(gid){ const t = firstTabInGroup(gid); if (t) goTab(t); }
-function switchNavCategory(dir){ const avail = availableGroupIds(); selectNavGroup(cycleGroup(activeNavGroup(), dir, avail)); }
+function switchNavCategory(dir){ const avail = availableGroupIds(); selectNavGroup(cycleGroup(activeNavGroup(), dir, avail)); focusMainPrimary(); }
+// LT/RT — cycle SCREENS (tabs) within the active category.
+function switchScreen(dir){
+  const ids = unlockedTabsInGroup(activeNavGroup()).map(t => t.id);
+  const next = cycleTab(ids, S.tab, dir);
+  if (next && next !== S.tab){ goTab(next); focusMainPrimary(); }
+}
+// View/Select — Objectives / Journal (the Valley Journal checklist of firsts).
+function openObjectives(){ try{ openJournalPanel(); }catch(e){} }
+// The documented input contract, rendered in the game's own navy/gold style.
+function openControlsReference(){
+  const rows = INPUT_CONTRACT.map(r =>
+    `<tr style="border-top:1px solid var(--edge)">
+      <td style="padding:7px 10px;color:var(--text)">${esc(r.action)}</td>
+      <td style="padding:7px 10px;text-align:center"><span class="gp-btn">${esc(r.gamepad)}</span></td>
+      <td style="padding:7px 10px;text-align:center;color:var(--dim)">${esc(r.keyboard)}</td></tr>`).join('');
+  const inner = () => `<div class="panel" style="padding:16px;max-width:480px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h2 style="margin:0;font-size:15px">🎮 Controls</h2>
+      <button aria-label="Close" class="modal-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer">✕</button></div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="color:var(--amber);text-align:left">
+        <th style="padding:4px 10px;font-weight:700">Action</th>
+        <th style="padding:4px 10px;text-align:center;font-weight:700">Controller</th>
+        <th style="padding:4px 10px;text-align:center;font-weight:700">Keyboard</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    <p style="font-size:11px;color:var(--dim);margin:10px 0 0;line-height:1.5">Buttons follow the Xbox layout. Mouse and touch stay fully supported — the prompt bar shows the controls for whichever input you used last.</p>
+    <button data-primary id="controls-ok" class="btn" style="width:100%;margin-top:12px">Got it ▶</button>
+  </div>`;
+  const wire = (el: HTMLElement) => {
+    (el.querySelector('.modal-close') as HTMLElement).onclick = () => closeModal('controls-modal');
+    (el.querySelector('#controls-ok') as HTMLElement).onclick = () => closeModal('controls-modal');
+  };
+  openModal('controls-modal', inner, { label:'Controls', backdrop:'rgba(0,0,0,.62)', initialFocus:'#controls-ok', wire });
+}
+(globalThis as any).openControlsReference = openControlsReference;
+// Req 3: opening a screen places focus on its PRIMARY action — the element marked
+// [data-primary], else the first focusable control in the main panel.
+function focusMainPrimary(){
+  const main = document.getElementById('main'); if (!main) return;
+  const el = (main.querySelector('[data-primary]:not([disabled])') as HTMLElement) || _firstFocusable(main);
+  if (el) _setUiFocus(el);
+}
 function renderNav(){
   const active = activeNavGroup();
   const avail = availableGroupIds();
@@ -14786,6 +14828,7 @@ document.getElementById("version-label")?.addEventListener("keydown", (e:any) =>
 syncJourneyBtn(); syncJournalBtn();
 window.addEventListener("keydown", e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as any)?.tagName||"");
+  if (!typing) setInputMethod('keyboard');   // keyboard is now the active input (req 11)
   // ---- controller-equivalent keyboard nav (works everywhere, incl. modals) ----
   if (!typing){
     if (e.key==="ArrowUp" || e.key==="ArrowLeft"){ e.preventDefault(); moveUiFocus(-1); return; }
@@ -14793,6 +14836,12 @@ window.addEventListener("keydown", e => {
     if (e.key==="Tab"){ e.preventDefault(); moveUiFocus(e.shiftKey ? -1 : 1); return; }
     if (e.key==="Enter"){ if (uiConfirm()){ e.preventDefault(); return; } }
     if (e.key==="Escape" || e.key==="Backspace"){ if (uiBack()){ e.preventDefault(); return; } if (e.key==="Escape" && !_topModal() && !_titleUp()){ e.preventDefault(); openPauseMenu(); return; } }
+    // category (LB/RB) + screen (LT/RT) keyboard equivalents, and Objectives (View)
+    if (e.key==="["){ e.preventDefault(); switchNavCategory(-1); return; }
+    if (e.key==="]"){ e.preventDefault(); switchNavCategory(1); return; }
+    if (e.key==="-" || e.key==="_"){ e.preventDefault(); switchScreen(-1); return; }
+    if (e.key==="=" || e.key==="+"){ e.preventDefault(); switchScreen(1); return; }
+    if (e.key==="o"||e.key==="O"){ e.preventDefault(); openObjectives(); return; }
   }
   if (typing) return;
   if ((e.key==="j"||e.key==="J")){ openJourney(); return; }
@@ -14812,6 +14861,9 @@ window.addEventListener("keydown", e => {
   if (["a","d","w","s"].includes(e.key)) VKEYS[e.key] = true;
 });
 window.addEventListener("keyup", e => { VKEYS[e.key] = false; });
+// A real pointer/touch press makes the pointer the active input method (req 11):
+// hides the controller/keyboard prompt bar so mouse/touch players get a clean HUD.
+window.addEventListener("pointerdown", () => setInputMethod('pointer'), { passive:true });
 // Autoplay-safe audio bootstrap. HTMLAudio needs a user activation to start, and a
 // rejected play() is never retried — so returning players (who skip the title) and
 // any deferred start would get silence. On the FIRST real gesture, unlock + start the
@@ -15057,12 +15109,27 @@ function uiBack(){
   if (_uiFocusEl){ _clearUiFocus(); return true; }
   return false;
 }
-// Controller-prompt footer, context-aware.
+// Controller-prompt footer, context-aware and styled for the most recently used
+// input method (req 11): controller glyphs after gamepad/D-pad, key labels after
+// the keyboard. The pointer hides the bar (handled in CSS via body.input-pointer).
 function updateGpPrompts(){
   const bar = document.getElementById('gp-prompts'); if (!bar) return;
   const ctx = _topModal() ? 'modal' : (_uiFocusEl ? 'menu' : 'world');
-  bar.innerHTML = controllerPrompts(ctx as any).map(p =>
+  const method = _lastInput === 'keyboard' ? 'keyboard' : 'gamepad';
+  bar.innerHTML = inputPrompts(ctx as any, method as any).map(p =>
     `<span class="gp-hint"><span class="gp-btn">${p.btn}</span>${p.label}</span>`).join('');
+}
+// Most-recently-used input method (req 11). Drives prompt style + visibility.
+var _lastInput: 'gamepad' | 'keyboard' | 'pointer' = 'pointer';
+function setInputMethod(m: 'gamepad' | 'keyboard' | 'pointer'){
+  if (_lastInput === m) return;
+  _lastInput = m;
+  const b = document.body.classList;
+  b.toggle('input-gamepad', m === 'gamepad');
+  b.toggle('input-keyboard', m === 'keyboard');
+  b.toggle('input-pointer', m === 'pointer');
+  if (m === 'gamepad') setGamepadActive(true);
+  updateGpPrompts();
 }
 // Couch / TV mode + gamepad presence body classes.
 function applyCouchMode(){ document.body.classList.toggle('couch-mode', !!(S.settings && S.settings.couch)); updateGpPrompts(); }
@@ -15088,7 +15155,7 @@ function openPauseMenu(){
       else if (a === 'settings'){ closeModal('pause-modal'); openSettings(); }
       else if (a === 'couch'){ if(!S.settings) S.settings={}; S.settings.couch = !S.settings.couch; applyCouchMode(); save(); }
       else if (a === 'fullscreen'){ toggleFullscreen(); }
-      else if (a === 'controls'){ closeModal('pause-modal'); if (typeof showPlayHint === 'function') showPlayHint(); }
+      else if (a === 'controls'){ closeModal('pause-modal'); openControlsReference(); }
     });
   };
   openModal('pause-modal', inner, { label:'Paused', backdrop:'rgba(0,0,0,.62)', initialFocus:'[data-pause="resume"]', wire,
@@ -15147,14 +15214,19 @@ function pollGamepad(){
     const inWorld = S.tab==="village" && !_topModal() && !_paused && !_uiFocusEl;
     if (!(inWorld && _cycleVillageTarget(dir))) moveUiFocus(dir);
   }
-  // ---- Face + system buttons ----
-  if (pad.buttons[9]?.pressed  && !prev[9]){ if (document.getElementById('pause-modal')) closePauseMenu(); else if (!_titleUp()) openPauseMenu(); }  // ☰ Menu → pause
+  // any button press this frame counts as "gamepad is the active input method"
+  if (pad.buttons.some((bt,i)=>bt?.pressed && !prev[i])) setInputMethod('gamepad');
+  // ---- Face + system buttons (see INPUT_CONTRACT in src/data/ui.ts) ----
+  if (pad.buttons[9]?.pressed  && !prev[9]){ if (document.getElementById('pause-modal')) closePauseMenu(); else if (!_titleUp()) openPauseMenu(); }  // ☰ Menu → Pause
+  if (pad.buttons[8]?.pressed  && !prev[8])  openObjectives();     // View/Select — Objectives / Journal
   if (pad.buttons[0]?.pressed  && !prev[0]){ if (!uiConfirm()) gpInteract(); }   // A — confirm focus, else interact
   if (pad.buttons[1]?.pressed  && !prev[1]){ if (!uiBack()) gpBack(); }          // B — back / close
   if (pad.buttons[3]?.pressed  && !prev[3])  toggleInventory();   // Y — inventory
   if (pad.buttons[2]?.pressed  && !prev[2])  openJourney();       // X — Founder's Journey
   if (pad.buttons[4]?.pressed  && !prev[4])  switchNavCategory(-1);  // LB — prev category
   if (pad.buttons[5]?.pressed  && !prev[5])  switchNavCategory(1);   // RB — next category
+  if (pad.buttons[6]?.pressed  && !prev[6])  switchScreen(-1);       // LT — prev screen in category
+  if (pad.buttons[7]?.pressed  && !prev[7])  switchScreen(1);        // RT — next screen in category
   for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
 }
 function gpInteract(){
@@ -15391,6 +15463,17 @@ if (import.meta.env.DEV) {
       save();
       return snaps;
     },
+    // ---- UI focus / controller-navigation probes --------------------------
+    uiFocus(){ return { tab:S.tab, group:activeNavGroup(), method:_lastInput,
+      focus: _uiFocusEl ? ((_uiFocusEl.textContent||_uiFocusEl.getAttribute('aria-label')||'').trim().slice(0,32)) : null,
+      hasFocusRing: !!document.querySelector('.gp-focus'),
+      focusables: _focusables().length,
+      promptsVisible: (()=>{ const b=document.getElementById('gp-prompts'); return !!(b && getComputedStyle(b).display!=='none'); })() }; },
+    uiCategory(dir:number){ switchNavCategory(dir); return (window as any).__gate.uiFocus(); },
+    uiScreen(dir:number){ switchScreen(dir); return (window as any).__gate.uiFocus(); },
+    uiFocusMove(dir:number){ moveUiFocus(dir); return (window as any).__gate.uiFocus(); },
+    uiOpenObjectives(){ openObjectives(); return { open: !!document.getElementById('journal-modal') || !!document.querySelector('[id*="journal"],[id*="dd-"]') }; },
+    uiSetMethod(m:string){ setInputMethod(m as any); return { method:_lastInput, promptsVisible:(()=>{const b=document.getElementById('gp-prompts');return !!(b&&getComputedStyle(b).display!=='none');})() }; },
     // ---- Interaction-contract probes (village) ----------------------------
     ixTargets(){ return buildVillageTargets().map((t:any) => ({ id:t.id, kind:t.kind, name:t.name, verb:t.verb, box:t.box, approach:t.approach })); },
     ixState(){ return { tab:S.tab, sel:SEL_ID, hover:HOVER_ID, vpx:VP.x, vpy:VP.y, vptx:VP.tx, vpty:VP.ty, pending:!!VP.pending, npcMet:!!S.npcMet, action:S.action?S.action.objId:null }; },
