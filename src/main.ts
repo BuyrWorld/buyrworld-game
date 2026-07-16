@@ -28,6 +28,7 @@ import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary,
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, radioDefaultTrack, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
+import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
 import { ECON, applySalePressure, applyBuyPressure, recoverPressure, driftToward, nudgeDrift, baseFactor, markToMarket, macroPhase, macroPhaseId, macroDemand, msToNextPhase } from './data/economy.ts';
@@ -2517,59 +2518,153 @@ function showVillagerProfile(v){
   el.innerHTML = `<div class="vp-card"><div class="vp-name">${v.n}</div>${rows}<button class="vp-close" onclick="document.getElementById('villager-profile-modal').remove()">✕</button></div>`;
   document.body.appendChild(el);
 }
+// ============================================================================
+// INTERACTION TARGETING — one reusable contract for pointer, touch & controller.
+// buildVillageTargets() normalises every live interactable (NPCs, buildings,
+// resources, signs, stalls, lore, props) into a single list with a hitbox, verb,
+// approach point and action. The pure core (priority, hit-test, verbs, cycling)
+// lives in src/data/interaction.ts. NOTHING here is per-NPC special-cased.
+// ============================================================================
+var SEL_ID: string | null = null;   // highlighted/selected target id (runtime; never saved)
+var HOVER_ID: string | null = null; // mouse-hover target id (pointer only)
+
+function _targetKind(o: any){
+  if (o.kind==="bld") return 'building';
+  if (o.kind==="rock" || o.kind==="tree") return 'resource';
+  if (o.kind==="sign") return 'sign';
+  if (o.kind==="bench"||o.kind==="swing"||o.kind==="slide"||o.kind==="fountain"||o.kind==="bin") return 'prop';
+  return null;   // lamps/plants are scenery, never interactive
+}
+function _objVerb(o: any, k: string){
+  if (k==='resource') return ixVerb('resource', { resource: o.kind==='tree' ? 'tree' : 'rock' });
+  if (k==='building')  return ixVerb('building', { tab: o.tab });
+  if (k==='sign')      return o.id==='town_directory' ? 'Open' : 'Read';
+  return 'Inspect';
+}
+// Build the full interactable list for the current village frame. Each target:
+// { id, kind, box, cx, cy, approach:{x,y}, range, verb, act }.
+function buildVillageTargets(){
+  const out: any[] = [];
+  for (const v of VILLAGER_STATE){
+    if (v.indoor || v.phase === "sleep") continue;
+    out.push({ id:'v:'+v.id, kind:'npc', name:v.n, box:npcBox(v.x,v.y,TILE), cx:v.x, cy:v.y, approach:{x:v.x, y:v.y+18}, range:INTERACT_RANGE, verb:'Chat', act:()=>showVillagerProfile(v) });
+  }
+  for (const w of WANDERERS){
+    out.push({ id:'w:'+w.id, kind:'npc', name:w.n, box:npcBox(w.x,w.y,TILE), cx:w.x, cy:w.y, approach:{x:w.x, y:w.y+18}, range:INTERACT_RANGE, verb:'Chat', act:()=>showWandererProfile(w) });
+  }
+  if (lemonadeOpen()){
+    const x=(LEMONADE.tx+0.5)*TILE, y=LEMONADE.ty*TILE;
+    out.push({ id:'stall:lemonade', kind:'stall', name:'Lemonade Stand', box:{x:x-TILE*0.9,y:y-TILE*1.1,w:TILE*1.8,h:TILE*2.2}, cx:x, cy:y, approach:{x, y:y+TILE}, range:INTERACT_RANGE, verb:'Shop', act:()=>openLemonadeStand() });
+  }
+  if (merchantActive(_eventDay())){
+    const x=(MERCHANT_POS.tx+0.6)*TILE, y=MERCHANT_POS.ty*TILE;
+    out.push({ id:'stall:merchant', kind:'stall', name:'Travelling Merchant', box:{x:x-TILE,y:y-TILE*1.1,w:TILE*2,h:TILE*2.3}, cx:x, cy:y, approach:{x, y:y+TILE}, range:INTERACT_RANGE, verb:'Shop', act:()=>openMerchant() });
+  }
+  if (fairActive(_eventDay())){
+    const x=(FAIR_POS.tx+0.6)*TILE, y=FAIR_POS.ty*TILE;
+    out.push({ id:'stall:fair', kind:'stall', name:'Fairground', box:{x:x-TILE,y:y-TILE*1.1,w:TILE*2,h:TILE*2.3}, cx:x, cy:y, approach:{x, y:y+TILE}, range:INTERACT_RANGE, verb:'Play', act:()=>openFair() });
+  }
+  for (const id in LORE_STONES){
+    const s = loreStoneAt(id); if (!s) continue;
+    const known = !!(S.lore && S.lore[id]);
+    out.push({ id:'lore:'+id, kind:'lore', name:'Waystone', box:{x:s.x-TILE*0.5,y:s.y-TILE*0.6,w:TILE,h:TILE*1.2}, cx:s.x, cy:s.y, approach:{x:s.x, y:s.y+TILE}, range:INTERACT_RANGE, verb:known?'Read':'Inspect',
+      act:()=>{ if (known) openLoreEntry(id); else discoverLore(id, true); } });
+  }
+  for (const o of V_OBJECTS){
+    const k = _targetKind(o); if (!k) continue;
+    const r = objRect(o), ap = objApproach(o);
+    const nm = o.name || (o.ore && ITEMS[o.ore] ? ITEMS[o.ore].n : '') || '';
+    out.push({ id:'o:'+o.id, kind:k, name:nm, box:footprintBox(r.x,r.y,r.w,r.h), cx:r.x+r.w/2, cy:r.y+r.h/2, approach:ap, range:INTERACT_RANGE, verb:_objVerb(o,k), objId:o.id, act:()=>interactObj(o) });
+  }
+  return out;
+}
+function _findTarget(id: string | null, list?: any[]){
+  if (!id) return null;
+  const ts = list || buildVillageTargets();
+  return ts.find(t => t.id === id) || null;
+}
+function _inRangeOf(t: any){ return t && ixInRange(VP.x, VP.y, t.approach.x, t.approach.y, t.range || INTERACT_RANGE); }
+function _selectTarget(t: any){   // highlight + walk toward the approach point (no interaction yet)
+  SEL_ID = t.id;
+  VP.tx = t.approach.x; VP.ty = t.approach.y; VP.pending = null;
+}
+function _clearSel(){ SEL_ID = null; }
+// D-pad focus nav: cycle the highlighted target among nearby ones (nearest first).
+// Returns false when there is nothing nearby, so the caller can fall back to UI focus.
+function _cycleVillageTarget(dir: 1|-1){
+  const ids = buildVillageTargets()
+    .map(t => ({ id:t.id, d:Math.hypot(VP.x-t.approach.x, VP.y-t.approach.y) }))
+    .filter(o => o.d < NEARBY_RADIUS)
+    .sort((a,b) => a.d - b.d)
+    .map(o => o.id);
+  if (!ids.length) return false;
+  SEL_ID = ixCycle(ids, SEL_ID, dir);
+  return true;
+}
+// Confirm the current selection (verb chip / second tap / A / E). Interacts only
+// when in range; otherwise walks to the approach point and keeps the selection.
+function _confirmSel(){
+  const t = _findTarget(SEL_ID); if (!t) return;
+  if (_inRangeOf(t)){ const act = t.act; _clearSel(); act(); }
+  else { VP.tx = t.approach.x; VP.ty = t.approach.y; VP.pending = null; }
+}
+function _targetName(t: any){ return t ? (t.name || t.verb || '') : ''; }
+function _strokeRoundRect(ctx: any, x:number, y:number, w:number, h:number, r:number){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.stroke();
+}
+// Draw hover/focus outlines for the highlighted (and mouse-hovered) target so
+// buildings and resource nodes read as selectable. Called inside the world-space
+// (camera-translated) transform, so target boxes are in world coords already.
+function drawInteractHighlights(ctx: any, t: number){
+  if (SEL_ID == null && HOVER_ID == null) return;
+  const list = buildVillageTargets();
+  const outline = (tg: any, col: string, lw: number, dash: number[] | null) => {
+    if (!tg) return;
+    const b = tg.box, pad = 3;
+    ctx.save();
+    ctx.strokeStyle = col; ctx.lineWidth = lw; if (dash) ctx.setLineDash(dash);
+    _strokeRoundRect(ctx, b.x - pad, b.y - pad, b.w + pad*2, b.h + pad*2, 5);
+    ctx.restore();
+  };
+  const hov = HOVER_ID && HOVER_ID !== SEL_ID ? _findTarget(HOVER_ID, list) : null;
+  if (hov) outline(hov, 'rgba(255,255,255,.45)', 1.5, [4,3]);
+  const sel = _findTarget(SEL_ID, list);
+  if (sel){
+    const inR = _inRangeOf(sel);
+    // green pulse = in range & ready to confirm; blue dashed = selected, walk closer
+    const a = inR ? (0.7 + Math.sin(t*8)*0.2) : 0.85;
+    outline(sel, inR ? `rgba(120,220,140,${a.toFixed(2)})` : 'rgba(150,200,255,.85)', 2.5, inR ? null : [5,4]);
+  }
+}
 function villageClick(e){
   const cv = document.getElementById("village");
   if (!cv) return;
   const rect = cv.getBoundingClientRect();
   const wx = (e.clientX-rect.left)*(cv.width/rect.width) + CAM.x;
   const wy = (e.clientY-rect.top)*(cv.height/rect.height) + CAM.y;
-  // check for outdoor villager click
-  for (const v of VILLAGER_STATE){
-    if (v.indoor || v.phase === "sleep") continue;
-    if (Math.hypot(wx-v.x, wy-v.y) < 20){ showVillagerProfile(v); return; }
+  _villageTapAt(wx, wy);
+}
+// The pointer/touch interaction contract, in world coordinates (so it's testable
+// without synthesising DOM pointer events).
+function _villageTapAt(wx: number, wy: number){
+  const targets = buildVillageTargets();
+  const t = ixHitTest(wx, wy, targets);
+  if (!t){
+    // Clear terrain → MOVE. Tight hitboxes mean a tap beside/behind an NPC or on
+    // the ground near a building lands here and walks, never triggering anything.
+    VP.tx = Math.max(TILE, Math.min((VCOLS-1)*TILE, wx));
+    VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
+    VP.pending = null; _clearSel();
+    return;
   }
-  for (const w of WANDERERS){
-    if (Math.hypot(wx-w.x, wy-w.y) < 20){ showWandererProfile(w); return; }
-  }
-  // the children's lemonade stand (when it's open)
-  if (lemonadeOpen()){
-    const _lsx = (LEMONADE.tx+0.5)*TILE, _lsy = LEMONADE.ty*TILE;
-    if (Math.abs(wx-_lsx) < TILE*1.1 && wy > _lsy-TILE*1.2 && wy < _lsy+TILE*1.4){ openLemonadeStand(); return; }
-  }
-  // today's village event stall (travelling merchant / fair)
-  if (merchantActive(_eventDay())){
-    const _mx = (MERCHANT_POS.tx+0.6)*TILE, _my = MERCHANT_POS.ty*TILE;
-    if (Math.abs(wx-_mx) < TILE*1.3 && wy > _my-TILE*1.2 && wy < _my+TILE*1.4){ openMerchant(); return; }
-  }
-  if (fairActive(_eventDay())){
-    const _fx = (FAIR_POS.tx+0.6)*TILE, _fy = FAIR_POS.ty*TILE;
-    if (Math.abs(wx-_fx) < TILE*1.3 && wy > _fy-TILE*1.2 && wy < _fy+TILE*1.4){ openFair(); return; }
-  }
-  // Valley Lore waystones — tap one to read it (or to walk over and uncover it)
-  for (const id in LORE_STONES){
-    const s = loreStoneAt(id); if (!s) continue;
-    if (Math.abs(wx-s.x) < TILE*0.9 && Math.abs(wy-s.y) < TILE*1.1){
-      if (S.lore && S.lore[id]) openLoreEntry(id);
-      else if (Math.hypot(VP.x-s.x, VP.y-s.y) < TILE*1.6) discoverLore(id, true);
-      else { VP.tx = s.x; VP.ty = s.y + TILE; VP.pending = null; }   // walk over to uncover it
-      return;
-    }
-  }
-  for (const o of V_OBJECTS){
-    // signs (notice board, town directory, lore stone) get a bigger hit area and
-    // open immediately on click — no need to walk over to them first.
-    const _isSign = o.kind==="sign";
-    const r = objRect(o), pad = _isSign ? 16 : 6;
-    if (wx>=r.x-pad && wx<=r.x+r.w+pad && wy>=r.y-pad && wy<=r.y+r.h+pad){
-      const ap = objApproach(o);
-      if (_isSign || Math.hypot(VP.x-ap.x, VP.y-ap.y) < 46) interactObj(o);
-      else { VP.tx=ap.x; VP.ty=ap.y; VP.pending=o; }
-      return;
-    }
-  }
-  VP.tx = Math.max(TILE, Math.min((VCOLS-1)*TILE, wx));
-  VP.ty = Math.max(TILE, Math.min((VROWS-1)*TILE, wy));
-  VP.pending = null;
+  // Active-swing passthrough: tapping the node you're already working keeps swinging.
+  if (t.kind==='resource' && S.action && S.action.objId === t.objId && _inRangeOf(t)){ t.act(); return; }
+  // Second tap on the SAME highlighted target, in range → confirm → interact.
+  if (SEL_ID === t.id && _inRangeOf(t)){ const act = t.act; _clearSel(); act(); return; }
+  // Otherwise: highlight/select it first and walk toward it. No interaction yet.
+  _selectTarget(t);
 }
 // Draws a proper pixel tool in the swinging arm's local frame (arm points +y, so
 // the handle runs down the arm and the tier-coloured head sits at the far end).
@@ -5608,6 +5703,7 @@ function drawVillage(t){
     ctx.restore();
   }
   drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', WORLD_PPL, plHat(), plHatColor(), plOpts());
+  drawInteractHighlights(ctx, t);   // hover/focus outlines on the highlighted target
   drawWP(ctx, t, 1);   // air-layer particles (steam, smoke, coins, xp, sparkles) over people
   ctx.restore();
   drawWorldDepth(ctx, t);    // screen-space atmosphere: far haze up top, foreground vignette below
@@ -5616,16 +5712,29 @@ function drawVillage(t){
   const overlay = document.getElementById("village-overlay");
   if (overlay){
     let html = "";
-    const near = nearestInteractable();
-    if (near){
-      const isN = near.kind==="npc";
-      const r = isN ? {x:near.w.x-12, y:near.w.y-12, w:24} : objRect(near);
-      const label = isN ? ((near.w.id==="frost"?"❄️ ":"💬 ")+near.w.n) : villageTip(near);
-      if (label){
-        const tx = (r.x+(r.w||24)/2 - CAM.x) / VIEW_W * 100;
-        const ty = (r.y - 18 - CAM.y) / VIEW_H * 100;
-        if (tx > -5 && tx < 105 && ty > -5 && ty < 100)
-          html += `<div class="vlbl" style="left:${tx.toFixed(1)}%;top:${ty.toFixed(1)}%">${label}</div>`;
+    // Contextual interaction chip — shows the verb (Chat / Enter / Mine / Fish /
+    // Inspect …) for the SELECTED target, or, when nothing is selected, the nearest
+    // one so controller/keyboard users see what A/E will do. When selected AND in
+    // range it becomes a bright, tappable "confirm" chip.
+    {
+      const _list = buildVillageTargets();
+      let _chip = _findTarget(SEL_ID, _list);
+      const _selected = !!_chip;
+      if (!_chip){
+        let bd = NEARBY_RADIUS;
+        for (const c of _list){ const d = Math.hypot(VP.x-c.approach.x, VP.y-c.approach.y); if (d < bd){ bd = d; _chip = c; } }
+      }
+      if (_chip){
+        const b = _chip.box;
+        const cx = (b.x + b.w/2 - CAM.x) / VIEW_W * 100;
+        const cy = (b.y - 16 - CAM.y) / VIEW_H * 100;
+        if (cx > -5 && cx < 105 && cy > -5 && cy < 100){
+          const inR = _inRangeOf(_chip);
+          const ready = _selected && inR;                    // tappable confirm
+          const nm = _targetName(_chip);
+          const body = ready ? `▶ ${esc(_chip.verb)}${nm?` ${esc(nm)}`:''}` : `${esc(_chip.verb)}${nm?` · ${esc(nm)}`:''}`;
+          html += `<div class="vchip${ready?' vchip-ready':''}"${ready?' data-vconfirm="1"':''} style="left:${cx.toFixed(1)}%;top:${cy.toFixed(1)}%">${body}</div>`;
+        }
       }
     }
     // floating name tags and speech dock for nearby outdoor villagers
@@ -8595,18 +8704,10 @@ function villageFrame(ts){
       toast(`🌊 ${pName()}: "I can't swim… yet."`);
       log(`🌊 ${pName()} eyes the water: "I can't swim… yet."`);
     }
-    // walk-in building entry — fires when VP feet reach door bottom edge
+    // Buildings are NOT entered just by walking over the door — that caused the
+    // accidental entries while crossing the village. Entry now needs a deliberate
+    // confirm (tap the highlighted building / verb chip, or controller A / key E).
     if (VP.enterCooldown > 0) VP.enterCooldown--;
-    else if (!VP.pending) {
-      for (const o of V_OBJECTS) {
-        if (o.kind !== "bld") continue;
-        const r = objRect(o);
-        const doorX = r.x + r.w/2, doorY = r.y + r.h;
-        if (Math.abs(VP.x - doorX) < TILE*0.7 && VP.y > doorY - TILE*0.6 && VP.y < doorY + TILE*0.6) {
-          interactObj(o); VP.enterCooldown = 90; break;
-        }
-      }
-    }
     // auto-cancel action when player walks away from station
     if (S.action && VP.moving) {
       const sp = stationPos(S.action.skill, S.action.id);
@@ -8622,11 +8723,13 @@ function villageFrame(ts){
     updateVillagers(dt);
     updateChildren(dt);
     updateNightWildlife(dt);
+    // Deliberate direct interaction (controller A / keyboard E) walks to a target
+    // and interacts ON ARRIVAL — the button press was the deliberate trigger.
+    // (Pointer taps never set VP.pending; they select + await a confirm instead.)
     if (VP.pending){
-      const o = VP.pending;
-      const ap = o.kind==="npc" ? {x:o.w.x, y:o.w.y+18} : objApproach(o);
-      if (Math.hypot(VP.x-ap.x, VP.y-ap.y) < 46 && VP.tx===null){
-        VP.pending=null; interactObj(o);
+      const p = VP.pending;
+      if (VP.tx===null && ixInRange(VP.x, VP.y, p.approach.x, p.approach.y, INTERACT_RANGE)){
+        VP.pending=null; p.act();
       } else if (VP.tx===null && !VP.moving){ VP.pending=null; }
     }
     drawVillage(t);
@@ -8693,9 +8796,34 @@ function villageFrame(ts){
   }
   requestAnimationFrame(villageFrame);
 }
+function villageHover(e: any){
+  // Mouse hover → outline the target under the cursor (touch has no hover). Cleared
+  // when the pointer is over clear terrain.
+  if (e.pointerType && e.pointerType !== 'mouse'){ HOVER_ID = null; return; }
+  const cv = document.getElementById("village"); if (!cv) return;
+  const rect = cv.getBoundingClientRect();
+  const wx = (e.clientX-rect.left)*(cv.width/rect.width) + CAM.x;
+  const wy = (e.clientY-rect.top)*(cv.height/rect.height) + CAM.y;
+  const t = ixHitTest(wx, wy, buildVillageTargets());
+  HOVER_ID = t ? t.id : null;
+  cv.style.cursor = t ? 'pointer' : '';
+}
 function setupVillage(){
   const cv = document.getElementById("village");
-  if (cv) cv.onclick = villageClick;
+  if (cv){
+    cv.onclick = villageClick;
+    cv.onpointermove = villageHover;
+    cv.onpointerleave = () => { HOVER_ID = null; };
+  }
+  // The in-range verb chip is a tappable confirm (delegated, since the overlay is
+  // rebuilt each frame). Tapping it interacts with the highlighted target.
+  const ov = document.getElementById("village-overlay");
+  if (ov && !(ov as any)._vwired){
+    (ov as any)._vwired = true;
+    ov.addEventListener('click', (ev: any) => {
+      if (ev.target && ev.target.closest && ev.target.closest('[data-vconfirm]')){ ev.stopPropagation(); _confirmSel(); }
+    });
+  }
 }
 function interiorClick(e){
   const cv = document.getElementById("interior");
@@ -9040,6 +9168,10 @@ if (typeof document !== 'undefined'){
   .village-canvas-rel{position:relative}
   #village-overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden}
   .vlbl{position:absolute;transform:translate(-50%,-100%);background:rgba(255,248,230,.96);border:2px solid #8c6947;color:#453423;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:4px;white-space:nowrap;box-shadow:2px 2px 0 rgba(70,50,30,.25);pointer-events:none}
+  /* Interaction verb chip: informational by default; the in-range "ready" chip is a bright, tappable confirm. */
+  .vchip{position:absolute;transform:translate(-50%,-100%);background:rgba(24,28,36,.9);border:1px solid #5a6472;color:#dfe6ef;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 9px;border-radius:11px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35);pointer-events:none}
+  .vchip-ready{background:rgba(30,120,60,.96);border-color:#8ff0aa;color:#eafff0;pointer-events:auto;cursor:pointer;box-shadow:0 0 0 2px rgba(140,240,170,.35),0 2px 8px rgba(0,0,0,.4)}
+  body.gpad .vchip-ready::before{content:'Ⓐ ';opacity:.9}
   .int-canvas-wrap .ilbl{position:absolute;transform:translate(-50%,0);background:rgba(69,52,35,.92);color:#fff8e6;font:600 11px/1.3 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 0 rgba(0,0,0,.25)}
   .ilbl-lock{color:#ffd666}
   .int-canvas-wrap .ilbl-exit{position:absolute;left:50%;bottom:3px;transform:translateX(-50%);background:rgba(176,60,50,.95);color:#fff8e6;font:700 11px 'IBM Plex Mono',monospace;padding:3px 10px;border-radius:5px;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.4);animation:exitPulse 1.8s ease-in-out infinite}
@@ -14644,6 +14776,11 @@ window.addEventListener("keydown", e => {
   if (e.key===" "){
     if (S.action && SWING_SKILLS.has(S.action.skill)){ e.preventDefault(); swing(); return; }
   }
+  // E / Enter — the keyboard "deliberate direct interaction" control (mirrors
+  // controller A): interact with the highlighted (or nearest) in-range target.
+  if ((e.key==="e"||e.key==="E"||e.key==="Enter") && !_topModal() && !_paused){
+    if (S.tab==="village" || INTERIOR_TABS.has(S.tab)){ e.preventDefault(); gpInteract(); return; }
+  }
   // WASD walks the avatar in world views (arrows are reserved for UI focus above).
   if (_topModal() || _paused) return;
   if (S.tab !== "village" && !INTERIOR_TABS.has(S.tab)) return;
@@ -14972,15 +15109,18 @@ function pollGamepad(){
     for (let i=0;i<pad.buttons.length;i++) _gpLastBtns[i] = pad.buttons[i]?.pressed||false;
     return;
   }
-  // ---- D-pad → UI focus ring (edge-press + hold-repeat) ----
+  // ---- D-pad → focus navigation (edge-press + hold-repeat). NEVER moves the
+  // character (that's the left stick). In the village overworld it cycles the
+  // highlighted interaction target; in menus/panels it moves the UI focus ring. ----
   const now = (typeof performance!=="undefined"?performance.now():Date.now());
   const dEdge = (i:number)=> pad.buttons[i]?.pressed && !prev[i];
   const dHeld = pad.buttons[12]?.pressed||pad.buttons[13]?.pressed||pad.buttons[14]?.pressed||pad.buttons[15]?.pressed;
   const dFresh = dEdge(12)||dEdge(13)||dEdge(14)||dEdge(15);
   if (dFresh || (dHeld && now > _gpNavRepeatAt)){
     _gpNavRepeatAt = now + (dFresh ? 320 : 150);
-    if (pad.buttons[12]?.pressed || pad.buttons[14]?.pressed) moveUiFocus(-1);   // up / left → prev
-    else if (pad.buttons[13]?.pressed || pad.buttons[15]?.pressed) moveUiFocus(1); // down / right → next
+    const dir: 1|-1 = (pad.buttons[12]?.pressed || pad.buttons[14]?.pressed) ? -1 : 1;   // up/left prev · down/right next
+    const inWorld = S.tab==="village" && !_topModal() && !_paused && !_uiFocusEl;
+    if (!(inWorld && _cycleVillageTarget(dir))) moveUiFocus(dir);
   }
   // ---- Face + system buttons ----
   if (pad.buttons[9]?.pressed  && !prev[9]){ if (document.getElementById('pause-modal')) closePauseMenu(); else if (!_titleUp()) openPauseMenu(); }  // ☰ Menu → pause
@@ -15001,15 +15141,19 @@ function gpInteract(){
     return;
   }
   if (S.tab!=="village") return;
-  let bestO: any = null, bestD = Infinity;
-  for (const o of V_OBJECTS){
-    const ap = objApproach(o), d = Math.hypot(VP.x-ap.x, VP.y-ap.y);
-    if (d < 120 && d < bestD){ bestO=o; bestD=d; }
+  // A is a DELIBERATE DIRECT interaction: act on the highlighted target (or, if
+  // none, the nearest). In range → interact now; otherwise walk there and interact
+  // on arrival (via VP.pending). Handles NPCs, buildings, resources — all uniform.
+  const targets = buildVillageTargets();
+  let t = _findTarget(SEL_ID, targets);
+  if (!t){
+    let bd = NEARBY_RADIUS;
+    for (const c of targets){ const d = Math.hypot(VP.x-c.approach.x, VP.y-c.approach.y); if (d < bd){ bd=d; t=c; } }
   }
-  if (bestO){
-    if (bestD < 46) interactObj(bestO);
-    else { const ap=objApproach(bestO); VP.tx=ap.x; VP.ty=ap.y; VP.pending=bestO; }
-  }
+  if (!t) return;
+  SEL_ID = t.id;
+  if (_inRangeOf(t)){ const act = t.act; _clearSel(); act(); }
+  else { VP.tx=t.approach.x; VP.ty=t.approach.y; VP.pending={ approach:t.approach, act:t.act }; }
 }
 function gpBack(){
   if (CHAT_NPC){ CHAT_NPC=null; renderMain(); return; }
@@ -15222,6 +15366,15 @@ if (import.meta.env.DEV) {
       save();
       return snaps;
     },
+    // ---- Interaction-contract probes (village) ----------------------------
+    ixTargets(){ return buildVillageTargets().map((t:any) => ({ id:t.id, kind:t.kind, name:t.name, verb:t.verb, box:t.box, approach:t.approach })); },
+    ixState(){ return { tab:S.tab, sel:SEL_ID, hover:HOVER_ID, vpx:VP.x, vpy:VP.y, vptx:VP.tx, vpty:VP.ty, pending:!!VP.pending, npcMet:!!S.npcMet, action:S.action?S.action.objId:null }; },
+    ixSetTab(tab:string){ S.tab=tab; try{ renderNav(); renderMain(); }catch(e){} return S.tab; },
+    ixTeleport(wx:number, wy:number){ VP.x=wx; VP.y=wy; VP.tx=null; VP.ty=null; VP.moving=false; VP.pending=null; SEL_ID=null; return { vpx:VP.x, vpy:VP.y }; },
+    ixTapWorld(wx:number, wy:number){ _villageTapAt(wx, wy); return (window as any).__gate.ixState(); },
+    ixInteractKey(){ gpInteract(); return (window as any).__gate.ixState(); },
+    ixDpad(dir:1|-1){ const handled = _cycleVillageTarget(dir); return { handled, sel:SEL_ID, vptx:VP.tx, vpty:VP.ty }; },
+    ixConfirm(){ _confirmSel(); return (window as any).__gate.ixState(); },
     // Transaction history developer view — the structured wallet ledger.
     wallet(n = 40){
       const L = _ledger();
