@@ -15755,6 +15755,20 @@ if (import.meta.env.DEV) {
       save();
       return snaps;
     },
+    // Advance the tutorial by EXACTLY one stage (for save/reload-per-stage audits).
+    tutAdvanceOne(){
+      const step = S.tut ? (S.tut.step|0) : 99;
+      if (S.tut && !S.tut.done){
+        if (step === 0){ const m = findAct('iron_ore'); for (let i=0;i<6;i++) completeAction(m.act, m.skill, true); }
+        else if (step === 1){ const s = findAct('iron_bar'); for (let i=0;i<3;i++) completeAction(s.act, s.skill, true); }
+        else if (step === 2){ const p = findAct('bracket'); for (let i=0;i<3;i++) completeAction(p.act, p.skill, true); }
+        else if (step === 3){ ensureTutorialContract(); const ci = S.contracts.findIndex(c => c.tutorial); if (ci>=0) deliverContract(ci); }
+        tutCheck();
+      }
+      save();
+      return { step: S.tut ? S.tut.step : 99, done: !!(S.tut && S.tut.done), items: inv(), coins: S.coins };
+    },
+    tutState(){ return { step: S.tut ? S.tut.step : 99, done: !!(S.tut && S.tut.done), items: inv(), coins: S.coins, recovered: !!(S.tut && S.tut.recovered) }; },
     // ---- UI focus / controller-navigation probes --------------------------
     uiFocus(){ return { tab:S.tab, group:activeNavGroup(), method:_lastInput,
       focus: _uiFocusEl ? ((_uiFocusEl.textContent||_uiFocusEl.getAttribute('aria-label')||'').trim().slice(0,32)) : null,
