@@ -28,6 +28,7 @@ import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary,
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, radioDefaultTrack, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
+import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, cycleTab, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, inputPrompts, INPUT_CONTRACT, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
@@ -298,12 +299,29 @@ function tutCheck(){
   try{ ensureTutorialContract(); }catch(e){}   // pin/remove the guaranteed Tutorial Order as the stage changes
   if (advanced){ updateHud(); save(); }
 }
-// M5: the single "Your First Supply Chain" summary, shown once when the tutorial ends.
+// ============================================================================
+// POST-TUTORIAL ONBOARDING FLOW — one screen at a time (req 9). The chain:
+//   showTutorialSummary  →  showChooseNextStep  →  staged unlock cards.
+// Each step's close opens the next, so no two reward/onboarding modals ever stack.
+// ============================================================================
+const _ONBOARD_IDS = ['tut-summary', 'next-step-modal', 'unlock-card'];
+function _onboardOpen(){ return _ONBOARD_IDS.some(id => !!document.getElementById(id)); }
+const _overlayCss = 'position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px';
+
+// The single "Your First Supply Chain" summary, shown once when the tutorial ends.
+// It also folds in a COMBINED summary of everything that was deferred while you
+// learned the ropes (req 2) — kept in the activity log for review (req 8).
 function showTutorialSummary(){
   if (document.getElementById('tut-summary')) return;
   const rep = (S.contractRep && S.contractRep[TUTORIAL_CONTRACT.client]) || 2;
-  const el=document.createElement('div'); el.id='tut-summary';
-  el.style.cssText='position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px';
+  const deferred = (S.tut && Array.isArray(S.tut.deferred)) ? summariseDeferred(S.tut.deferred) : [];
+  const deferHtml = deferred.length ? `
+    <div style="text-align:left;font-size:11px;color:var(--dim);background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:6px;padding:8px 12px;margin-bottom:10px">
+      <div style="font-weight:700;color:var(--amber);margin-bottom:4px">While you focused on the basics…</div>
+      ${deferred.slice(0,6).map(d=>`• ${esc(d.msg)}${d.count>1?` ×${d.count}`:''}`).join('<br>')}
+      <div style="margin-top:5px;font-size:10px;opacity:.8">All kept in your activity log 📔</div>
+    </div>` : '';
+  const el=document.createElement('div'); el.id='tut-summary'; el.style.cssText=_overlayCss;
   el.innerHTML=`<div class="panel" style="padding:16px;max-width:400px;text-align:center">
     <h2 style="margin:0 0 4px;font-size:18px">🏭 Your First Supply Chain</h2>
     <p style="font-size:12px;color:var(--dim);margin:0 0 10px">You took raw ore all the way to a paid customer order — the heart of BuyrWorld.</p>
@@ -314,20 +332,83 @@ function showTutorialSummary(){
       Tutorial bonus: <b>${fmt(TUTORIAL_REWARDS.completeBonus)} coins</b><br>
       Total coins now: <b id="tut-sum-total">${fmt(S.coins)}</b><br>
       Customer reputation: <b>+${rep}</b> with ${esc(TUTORIAL_CONTRACT.client.replace(' (Tutorial Order)',''))}</div>
-    <div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:6px">What next?</div>
-    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
-      ${NEXT_ACTIONS.map((a,i)=>`<button data-next="${i}" style="background:#3a5a6a;color:#fff;border:none;padding:7px;border-radius:5px;cursor:pointer;font-size:12px">${['🔥','🗺️','📋'][i]} ${a}</button>`).join('')}</div>
-    <button id="tut-sum-close" style="background:#2a5a2a;color:#fff;border:none;padding:8px 20px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:700;width:100%">Let's go! ▶</button>
+    ${deferHtml}
+    <button id="tut-sum-close" style="background:#2a5a2a;color:#fff;border:none;padding:9px 20px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:700;width:100%">Continue ▶</button>
   </div>`;
   document.body.appendChild(el);
-  const finish=()=>{ el.remove(); notify("🌟 New goals ready — see 'Getting Started' in your Warehouse.", 'system_unlock'); };
-  document.getElementById('tut-sum-close')!.onclick=finish;
-  el.querySelectorAll('[data-next]').forEach(b=>(b as HTMLElement).onclick=()=>{
-    const i=+(b as HTMLElement).dataset.next!; el.remove();
-    S.tab = i===0 ? 'steelworks' : i===2 ? 'contracts' : 'village';
-    renderNav(); renderMain(); save();
-    notify("🌟 New goals ready — see 'Getting Started' in your Warehouse.", 'system_unlock');
+  document.getElementById('tut-sum-close')!.onclick = () => {
+    el.remove();
+    if (S.tut) S.tut.deferred = [];        // cleared from the queue; they remain in the log
+    save();
+    showChooseNextStep();                  // → one screen at a time
+  };
+}
+// "Choose Your Next Step" (req 4/5): three clear paths with ONE recommended by
+// current stock + progression.
+function showChooseNextStep(){
+  if (document.getElementById('next-step-modal')) return;
+  const ctx = { brackets:itemCount('bracket'), bars:itemCount('iron_bar'), ore:itemCount('iron_ore'), coins:S.coins, contractsDone:(S.counters?.contracts||0) };
+  const rec = recommendNextStep(ctx);
+  const el=document.createElement('div'); el.id='next-step-modal'; el.style.cssText=_overlayCss;
+  const card = (s:any) => {
+    const isRec = s.id===rec;
+    return `<button data-step="${s.id}" style="display:block;width:100%;text-align:left;background:${isRec?'rgba(216,184,74,.12)':'var(--panel2)'};border:2px solid ${isRec?'var(--amber)':'var(--edge)'};border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;color:var(--text)">
+      <div style="font-size:13px;font-weight:700">${s.icon} ${esc(s.title)} ${isRec?`<span style="font-size:10px;color:#12240f;background:var(--amber);border-radius:8px;padding:1px 7px;margin-left:4px">★ Recommended</span>`:''}</div>
+      <div style="font-size:11px;color:var(--dim);margin-top:3px">${esc(s.desc)}</div>
+      ${isRec?`<div style="font-size:10px;color:var(--amber);margin-top:3px">${esc(recommendReason(rec,ctx))}</div>`:''}
+    </button>`;
+  };
+  el.innerHTML=`<div class="panel" style="padding:16px;max-width:420px">
+    <h2 style="margin:0 0 4px;font-size:17px;text-align:center">🧭 Choose Your Next Step</h2>
+    <p style="font-size:12px;color:var(--dim);margin:0 0 12px;text-align:center">Frosty's shown you the ropes — where to now?</p>
+    ${NEXT_STEPS.map(card).join('')}
+    <p style="font-size:10px;color:var(--dim);text-align:center;margin-top:4px">You can do all three — this is just where to start.</p>
+  </div>`;
+  document.body.appendChild(el);
+  el.querySelectorAll('[data-step]').forEach(b=>(b as HTMLElement).onclick=()=>{
+    const id=(b as HTMLElement).dataset.step!; el.remove();
+    const step = nextStepById(id as any);
+    try{ goTab(step.tab); }catch(e){}
+    save();
+    _startUnlockTour();                    // → introduce the first small group of features
   });
+}
+// Staged feature unlocks (req 6/7): introduce a SMALL group, one card at a time,
+// each with a short explanation, one meaningful action, and "Not now".
+function _startUnlockTour(){
+  if (!Array.isArray(S.unlockShown)) S.unlockShown = [];
+  const group = nextUnlockGroup(S.unlockShown);
+  if (group && group.length) _showUnlockCard(group, 0);
+}
+function _showUnlockCard(group:any[], idx:number){
+  if (idx >= group.length) return;                      // group finished; later groups come later
+  const f = group[idx];
+  if (!Array.isArray(S.unlockShown)) S.unlockShown = [];
+  if (S.unlockShown.includes(f.id)){ _showUnlockCard(group, idx+1); return; }
+  if (document.getElementById('unlock-card')) return;
+  const el=document.createElement('div'); el.id='unlock-card'; el.style.cssText=_overlayCss;
+  el.innerHTML=`<div class="panel" style="padding:16px;max-width:360px;text-align:center">
+    <div style="font-size:34px;line-height:1;margin-bottom:6px">${f.icon}</div>
+    <h2 style="margin:0 0 4px;font-size:16px">${esc(f.title)} <span style="font-size:10px;color:var(--dim)">· ${idx+1}/${group.length}</span></h2>
+    <p style="font-size:12px;color:var(--dim);margin:0 0 12px;line-height:1.5">${esc(f.blurb)}</p>
+    <button id="uc-go" style="background:#2a5a6a;color:#fff;border:none;padding:9px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;width:100%;margin-bottom:7px">${esc(f.actionLabel)} ▶</button>
+    <button id="uc-later" style="background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:7px;border-radius:6px;cursor:pointer;font-size:12px;width:100%">Not now</button>
+  </div>`;
+  document.body.appendChild(el);
+  const mark = ()=>{ if (!S.unlockShown.includes(f.id)) S.unlockShown.push(f.id); save(); };
+  document.getElementById('uc-go')!.onclick = ()=>{ mark(); el.remove(); try{ goTab(f.tab); }catch(e){} };   // acts + ends the run (they went to do it)
+  document.getElementById('uc-later')!.onclick = ()=>{ mark(); el.remove(); _showUnlockCard(group, idx+1); };  // → next card, or done
+}
+// Progressive hook: introduce the NEXT small group at a natural later beat (a real
+// contract delivered), never during the tutorial, never stacking a modal.
+function maybeShowUnlockGroup(){
+  if (_tutorialActive() || _onboardOpen() || modalIsOpen()) return;
+  if (!Array.isArray(S.unlockShown)) S.unlockShown = [];
+  if (!nextUnlockGroup(S.unlockShown)) return;
+  const now = Date.now();
+  if (now - (S.lastUnlockAt||0) < 90*1000) return;      // at most one new group every ~90s
+  S.lastUnlockAt = now;
+  _startUnlockTour();
 }
 function tutBannerHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
@@ -838,6 +919,7 @@ function _radioHotspot(){ const W=icanvasW(), H=icanvasH(); return { x: Math.rou
 function _radioSelectedTrack(){ const r=_radio(); const list=unlockedTracks(_frostyQuests()); return list.find(t=>t.id===r.selected) || list[0] || null; }
 // Announce newly-unlocked tracks once each (no autoplay, no duplicate rewards).
 function checkRadioUnlocks(){
+  if (ambientBlockedDuringTutorial(_tutorialActive())) return;   // no radio unlocks announced during the tutorial
   const r=_radio(); const q=_frostyQuests();
   for (const t of unlockedTracks(q)){
     if (!r.announced.includes(t.id)){
@@ -1096,7 +1178,7 @@ function achCheck(){
       S.ach[a.id] = 1;
       credit(a.r, 'achievement', a.id, 'ach:'+a.id);   // idempotent per achievement
       const _rp = renownForAch(a.r||0);
-      toast(`🏆 AWARD: ${a.n}! +${a.r} COINS · +${_rp} 🎖️`);
+      notify(`🏆 AWARD: ${a.n}! +${a.r} coins · +${_rp} 🎖️`, 'award');   // queued; deferred during the tutorial
       log(`🏆 Award unlocked: <b>${a.n}</b> — ${a.ds} (+${a.r} coins, +${_rp} Renown)`, "rare");
       // One-time pointer to the Hall of Renown the first time Renown is spendable.
       if (!S.seenTips) S.seenTips = {};
@@ -3729,7 +3811,7 @@ function checkJournal(){
     if (!S.firsts[j.id] && j.cond()){
       S.firsts[j.id] = true;
       credit(j.reward, 'journal', j.id, 'firsts:'+j.id);
-      toast(`📔 Journal: ${j.ic} ${j.title}! +${fmt(j.reward)} coins`);
+      notify(`📔 Journal: ${j.ic} ${j.title}! +${fmt(j.reward)} coins`, 'journal_first');   // deferred during the tutorial
       log(`📔 <b>Valley Journal</b> — ${j.title} ✓ (+${fmt(j.reward)} coins)`, "good");
       changed = true;
     }
@@ -9264,7 +9346,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false,
+    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0,
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -9497,6 +9579,10 @@ function load(){
       if (!S.uiCollapsed || typeof S.uiCollapsed !== "object") S.uiCollapsed = {};   // (also below; harmless)
       if (!S.uiCollapsed || typeof S.uiCollapsed !== "object") S.uiCollapsed = {};   // collapsible section state
       if (!("prod" in parsed)) S.prod = {};
+      // Existing saves keep their activity-log state; only brand-new games start
+      // with the log minimised (req 3). unlockShown/deferred default safely.
+      if (!("logCollapsed" in parsed)) S.logCollapsed = false;
+      if (!Array.isArray(S.unlockShown)) S.unlockShown = [];
       if (!("tut" in parsed)) S.tut = { step:99, done:true };
       // Defensive: keep an in-progress tutorial step within the current stage
       // list. A step at/after the last stage means the chain is already finished
@@ -9912,10 +9998,14 @@ function updateBeachBirds(){
 }
 function updateFestivalNotification(){
   const _fst = isFestivalActive();
+  _updateFestivalIndicator(_fst);   // small, non-blocking "festival on" pill (always)
   if (!S.festival) return;
   if (_fst){
     const _fKey = _fst.season + new Date().getFullYear();
     if (S.festival.notified !== _fKey){
+      // During Frosty's tutorial a festival is announced ONLY as the small
+      // non-blocking indicator above — never a toast that competes for attention.
+      if (_tutorialActive()) return;
       S.festival.notified = _fKey;
       // NOTE: the festival merely being in-season does NOT count as attending —
       // that's recorded via attendFestival() when the player actually takes part,
@@ -9925,6 +10015,21 @@ function updateFestivalNotification(){
       save();
     }
   }
+}
+// A small, always-non-blocking indicator that a festival is on — a HUD pill, not
+// a toast. This is the ONLY festival cue shown during the tutorial (req 1).
+function _updateFestivalIndicator(fst){
+  let el = document.getElementById('festival-indicator');
+  if (!fst){ if (el) el.remove(); return; }
+  if (!el){
+    el = document.createElement('div');
+    el.id = 'festival-indicator';
+    el.className = 'festival-pill';
+    (document.getElementById('main') || document.body).appendChild(el);
+    (el as HTMLElement).onclick = () => { try{ goTab('seasonal_market'); }catch(e){ try{ goTab('village'); }catch(_){} } };
+  }
+  el.innerHTML = `🎪 <b>${esc(fst.n)}</b> · ${daysLeftInFestival()}d`;
+  el.setAttribute('title', `${fst.n} is on — visit the Seasonal Market`);
 }
 // Genuine festival participation — visiting the Seasonal Market or playing a
 // fairground game during an active festival. This (not the passive "it's on"
@@ -9944,7 +10049,7 @@ function updateWorldEvents(){
     if (!S.worldEvent || S.worldEvent.id !== _se.id){
       S.worldEvent = { id:_se.id, endsAt:_mEnd.getTime(), seasonal:true };
       S.nextEventAt = _mEnd.getTime();
-      if (S.seNotified !== _se.id){
+      if (S.seNotified !== _se.id && !_tutorialActive()){   // don't announce over the tutorial
         S.seNotified = _se.id;
         _tickerX = VIEW_W;
         toast("🎉 " + _se.n + " — special prices this month!");
@@ -10005,6 +10110,9 @@ function updateDeliveries(){
       S.nextDeliveryAt = _now + 30*60*1000;
     }
   }
+  // Ambient customer requests never interrupt Frosty's tutorial (req 1): hold the
+  // next one until a short while after the tutorial is finished.
+  if (ambientBlockedDuringTutorial(_tutorialActive())){ S.nextDeliveryAt = _now + 3*60*1000; return; }
   if (!S.deliveryReq && _now > (S.nextDeliveryAt||0)){
     // ask for something the player has actually made before (so it's fulfillable);
     // fall back to the full pool only if they've produced nothing yet.
@@ -10277,6 +10385,7 @@ function generateNBQuests(){
 }
 function updateNoticeBoard(now){
   if (!S.noticeBoard) S.noticeBoard = { quests:[], lastRefresh:0 };
+  if (ambientBlockedDuringTutorial(_tutorialActive())) return;   // no board quests until the tutorial is done
   const _allDone = S.noticeBoard.quests.length > 0 && S.noticeBoard.quests.every((q:any)=>q.done);
   const _stale = now - (S.noticeBoard.lastRefresh||0) > 30*60*1000;
   if (S.noticeBoard.quests.length === 0 || _stale || _allDone){
@@ -10304,6 +10413,7 @@ function generateVillagerRequest(npcId: string, now: number){
 }
 function updateVillagerRequests(now: number){
   if (!S.villagerRequests) S.villagerRequests = {};
+  if (ambientBlockedDuringTutorial(_tutorialActive())) return;   // villagers wait until the tutorial is done
   let changed = false;
   for (const v of VILLAGERS){
     const cur = S.villagerRequests[v.id];
@@ -10663,8 +10773,23 @@ function _processNotice(){
 // time; routine uses immediate small feedback (and won't clobber a managed toast).
 function notify(msg, category='routine'){
   const p = notifyPriority(category);
+  // While Frosty's tutorial is active, hold back the MANAGED notices that aren't
+  // his own guidance (or a genuine safety event) — awards, unlocks, journal
+  // rewards, skill perks. They're deferred (still logged, reviewable in the
+  // journal) and surfaced calmly as one summary once the tutorial ends. Routine
+  // gathering feedback still shows; unrelated ambient sources are gated at origin.
+  if (isManaged(p) && shouldDeferDuringTutorial(category, _tutorialActive())){
+    _deferNotice(msg, category);
+    return;
+  }
   if (isManaged(p)){ _noticeQueue.push({ msg, priority:p, seq:_noticeSeq++ }); _processNotice(); }
   else if (!_noticeShowing){ _showToastRaw(msg, 1800); }
+}
+// Deferred-during-tutorial store (persisted on S.tut so it survives a reload).
+function _deferNotice(msg, category){
+  if (!S.tut) return;
+  if (!Array.isArray(S.tut.deferred)) S.tut.deferred = [];
+  if (S.tut.deferred.length < 40) S.tut.deferred.push({ msg, category });
 }
 
 function grantXp(skill, xp){
@@ -11044,6 +11169,7 @@ function deliverContract(i){
   achCheck();
   log(`🚚 Delivered ${c.qty}× ${ITEMS[c.item].n} to ${c.client} → <b>+${fmt(payout)} coins</b>`, "good");
   S.contracts.splice(i,1);
+  if (!c.tutorial) try{ maybeShowUnlockGroup(); }catch(e){}   // a real delivery is a calm beat to introduce the next small group
   fillContracts(); renderMain(); updateHud(); save();
 }
 function rerollContract(i){
@@ -15474,6 +15600,31 @@ if (import.meta.env.DEV) {
     uiFocusMove(dir:number){ moveUiFocus(dir); return (window as any).__gate.uiFocus(); },
     uiOpenObjectives(){ openObjectives(); return { open: !!document.getElementById('journal-modal') || !!document.querySelector('[id*="journal"],[id*="dd-"]') }; },
     uiSetMethod(m:string){ setInputMethod(m as any); return { method:_lastInput, promptsVisible:(()=>{const b=document.getElementById('gp-prompts');return !!(b&&getComputedStyle(b).display!=='none');})() }; },
+    // ---- First-session pacing probes --------------------------------------
+    pacing(){
+      const def = (S.tut && Array.isArray(S.tut.deferred)) ? S.tut.deferred : [];
+      return {
+        tutActive: _tutorialActive(), tutDone: !!(S.tut && S.tut.done),
+        deferredCount: def.length,
+        deferredCategories: Array.from(new Set(def.map((d:any)=>d.category))),
+        festivalToastFired: !!(S.festival && S.festival.notified),
+        festivalIndicator: !!document.getElementById('festival-indicator'),
+        deliveryReq: !!S.deliveryReq,
+        noticeQuests: (S.noticeBoard && S.noticeBoard.quests ? S.noticeBoard.quests.length : 0),
+        radioAnnounced: (S.frostyRadio && S.frostyRadio.announced ? S.frostyRadio.announced.length : 0),
+        unlockShown: (S.unlockShown||[]).slice(),
+        logCollapsed: !!S.logCollapsed,
+        summaryOpen: !!document.getElementById('tut-summary'),
+        nextStepOpen: !!document.getElementById('next-step-modal'),
+        unlockCardOpen: !!document.getElementById('unlock-card'),
+        onboardOpen: _onboardOpen(),
+        modalCount: (document.getElementById('tut-summary')?1:0)+(document.getElementById('next-step-modal')?1:0)+(document.getElementById('unlock-card')?1:0),
+      };
+    },
+    pacingClickSummaryContinue(){ (document.getElementById('tut-sum-close') as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
+    pacingChooseStep(id:string){ (document.querySelector(`#next-step-modal [data-step="${id}"]`) as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
+    pacingUnlockLater(){ (document.getElementById('uc-later') as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
+    pacingRecommend(){ return recommendNextStep({ brackets:itemCount('bracket'), bars:itemCount('iron_bar'), ore:itemCount('iron_ore'), coins:S.coins, contractsDone:(S.counters?.contracts||0) }); },
     // ---- Interaction-contract probes (village) ----------------------------
     ixTargets(){ return buildVillageTargets().map((t:any) => ({ id:t.id, kind:t.kind, name:t.name, verb:t.verb, box:t.box, approach:t.approach })); },
     ixState(){ return { tab:S.tab, sel:SEL_ID, hover:HOVER_ID, vpx:VP.x, vpy:VP.y, vptx:VP.tx, vpty:VP.ty, pending:!!VP.pending, npcMet:!!S.npcMet, action:S.action?S.action.objId:null }; },

@@ -163,6 +163,13 @@ nav button.locked:hover{ opacity:.85; background:rgba(255,248,230,0.3); }
 .gp-focus::after{ content:"▸"; position:absolute; left:-15px; top:50%; transform:translateY(-50%); color:var(--mint); font-weight:900; font-size:13px; }
 body.gpad button:focus-visible, body.gpad [tabindex]:focus-visible{ outline:3px solid var(--mint); }
 /* Controller-prompt footer */
+/* Small, non-blocking "a festival is on" indicator — the only festival cue shown
+   during the tutorial (never a toast). Navy/gold, unobtrusive, tap to visit. */
+.festival-pill{ position:fixed; right:calc(12px + env(safe-area-inset-right)); bottom:calc(96px + env(safe-area-inset-bottom));
+  z-index:35; background:var(--panel2); border:1px solid var(--amber); color:var(--text);
+  border-radius:14px; padding:4px 11px; font-size:12px; box-shadow:0 3px 10px rgba(0,0,0,.35);
+  cursor:pointer; opacity:.92; pointer-events:auto; }
+.festival-pill b{ color:var(--amber); }
 #gp-prompts{ display:none; position:sticky; bottom:0; z-index:40; gap:14px; flex-wrap:wrap;
   background:var(--panel2); border-top:2px solid var(--edge); font-size:12px; color:var(--dim); align-items:center;
   padding:6px 12px; padding-left:calc(12px + env(safe-area-inset-left)); padding-right:calc(12px + env(safe-area-inset-right)); padding-bottom:calc(6px + env(safe-area-inset-bottom)); }
