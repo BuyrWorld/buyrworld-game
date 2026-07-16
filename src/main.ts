@@ -2620,22 +2620,47 @@ function _strokeRoundRect(ctx: any, x:number, y:number, w:number, h:number, r:nu
 function drawInteractHighlights(ctx: any, t: number){
   if (SEL_ID == null && HOVER_ID == null) return;
   const list = buildVillageTargets();
-  const outline = (tg: any, col: string, lw: number, dash: number[] | null) => {
+  // Bold, high-contrast outline: a dark backing halo (so it reads on busy pixel
+  // art) + a bright coloured stroke, with a soft glow and corner brackets on the
+  // selected target. Buildings get the thickest treatment.
+  const outline = (tg: any, col: string, lw: number, dash: number[] | null, glow: boolean, brackets: boolean) => {
     if (!tg) return;
-    const b = tg.box, pad = 3;
+    const bld = tg.kind === 'building';
+    const b = tg.box, pad = bld ? 5 : 4, r = 6;
+    const x = b.x - pad, y = b.y - pad, w = b.w + pad*2, h = b.h + pad*2;
     ctx.save();
-    ctx.strokeStyle = col; ctx.lineWidth = lw; if (dash) ctx.setLineDash(dash);
-    _strokeRoundRect(ctx, b.x - pad, b.y - pad, b.w + pad*2, b.h + pad*2, 5);
+    if (dash) ctx.setLineDash(dash);
+    // dark backing halo
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = lw + 3;
+    _strokeRoundRect(ctx, x, y, w, h, r);
+    // bright coloured stroke (+ glow)
+    if (glow){ ctx.shadowColor = col; ctx.shadowBlur = 12; }
+    ctx.strokeStyle = col; ctx.lineWidth = lw;
+    _strokeRoundRect(ctx, x, y, w, h, r);
+    // corner brackets make a selected building read unmistakably as a target
+    if (brackets){
+      ctx.setLineDash([]); ctx.shadowBlur = 0;
+      const c = Math.min(14, w*0.28, h*0.28);
+      ctx.lineWidth = lw + 0.5; ctx.strokeStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(x, y+c); ctx.lineTo(x, y); ctx.lineTo(x+c, y);
+      ctx.moveTo(x+w-c, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+c);
+      ctx.moveTo(x+w, y+h-c); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w-c, y+h);
+      ctx.moveTo(x+c, y+h); ctx.lineTo(x, y+h); ctx.lineTo(x, y+h-c);
+      ctx.stroke();
+    }
     ctx.restore();
   };
   const hov = HOVER_ID && HOVER_ID !== SEL_ID ? _findTarget(HOVER_ID, list) : null;
-  if (hov) outline(hov, 'rgba(255,255,255,.45)', 1.5, [4,3]);
+  if (hov) outline(hov, 'rgba(255,255,255,.85)', hov.kind==='building' ? 3 : 2.5, [5,4], false, false);
   const sel = _findTarget(SEL_ID, list);
   if (sel){
     const inR = _inRangeOf(sel);
-    // green pulse = in range & ready to confirm; blue dashed = selected, walk closer
-    const a = inR ? (0.7 + Math.sin(t*8)*0.2) : 0.85;
-    outline(sel, inR ? `rgba(120,220,140,${a.toFixed(2)})` : 'rgba(150,200,255,.85)', 2.5, inR ? null : [5,4]);
+    const bld = sel.kind === 'building';
+    // green pulse = in range & ready to confirm; blue = selected, walk closer
+    const a = inR ? (0.85 + Math.sin(t*8)*0.15) : 0.95;
+    const col = inR ? `rgba(120,235,150,${a.toFixed(2)})` : 'rgba(150,200,255,.95)';
+    outline(sel, col, bld ? 4.5 : 3.5, inR ? null : [6,4], true, bld);
   }
 }
 function villageClick(e){
