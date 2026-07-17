@@ -30,6 +30,7 @@ import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isT
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
 import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult } from './data/contractToCash.ts';
+import { createContract as c2cCreate, reduce as c2cReduce, migrateContract as c2cMigrate, plannedPnl as c2cPlannedPnl, actualPnl as c2cActualPnl, reservedByContract as c2cReserved, gradeOf as c2cGrade, satisfactionOf as c2cSatisfaction, C2C_ENGINE_VERSION, C2C_STAGES, isDecisionStage as c2cIsDecision } from './data/c2cEngine.ts';
 import { EXIT_BAND, inExitRegion, validReturn, isInteriorTab } from './data/interiors.ts';
 import { tutorialPhase, isTutorialRunning, contractsFrozen, classifyModal, canOpenModal, isBlocking as _modalBlocking, summariseRewards, clampTutorialCount } from './data/tutorialState.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
@@ -207,8 +208,10 @@ function doTrade(npcId, it, qty, mode){
     log(`⚖️ Bought ${q}× ${ITEMS[it].n} from ${npc.n} (−${fmt(unit*q)} coins)`);
   } else {
     const unit = sellPrice(npc, it);
-    const q = qty === "max" ? itemCount(it) : Math.min(qty, itemCount(it));
-    if (q <= 0){ toast("Nothing to sell."); return; }
+    // Only sell stock that isn't reserved for an open Contract-to-Cash order.
+    const avail = availableItem(it);
+    const q = qty === "max" ? avail : Math.min(qty, avail);
+    if (q <= 0){ toast(reservedQty(it) > 0 ? "That stock is committed to an order." : "Nothing to sell."); return; }
     S.items[it] -= q; credit(unit * q, 'sale', 'trade:'+it);
     _econSale(it, q);   // LE1: selling saturates the market → your price softens
     grantXp("trading", Math.max(2, Math.round(unit * q * 0.22)));
@@ -467,6 +470,11 @@ function flagshipAvailable(){ return !!(S.tut && S.tut.done) && !S.flagshipDone;
 function openFlagshipOrder(){
   if (document.getElementById('flagship-modal')) return;
   _flag = { step:'brief', offerId:null, orderQty:0, deliveryId:'van', result:null };
+  // Seed the persistent authoritative state-engine model for this order (connected
+  // to the same flagship data). It sits at a decision stage — no money/inventory
+  // moves until it's driven — so it never interferes with the current one-shot
+  // presentation, but the underlying 17-stage state is now real + inspectable.
+  if (!S.c2c || S.c2c.stage === 'closed'){ try{ c2cStartFlagship(); }catch(e){} }
   _renderFlagship();
 }
 function _flagClose(){ const e=document.getElementById('flagship-modal'); if (e) e.remove(); _flag=null; try{ if (S.tab==='contracts') renderMain(); }catch(e){} }
@@ -485,6 +493,7 @@ function _renderFlagship(){
         Deadline: <b>${O.deadlineMin} minutes</b> from now (request → their door).<br>
         You'll need to source <b>${O.qty}× ${esc(ITEMS[O.materialItem]?.n||O.materialItem)}</b>, press them into brackets, pass quality, and ship.</div>
       <div style="font-size:11px;color:var(--dim);margin:10px 0 8px;text-align:center">The whole pipeline, one order: <b>request → quote → suppliers → PO → inbound → goods-in QC → production → final QC → delivery → invoice → payment → margin</b>.</div>
+      ${S.c2c ? `<div style="font-size:10px;color:var(--dim);text-align:center;margin:0 0 8px;border:1px dashed var(--edge);border-radius:5px;padding:4px 6px">🔧 Pipeline state: <b style="color:var(--text)">${esc(String(S.c2c.stage).replace(/_/g,' '))}</b> · stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17</div>` : ''}
       <button data-flag="suppliers" class="btn" style="width:100%;margin-bottom:6px">Compare suppliers ▶</button>
       <button data-flag="close" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">Not now</button>`);
   } else if (_flag.step==='suppliers'){
@@ -604,6 +613,60 @@ function _resolveFlagship(){
   updateHud(); save();
 }
 (globalThis as any).openFlagshipOrder = openFlagshipOrder;
+
+// ============================================================================
+// CONTRACT-TO-CASH STATE ENGINE — persistence + real-world effect adapter.
+// ----------------------------------------------------------------------------
+// The pure engine (src/data/c2cEngine.ts) owns the authoritative 17-stage model;
+// here we give it the real world: a persisted game-time clock, the shared
+// inventory + wallet + reputation + QC, a material reservation ledger and a
+// performance history. This is the STATE MODEL milestone — UI is intentionally
+// minimal (a stage readout + a dev bridge). The stepwise pipeline UI is later.
+// ============================================================================
+const C2C_MIN_MS = 1000;   // 1 game-minute = 1 real second of active play
+// Robust game-time abstraction: a persisted, monotonic clock advanced by the sim
+// loop — deadlines compare against THIS, never a fragile setTimeout/RAF timer.
+function gameNow(){ return (S.gameClock || 0) / C2C_MIN_MS; }   // game-minutes
+
+// Reserved-aware availability: units of an item NOT already committed to an open
+// Contract-to-Cash order, so the same physical stock can't be double-used.
+function reservedQty(id){ return (S.c2cReserved && S.c2cReserved[id]) || 0; }
+function availableItem(id){ return Math.max(0, itemCount(id) - reservedQty(id)); }
+
+// Apply one declarative engine effect against the real world. Money moves carry a
+// stable key so the wallet ledger dedupes them — a re-applied effect can never
+// double-pay or double-charge.
+function _c2cApplyEffect(e){
+  switch (e.kind){
+    case 'inv_add':    addItem(e.item, e.qty); break;
+    case 'inv_remove': S.items[e.item] = Math.max(0, (S.items[e.item] || 0) - e.qty); break;
+    case 'reserve':    if (!S.c2cReserved) S.c2cReserved = {}; S.c2cReserved[e.item] = (S.c2cReserved[e.item] || 0) + e.qty; break;
+    case 'release':    if (!S.c2cReserved) S.c2cReserved = {}; S.c2cReserved[e.item] = Math.max(0, (S.c2cReserved[e.item] || 0) - e.qty); break;
+    case 'debit':      debit(e.amount, e.source, null, e.key); break;
+    case 'credit':     credit(e.amount, e.source, null, e.key); break;
+    case 'rep':        if (!S.contractRep) S.contractRep = {}; S.contractRep[e.client] = Math.max(0, (S.contractRep[e.client] || 0) + e.delta); break;
+    case 'closed':     if (!Array.isArray(S.c2cHistory)) S.c2cHistory = []; S.c2cHistory.push(e.record); break;
+  }
+}
+// The single entry point to advance the persisted engine order + apply its effects.
+function c2cDispatch(action){
+  if (!S.c2c) return { ok: false, error: 'no_contract' };
+  const res = c2cReduce(S.c2c, action);
+  if (res.ok){ S.c2c = res.contract; res.effects.forEach(_c2cApplyEffect); }
+  return res;
+}
+// Advance time-driven stages each sim tick (never crosses a decision stage).
+function c2cTick(){ if (S.c2c && S.c2c.stage !== 'closed') c2cDispatch({ type: 'tick', now: gameNow() }); }
+// Start an authoritative engine order from the flagship data — reusing the QC
+// rating as finished-goods quality (extends the QC system, doesn't fork it).
+function c2cStartFlagship(customerTerms?){
+  const q = (S.qc && typeof S.qc.rating === 'number') ? S.qc.rating / 100 : 0.9;
+  S.c2c = c2cCreate(FLAGSHIP_ORDER, { id: 'c2c_' + Date.now().toString(36), seed: (Date.now() >>> 0), now: gameNow(), makeQuality: q, customerTerms: customerTerms || 'on_delivery' });
+  try{ save(); }catch(e){}
+  return S.c2c;
+}
+(globalThis as any).c2cDispatch = c2cDispatch;
+
 function tutBannerHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
   const st = TUT[S.tut.step];
@@ -9599,7 +9662,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0,
+    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[],
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -9931,6 +9994,25 @@ function load(){
           window._tutRecoveryMsg = _keys.map(k => `${_need[k]}× ${ITEMS[k]?.n||k}`).join(", ");
         }
         S.tut.recovered = true;   // stored so recovery is applied at most once
+      }
+      // Contract-to-Cash state engine — versioned migration (req). A persisted
+      // contract is brought up to the current shape (missing buckets/flags default
+      // safely); the reservation ledger + performance history + game clock are
+      // seeded for saves that predate the engine.
+      if (typeof S.gameClock !== "number") S.gameClock = 0;
+      if (!S.c2cReserved || typeof S.c2cReserved !== "object") S.c2cReserved = {};
+      if (!Array.isArray(S.c2cHistory)) S.c2cHistory = [];
+      if (S.c2c){
+        const _mig = c2cMigrate(S.c2c);
+        S.c2c = _mig;   // null if it was corrupt/unrecognisable — safely dropped
+        // Rebuild the reservation ledger from the (authoritative) contract so a
+        // reload can never leave phantom reservations or drop real ones.
+        if (S.c2c){
+          const _rz: Record<string,number> = {};
+          _rz[S.c2c.order.materialItem] = (_rz[S.c2c.order.materialItem]||0) + c2cReserved(S.c2c, S.c2c.order.materialItem);
+          _rz[S.c2c.order.productItem]  = (_rz[S.c2c.order.productItem] ||0) + c2cReserved(S.c2c, S.c2c.order.productItem);
+          S.c2cReserved = _rz;
+        } else { S.c2cReserved = {}; }
       }
       if (!("econ" in parsed) || !S.econ || !S.econ.pressure) S.econ = { pressure:{} };
       if (!("netWorth" in parsed) || !S.netWorth || !Array.isArray(S.netWorth.history)) S.netWorth = { history:[], last:0 };
@@ -15836,6 +15918,7 @@ setInterval(()=>{
   // M4: no world simulation runs behind the title screen — clock, contracts,
   // cleanliness, production, automation, deliveries and NPC schedules all pause.
   if (!simulationActive(_titleUp())) return;
+  if (!(window as any).__c2cClockFrozen) S.gameClock = (S.gameClock || 0) + dt;   // advance the persisted game-time clock (req)
   const beforeItems = JSON.stringify(S.items);
   tick(dt);
   updateWorldEvents();
@@ -15853,6 +15936,7 @@ setInterval(()=>{
   updateVillagerRequests(now);
   updateDailyChallenge();
   sweepContracts();         // lapse any contract past its deadline (idle/offline-safe)
+  c2cTick();                // Contract-to-Cash: advance any time-driven pipeline stage
   updateProcurement(now);   // M17: land any supplier deliveries whose ETA has passed
   collectBinIfDue();        // M3: weekly bin collection + evening reminder
   updateGarden(now);
@@ -15931,6 +16015,12 @@ if (import.meta.env.DEV) {
     return null;
   };
   const inv = () => ({ iron_ore: itemCount('iron_ore'), iron_bar: itemCount('iron_bar'), bracket: itemCount('bracket') });
+  const _c2cSnap = (c:any) => c ? {
+    stage: c.stage, decision: c2cIsDecision(c.stage), po: c.po, mat: c.mat, fin: c.fin, t: c.t,
+    onTime: c.onTime, customerRejected: c.customerRejected, cash: c.cash, did: c.did,
+    planned: c2cPlannedPnl(c), actual: c2cActualPnl(c), grade: c2cGrade(c), satisfaction: c2cSatisfaction(c),
+    reservedMaterial: c2cReserved(c, c.order.materialItem), reservedProduct: c2cReserved(c, c.order.productItem),
+  } : null;
   (window as any).__gate = {
     // Wipe ONLY this browser context's save (Playwright uses isolated contexts,
     // so a real player's localStorage is untouched) and hard-reload to the title.
@@ -16178,6 +16268,23 @@ if (import.meta.env.DEV) {
       if (res.cashIn>0)  credit(res.cashIn,'contract','flagship_order');
       return { grade:res.grade, onTime:res.onTime, profit:res.profit, actualRevenue:res.actualRevenue, quotedRevenue:res.quotedRevenue, learning:res.learning, coinDelta:S.coins-before, satisfaction:res.satisfaction };
     },
+    // ---- Contract-to-Cash STATE ENGINE probes (this milestone) ------------
+    // Drive + inspect the persistent 17-stage engine against the real inventory
+    // + wallet. gameNow is overridable so time-driven stages are testable.
+    c2cStart(customerTerms?:string){ return _c2cSnap(c2cStartFlagship(customerTerms as any)); },
+    c2cAdvanceClock(mins:number){ S.gameClock = (S.gameClock||0) + (mins||0)*C2C_MIN_MS; return gameNow(); },
+    c2cAction(action:any){ const r = c2cDispatch(action); try{ save(); }catch(e){} return { ok:r.ok, error:(r as any).error, stage:S.c2c?S.c2c.stage:null, effects:(r as any).effects?(r as any).effects.length:0 }; },
+    c2cForceRolls(r:any){ if (S.c2c) S.c2c.rolled = Object.assign({ supplierOnTime:true, shortfallFrac:0, incomingDefectFrac:0, makeDefectFrac:0, reworkShare:0.6 }, r||{}); try{ save(); }catch(e){} return S.c2c?S.c2c.rolled:null; },
+    // Freeze the game clock so a test controls game-time purely via c2cAdvanceClock
+    // (removes sim-loop drift → deterministic deadlines).
+    c2cFreezeClock(on:boolean){ (window as any).__c2cClockFrozen = !!on; return !!(window as any).__c2cClockFrozen; },
+    c2cTick(){ c2cTick(); return S.c2c?S.c2c.stage:null; },
+    c2cState(){ return _c2cSnap(S.c2c); },
+    c2cReserved(){ return Object.assign({}, S.c2cReserved||{}); },
+    c2cAvailable(id:string){ return { item:id, total:itemCount(id), reserved:reservedQty(id), available:availableItem(id) }; },
+    c2cInv(){ return { iron_bar:itemCount('iron_bar'), bracket:itemCount('bracket') }; },
+    c2cHistory(){ return (S.c2cHistory||[]).slice(); },
+    c2cGameNow(){ return gameNow(); },
     // ---- Interaction-contract probes (village) ----------------------------
     ixTargets(){ return buildVillageTargets().map((t:any) => ({ id:t.id, kind:t.kind, name:t.name, verb:t.verb, box:t.box, approach:t.approach })); },
     ixState(){ return { tab:S.tab, sel:SEL_ID, hover:HOVER_ID, vpx:VP.x, vpy:VP.y, vptx:VP.tx, vpty:VP.ty, pending:!!VP.pending, npcMet:!!S.npcMet, action:S.action?S.action.objId:null }; },
