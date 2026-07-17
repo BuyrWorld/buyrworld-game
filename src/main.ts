@@ -626,7 +626,9 @@ function _c2cStartPoll(){
     if (!document.getElementById('flagship-modal')){ clearInterval(_c2cPoll); _c2cPoll = null; return; }
     if (!S.c2c){ _c2cClose(); return; }
     const waiting = !c2cIsDecision(S.c2c.stage) && S.c2c.stage !== 'closed';
-    if (S.c2c.stage !== _c2cLastStage || waiting) _renderC2C();   // re-render on change + tick countdowns
+    // re-render on a stage change always; for the waiting-stage countdown, defer
+    // while a pointer is held so a click on an intervention button isn't swallowed.
+    if (S.c2c.stage !== _c2cLastStage || (waiting && !_uiPointerBusy())) _renderC2C();
   }, 250);
 }
 // Real-seconds remaining for a game-time threshold (game-minutes → wall seconds).
@@ -1432,8 +1434,10 @@ function applyTextScale(){ const s = S.settings?.textScale || 'normal'; document
 function openSettings(){
   if (!S.settings) S.settings = Object.assign({}, DEFAULT_SETTINGS);
   const st = S.settings;
+  // Segmented control. Each option carries aria-pressed so the selected state is
+  // exposed to assistive tech, not just conveyed by colour (req 11).
   const seg = (label:string, opts:{v:string;l:string}[], cur:string, act:string) =>
-    `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0"><span style="font-size:12px">${label}</span><span style="display:flex;gap:4px">${opts.map(o=>`<button data-set="${act}:${o.v}" style="background:${cur===o.v?'#3a6a8a':'#33333c'};color:#fff;border:none;border-radius:4px;padding:4px 9px;font-size:11px;cursor:pointer">${o.l}</button>`).join('')}</span></div>`;
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0"><span id="seglbl-${act}" style="font-size:12px">${label}</span><span role="group" aria-labelledby="seglbl-${act}" style="display:flex;gap:4px">${opts.map(o=>`<button data-set="${act}:${o.v}" role="button" aria-pressed="${cur===o.v}" aria-label="${label}: ${o.l}" style="background:${cur===o.v?'#3a6a8a':'#33333c'};color:#fff;border:none;border-radius:4px;padding:4px 9px;font-size:11px;cursor:pointer">${o.l}</button>`).join('')}</span></div>`;
   const inner = () => `<div class="panel" style="padding:14px;max-width:380px;width:100%">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 style="margin:0;font-size:16px">⚙️ Settings</h2><button id="set-close" aria-label="Close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
     ${seg('Soundtrack', [{v:'frosty',l:'Frosty'},{v:'chiptune',l:'Chiptune'}], st.soundtrack==='chiptune'?'chiptune':'frosty', 'soundtrack')}
@@ -1461,8 +1465,11 @@ function openSettings(){
       else if(k==='couch'){ st.couch=(v==='on'); applyCouchMode(); }
       save();
       // re-render the panel in place (keeps the modal, scroll lock & focus — no reopen)
+      const _setKey = (b as HTMLElement).dataset.set;
       el.innerHTML = inner(); wire(el);
-      const f = el.querySelector('#set-close') as HTMLElement; if (f) _setUiFocus(f);
+      // keep focus on the control the player just toggled (req 2/11), not bounced to Close
+      const f = (el.querySelector(`[data-set="${_setKey}"]`) || el.querySelector('#set-close')) as HTMLElement;
+      if (f) _setUiFocus(f);
     });
   };
   openModal('settings-modal', inner, { label:'Settings', initialFocus:'#set-close', wire });
@@ -3898,11 +3905,21 @@ function closeDistricts(){ const e=document.getElementById("districts-modal"); i
 function visitDistrict(id){
   const d=DISTRICTS.find(x=>x.id===id); if(!d || !isDistrictOpen(d, totalLvl())) return;
   const [tx,ty]=d.hub;
+  // Atomic fast-travel (req 8/9): update EVERY location value — position, movement,
+  // camera, active view, selection/waypoint — and re-render BEFORE the arrival
+  // notification, so the map can never still show the previous district when the
+  // toast says you've arrived.
   VP.x=tx*TILE+TILE/2; VP.y=ty*TILE+TILE/2; VP.tx=null; VP.ty=null; VP.moving=false; VP.pending=null;
   CAM.x=Math.max(0, Math.min(VP.x-VIEW_W/2, VCOLS*TILE-VIEW_W));
   CAM.y=Math.max(0, Math.min(VP.y-VIEW_H/2, VROWS*TILE-VIEW_H));
-  if (S.tab!=="village"){ S.tab="village"; renderNav(); renderMain(); }
+  try{ SEL_ID=null; HOVER_ID=null; }catch(e){}   // clear any pending target/waypoint
+  S.tab="village";
   closeDistricts();
+  // ALWAYS render — the previous code skipped this when already in the village,
+  // leaving the label/canvas showing the old district (the exact bug in req 9).
+  renderNav(); renderMain(); updateHud();
+  try{ drawVillage(performance.now()/1000); }catch(e){}   // paint the new location this frame (no 1-frame lag)
+  try{ save(); }catch(e){}
   toast(`${d.ic} Arrived at ${d.name}.`);
 }
 function openDistricts(){
@@ -15746,7 +15763,11 @@ window.addEventListener("keydown", e => {
       e.preventDefault(); moveUiFocus((e.key==="ArrowUp"||e.key==="ArrowLeft") ? -1 : 1); return;
     }
     if (e.key==="Tab"){ e.preventDefault(); moveUiFocus(e.shiftKey ? -1 : 1); return; }
-    if (e.key==="Enter"){ if (uiConfirm()){ e.preventDefault(); return; } }
+    // Enter/Space activate the focused control (req 2). Space only when a modal is
+    // open or a control is focused, so world Space still swings a gathering action.
+    if (e.key==="Enter" || (e.key===" " && (_topModal() || (_uiFocusEl && _isActivatable(_uiFocusEl))))){
+      if (uiConfirm()){ e.preventDefault(); return; }
+    }
     if (e.key==="Escape" || e.key==="Backspace"){
       if (uiBack()){ e.preventDefault(); return; }
       // In an interior, Escape/Back opens the small RECOVERY menu (Resume / Leave
@@ -15782,6 +15803,29 @@ window.addEventListener("keyup", e => { VKEYS[e.key] = false; });
 // A real pointer/touch press makes the pointer the active input method (req 11):
 // hides the controller/keyboard prompt bar so mouse/touch players get a clean HUD.
 window.addEventListener("pointerdown", () => setInputMethod('pointer'), { passive:true });
+// First-click reliability (req 1/6): several panels rebuild their innerHTML on a
+// timer (contracts board, trade, skill panels…). If that rebuild lands between a
+// click's pointerdown and pointerup, the button node is replaced and the click is
+// lost — the classic "needs a second click", worse at couch/TV distance. While a
+// pointer is held we DEFER those timed rebuilds so the target survives the click.
+var _pointerHeld = false;
+function _uiPointerBusy(){ return _pointerHeld; }
+// Remember the control that opened a modal so Esc/B can restore focus to it (req 5).
+// Adopted modals capture prevFocus asynchronously (after the overlay appears), and
+// browsers differ on whether a clicked <button> becomes activeElement — so we track
+// the last activatable control pressed/focused OUTSIDE any modal as the opener.
+var _lastUiControl: HTMLElement | null = null;
+function _trackOpener(t: any){
+  const el = t && t.closest && t.closest('button,a,[role="button"],[data-primary],[tabindex]');
+  if (el && !(el.closest && el.closest('#modal-layer, .bw-modal, [id$="-modal"], #play-hint-overlay'))) _lastUiControl = el as HTMLElement;
+}
+window.addEventListener("pointerdown", (e) => _trackOpener(e.target), { capture:true, passive:true });
+document.addEventListener("focusin", (e) => _trackOpener(e.target), true);
+window.addEventListener("pointerdown", () => { _pointerHeld = true; }, { passive:true });
+window.addEventListener("pointerup",   () => { _pointerHeld = false; }, { passive:true });
+window.addEventListener("pointercancel", () => { _pointerHeld = false; }, { passive:true });
+// belt-and-braces: never get stuck "held" if a pointerup is missed (e.g. drag off-window)
+window.addEventListener("blur", () => { _pointerHeld = false; }, { passive:true });
 // Autoplay-safe audio bootstrap. HTMLAudio needs a user activation to start, and a
 // rejected play() is never retried — so returning players (who skip the title) and
 // any deferred start would get silence. On the FIRST real gesture, unlock + start the
@@ -15907,7 +15951,8 @@ function openModal(id: string, buildInner: ()=>string, opts: any = {}){
   if (opts.label) el.setAttribute('aria-label', opts.label);
   if (opts.backdrop) el.style.background = opts.backdrop;
   el.innerHTML = buildInner();
-  const prevFocus = document.activeElement;
+  const _ae = document.activeElement as HTMLElement;
+  const prevFocus = (_ae && _isActivatable(_ae)) ? _ae : (_lastUiControl || _ae);   // restore to the opener on close (req 5)
   _modalLayer().appendChild(el);
   document.body.classList.add('modal-open');
   _MODAL_STACK.push({ id, el, prevFocus, onClose: opts.onClose });
@@ -15973,7 +16018,11 @@ function _isBlockingOverlay(n: any){
 function _adoptModal(el: HTMLElement){
   if (_MODAL_STACK.some(m => m.el === el)) return;
   if (!el.id) el.id = 'adopted-modal-' + Math.random().toString(36).slice(2, 8);
-  _MODAL_STACK.push({ id: el.id, el, prevFocus: document.activeElement, adopted: true } as any);
+  // Restore-focus target: the truly-focused control if it's an activatable outside
+  // this overlay, otherwise the tracked opener (req 5, cross-browser).
+  const ae = document.activeElement as HTMLElement;
+  const prevFocus = (ae && _isActivatable(ae) && !el.contains(ae)) ? ae : (_lastUiControl && !el.contains(_lastUiControl) ? _lastUiControl : ae);
+  _MODAL_STACK.push({ id: el.id, el, prevFocus, adopted: true } as any);
   document.body.classList.add('modal-open');
   if (!el.contains(document.activeElement)){ const f = _firstFocusable(el); if (f) _setUiFocus(f); }
   updateGpPrompts();
@@ -16037,8 +16086,26 @@ function moveUiFocus(dir){
   idx = wrapIndex(idx, els.length, dir);
   _setUiFocus(els[idx]);
 }
+// Is `el` a control that Enter/Space/A should activate?
+function _isActivatable(el: any){
+  if (!el || el === document.body) return false;
+  const t = (el.tagName || '').toLowerCase();
+  if (t === 'button' || t === 'a' || t === 'input' || t === 'select' || t === 'textarea') return true;
+  const r = el.getAttribute && el.getAttribute('role');
+  if (r === 'button' || r === 'tab' || r === 'menuitem' || r === 'checkbox' || r === 'radio') return true;
+  return !!(el.hasAttribute && (el.hasAttribute('data-primary') || el.hasAttribute('onclick') || el.hasAttribute('tabindex')));
+}
+// Activate the currently-focused control (keyboard Enter/Space, controller A). One
+// shared path — clicking the element — so mouse/keyboard/controller never diverge.
+// Prefers the truly-focused element (document.activeElement) so a natively-focused
+// modal button activates on the FIRST press (req 2/3/4), then the tracked UI focus.
 function uiConfirm(){
-  if (_uiFocusEl && _isVisible(_uiFocusEl)){ const el = _uiFocusEl; el.click(); return true; }
+  const a = document.activeElement as HTMLElement;
+  if (a && _isVisible(a) && _isActivatable(a)){
+    if (_uiFocusEl !== a){ if (_uiFocusEl) _uiFocusEl.classList.remove('gp-focus'); _uiFocusEl = a; try{ a.classList.add('gp-focus'); }catch(e){} }
+    a.click(); return true;
+  }
+  if (_uiFocusEl && _isVisible(_uiFocusEl)){ _uiFocusEl.click(); return true; }
   const m = _topModal();
   if (m){ const els = _focusables(); if (els.length){ _setUiFocus(els[0]); return true; } }
   return false;
@@ -16314,13 +16381,16 @@ setInterval(()=>{
   checkJournal();           // auto-grant Valley Journal "firsts" rewards
   checkCommissions();       // refresh the board daily + auto-hand-in completed orders
   checkVoyages(false);      // land any returned ocean voyages
-  if (S.tab==="harbour_office" && (S.voyages||[]).length && Date.now()-_voyageRenderAt > 4000){ _voyageRenderAt = Date.now(); renderMain(); }
-  if (S.tab==="police_cell" && Date.now()-_cellRenderAt > 1000){ _cellRenderAt = Date.now(); renderMain(); }   // tick the countdown / reveal the walk-out
-  if (S.tab==="contracts" && Date.now()-_contractsRenderAt > 1000){ _contractsRenderAt = Date.now(); renderMain(); }   // live-tick the contract deadlines
-  if (S.tab==="postoffice" && (S.procurement?.orders||[]).length && Date.now()-_postRenderAt > 1000){ _postRenderAt = Date.now(); renderMain(); }   // live-tick supplier delivery ETAs
-  if (rollMarket(false) && S.tab === "trade") renderMain();
+  // Defer these timed panel rebuilds while a pointer is held so a click in progress
+  // can't be swallowed by a mid-click re-render (req 1/6). They resume next tick.
+  const _busy = _uiPointerBusy();
+  if (!_busy && S.tab==="harbour_office" && (S.voyages||[]).length && Date.now()-_voyageRenderAt > 4000){ _voyageRenderAt = Date.now(); renderMain(); }
+  if (!_busy && S.tab==="police_cell" && Date.now()-_cellRenderAt > 1000){ _cellRenderAt = Date.now(); renderMain(); }   // tick the countdown / reveal the walk-out
+  if (!_busy && S.tab==="contracts" && Date.now()-_contractsRenderAt > 1000){ _contractsRenderAt = Date.now(); renderMain(); }   // live-tick the contract deadlines
+  if (!_busy && S.tab==="postoffice" && (S.procurement?.orders||[]).length && Date.now()-_postRenderAt > 1000){ _postRenderAt = Date.now(); renderMain(); }   // live-tick supplier delivery ETAs
+  if (!_busy && rollMarket(false) && S.tab === "trade") renderMain(); else if (_busy) rollMarket(false);
   const _itemsChanged = JSON.stringify(S.items) !== beforeItems;
-  if (_itemsChanged && (S.tab in SKILLS || S.tab==="contracts")) {
+  if (!_busy && _itemsChanged && (S.tab in SKILLS || S.tab==="contracts")) {
     renderMain(); updateHud();
   }
   // Village: refresh just the Warehouse sidebar so ore/bar counts and the
@@ -16651,6 +16721,49 @@ if (import.meta.env.DEV) {
     c2cModalText(){ const el=document.getElementById('flagship-modal'); return el?(el.textContent||'').replace(/\s+/g,' ').trim():''; },
     c2cHasButton(action:string){ return !!document.querySelector(`#flagship-modal [data-c2c="${action}"]`); },
     c2cClick(action:string){ const b=document.querySelector(`#flagship-modal [data-c2c="${action}"]`) as HTMLElement; if(b){ b.click(); return true; } return false; },
+    // ---- Interaction-reliability probes (this milestone) -------------------
+    uiGoTab(tab:string){ try{ goTab(tab); }catch(e){} return { tab:S.tab }; },
+    uiPointerHeld(){ return _uiPointerBusy(); },
+    uiActive(){ const a=document.activeElement as any; return { tag:a?.tagName||null, id:a?.id||null, action:(a?.dataset?.c2c||a?.dataset?.set||null), text:(a?.textContent||'').trim().slice(0,24), pressed:a?.getAttribute?.('aria-pressed')??null }; },
+    // The Flagship CTA on the contracts board (the button that opens the pipeline).
+    uiFlagshipCta(){ return document.querySelector('button[onclick*="openFlagshipOrder"]') ? true : false; },
+    uiClickFlagshipCta(){ const b=document.querySelector('button[onclick*="openFlagshipOrder"]') as HTMLElement; if(!b) return { clicked:false }; b.click(); return { clicked:true, open:!!document.getElementById('flagship-modal') }; },
+    // Reproduce the mid-click re-render race: press (pointer held) → force the timed
+    // rebuild path → the node must survive and the click must still open the modal.
+    uiFirstClickRace(){
+      try{ goTab('contracts'); }catch(e){}
+      const cta = document.querySelector('button[onclick*="openFlagshipOrder"]') as HTMLElement;
+      if (!cta){ return { err:'no_cta' }; }
+      cta.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true }));
+      const heldDuringPress = _uiPointerBusy();
+      _contractsRenderAt = 0;                                  // make the timed rebuild "due"
+      const wouldRebuild = !_uiPointerBusy();                  // guard says: don't rebuild while held
+      if (wouldRebuild){ try{ renderMain(); }catch(e){} }
+      const stillConnected = document.body.contains(cta);
+      cta.dispatchEvent(new PointerEvent('pointerup', { bubbles:true }));
+      cta.click();
+      const opened = !!document.getElementById('flagship-modal');
+      return { heldDuringPress, wouldRebuild, stillConnected, opened };
+    },
+    // District fast-travel: open districts + a consistency snapshot.
+    uiDistrictsOpen(){ try{ return DISTRICTS.filter((d:any)=>isDistrictOpen(d, totalLvl())).map((d:any)=>({ id:d.id, name:d.name, hx:(d.hub[0]+0.5)*TILE, hy:(d.hub[1]+0.5)*TILE })); }catch(e){ return []; } },
+    uiTravelTo(id:string){ visitDistrict(id); return (window as any).__gate.uiTravelSnapshot(); },
+    uiTravelSnapshot(){
+      const cur = currentDistrict();
+      const ov = document.getElementById('village-overlay');
+      const chip = ov ? ov.querySelector('.dist-chip') : null;
+      return { tab:S.tab, vpx:VP.x, vpy:VP.y, camx:CAM.x, camy:CAM.y,
+        currentDistrict: cur?cur.id:null, currentName: cur?cur.name:null,
+        chipText: (chip?.textContent||'').trim(), vptx:VP.tx, vpty:VP.ty, moving:!!VP.moving };
+    },
+    // Settings: open, read a segmented control's aria-pressed state, toggle it.
+    uiOpenSettings(){ try{ openSettings(); }catch(e){} return { open:!!document.getElementById('settings-modal') }; },
+    uiSegState(act:string){ const btns=Array.from(document.querySelectorAll(`#settings-modal [data-set^="${act}:"]`)) as HTMLElement[]; return btns.map(b=>({ v:b.dataset.set!.split(':')[1], pressed:b.getAttribute('aria-pressed') })); },
+    uiCottageEnter(){ const o=V_OBJECTS.find((x:any)=>x.id==='player_home'); if(o) interactObj(o); return { tab:S.tab }; },
+    uiCouch(on:boolean){ if(!S.settings) S.settings={}; S.settings.couch=!!on; try{ applyCouchMode(); }catch(e){} return { couch:!!(document.body.classList.contains('couch-mode')) }; },
+    // Controller A / the shared confirm path — activates the focused control.
+    uiPressA(){ const before=!!document.getElementById('flagship-modal'); const ok=uiConfirm(); return { ok, openedFlagship: !before && !!document.getElementById('flagship-modal') }; },
+    uiFocusEl(sel:string){ const el=document.querySelector(sel) as HTMLElement; if(el){ _setUiFocus(el); return { focused:true, active:document.activeElement===el }; } return { focused:false }; },
     // ---- Interaction-contract probes (village) ----------------------------
     ixTargets(){ return buildVillageTargets().map((t:any) => ({ id:t.id, kind:t.kind, name:t.name, verb:t.verb, box:t.box, approach:t.approach })); },
     ixState(){ return { tab:S.tab, sel:SEL_ID, hover:HOVER_ID, vpx:VP.x, vpy:VP.y, vptx:VP.tx, vpty:VP.ty, pending:!!VP.pending, npcMet:!!S.npcMet, action:S.action?S.action.objId:null }; },
