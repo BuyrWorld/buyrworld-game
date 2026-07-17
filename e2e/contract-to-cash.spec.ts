@@ -34,33 +34,56 @@ const gate = (page: Page, method: string, ...args: any[]) =>
   page.evaluate(([m, a]) => (window as any).__gate[m as string](...(a as any[])), [method, args] as const);
 
 test.describe('Contract-to-Cash vertical slice', () => {
-  test('offered after the tutorial; the guided flow reaches the P&L review', async ({ page }) => {
+  test('the live pipeline modal drives the engine through every stage to the P&L review', async ({ page }) => {
     await startAndFinishTutorial(page);
     expect(await gate(page, 'flagAvailable')).toBe(true);   // authored order available post-tutorial
-    await gate(page, 'flagGiveCoins', 1500);                // enough to source
+    await gate(page, 'flagGiveCoins', 2000);                // enough to source
+    await gate(page, 'c2cFreezeClock', true);               // deterministic game-time for the test
 
     await page.evaluate(() => (window as any).openFlagshipOrder());
-    await expect(page.locator('#flagship-modal')).toBeVisible();
-    // customer request → suppliers → pick → planned margin → accept → review
-    await page.locator('[data-flag="suppliers"]').click();
-    await page.locator('[data-offer="standard"]').click();
-    expect((await gate(page, 'flagStep')).step).toBe('plan');
-    // planned margin is shown before committing (req 3)
-    await expect(page.locator('#flagship-modal')).toContainText(/Planned margin/i);
-    await page.locator('[data-flag="accept"]').click();
-    expect((await gate(page, 'flagStep')).step).toBe('review');
-    // the review itemises the full P&L (req 7)
     const modal = page.locator('#flagship-modal');
-    await expect(modal).toContainText(/Quoted revenue/i);
-    await expect(modal).toContainText(/Actual revenue/i);
-    await expect(modal).toContainText(/Material cost/i);
-    await expect(modal).toContainText(/Logistics cost/i);
-    await expect(modal).toContainText(/Quality cost/i);
-    await expect(modal).toContainText(/Profit/i);
+    await expect(modal).toBeVisible();
+
+    // customer_request → quotation_review → supplier_selection
+    await modal.locator('[data-c2c="accept_request"]').click();
+    await modal.locator('[data-c2c="accept_quote"]').click();
+    await modal.locator('[data-c2coffer="standard"]').click();
+    await expect(modal).toContainText(/Planned margin/i);   // shown before committing
+    await modal.locator('[data-c2c="commit_po"]').click();  // select_supplier + raise_po
+
+    // supplier_in_progress → … → materials (advance the clock; the sim loop ticks it through)
+    await gate(page, 'c2cForceRolls', { supplierOnTime: true });
+    await gate(page, 'c2cAdvanceClock', 8);
+    await modal.locator('[data-c2c="resolve:hold"]').click({ timeout: 10000 });   // goods-in QC
+    await modal.locator('[data-c2c="run_production"]').click({ timeout: 10000 }); // production
+    await modal.locator('[data-c2c="dispatch"]').click({ timeout: 10000 });       // final QC → dispatch
+
+    await gate(page, 'c2cAdvanceClock', 6);                 // outbound transit
+    await modal.locator('[data-c2c="send_invoice"]').click({ timeout: 10000 });   // delivered → invoice
+    await gate(page, 'c2cAdvanceClock', 2);                 // payment settles
+
+    // the review itemises the full planned-vs-actual P&L
+    await expect(modal).toContainText(/Order Review/i, { timeout: 10000 });
+    await expect(modal).toContainText(/Revenue/i);
+    await expect(modal).toContainText(/Material/i);
+    await expect(modal).toContainText(/Inbound logistics/i);
+    await expect(modal).toContainText(/Outbound logistics/i);
+    await expect(modal).toContainText(/Gross profit/i);
     await expect(modal).toContainText(/satisfaction/i);
-    // it's a one-time authored order
-    const st = await gate(page, 'flagState');
-    expect(st.done).toBe(true);
+    expect((await gate(page, 'flagStep')).step).toBe('closed');
+    // a performance record was written for the history view
+    expect((await gate(page, 'c2cHistory')).length).toBe(1);
+
+    await modal.locator('[data-c2c="done"]').click();
+    expect((await gate(page, 'flagState')).done).toBe(true);
+
+    // the performance-history view surfaces the closed order + supplier record
+    await page.evaluate(() => (window as any).openC2CHistory());
+    const hist = page.locator('#c2c-history-modal');
+    await expect(hist).toBeVisible();
+    await expect(hist).toContainText('Featherstone Rail Yard');
+    await expect(hist).toContainText(/Supplier performance/i);
+    await expect(hist).toContainText(/Margin/i);
   });
 
   test('best / late / defective / loss outcomes settle through the wallet, safely', async ({ page }) => {

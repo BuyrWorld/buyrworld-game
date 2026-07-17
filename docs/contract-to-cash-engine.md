@@ -88,21 +88,36 @@ phantom or missing reservations.
   real inventory movements, reservations, mid-pipeline refresh persistence, and
   pay-once (no double payment on extra ticks).
 
+## Presentation layer (now built)
+
+The flagship order is now the **live** engine-driven pipeline — the one-shot
+`_resolveFlagship` has been removed; every screen dispatches a real engine action.
+
+- **Stepwise pipeline modal** (`_renderC2C` / `openFlagshipOrder`): one card per
+  stage with its decision controls — review quote, compare suppliers, plan +
+  place PO (with planned-margin preview and an affordability gate), goods-in QC
+  (accept / rework / scrap quarantine), run production, final-QC + optional rework
+  + dispatch, send invoice, and a **planned-vs-actual P&L review** on close. Waiting
+  stages (supplier, inbound, outbound, payment) show a **live ETA** and a
+  **deadline countdown**; they auto-advance via the sim-loop tick while the modal
+  polls for changes. Resuming reopens at the exact current stage.
+- **Fair game-time**: the clock advances only while an order is in a *waiting*
+  stage, so the deadline counts operational time (lead + transit + shipping), never
+  the player's thinking time.
+- **Performance-history view** (`openC2CHistory`, reachable from the Contracts
+  panel): per-order grade / on-time / satisfaction / realised margin, plus a
+  supplier-performance tally (on-time record + total margin), backed by
+  `S.c2cHistory`.
+
 ## Dev/debug surface (`window.__gate`, DEV-only)
 
 `c2cStart`, `c2cAction`, `c2cTick`, `c2cState`, `c2cReserved`, `c2cAvailable`,
 `c2cInv`, `c2cHistory`, `c2cGameNow`, `c2cAdvanceClock`, `c2cForceRolls`,
-`c2cFreezeClock`. The flagship modal shows a read-only `Pipeline state: <stage>`
-line when an engine order exists.
+`c2cFreezeClock`.
 
-## Follow-up UI work (next milestone)
+## Possible future work
 
-- A stepwise pipeline screen: one card per stage with the decision controls
-  (quote review, supplier compare already exist and can be reused; add PO confirm,
-  goods-in QC accept/quarantine, production, final-QC + rework, dispatch, invoice).
-- Live game-time deadline countdown + supplier/logistics ETA indicators.
-- A performance-history view backed by `S.c2cHistory` (supplier reliability,
-  on-time %, realised margins over time).
-- Replace the current one-shot `_resolveFlagship` presentation with the engine as
-  the live money/inventory path (it currently seeds the model but the legacy
-  one-shot still resolves the coins for the existing screen).
+- Make the flagship order repeatable / generalise the engine to the standard
+  contract board (it is currently gated to the one authored order via `flagshipDone`).
+- Controller/keyboard focus polish for the stepwise modal.
+- Richer history analytics (trend of margin/on-time over many orders).
