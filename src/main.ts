@@ -5,7 +5,7 @@ import { SKILLS } from './data/skills.ts';
 import { NPCS, MARKET_ROLL_MS } from './data/npcs.ts';
 import { UPGRADES } from './data/upgrades.ts';
 import { PETS } from './data/pets.ts';
-import { CLIENTS, CONTRACT_POOL, rollContract, tierById, repRank, repSlotBonus, repDeltaOnDeliver, repDeltaOnExpire, isExpired } from './data/contracts.ts';
+import { CLIENTS, CONTRACT_POOL, rollContract, tierById, repRank, repSlotBonus, repDeltaOnDeliver, repDeltaOnExpire, isExpired, contractDeadlineMs } from './data/contracts.ts';
 import { TRACKS } from './audio/tracks.ts';
 import { TILE, VCOLS, VROWS, VIEW_W, VIEW_H, VMAP, V_OBJECTS, NORTH_EXT } from './world/map.ts';
 // Horizontal world-stretch factor. The map (VMAP) and every object tx in
@@ -31,6 +31,7 @@ import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './da
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
 import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult } from './data/contractToCash.ts';
 import { EXIT_BAND, inExitRegion, validReturn, isInteriorTab } from './data/interiors.ts';
+import { tutorialPhase, isTutorialRunning, contractsFrozen, classifyModal, canOpenModal, isBlocking as _modalBlocking, summariseRewards, clampTutorialCount } from './data/tutorialState.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
 import { NAV_GROUPS, NAV_GROUP_ORDER, TAB_GROUP, groupOf, groupById, groupIndex, cycleGroup, cycleTab, QTY_STEPS, clampQty, stepQty, wrapIndex, controllerPrompts, inputPrompts, INPUT_CONTRACT, statusGlyph } from './data/ui.ts';
 import { MUSIC_MANIFEST, SCENARIO_PRIORITY, resolveScenario, frostySources, frostyPlaylist, nightclubVenueMode, chiptuneKeys, radioTracks, SOUNDTRACK_MODES, DEFAULT_SOUNDTRACK, isSoundtrackMode, VOLUME_STEPS, VOLUME_GAINS, DEFAULT_VOLUME, volumeGain } from './data/musicManifest.ts';
@@ -291,12 +292,19 @@ function tutCheck(){
   if (S.tut.step >= TUT.length && !S.tut.done){
     S.tut.done = true;
     S.action = null;                 // stop any manual tutorial job
-    credit(TUTORIAL_REWARDS.completeBonus, 'tutorial', 'complete', 'tut:bonus');   // one-time completion bonus (audited budget)
-    endLogGroup();
-    log(`❄️ Frosty: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
-    try{ SFX.fanfare(); }catch(e){}
-    try{ syncOnboardingUI(); }catch(e){}
-    try{ showTutorialSummary(); }catch(e){}   // the single "Your First Supply Chain" summary
+    // One-time completion bonus. The ledger key makes credit() idempotent, and the
+    // explicit flag guards the whole completion side-effect block so the summary,
+    // fanfare and board-start can never fire twice (req: no double completion).
+    if (!S.tut.completeAwarded){
+      S.tut.completeAwarded = true;
+      credit(TUTORIAL_REWARDS.completeBonus, 'tutorial', 'complete', 'tut:bonus');
+      endLogGroup();
+      log(`❄️ Frosty: "That's the whole loop, ${pName()} — mine, make, move, get paid. The valley's yours now. Stay frosty."`, "rare");
+      try{ SFX.fanfare(); }catch(e){}
+      try{ syncOnboardingUI(); }catch(e){}
+      try{ _startNormalContracts(); }catch(e){}   // normal contract timers start NOW (req 3)
+      try{ showTutorialSummary(); }catch(e){}      // the single "Your First Supply Chain" summary
+    }
   }
   try{ ensureTutorialContract(); }catch(e){}   // pin/remove the guaranteed Tutorial Order as the stage changes
   if (advanced){ updateHud(); save(); }
@@ -370,9 +378,35 @@ function showChooseNextStep(){
   el.querySelectorAll('[data-step]').forEach(b=>(b as HTMLElement).onclick=()=>{
     const id=(b as HTMLElement).dataset.step!; el.remove();
     const step = nextStepById(id as any);
+    // Every choice is AUTHORITATIVE (req 4): it opens ONLY its own destination.
+    //   explore → the valley + exploration guidance (nothing else opens)
+    //   contract → the Contracts board
+    //   production/work → the relevant work interface
+    // Staged feature unlocks are NOT chained here anymore — that is what made the
+    // Trade Post open after "Explore". They are introduced later, at a calm beat
+    // (maybeShowUnlockGroup, after a real delivery), one small group at a time.
     try{ goTab(step.tab); }catch(e){}
     save();
-    _startUnlockTour();                    // → introduce the first small group of features
+    if (id === 'explore'){ try{ _showExploreGuidance(); }catch(e){} }
+  });
+}
+// Exploration guidance ONLY (req 4) — a single optional card, routed through the
+// modal coordinator so it can never stack over another blocking modal.
+function _showExploreGuidance(){
+  _present('explore-guide', 'optional', () => {
+    const el=document.createElement('div'); el.id='explore-guide'; el.style.cssText=_overlayCss;
+    el.innerHTML=`<div class="panel" style="padding:16px;max-width:360px;text-align:center">
+      <div style="font-size:34px;line-height:1;margin-bottom:6px">🗺️</div>
+      <h2 style="margin:0 0 4px;font-size:16px">Explore Featherstone</h2>
+      <p style="font-size:12px;color:var(--dim);margin:0 0 12px;line-height:1.6">
+        Wander with <b>WASD</b> / arrows or tap where to go. Chat to villagers, find the
+        town directory for the valley's districts, and see what's tucked away in the
+        corners. Nothing's on a timer — take your time.</p>
+      <button id="eg-ok" style="background:#2a5a6a;color:#fff;border:none;padding:9px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;width:100%">Explore ▶</button>
+    </div>`;
+    document.body.appendChild(el);
+    (document.getElementById('eg-ok') as HTMLElement).onclick = () => { el.remove(); };
+    return el;
   });
 }
 // Staged feature unlocks (req 6/7): introduce a SMALL group, one card at a time,
@@ -603,16 +637,21 @@ function questMarkerHtml(){
   if (target.kind === "rock"){ rx = (target.tx + 0.5) * TILE; ry = (target.ty + 0.5) * TILE; }
   else { const r = objRect(target); rx = r.x + r.w/2; ry = r.y + r.h; }
   const sx = (rx - CAM.x) / VIEW_W * 100, sy = (ry - CAM.y) / VIEW_H * 100;
-  const lbl = QUEST_TARGET_LABEL[st.target] || `📍 ${st.where}`;
+  // Req 8: a live distance indicator from the player to the current objective —
+  // "here" when you're on top of it, otherwise the whole-tile distance to walk.
+  const distTiles = Math.round(Math.hypot(rx - (VP.x + TILE/2), ry - (VP.y + TILE/2)) / TILE);
+  const distTxt = distTiles <= 1 ? "you're here" : `${distTiles}m`;
+  const lbl = (QUEST_TARGET_LABEL[st.target] || `📍 ${st.where}`) + ` · <b>${distTxt}</b>`;
   if (sx > 3 && sx < 97 && sy > 8 && sy < 94){
     return `<div class="quest-rock" style="left:${sx.toFixed(1)}%;top:${sy.toFixed(1)}%">${lbl}</div>`;
   }
-  // off screen: an arrow at the screen edge pointing toward the objective
+  // off screen: an arrow at the screen edge pointing toward the objective, with the
+  // destination name AND the distance so the route is obvious even when it's far off.
   const ang = Math.atan2(ry - (CAM.y + VIEW_H/2), rx - (CAM.x + VIEW_W/2));
   const ex = Math.max(9, Math.min(91, 50 + Math.cos(ang) * 44));
   const ey = Math.max(14, Math.min(86, 50 + Math.sin(ang) * 38));
   return `<div class="quest-arrow" style="left:${ex.toFixed(1)}%;top:${ey.toFixed(1)}%;transform:translate(-50%,-50%) rotate(${ang.toFixed(3)}rad)">➤</div>`
-       + `<div class="quest-arrow-lbl" style="left:${ex.toFixed(1)}%;top:${(ey+8).toFixed(1)}%">${esc(st.where)}</div>`;
+       + `<div class="quest-arrow-lbl" style="left:${ex.toFixed(1)}%;top:${(ey+8).toFixed(1)}%">${esc(st.where)} · ${distTxt}</div>`;
 }
 // Onboarding M3 — surface Active Swing to new players: a pulsing prompt above the
 // player while a swing-eligible action runs, retiring once they've got the hang of it.
@@ -2749,6 +2788,10 @@ function interactObj(o){
   if (o.id==="town_directory"){ openDistricts(); return; }
   if (o.tab==="robotics_lab" && totalLvl() < 150){ toast(`🤖 The Automation Lab opens at total level 150 (you: ${totalLvl()}).`); return; }
   if (o.tab==="data_centre" && totalLvl() < 200){ toast(`🖥️ The Data Centre opens at total level 200 (you: ${totalLvl()}).`); return; }
+  // Req 9: if the player wanders into a building that ISN'T their current tutorial
+  // objective, gently point them back — their progress is inventory-based and fully
+  // preserved, so this never resets anything, it just re-orients.
+  _tutOffPathReminder(o);
   // First visit teaches the system; later visits get the characterful greeting.
   if (!tipOnce(o.tab, SYSTEM_TUTORIAL[o.tab]) && BUILDING_FLAVOUR[o.tab]) toast(BUILDING_FLAVOUR[o.tab]);
   _recordInteriorReturn(o);   // record the exterior return BEFORE we switch views
@@ -9872,8 +9915,16 @@ function load(){
       // Milestone 1 — deterministic tutorial: flag + one-time material recovery for
       // saves stranded mid-tutorial under the old (5/2/1) amounts.
       if (!("tutContractDone" in parsed)) S.tutContractDone = false;
+      // A save that already finished the tutorial is marked so the one-time
+      // completion side-effects (bonus, summary, board-start) can NEVER re-fire —
+      // even if the state machine is re-evaluated (req: no double completion).
+      if (S.tut && S.tut.done && !S.tut.completeAwarded) S.tut.completeAwarded = true;
+      // Safe repair (req 10): a save whose current stage is missing its input
+      // materials (an old 5/2/1 amount, or resources spent elsewhere) is topped up
+      // with EXACTLY the deficit — never a surplus, applied at most once. This is
+      // the abandoned_recoverable → active repair.
       if (S.tut && !S.tut.done && !S.tut.recovered){
-        const _need = tutorialRecovery(S.tut.step|0, { iron_ore:itemCount("iron_ore"), iron_bar:itemCount("iron_bar"), bracket:itemCount("bracket") });
+        const _need = tutorialRecovery(S.tut.step|0, _tutInv());
         const _keys = Object.keys(_need);
         if (_keys.length){
           for (const k of _keys) S.items[k] = (S.items[k]||0) + _need[k];
@@ -11154,6 +11205,34 @@ function completeAction(act, skill, silent){
 }
 // Frosty's tutorial is running (drives auto-stop + bonus suppression).
 function _tutorialActive(){ return !!(S.tut && !S.tut.done); }
+// ---- Explicit tutorial session state machine (req 1) ----------------------
+// The delivery stage is the last one; its config drives deliverStep/stageCount so
+// nothing hard-codes "3". The phase is DERIVED (never a separate source of truth)
+// from S.tut + live inventory, so it can never drift from the real progression.
+const _TUT_DELIVER_STEP = TUTORIAL_STAGES.length - 1;
+function _tutInv(){ return { iron_ore: itemCount("iron_ore"), iron_bar: itemCount("iron_bar"), bracket: itemCount("bracket") }; }
+function tutPhase(){
+  return tutorialPhase(S.tut, _tutInv(), {
+    deliverStep: _TUT_DELIVER_STEP,
+    stageCount: TUTORIAL_STAGES.length,
+    recovery: (step, inv) => tutorialRecovery(step, inv),
+  });
+}
+// Standard contract timers stay frozen (no countdown, no expiry) until the phase
+// leaves the tutorial — then they initialise from that moment (req 2/3).
+function _contractsFrozen(){ return contractsFrozen(tutPhase()); }
+// Req 9: a short, throttled contextual reminder when the player enters a building
+// that isn't the current objective. Progress is untouched — this only re-orients.
+var _lastTutReminderAt = 0;
+function _tutOffPathReminder(o){
+  if (!_tutorialActive() || S.tut.step >= TUT.length) return;
+  const st = TUT[S.tut.step];
+  if (!o || o.id === st.target || o.tab === st.target) return;   // on-path — no nag
+  const now = Date.now();
+  if (now - _lastTutReminderAt < 15000) return;                  // at most once every ~15s
+  _lastTutReminderAt = now;
+  notify(`❄️ Frosty: no rush — when you're ready, ${st.obj.toLowerCase()} at the ${st.where}. Your progress is safe.`, 'tutorial_step');
+}
 // Remaining tutorial units of an action's output (for the active-job UI), or null.
 function _tutRemain(act){
   if (!_tutorialActive()) return null;
@@ -11321,7 +11400,24 @@ function genContract(){
     now: Date.now(),
   });
 }
-function fillContracts(){ while (S.contracts.length < contractSlots()) S.contracts.push(genContract()); ensureTutorialContract(); }
+function fillContracts(){
+  // While Frosty has the stage, the standard board stays empty so nothing counts
+  // down or lapses (req 2). Only the guaranteed Tutorial Order is present. The
+  // normal board (and its fresh deadlines) begins at completion via _startNormalContracts().
+  if (!_contractsFrozen()){ while (S.contracts.length < contractSlots()) S.contracts.push(genContract()); }
+  ensureTutorialContract();
+}
+// Initialise the normal contract timers from THIS moment (req 3) — never
+// retroactively. Called once when the tutorial completes: any standard order that
+// somehow lingered from an older save gets a fresh deadline starting now, then the
+// board is topped up.
+function _startNormalContracts(){
+  const now = Date.now();
+  if (Array.isArray(S.contracts)){
+    for (const c of S.contracts){ if (!c.tutorial) c.deadline = contractDeadlineMs(c.tier || 'standard', now); }
+  }
+  fillContracts();
+}
 // Guaranteed tutorial contract: pinned to the top from the delivery stage until it
 // is delivered. Never rotates, never expires, never duplicates.
 function ensureTutorialContract(){
@@ -11343,6 +11439,7 @@ function ensureTutorialContract(){
 // reputation (never coins — kept forgiving/child-safe). Idle & offline-safe.
 function sweepContracts(){
   if (!Array.isArray(S.contracts)) return;
+  if (_contractsFrozen()) return;   // no order lapses while Frosty's tutorial is running (req 2)
   const now = Date.now();
   let changed = false;
   for (let i = S.contracts.length - 1; i >= 0; i--){
@@ -11440,14 +11537,21 @@ function tabUnlocked(id){ return TAB_ALWAYS.has(id) || !!(S.unlockedTabs && S.un
 function syncTabUnlocks(silent){
   if (!S.unlockedTabs) S.unlockedTabs = {};
   let changed = false;
+  const _newly: {ic:string; n:string}[] = [];
   for (const id in TAB_COND){
     if (!S.unlockedTabs[id] && TAB_COND[id]()){
       S.unlockedTabs[id] = true; changed = true;
-      if (!silent){
-        const t = TABS.find(x => x.id === id);
-        if (t){ notify(`🔓 ${t.ic} ${t.n} unlocked!`, 'system_unlock'); log(`🔓 <b>${t.n}</b> is now available in your tabs.`, "good"); }
-      }
+      const t = TABS.find(x => x.id === id);
+      if (t){ if (!silent) log(`🔓 <b>${t.n}</b> is now available in your tabs.`, "good"); _newly.push({ ic:t.ic, n:t.n }); }
     }
+  }
+  // Req 7: when SEVERAL tabs unlock at once, show ONE compact summary toast rather
+  // than a burst of competing notices. (During the tutorial these are deferred to
+  // the end-of-tutorial summary anyway.)
+  if (!silent && _newly.length){
+    const sum = summariseRewards(_newly.map(t => ({ label: `${t.ic} ${t.n}` })));
+    if (sum.count === 1) notify(`🔓 ${_newly[0].ic} ${_newly[0].n} unlocked!`, 'system_unlock');
+    else notify(`🔓 ${sum.count} new tabs unlocked: ${sum.lines.map(l=>l.label).join(', ')}`, 'system_unlock');
   }
   if (changed && !silent) renderNav();
   return changed;
@@ -11784,7 +11888,13 @@ function renderContracts(){
     </button>`;
   }
   const now = Date.now();
+  const _frozen = _contractsFrozen();
+  let _heldStandard = 0;
   S.contracts.forEach((c,i)=>{
+    // While Frosty's tutorial runs, the standard board is held: never show a
+    // countdown or an expiry warning for an unrelated order (req 2). Only the
+    // pinned Tutorial Order is presented.
+    if (_frozen && !c.tutorial){ _heldStandard++; return; }
     const have = itemCount(c.item);
     const ok = have >= c.qty;
     const payout = Math.round(c.coins * payMult() * qcContractMult());
@@ -11816,6 +11926,10 @@ function renderContracts(){
       <button class="btn alt" data-reroll="${i}">Re-tender (25c)</button>
     </div>`;
   });
+  if (_frozen){
+    html += `<div style="font-size:11px;color:var(--dim);text-align:center;padding:8px 4px 2px;line-height:1.5">
+      ❄️ The valley's other clients hold their orders until you finish Frosty's tutorial — <b>no clock is running</b>.${_heldStandard?` (${_heldStandard} waiting)`:''}</div>`;
+  }
   html += `</div>` + renderInventoryPanel();
   return html;
 }
@@ -15318,6 +15432,32 @@ var _paused = false;
 // var (not const): _topModal()/modalIsOpen() are reachable from updateGpPrompts()
 // during early init — a const here would throw a TDZ error and crash boot.
 var _MODAL_STACK: { id:string; el:HTMLElement; prevFocus:Element|null; onClose?:()=>void }[] = [];
+// ---- Modal coordinator (req 5/6) ------------------------------------------
+// ONE place decides whether an overlay may open now. Blocking modals never stack
+// (canOpenModal enforces "only one blocking modal"); an OPTIONAL/reward surface
+// that arrives while something blocking is up — or during a required tutorial
+// action — is QUEUED and presented when the stack next clears. So rewards and
+// informational cards can never fight a tutorial step or a critical safety modal.
+var _MODAL_PENDING: { id:string; cls:string; open:()=>any }[] = [];
+function _topModalClass(): string | null {
+  if (!_MODAL_STACK.length) return null;
+  return classifyModal(_MODAL_STACK[_MODAL_STACK.length-1].id);
+}
+function _present(id: string, cls: string, open: ()=>any){
+  if (document.getElementById(id) || _MODAL_STACK.some(m=>m.id===id)) return;   // already open
+  if (_MODAL_PENDING.some(p=>p.id===id)) return;                                // already queued
+  if (canOpenModal(cls as any, _topModalClass() as any, _tutorialActive())){ try{ open(); }catch(e){} }
+  else { _MODAL_PENDING.push({ id, cls, open }); }
+}
+// Present the next eligible queued surface once the stack clears (called on every
+// modal close / un-adopt). Optional info waits out the tutorial entirely (req 2).
+function _drainPendingModals(){
+  if (!_MODAL_PENDING.length || _MODAL_STACK.length) return;
+  const i = _MODAL_PENDING.findIndex(p => canOpenModal(p.cls as any, null, _tutorialActive()));
+  if (i < 0) return;
+  const p = _MODAL_PENDING.splice(i, 1)[0];
+  try{ p.open(); }catch(e){}
+}
 function _modalLayer(){
   let l = document.getElementById('modal-layer');
   if (!l){ l = document.createElement('div'); l.id = 'modal-layer'; document.body.appendChild(l); }
@@ -15366,6 +15506,7 @@ function closeModal(id: string){
     if (p && typeof p.focus === 'function' && _elVisible(p)){ try{ p.focus({ preventScroll:true }); }catch(e){} }
   }
   updateGpPrompts();
+  _drainPendingModals();
 }
 function closeTopModal(){
   if (!_MODAL_STACK.length) return false;
@@ -15421,6 +15562,7 @@ function _unadoptModal(el: HTMLElement){
     if (p && typeof p.focus === 'function' && _elVisible(p)){ try{ p.focus({ preventScroll:true }); }catch(e){} }
   }
   updateGpPrompts();
+  _drainPendingModals();
 }
 if (typeof MutationObserver !== 'undefined' && document.body){
   new MutationObserver(muts => {
@@ -15894,6 +16036,58 @@ if (import.meta.env.DEV) {
       return { step: S.tut ? S.tut.step : 99, done: !!(S.tut && S.tut.done), items: inv(), coins: S.coins };
     },
     tutState(){ return { step: S.tut ? S.tut.step : 99, done: !!(S.tut && S.tut.done), items: inv(), coins: S.coins, recovered: !!(S.tut && S.tut.recovered) }; },
+    // ---- Tutorial session-state / coordinator probes (this task) -----------
+    tutPhase(){ return tutPhase(); },
+    // The contract board seen as data + as rendered HTML — proves no standard
+    // order shows a countdown or "hurry!" while the tutorial has the stage.
+    tutBoard(){
+      const html = (()=>{ try{ return renderContracts(); }catch(e){ return ''; } })();
+      return {
+        phase: tutPhase(), frozen: _contractsFrozen(),
+        standardCount: S.contracts.filter((c:any)=>!c.tutorial).length,
+        tutorialPresent: S.contracts.some((c:any)=>c.tutorial),
+        anyHurryDom: /hurry!/.test(html), anyCountdownDom: /⏳/.test(html),
+        expiredCounter: S.counters.contractsExpired||0,
+      };
+    },
+    // Seed the board with expiring standard orders (as an old mid-tutorial save
+    // might have) to prove they neither show a clock nor lapse during the tutorial.
+    tutSeedBoard(n:number){
+      for (let i=0;i<(n|0);i++) S.contracts.push({ client:'Test Client '+i, item:'bracket', qty:2, coins:50, xp:10, tier:'rush', repAtOffer:0, deadline: Date.now()+800 } as any);
+      return { standardCount: S.contracts.filter((c:any)=>!c.tutorial).length };
+    },
+    tutSweep(){ const before=S.counters.contractsExpired||0; sweepContracts(); return { before, after:S.counters.contractsExpired||0, frozen:_contractsFrozen(), standardCount:S.contracts.filter((c:any)=>!c.tutorial).length }; },
+    // Force the whole tutorial complete (runChain) so the What-next choice is reachable.
+    tutOpenNextStep(){ showChooseNextStep(); return { open:!!document.getElementById('next-step-modal') }; },
+    // Click a What-next choice and report EXACTLY what opened — the authoritative-choice audit.
+    tutChoose(id:string){
+      (document.querySelector(`#next-step-modal [data-step="${id}"]`) as HTMLElement)?.click();
+      return {
+        tab: S.tab,
+        tradeOpen: S.tab==='trade',
+        contractsOpen: S.tab==='contracts',
+        villageOpen: S.tab==='village',
+        unlockCardOpen: !!document.getElementById('unlock-card'),
+        exploreGuideOpen: !!document.getElementById('explore-guide') || _MODAL_PENDING.some(p=>p.id==='explore-guide'),
+        nextStepOpen: !!document.getElementById('next-step-modal'),
+      };
+    },
+    // Pure modal-coordinator gate (does an incoming class open over `topId`?).
+    tutModalGate(incoming:string, topId:string|null){ return canOpenModal(incoming as any, topId?classifyModal(topId) as any:null, _tutorialActive()); },
+    tutPending(){ return _MODAL_PENDING.map(p=>p.id); },
+    // Reward coalescing: several simultaneous unlocks → one compact summary.
+    tutSummariseRewards(labels:string[]){ return summariseRewards((labels||[]).map(l=>({label:l}))); },
+    // Simulate an OLD save stranded mid-tutorial with insufficient inputs (req 10):
+    // set the step, wipe the stage's inputs, and persist so a reload triggers the
+    // one-time safe-repair top-up.
+    tutStrandOldSave(step:number){
+      S.tut = { step:step|0, done:false } as any;   // no `recovered` flag → migration runs on load
+      S.items = {}; S.tutContractDone = false;
+      save();
+      return { step:S.tut.step, phase:tutPhase(), items:_tutInv() };
+    },
+    // The quest marker as HTML — proves the live distance indicator is present.
+    tutMarker(){ S.tab='village'; const html=(()=>{ try{ return questMarkerHtml(); }catch(e){ return ''; } })(); return { html, hasDistance:/\d+m|you're here/.test(html), step:S.tut?S.tut.step:99, where: S.tut&&!S.tut.done&&S.tut.step<TUT.length ? TUT[S.tut.step].where : null }; },
     // ---- UI focus / controller-navigation probes --------------------------
     uiFocus(){ return { tab:S.tab, group:activeNavGroup(), method:_lastInput,
       focus: _uiFocusEl ? ((_uiFocusEl.textContent||_uiFocusEl.getAttribute('aria-label')||'').trim().slice(0,32)) : null,
@@ -15957,6 +16151,10 @@ if (import.meta.env.DEV) {
     pacingClickSummaryContinue(){ (document.getElementById('tut-sum-close') as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
     pacingChooseStep(id:string){ (document.querySelector(`#next-step-modal [data-step="${id}"]`) as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
     pacingUnlockLater(){ (document.getElementById('uc-later') as HTMLElement)?.click(); return (window as any).__gate.pacing(); },
+    // The staged feature-unlock tour is now DECOUPLED from the What-next choice
+    // (so a choice opens only its destination); it surfaces at a later calm beat.
+    // This drives that same tour directly for coverage.
+    pacingStartUnlockTour(){ _startUnlockTour(); return (window as any).__gate.pacing(); },
     pacingRecommend(){ return recommendNextStep({ brackets:itemCount('bracket'), bars:itemCount('iron_bar'), ore:itemCount('iron_ore'), coins:S.coins, contractsDone:(S.counters?.contracts||0) }); },
     // ---- Contract-to-Cash probes ------------------------------------------
     flagAvailable(){ return flagshipAvailable(); },

@@ -84,13 +84,18 @@ test.describe('First-session pacing', () => {
     const rec = await gate(page, 'pacingRecommend');
     expect(['production', 'contract', 'explore']).toContain(rec);
 
-    // choose a path → a staged unlock card (small group), still one modal
+    // choose a path → it opens ONLY its destination (authoritative, req 4): the
+    // choice no longer chains the unlock tour, so nothing else pops up over it.
     p = await gate(page, 'pacingChooseStep', 'contract');
-    expect(p.unlockCardOpen).toBe(true);
     expect(p.nextStepOpen).toBe(false);
-    expect(p.modalCount).toBe(1);
+    expect(p.unlockCardOpen).toBe(false);               // NOT chained anymore
+    expect(p.modalCount).toBe(0);                        // no competing modal
 
-    // "Not now" advances through the SMALL group one card at a time, then stops
+    // The staged unlock tour still exists — decoupled, surfaced at a later beat.
+    // It introduces a SMALL group one card at a time, then stops (never a cascade).
+    p = await gate(page, 'pacingStartUnlockTour');
+    expect(p.unlockCardOpen).toBe(true);
+    expect(p.modalCount).toBe(1);
     p = await gate(page, 'pacingUnlockLater');
     expect(p.modalCount).toBeLessThanOrEqual(1);
     expect(p.unlockShown.length).toBeGreaterThanOrEqual(1);
