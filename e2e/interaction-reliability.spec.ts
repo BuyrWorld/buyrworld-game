@@ -149,10 +149,11 @@ test.describe('Interaction reliability', () => {
   test('couch mode: the Flagship CTA still opens on a single click', async ({ page }) => {
     await afterTutorial(page);
     await gate(page, 'uiCouch', true);
+    expect((await gate(page, 'uiCouch', true)).couch).toBe(true);   // couch-mode is on
     await gate(page, 'uiGoTab', 'contracts');
-    const cta = page.locator('button[onclick*="openFlagshipOrder"]');
-    await expect(cta).toBeVisible();
-    await cta.click();
+    expect(await gate(page, 'uiFlagshipCta')).toBe(true);           // the CTA is present
+    // a single real click opens it (no second click needed)
+    await page.locator('button[onclick*="openFlagshipOrder"]').first().click();
     await expect(page.locator('#flagship-modal')).toBeVisible({ timeout: 4000 });
   });
 
