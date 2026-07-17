@@ -30,7 +30,7 @@ import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isT
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
 import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult, rollFlagshipOrder, primarySource, contractSourceable, orderFromContract } from './data/contractToCash.ts';
-import { createContract as c2cCreate, reduce as c2cReduce, migrateContract as c2cMigrate, plannedPnl as c2cPlannedPnl, actualPnl as c2cActualPnl, reservedByContract as c2cReserved, gradeOf as c2cGrade, satisfactionOf as c2cSatisfaction, C2C_ENGINE_VERSION, C2C_STAGES, isDecisionStage as c2cIsDecision } from './data/c2cEngine.ts';
+import { createContract as c2cCreate, reduce as c2cReduce, migrateContract as c2cMigrate, plannedPnl as c2cPlannedPnl, actualPnl as c2cActualPnl, reservedByContract as c2cReserved, gradeOf as c2cGrade, satisfactionOf as c2cSatisfaction, C2C_ENGINE_VERSION, C2C_STAGES, isDecisionStage as c2cIsDecision, scenarioById as c2cScenarioById, C2C_SCENARIOS } from './data/c2cEngine.ts';
 import { EXIT_BAND, inExitRegion, validReturn, isInteriorTab } from './data/interiors.ts';
 import { tutorialPhase, isTutorialRunning, contractsFrozen, classifyModal, canOpenModal, isBlocking as _modalBlocking, summariseRewards, clampTutorialCount } from './data/tutorialState.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
@@ -490,7 +490,8 @@ function openFlagshipOrder(){
 // performance history. This is the STATE MODEL milestone — UI is intentionally
 // minimal (a stage readout + a dev bridge). The stepwise pipeline UI is later.
 // ============================================================================
-const C2C_MIN_MS = 1000;   // 1 game-minute = 1 real second of active play
+const C2C_MIN_MS = 4000;   // 1 game-minute = 4 real seconds — waits feel like a beat
+                           // without being tedious; a full order runs ~10-15 min.
 // Robust game-time abstraction: a persisted, monotonic clock advanced by the sim
 // loop — deadlines compare against THIS, never a fragile setTimeout/RAF timer.
 function gameNow(){ return (S.gameClock || 0) / C2C_MIN_MS; }   // game-minutes
@@ -557,6 +558,22 @@ function c2cStartFlagship(customerTerms?, opts?){
   try{ save(); }catch(e){}
   return S.c2c;
 }
+// Start a deterministic, replayable named scenario (a curated Rail Yard set-up with
+// locked outcome rolls) — for practice + the showcase, and testable.
+function c2cStartScenario(id){
+  if (S.c2c && S.c2c.stage !== 'closed'){ toast('Finish or abandon your current order first.'); return null; }
+  const scn = c2cScenarioById(id); if (!scn) return null;
+  const order = Object.assign({}, FLAGSHIP_ORDER, scn.orderOverrides || {});
+  const seed = 12345;   // fixed → the scenario plays out identically every time
+  S.c2c = c2cCreate(order, { id: 'c2c_scn_' + id + '_' + Date.now().toString(36), seed, now: gameNow(), makeQuality: 0.9, customerTerms: scn.customerTerms || 'on_delivery' });
+  S.c2c.rolled = Object.assign({}, scn.rolled);   // lock the world outcomes
+  (S.c2c as any).scenario = id;
+  try{ save(); }catch(e){}
+  _c2cUI = { offerId: null, orderQty: 0, deliveryId: 'van', reworkFinished: false };
+  _renderC2C(); _c2cStartPoll();
+  return S.c2c;
+}
+(globalThis as any).c2cStartScenario = c2cStartScenario;
 // A board contract's item is pipeline-fulfillable when it has a recipe (a material
 // to source). Raw materials (mined/chopped) can't be produced, so no pipeline.
 function contractCanPipeline(c){ return !!c && !c.tutorial && contractSourceable(recipeMap()[c.item]?.in); }
@@ -730,7 +747,17 @@ function _renderC2C(){
              <button data-c2cback="1" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">← Back to suppliers</button>`);
   }
   else if (c.stage === 'supplier_in_progress'){
-    body = head('🏭 Supplier — In Progress', esc(c.po.supplier) + ' is making your order.') + _c2cWaitCard('Supplier producing your bars', 'They ship when the batch is ready.', c.t.supplierReadyAt) + closeBtn;
+    const dueVsDeadline = (c.t.inboundArriveAt ?? 0) + (c.po ? c.po.deliveryTimeMin : 0);
+    const tight = dueVsDeadline > c.deadlineAt - 1;
+    const expFee = c.po ? Math.max(10, Math.round(c.po.qty * c.po.unitPrice * 0.15)) : 0;
+    body = head('🏭 Supplier — In Progress', esc(c.po.supplier) + ' is making your order.')
+      + _c2cWaitCard('Supplier producing your bars', tight ? '⚠️ On this pace it may arrive too late.' : 'On pace to arrive in good time.', c.t.supplierReadyAt)
+      + `<div style="font-size:11px;color:var(--dim);text-align:center;margin:8px 0 6px">Your move while they work — <b>why it matters:</b> a tight deadline may need a nudge.</div>
+         <button data-c2c="intervene:expedite" data-primary class="btn" style="width:100%;margin-bottom:6px" ${c.did.expedited?'disabled':''}>⚡ Expedite (−${expFee}c) — fast-track the batch</button>
+         <div style="display:flex;gap:6px;margin-bottom:6px">
+           <button data-c2c="intervene:chase" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px" ${c.did.chased?'disabled':''}>📞 Chase (free)</button>
+           <button data-c2c="intervene:wait" style="flex:1;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">⏳ Wait it out</button>
+         </div>` + closeBtn;
   }
   else if (c.stage === 'inbound_transport'){
     body = head('🚚 Inbound Freight', 'Your bars are on the road to the yard.') + _c2cWaitCard('Inbound freight in transit', 'Goods will be booked into inventory on arrival.', c.t.inboundArriveAt) + closeBtn;
@@ -739,22 +766,39 @@ function _renderC2C(){
     body = head('📦 Goods Receipt & Inspection', 'Booking stock in and running goods-in QC…') + _c2cWaitCard('Receiving & inspecting', 'Materials are entering inventory.', null) + closeBtn;
   }
   else if (c.stage === 'materials_accepted_or_quarantined'){
-    const q = c.mat.quarantined, ac = c.mat.accepted;
+    const q = c.mat.quarantined, ac = c.mat.accepted, rec = c.mat.received;
     const reworkCost = q * O.reworkCostPerUnit;
-    body = head('🔬 Goods-In QC', 'Decide what to do with the received batch.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9;margin-bottom:8px">
-          Received <b>${c.mat.received}</b> bars → <b style="color:var(--mint)">${ac} accepted</b>${q>0?` · <b style="color:#e0a45a">${q} quarantined</b>`:''}.<br>
-          ${q>0?'Quarantined stock can be reworked to spec, or scrapped.':'All bars passed inspection.'}</div>`
-      + `<button data-c2c="resolve:hold" data-primary class="btn" style="width:100%;margin-bottom:6px">Accept ${ac} &amp; start production ▶</button>`
-      + (q>0 ? `<button data-c2c="resolve:rework" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">Rework ${q} quarantined (−${reworkCost}c) → usable</button>
-               <button data-c2c="resolve:scrap" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">Scrap ${q} quarantined</button>` : '');
+    const seen = !!c.inspected;
+    const summary = seen
+      ? `Received <b>${rec}</b> bars → <b style="color:var(--mint)">${ac} on-spec</b>${q>0?` · <b style="color:#e0a45a">${q} out of spec</b>`:''}.`
+      : `Received <b>${rec}</b> bars. The paperwork looks fine, but you haven't checked the metal yet.`;
+    const why = q>0
+      ? `<b>Why it matters:</b> out-of-spec bars make out-of-spec brackets. Quarantine keeps quality high but loses the bad ones; rework saves them for a fee; accepting the lot is cheap but risky.`
+      : (seen ? `All bars passed — good sourcing.` : `<b>Why it matters:</b> a bad batch tanks your final quality. A quick sample check tells you before you commit.`);
+    body = head('🔬 Goods-In QC', 'Check the batch, then decide.')
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9;margin-bottom:8px">${summary}<br><span style="font-size:11px;color:var(--dim)">${why}</span></div>`
+      + (seen ? '' : `<button data-c2c="inspect" data-primary class="btn" style="width:100%;margin-bottom:6px">🔍 Inspect a sample</button>`)
+      + `<button data-c2c="resolve:hold" ${seen?'data-primary':''} class="btn" style="width:100%;margin-bottom:6px">${q>0?`Quarantine the ${q} bad · use ${ac}`:`Accept ${ac}`} &amp; start production ▶</button>`
+      + (q>0 ? `<div style="display:flex;gap:6px;margin-bottom:6px">
+          <button data-c2c="resolve:rework" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:11px">🔧 Rework all (−${reworkCost}c)</button>
+          <button data-c2c="resolve:accept" style="flex:1;background:var(--panel2);color:#e0a45a;border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:11px">⚠️ Accept the lot</button>
+        </div>
+        <button data-c2c="resolve:reject" style="width:100%;background:var(--panel2);color:#e0705a;border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:11px">🚫 Reject batch (part-refund, ship short)</button>` : '');
   }
   else if (c.stage === 'production'){
     const perUnit = Math.max(1, O.materialPerUnit);
     const willMake = Math.min(O.qty, Math.floor(c.mat.accepted / perUnit));
-    body = head('🏭 Production', 'Press your accepted bars into brackets.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9;margin-bottom:8px">
-          Accepted material: <b>${c.mat.accepted}</b> → will make <b style="color:var(--amber)">${willMake}× ${esc(ITEMS[O.productItem]?.n || O.productItem)}</b>${willMake<O.qty?` (short of the ${O.qty} ordered)`:''}.</div>`
+    const timeLeft = _c2cSecs(Math.max(0, c.deadlineAt - gameNow()));
+    const risk = (c.mat.defectiveAccepted || 0) > 0 ? 'Elevated' : 'Low';
+    const riskCol = risk === 'Low' ? 'var(--mint)' : '#e0a45a';
+    const gauge = (label, val, max, col) => `<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin:2px 0"><span style="width:80px;color:var(--dim)">${label}</span><span style="flex:1;height:7px;background:var(--panel);border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(Math.max(0,Math.min(1,val/Math.max(1,max)))*100)}%;background:${col}"></span></span><span style="width:70px;text-align:right">${label==='Capacity'?`${willMake}/${O.qty}`:''}</span></div>`;
+    body = head('🏭 Production', 'Press your bars into brackets on the manufacturing line.')
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.7;margin-bottom:8px">
+          ${gauge('Capacity', willMake, O.qty, willMake>=O.qty?'var(--mint)':'#e0a45a')}
+          <div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--dim)">Material on hand</span><b>${c.mat.accepted} bars</b></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--dim)">Time to deadline</span><b>~${timeLeft}s</b></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--dim)">Defect risk</span><b style="color:${riskCol}">${risk}</b></div>
+          <div style="margin-top:4px;font-size:11px">→ will make <b style="color:var(--amber)">${willMake}× ${esc(ITEMS[O.productItem]?.n || O.productItem)}</b>${willMake<O.qty?` <span style="color:#e0705a">(short of ${O.qty})</span>`:''}.</div></div>`
       + `<button data-c2c="run_production" data-primary class="btn" style="width:100%">Run production ▶</button>` + closeBtn;
   }
   else if (c.stage === 'final_qc'){
@@ -763,12 +807,22 @@ function _renderC2C(){
   else if (c.stage === 'dispatch_decision'){
     const rw = c.fin.reworkable, reworkCost = rw * O.reworkCostPerUnit;
     const willShip = Math.min(O.qty, c.fin.good + (_c2cUI.reworkFinished ? rw : 0));
-    body = head('🚚 Dispatch', 'Ship the finished order to the customer.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9;margin-bottom:8px">
+    const short = willShip < O.qty;
+    const etaAfter = gameNow() + (c.po ? c.po.deliveryTimeMin : 0);
+    const willBeLate = etaAfter > c.deadlineAt;
+    const extFee = Math.max(10, Math.round(O.quotedRevenue * 0.05));
+    const why = short
+      ? `<b>Why it matters:</b> shipping short forfeits pay for the missing units, but a late full order costs a ${Math.round(O.latePenaltyPct*100)}% penalty. Pick your poison.`
+      : `<b>Why it matters:</b> reworking recovers value; the courier costs more but arrives sooner.`;
+    body = head('🚚 Dispatch', 'Ship the finished order — timing and completeness both pay.')
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.8;margin-bottom:8px">
           Finished: <b style="color:var(--mint)">${c.fin.good} good</b>${rw>0?` · <b style="color:#e0a45a">${rw} reworkable</b>`:''}${c.fin.scrapped>0?` · <b style="color:#e0705a">${c.fin.scrapped} scrapped</b>`:''}.<br>
-          Will ship <b style="color:var(--amber)">${willShip}</b> of ${O.qty}.</div>`
+          Will ship <b style="color:var(--amber)">${willShip}</b> of ${O.qty}${short?` <span style="color:#e0705a">(short ${O.qty-willShip})</span>`:''}.${willBeLate?` <span style="color:#e0705a">⚠️ arriving late</span>`:''}<br>
+          <span style="font-size:11px;color:var(--dim)">${why}</span></div>`
       + (rw>0 ? `<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:8px"><button data-c2crework="1" style="width:22px;height:22px;border-radius:4px;border:2px solid var(--amber);background:${_c2cUI.reworkFinished?'var(--amber)':'transparent'};cursor:pointer;color:#12240f;font-weight:800">${_c2cUI.reworkFinished?'✓':''}</button> Rework the ${rw} reworkable units first (−${reworkCost}c)</label>` : '')
-      + `<button data-c2c="dispatch" data-primary class="btn" style="width:100%">Dispatch ${willShip} units ▶</button>` + closeBtn;
+      + `<button data-c2c="dispatch" data-primary class="btn" style="width:100%;margin-bottom:6px">Dispatch ${willShip} units ▶</button>`
+      + (willBeLate && !c.did.extended ? `<button data-c2c="extend" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">🗓️ Request deadline extension (−${extFee}c) — land on time</button>` : '')
+      + closeBtn;
   }
   else if (c.stage === 'outbound_transport'){
     body = head('🚚 Outbound Delivery', 'Your order is on its way to ' + esc(O.client) + '.') + _c2cWaitCard('Out for delivery', 'Delivery is timed against the deadline.', c.t.outboundArriveAt) + closeBtn;
@@ -789,12 +843,31 @@ function _renderC2C(){
   }
   else if (c.stage === 'closed'){
     const grade = c2cGrade(c), sat = c2cSatisfaction(c);
+    const inFull = c.fin.deliveredToCustomer >= O.qty;
+    const otif = c.onTime && inFull;
     const gCol = { excellent:'var(--mint)', good:'#8bd', fair:'#dc8', poor:'#e08a4a' }[grade];
+    const rep = (S.contractRep && S.contractRep[O.client]) || 0;
+    const repDelta = sat >= 90 ? 2 : sat >= 70 ? 1 : sat >= 45 ? 0 : -1;
+    const supName = c.po ? c.po.supplier : '—';
+    const supNote = c.mat.shortfall > 0 ? `short ${c.mat.shortfall}` : 'delivered in full';
+    const supQ = c.mat.received > 0 ? Math.round((1 - (c.mat.quarantined + (c.mat.defectiveAccepted||0)) / c.mat.received) * 100) : 100;
+    const demand = (()=>{ try{ return macroPhase().name; }catch(e){ return 'Steady'; } })();
+    const profit = c2cActualPnl(c).grossProfit;
+    const frosty = otif && profit > 0 ? `❄️ Frosty: "On time, in full, in profit — that's a proper job, ${pName()}!"`
+      : profit > 0 ? `❄️ Frosty: "Money's money — but a cleaner run next time and ${esc(O.client)} will love you."`
+      : `❄️ Frosty: "Ouch. But you sourced, made and shipped it — and you're still standing. Lesson banked."`;
+    const row = (l,v,col?) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span style="color:var(--dim)">${l}</span><span${col?` style="color:${col}"`:''}>${v}</span></div>`;
     body = head('📊 Order Review — ' + esc(O.client), 'Request to realised margin, all in one place.')
-      + `<div style="text-align:center;margin-bottom:6px"><span style="font-size:13px;font-weight:700;color:${gCol};text-transform:uppercase;letter-spacing:1px">${grade}</span>
-          <div style="font-size:11px;color:var(--dim)">Delivered ${c.fin.deliveredToCustomer}/${O.qty} · ${c.onTime?'on time ✓':'late ✗'} · ${c.fin.scrapped} scrapped · satisfaction ${sat}%</div></div>`
+      + `<div style="text-align:center;margin-bottom:6px"><span style="font-size:14px;font-weight:800;color:${gCol};text-transform:uppercase;letter-spacing:1px">${grade}</span>
+          <div style="font-size:11px;color:var(--dim)">Delivered ${c.fin.deliveredToCustomer}/${O.qty} · <b style="color:${otif?'var(--mint)':'#e0a45a'}">${otif?'ON TIME & IN FULL ✓':(c.onTime?'on time':'late')+(inFull?'':' · short')}</b> · satisfaction ${sat}%</div></div>`
       + _c2cPnlBlock(c)
-      + (c2cActualPnl(c).grossProfit < 0 ? `<div style="font-size:11px;color:#8bd;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px">🎓 A rough order, but you're still standing — weigh reliability and the deadline next time.</div>` : '')
+      + `<div style="background:var(--panel2);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;margin-bottom:8px">
+          ${row('Supplier', `${esc(supName)} · ${supNote} · ${supQ}% clean`)}
+          ${row('Customer satisfaction', `${sat}%`, sat>=70?'var(--mint)':'#e0a45a')}
+          ${row('Reputation with client', `${repDelta>=0?'+':''}${repDelta} → ${rep}`, repDelta>=0?'var(--mint)':'#e0705a')}
+          ${row('Valley demand', demand)}
+        </div>`
+      + `<div style="font-size:11px;color:#bfe8f7;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;line-height:1.5">${frosty}</div>`
       + `<button data-c2c="done" data-primary class="btn" style="width:100%">Done ▶</button>`;
   }
 
@@ -807,7 +880,10 @@ function _renderC2C(){
     if (a === 'abandon'){ c2cAbandon(); return; }
     if (a === 'commit_po'){ if (!_c2cUI.offerId) return; _c2cDo({ type:'select_supplier', offerId:_c2cUI.offerId, qty:_c2cUI.orderQty, deliveryId:_c2cUI.deliveryId }); _c2cDo({ type:'raise_po', now:gameNow() }); return; }
     if (a === 'raise_po'){ _c2cDo({ type:'raise_po', now:gameNow() }); return; }
-    if (a.startsWith('resolve:')){ _c2cDo({ type:'resolve_materials', quarantine:a.split(':')[1] }); return; }
+    if (a.startsWith('intervene:')){ _c2cDo({ type:'intervene', kind:a.split(':')[1] as any, now:gameNow() }); return; }
+    if (a === 'inspect'){ _c2cDo({ type:'inspect' }); return; }
+    if (a === 'extend'){ _c2cDo({ type:'extend_deadline', now:gameNow() }); return; }
+    if (a.startsWith('resolve:')){ _c2cDo({ type:'resolve_materials', quarantine:a.split(':')[1] as any }); return; }
     if (a === 'dispatch'){ _c2cDo({ type:'dispatch', rework:!!_c2cUI.reworkFinished, now:gameNow() }); return; }
     if (a === 'send_invoice'){ _c2cDo({ type:'send_invoice', now:gameNow() }); return; }
     _c2cDo({ type:a });   // accept_request / accept_quote / decline_quote / run_production
@@ -866,6 +942,27 @@ function openC2CHistory(){
   openModal('c2c-history-modal', inner, { label:'Order history', backdrop:'rgba(0,0,0,.62)', initialFocus:'#c2c-hist-ok', wire });
 }
 (globalThis as any).openC2CHistory = openC2CHistory;
+
+// Practice / showcase: pick a deterministic scenario to replay.
+function openC2CScenarios(){
+  const cards = C2C_SCENARIOS.map((s:any)=>`
+    <button data-scn="${s.id}" style="display:block;width:100%;text-align:left;background:var(--panel2);border:2px solid var(--edge);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;color:var(--text)">
+      <div style="font-size:13px;font-weight:700;color:var(--amber)">🎬 ${esc(s.label)}</div>
+      <div style="font-size:11px;color:var(--dim);margin-top:3px">${esc(s.blurb)}</div>
+    </button>`).join('');
+  const inner = () => `<div class="panel" style="padding:16px;max-width:460px;width:100%;max-height:88vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0;font-size:15px">🎬 Practice Scenarios</h2>
+      <button aria-label="Close" class="modal-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer">✕</button></div>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 10px">Same set-up every time — a safe place to practise a strategy. Your real orders vary.</p>
+    ${cards}</div>`;
+  const wire = (el:HTMLElement) => {
+    (el.querySelector('.modal-close') as HTMLElement).onclick = () => closeModal('c2c-scenarios-modal');
+    el.querySelectorAll('[data-scn]').forEach(b => (b as HTMLElement).onclick = () => { const id=(b as HTMLElement).dataset.scn!; closeModal('c2c-scenarios-modal'); c2cStartScenario(id); });
+  };
+  openModal('c2c-scenarios-modal', inner, { label:'Practice scenarios', backdrop:'rgba(0,0,0,.62)', initialFocus:'[data-scn]', wire });
+}
+(globalThis as any).openC2CScenarios = openC2CScenarios;
 
 function tutBannerHtml(){
   if (!S.tut || S.tut.done || S.tut.step >= TUT.length) return "";
@@ -9800,6 +9897,14 @@ if (typeof document !== 'undefined'){
   .int-canvas-wrap .ilbl-exit:hover{background:rgba(200,70,58,.98)}
   @keyframes exitPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,90,70,.55)}50%{box-shadow:0 0 0 5px rgba(232,90,70,0)}}
   @keyframes c2cPulse{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  /* Contract-to-Cash modal: readable at 1280x720 + couch/TV distance. */
+  #flagship-modal .btn{min-height:38px}
+  #flagship-modal button{touch-action:manipulation}
+  @media (max-height:760px){ #flagship-modal .panel{max-height:97vh;padding:12px} #flagship-modal h2{font-size:15px} }
+  body.couch-mode #flagship-modal .panel{max-width:600px;font-size:13.5px}
+  body.couch-mode #flagship-modal h2{font-size:18px}
+  body.couch-mode #flagship-modal .btn{min-height:44px;font-size:14px}
+  body.couch-mode #c2c-history-modal .panel, body.couch-mode #c2c-scenarios-modal .panel{font-size:13.5px}
   .firstrun-hint{position:absolute;top:28px;left:50%;transform:translateX(-50%);max-width:94%;background:rgba(42,26,10,.93);color:#fff8e6;border:2px solid #e8961e;border-radius:8px;padding:7px 14px;font:600 12px/1.45 'IBM Plex Mono',monospace;text-align:center;pointer-events:none;box-shadow:0 3px 10px rgba(0,0,0,.45);animation:frPulse 2.2s ease-in-out infinite}
   .firstrun-hint b{color:#ffd666}
   @keyframes frPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,150,30,.5)}50%{box-shadow:0 0 0 6px rgba(232,150,30,0)}}
@@ -12185,12 +12290,17 @@ function renderContracts(){
       <div style="font-size:11px;color:var(--dim);margin-top:3px">${_newDesc}</div>
     </button>`;
   }
-  // Performance history — realised margins + supplier reliability from closed orders.
-  if (Array.isArray(S.c2cHistory) && S.c2cHistory.length){
-    html += `<button onclick="openC2CHistory()" style="display:block;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--edge);border-radius:8px;padding:8px 12px;margin-bottom:10px;cursor:pointer;color:var(--text)">
-      <div style="font-size:12px;font-weight:700">📊 Order history <span style="font-size:10px;color:var(--dim)">· ${S.c2cHistory.length} closed</span></div>
-      <div style="font-size:10px;color:var(--dim);margin-top:2px">Realised margins, on-time record and supplier performance. ▶</div>
-    </button>`;
+  // Performance history + practice scenarios (side by side).
+  if (flagshipAvailable()){
+    const histBtn = (Array.isArray(S.c2cHistory) && S.c2cHistory.length)
+      ? `<button onclick="openC2CHistory()" style="flex:1;text-align:left;background:var(--panel2);border:1px solid var(--edge);border-radius:8px;padding:8px 12px;cursor:pointer;color:var(--text)">
+          <div style="font-size:12px;font-weight:700">📊 Order history <span style="font-size:10px;color:var(--dim)">· ${S.c2cHistory.length}</span></div>
+          <div style="font-size:10px;color:var(--dim);margin-top:2px">Margins, on-time record, suppliers ▶</div></button>` : '';
+    html += `<div style="display:flex;gap:8px;margin-bottom:10px">${histBtn}
+      <button onclick="openC2CScenarios()" style="flex:1;text-align:left;background:var(--panel2);border:1px solid var(--edge);border-radius:8px;padding:8px 12px;cursor:pointer;color:var(--text)">
+        <div style="font-size:12px;font-weight:700">🎬 Practice</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">Replay a fixed scenario ▶</div></button>
+    </div>`;
   }
   const now = Date.now();
   const _frozen = _contractsFrozen();
@@ -16534,6 +16644,13 @@ if (import.meta.env.DEV) {
     c2cContractCount(){ return { total:(S.contracts||[]).filter((c:any)=>!c.tutorial).length, delivered:S.counters?.contracts||0 }; },
     // The action the controller/keyboard focus ring is currently on (focus polish).
     c2cFocus(){ return { action: (_uiFocusEl && (_uiFocusEl as any).dataset) ? (_uiFocusEl as any).dataset.c2c || null : null, hasRing: !!document.querySelector('.gp-focus') }; },
+    // Deterministic scenarios (opens the live modal on a locked set-up).
+    c2cScenarios(){ return C2C_SCENARIOS.map((s:any)=>({ id:s.id, label:s.label })); },
+    c2cStartScenario(id:string){ const c=c2cStartScenario(id); return _c2cSnap(c); },
+    // Read the modal body text (for asserting the why-it-matters + result copy).
+    c2cModalText(){ const el=document.getElementById('flagship-modal'); return el?(el.textContent||'').replace(/\s+/g,' ').trim():''; },
+    c2cHasButton(action:string){ return !!document.querySelector(`#flagship-modal [data-c2c="${action}"]`); },
+    c2cClick(action:string){ const b=document.querySelector(`#flagship-modal [data-c2c="${action}"]`) as HTMLElement; if(b){ b.click(); return true; } return false; },
     // ---- Interaction-contract probes (village) ----------------------------
     ixTargets(){ return buildVillageTargets().map((t:any) => ({ id:t.id, kind:t.kind, name:t.name, verb:t.verb, box:t.box, approach:t.approach })); },
     ixState(){ return { tab:S.tab, sel:SEL_ID, hover:HOVER_ID, vpx:VP.x, vpy:VP.y, vptx:VP.tx, vpty:VP.ty, pending:!!VP.pending, npcMet:!!S.npcMet, action:S.action?S.action.objId:null }; },

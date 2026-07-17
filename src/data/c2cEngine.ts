@@ -107,7 +107,10 @@ export interface C2CContract {
   po: C2CPO | null;
   // material buckets (units)
   mat: { ordered: number; delivered: number; shortfall: number; received: number;
-         accepted: number; quarantined: number; scrapped: number; consumed: number };
+         accepted: number; quarantined: number; scrapped: number; consumed: number;
+         defectiveAccepted?: number; rejected?: number };
+  inspected?: boolean;      // player inspected the goods-in sample (reveals defects)
+  extended?: boolean;       // a deadline extension was granted (small satisfaction hit)
   // finished-goods buckets (units)
   fin: { produced: number; good: number; reworkable: number; scrapped: number;
          reworked: number; dispatched: number; deliveredToCustomer: number };
@@ -125,7 +128,8 @@ export interface C2CContract {
           revenue: number; penalties: number };
   // one-shot side-effect guards (idempotency / no-skip)
   did: { poRaised: boolean; supplierPaid: boolean; goodsMoved: boolean; materialsResolved: boolean;
-         produced: boolean; finalQc: boolean; dispatched: boolean; invoiced: boolean; paid: boolean; closed: boolean };
+         produced: boolean; finalQc: boolean; dispatched: boolean; invoiced: boolean; paid: boolean; closed: boolean;
+         chased?: boolean; expedited?: boolean; extended?: boolean };
   history: string[];
 }
 
@@ -142,7 +146,8 @@ export type C2CEffect =
 
 export interface C2CPerfRecord {
   id: string; orderId: string; client: string; supplier: string | null; deliveryId: string | null;
-  onTime: boolean; customerRejected: boolean; satisfaction: number; reputationDelta: number;
+  onTime: boolean; inFull: boolean; customerRejected: boolean; satisfaction: number; reputationDelta: number;
+  delivered: number; ordered: number; supplierShortfall: number; incomingDefects: number; finishedScrapped: number;
   planned: C2CPnl; actual: C2CPnl; grade: OrderGrade; closedAt: number;
 }
 export type OrderGrade = 'excellent' | 'good' | 'fair' | 'poor';
@@ -217,6 +222,30 @@ export function migrateContract(raw: any): C2CContract | null {
   return c as C2CContract;
 }
 
+// ---- Deterministic, replayable scenarios ----------------------------------
+// Named, seeded set-ups for the Rail Yard showcase — each locks the outcome rolls
+// so a scenario plays out identically every time (testable + fair to practise).
+// The rolls only fix the WORLD (supplier reliability, defects); the player's
+// decisions still determine the profit + satisfaction.
+export type ScenarioRolls = NonNullable<C2CContract['rolled']>;
+export interface C2CScenario {
+  id: string; label: string; blurb: string;
+  orderOverrides?: Partial<C2CContract['order']>;
+  rolled: ScenarioRolls;
+  customerTerms?: PaymentTerms;
+}
+export const C2C_SCENARIOS: C2CScenario[] = [
+  { id: 'trailer', label: 'The Featherstone Run', blurb: 'A clean showcase order — dependable suppliers, minor defects. On time and profitable if you plan well.',
+    rolled: { supplierOnTime: true, shortfallFrac: 0, incomingDefectFrac: 0.12, makeDefectFrac: 0.05, reworkShare: 0.6 } },
+  { id: 'supplier_shortfall', label: 'The Short Shipment', blurb: 'A cheap supplier under-delivers. Chase them, expedite, or ship what you can.',
+    rolled: { supplierOnTime: false, shortfallFrac: 0.3, incomingDefectFrac: 0.1, makeDefectFrac: 0.05, reworkShare: 0.6 } },
+  { id: 'quality_crisis', label: 'The Quality Crisis', blurb: 'A dodgy batch arrives. Inspect it, quarantine the bad bars, rework them — or gamble on accepting the lot.',
+    rolled: { supplierOnTime: true, shortfallFrac: 0, incomingDefectFrac: 0.4, makeDefectFrac: 0.08, reworkShare: 0.5 } },
+  { id: 'rush', label: 'The Rush Order', blurb: 'A tight deadline. Pay to expedite the supplier, or ask the client for grace.',
+    orderOverrides: { deadlineMin: 10 }, rolled: { supplierOnTime: true, shortfallFrac: 0, incomingDefectFrac: 0.1, makeDefectFrac: 0.05, reworkShare: 0.6 } },
+];
+export function scenarioById(id: string): C2CScenario | null { return C2C_SCENARIOS.find(s => s.id === id) || null; }
+
 // ---- P&L (planned + actual) -----------------------------------------------
 export interface C2CPnl {
   revenue: number;
@@ -245,9 +274,13 @@ export function plannedPnl(c: C2CContract): C2CPnl {
   const production = expDefects * c.order.reworkCostPerUnit;
   return pnl(c.order.quotedRevenue, material, inbound, production, outbound, 0);
 }
-/** Actual P&L — from what really happened (buckets + accrued cash). */
+/** Actual P&L — from what really happened (buckets + accrued cash). Revenue is
+ *  shown GROSS (what the order was worth) with the short/late/defect losses as a
+ *  separate penalties line, so grossProfit equals the real cash delta:
+ *  (net received = gross − penalties) − costs. `c.cash.revenue` is the NET amount
+ *  actually banked, so gross = net + penalties. */
 export function actualPnl(c: C2CContract): C2CPnl {
-  return pnl(c.cash.revenue, c.cash.supplierPaid, c.cash.inboundPaid, c.cash.reworkPaid, c.cash.outboundPaid, c.cash.penalties);
+  return pnl(c.cash.revenue + c.cash.penalties, c.cash.supplierPaid, c.cash.inboundPaid, c.cash.reworkPaid, c.cash.outboundPaid, c.cash.penalties);
 }
 export function gradeOf(c: C2CContract): OrderGrade {
   const a = actualPnl(c);
@@ -263,6 +296,7 @@ export function satisfactionOf(c: C2CContract): number {
   const shortUnits = Math.max(0, c.order.qty - c.fin.deliveredToCustomer);
   s -= shortUnits * 8;
   if (c.customerRejected) s -= 25;
+  if (c.extended) s -= 10;   // a granted extension keeps you on-time, but the client noticed
   return clamp(Math.round(s), 0, 100);
 }
 
@@ -271,8 +305,11 @@ export function satisfactionOf(c: C2CContract): number {
  *  (material not yet consumed/scrapped, plus finished goods not yet shipped). */
 export function reservedByContract(c: C2CContract, item: string): number {
   let n = 0;
-  if (item === c.order.materialItem) n += Math.max(0, c.mat.received - c.mat.consumed - c.mat.scrapped);
-  if (item === c.order.productItem) n += Math.max(0, c.fin.produced - c.fin.dispatched - c.fin.scrapped);
+  // Material stays reserved until production runs, which frees ALL of it (consumed
+  // out, the rest handed back to the player). Finished goods stay reserved until
+  // dispatch, which frees ALL of them (shipped out, the rest kept as stock).
+  if (item === c.order.materialItem) n += c.did.produced ? 0 : Math.max(0, c.mat.received - c.mat.scrapped);
+  if (item === c.order.productItem) n += c.did.dispatched ? 0 : Math.max(0, c.fin.produced - c.fin.scrapped);
   return n;
 }
 
@@ -283,8 +320,11 @@ export type C2CAction =
   | { type: 'decline_quote' }
   | { type: 'select_supplier'; offerId: string; qty: number; deliveryId: string }
   | { type: 'raise_po'; now: number }
-  | { type: 'resolve_materials'; quarantine: 'scrap' | 'rework' | 'hold' }
+  | { type: 'intervene'; kind: 'wait' | 'chase' | 'expedite'; now: number }
+  | { type: 'inspect' }
+  | { type: 'resolve_materials'; quarantine: 'scrap' | 'rework' | 'hold' | 'accept' | 'reject' }
   | { type: 'run_production' }
+  | { type: 'extend_deadline'; now: number }
   | { type: 'dispatch'; rework: boolean; now: number }
   | { type: 'send_invoice'; now: number }
   | { type: 'tick'; now: number }
@@ -358,11 +398,80 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       c.history.push(`PO raised — supplier working (lead ${c.po.promisedLeadMin} min).`);
       return okRes(c, effects);
     }
+    case 'intervene': {
+      // A meaningful mid-fulfilment intervention while the supplier is working.
+      if (c.stage !== 'supplier_in_progress') return noRes(c0, 'wrong_stage');
+      const now = action.now;
+      const effects: C2CEffect[] = [];
+      if (action.kind === 'chase') {
+        if (c.did.chased) return noRes(c0, 'already_chased');
+        c.did.chased = true;
+        // free, once: a gentle nudge that trims a minute off the remaining lead
+        if (c.t.supplierReadyAt != null) { c.t.supplierReadyAt = Math.max(now, c.t.supplierReadyAt - 1); c.t.inboundArriveAt = c.t.supplierReadyAt + INBOUND_TRANSIT; }
+        c.history.push('Chased the supplier — they promise to hurry it along.');
+        return okRes(c, effects);
+      }
+      if (action.kind === 'expedite') {
+        if (c.did.expedited) return noRes(c0, 'already_expedited');
+        if (!c.po) return noRes(c0, 'no_po');
+        c.did.expedited = true;
+        const fee = Math.max(10, Math.round(c.po.qty * c.po.unitPrice * 0.15));
+        c.cash.inboundPaid += fee;   // a rush freight surcharge (logistics)
+        effects.push({ kind: 'debit', amount: fee, source: 'c2c_expedite', key: keyOf(c, 'expedite') });
+        if (c.t.supplierReadyAt != null) { const rem = Math.max(0, c.t.supplierReadyAt - now); c.t.supplierReadyAt = now + Math.ceil(rem / 2); c.t.inboundArriveAt = c.t.supplierReadyAt + INBOUND_TRANSIT; }
+        c.history.push(`Paid ${fee}c to expedite — the batch is fast-tracked.`);
+        return okRes(c, effects);
+      }
+      // wait: hold your nerve — costs nothing, changes nothing
+      c.history.push('Waited on the supplier.');
+      return { contract: c, effects: [], ok: true, changed: false };
+    }
+    case 'inspect': {
+      if (c.stage !== 'materials_accepted_or_quarantined') return noRes(c0, 'wrong_stage');
+      if (c.inspected) return noRes(c0, 'already_inspected');
+      c.inspected = true;
+      c.history.push(`Inspected a sample: ${c.mat.quarantined} of ${c.mat.received} bars are out of spec.`);
+      return okRes(c, []);
+    }
+    case 'extend_deadline': {
+      if (c.stage !== 'dispatch_decision') return noRes(c0, 'wrong_stage');
+      if (c.did.extended) return noRes(c0, 'already_extended');
+      c.did.extended = true;
+      c.extended = true;
+      const fee = Math.max(10, Math.round(c.order.quotedRevenue * 0.05));
+      c.cash.outboundPaid += fee;   // a rush/grace service fee
+      c.deadlineAt = Math.max(c.deadlineAt, action.now + 12);   // the client grants extra time
+      c.history.push(`Requested a deadline extension (−${fee}c) — the client grants some grace.`);
+      return okRes(c, [{ kind: 'debit', amount: fee, source: 'c2c_extension', key: keyOf(c, 'extension') }]);
+    }
     case 'resolve_materials': {
       if (c.stage !== 'materials_accepted_or_quarantined') return noRes(c0, 'wrong_stage');
       if (c.did.materialsResolved) return noRes(c0, 'already_resolved');
       const effects: C2CEffect[] = [];
       c.did.materialsResolved = true;
+      // reject the WHOLE received batch → scrapped + a goodwill part-refund; nothing
+      // usable remains (a cut-your-losses escape hatch).
+      if (action.quarantine === 'reject') {
+        const remaining = Math.max(0, c.mat.received - c.mat.consumed - c.mat.scrapped);
+        if (c.mat.received > 0) effects.push({ kind: 'inv_remove', item: O.materialItem, qty: c.mat.received });
+        if (remaining > 0) effects.push({ kind: 'release', item: O.materialItem, qty: remaining });
+        const refund = Math.round((c.po ? c.po.unitPrice : 0) * c.mat.received * 0.5);
+        if (refund > 0) { c.cash.supplierPaid = Math.max(0, c.cash.supplierPaid - refund); effects.push({ kind: 'credit', amount: refund, source: 'c2c_refund', key: keyOf(c, 'refund') }); }
+        c.mat.rejected = c.mat.received; c.mat.scrapped += c.mat.quarantined; c.mat.quarantined = 0; c.mat.accepted = 0;
+        c.history.push(`Rejected the whole batch — supplier refunded ${refund}c. You'll need to ship short.`);
+        c.stage = 'production';
+        return okRes(c, effects);
+      }
+      // accept ALL, defective included — cheap + fast, but the bad bars raise the
+      // finished-goods defect rate (a genuine risk/quality trade-off).
+      if (action.quarantine === 'accept' && c.mat.quarantined > 0) {
+        c.mat.defectiveAccepted = c.mat.quarantined;
+        c.mat.accepted += c.mat.quarantined;
+        c.history.push(`Accepted all ${c.mat.received} bars, including ${c.mat.quarantined} out-of-spec — defect risk up.`);
+        c.mat.quarantined = 0;
+        c.stage = 'production';
+        return okRes(c, effects);
+      }
       if (c.mat.quarantined > 0) {
         if (action.quarantine === 'scrap') {
           // scrapped material leaves inventory + its reservation is released
@@ -398,14 +507,13 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       c.mat.consumed += consumed;
       c.fin.produced = produced;
       const effects: C2CEffect[] = [];
-      // consume accepted material (real movement) + release its reservation
-      if (consumed > 0) {
-        effects.push({ kind: 'inv_remove', item: O.materialItem, qty: consumed });
-        effects.push({ kind: 'release', item: O.materialItem, qty: consumed });
-      }
-      // any leftover accepted material is freed back to the player (reservation released)
-      const leftover = c.mat.accepted - consumed;
-      if (leftover > 0) effects.push({ kind: 'release', item: O.materialItem, qty: leftover });
+      // consume accepted material (real movement out of inventory)…
+      if (consumed > 0) effects.push({ kind: 'inv_remove', item: O.materialItem, qty: consumed });
+      // …and release ALL remaining material reservation for this order (the consumed
+      // units, plus any leftover accepted AND held-quarantine bars, which become the
+      // player's free stock). After production no material is reserved to the order.
+      const stillReserved = Math.max(0, c.mat.received - c.mat.scrapped);
+      if (stillReserved > 0) effects.push({ kind: 'release', item: O.materialItem, qty: stillReserved });
       c.mat.accepted = 0;
       // create real finished goods (reserved to this contract until shipped)
       if (produced > 0) {
@@ -434,11 +542,12 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       const ship = Math.min(O.qty, c.fin.good);
       c.fin.dispatched = ship;
       c.fin.deliveredToCustomer = ship;
-      // dispatch removes shipped goods from inventory + releases their reservation
-      if (ship > 0) {
-        effects.push({ kind: 'inv_remove', item: O.productItem, qty: ship });
-        effects.push({ kind: 'release', item: O.productItem, qty: ship });
-      }
+      // dispatch removes shipped goods from inventory…
+      if (ship > 0) effects.push({ kind: 'inv_remove', item: O.productItem, qty: ship });
+      // …and releases ALL remaining finished-goods reservation (shipped units plus any
+      // un-reworked reworkable units left behind — the player keeps those as stock).
+      const finReserved = Math.max(0, c.fin.produced - c.fin.scrapped);
+      if (finReserved > 0) effects.push({ kind: 'release', item: O.productItem, qty: finReserved });
       // outbound freight cost
       c.cash.outboundPaid += (c.po ? c.po.deliveryCost : 0);
       if (c.po && c.po.deliveryCost > 0) effects.push({ kind: 'debit', amount: c.po.deliveryCost, source: 'c2c_outbound', key: keyOf(c, 'outbound') });
@@ -536,7 +645,11 @@ function tick(c: C2CContract, now: number): ActionResult {
       if (!c.did.finalQc) {
         c.did.finalQc = true;
         if (!c.rolled) c.rolled = rollAll(c);
-        const defects = Math.round(c.fin.produced * clamp(c.rolled.makeDefectFrac, 0, 1));
+        // Accepting defective material at goods-in raises the finished defect rate.
+        const badMat = c.mat.defectiveAccepted || 0;
+        const matPenalty = badMat > 0 ? 0.4 * (badMat / Math.max(1, c.mat.received)) : 0;
+        const defectRate = clamp(c.rolled.makeDefectFrac + matPenalty, 0, 1);
+        const defects = Math.round(c.fin.produced * defectRate);
         const reworkable = Math.round(defects * clamp(c.rolled.reworkShare, 0, 1));
         const scrapped = defects - reworkable;
         c.fin.good = Math.max(0, c.fin.produced - defects);
@@ -554,9 +667,10 @@ function tick(c: C2CContract, now: number): ActionResult {
     }
     case 'outbound_transport': {
       if (c.t.outboundArriveAt == null || now < c.t.outboundArriveAt) return still(c);
-      c.t.deliveredAt = now;
-      // Robust on-time from the game-time deadline abstraction (not a wall clock).
-      c.onTime = now <= c.deadlineAt;
+      // The order arrives at its SCHEDULED time (not whenever the tick happens to
+      // observe it) — so on-time is deterministic and robust to clock granularity.
+      c.t.deliveredAt = c.t.outboundArriveAt;
+      c.onTime = c.t.outboundArriveAt <= c.deadlineAt;
       // Customer rejection: nothing usable actually reached them.
       const shortUnits = c.order.qty - c.fin.deliveredToCustomer;
       c.customerRejected = c.fin.deliveredToCustomer <= 0;
@@ -626,12 +740,15 @@ function repDeltaOf(c: C2CContract): number {
   const s = satisfactionOf(c);
   return s >= 90 ? 2 : s >= 70 ? 1 : s >= 45 ? 0 : -1;
 }
+export function isInFull(c: C2CContract): boolean { return c.fin.deliveredToCustomer >= c.order.qty; }
 function perfRecord(c: C2CContract): C2CPerfRecord {
   return {
     id: c.id, orderId: c.orderId, client: c.order.client,
     supplier: c.po ? c.po.supplier : null, deliveryId: c.po ? c.po.deliveryId : null,
-    onTime: c.onTime === true, customerRejected: c.customerRejected,
+    onTime: c.onTime === true, inFull: isInFull(c), customerRejected: c.customerRejected,
     satisfaction: satisfactionOf(c), reputationDelta: repDeltaOf(c),
+    delivered: c.fin.deliveredToCustomer, ordered: c.order.qty, supplierShortfall: c.mat.shortfall,
+    incomingDefects: c.mat.quarantined + (c.mat.defectiveAccepted || 0) + (c.mat.rejected || 0), finishedScrapped: c.fin.scrapped,
     planned: plannedPnl(c), actual: actualPnl(c), grade: gradeOf(c), closedAt: c.t.deliveredAt ?? c.createdAt,
   };
 }

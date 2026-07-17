@@ -160,7 +160,45 @@ genuine view change and **restores focus** to the same control across waiting-st
 countdown re-renders — only for non-pointer input (`_lastInput !== 'pointer'`), so
 mouse/touch users are unaffected. Focus + ring verified in e2e.
 
+## The Rail Yard showcase (trailer sequence)
+
+The flagship order is a polished, replayable 10–15 minute source-to-cash sequence
+with real decisions and visible consequences:
+
+1. **Customer request** — 12 Rail Brackets, the quoted revenue, deadline and terms.
+2. **Quotation review** — accept or decline.
+3. **Supplier compare** — 3 quotes with price / quality / lead / reliability / MOQ /
+   payment-terms bars; a planned-margin preview before you commit.
+4. **Raise PO** — with an affordability gate.
+5. **Supplier fulfilment intervention** — **expedite** (pay to fast-track), **chase**
+   (free nudge) or **wait**; a "⚠️ may arrive late" hint tells you when it matters.
+6. **Goods receipt** — real inbound inventory movement.
+7. **Goods-in QC** — **inspect a sample** (reveals the defect count), then **quarantine**
+   (safe), **rework** (pay to save the bad bars), **accept the lot** (cheap, raises the
+   finished defect rate) or **reject** (part-refund, ship short).
+8. **Production** — a capacity / material / time-to-deadline / defect-risk panel, then run.
+9. **Final QC** — good / reworkable / scrapped.
+10. **Dispatch** — rework the reworkable, choose van vs courier, **ship short** or
+    **request a deadline extension** (fee + small satisfaction hit) to land on time.
+11. **Invoice + payment** — terms drive when the cash lands.
+12. **Result screen** — planned vs actual P&L (revenue, every cost, penalties, gross
+    profit, margin %), **on-time & in-full**, customer satisfaction, supplier
+    performance, reputation delta, valley demand, and a Frosty character beat.
+
+Every screen carries a short plain-language "why it matters" line. The clock only
+runs during waiting stages (`C2C_MIN_MS = 4000`, ~4s/min), so decisions don't burn
+the deadline and a full order lands around 10–15 minutes.
+
+**Deterministic scenarios** (`C2C_SCENARIOS`, "🎬 Practice" on the Contracts board):
+`trailer`, `supplier_shortfall`, `quality_crisis`, `rush` — each locks the world
+rolls so it plays out identically; the player's decisions still set the outcome.
+Real orders vary (`rollFlagshipOrder`) in client, size, deadline and price.
+
+**Readability:** the modal is tuned for 1280×720 and couch/TV mode (larger type,
+bigger hit targets, height-capped panels).
+
 ## Possible future work
 
 - Scale supplier prices by material value so the economy is tuned per item.
 - Richer history analytics (trend of margin/on-time over many orders).
+- "Scrap and remake" recovery (needs re-sourcing / leftover-material reservation).
