@@ -108,11 +108,16 @@ The flagship order is now the **live** engine-driven pipeline — the one-shot
   panel): per-order grade / on-time / satisfaction / realised margin, plus a
   supplier-performance tally (on-time record + total margin), backed by
   `S.c2cHistory`.
-- **Repeatable**: the order is available whenever the tutorial is done. Finishing
-  one (`Done`) clears the active contract so the next open starts a fresh order
-  with a new seed (new supplier/quality/logistics outcomes); the completed order
-  stays in the history and grows client reputation (which sweetens future payouts).
-  `S.flagshipDone` now only records "completed ≥ 1" (stats/tests), never a lock.
+- **Repeatable + varied**: the order is available whenever the tutorial is done.
+  Finishing one (`Done`) clears the active contract so the next open starts a fresh
+  order. Each fresh order is **rolled from a seed** (`rollFlagshipOrder` in
+  `contractToCash.ts`) — a different client, order size (8–16), deadline (15–22) and
+  price, all within tuned always-valid bounds and deterministic/reload-safe. The
+  mechanical chain (bracket product, iron-bar material, penalties, rework) is
+  unchanged. `c2cStartFlagship(..., { base:true })` pins the canonical order for
+  deterministic tests. Completed orders stay in the history and grow client
+  reputation (which sweetens future payouts). `S.flagshipDone` now only records
+  "completed ≥ 1" (stats/tests), never a lock.
 
 ## Dev/debug surface (`window.__gate`, DEV-only)
 
@@ -123,8 +128,6 @@ The flagship order is now the **live** engine-driven pipeline — the one-shot
 ## Possible future work
 
 - Generalise the engine to the standard contract board (currently it powers the
-  one authored, now-repeatable order).
-- Per-order variation (qty/client/deadline) so repeats feel fresh beyond the
-  seeded outcome randomness.
+  one authored, now-repeatable + varied order).
 - Controller/keyboard focus polish for the stepwise modal.
 - Richer history analytics (trend of margin/on-time over many orders).

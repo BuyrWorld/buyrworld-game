@@ -50,7 +50,7 @@ test.describe('Contract-to-Cash engine wiring', () => {
     await start(page);
     await gate(page, 'flagGiveCoins', 3000);
     await gate(page, 'c2cFreezeClock', true);                        // deterministic game-time
-    let s = await gate(page, 'c2cStart', 'on_delivery');
+    let s = await gate(page, 'c2cStart', 'on_delivery', { base: true });   // pin the canonical order for exact-number assertions
     expect(s.stage).toBe('customer_request');
 
     await gate(page, 'c2cAction', { type: 'accept_request' });
@@ -114,7 +114,7 @@ test.describe('Contract-to-Cash engine wiring', () => {
     await start(page);
     await gate(page, 'flagGiveCoins', 3000);
     await gate(page, 'c2cFreezeClock', true);
-    await gate(page, 'c2cStart', 'on_delivery');
+    await gate(page, 'c2cStart', 'on_delivery', { base: true });
     await gate(page, 'c2cAction', { type: 'accept_request' });
     await gate(page, 'c2cAction', { type: 'accept_quote' });
     await gate(page, 'c2cAction', { type: 'select_supplier', offerId: 'standard', qty: 12, deliveryId: 'van' });

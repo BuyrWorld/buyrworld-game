@@ -78,10 +78,11 @@ test.describe('Contract-to-Cash vertical slice', () => {
     expect((await gate(page, 'flagState')).done).toBe(true);
 
     // the performance-history view surfaces the closed order + supplier record
+    const client = (await gate(page, 'c2cHistory'))[0].client;   // varied per order
     await page.evaluate(() => (window as any).openC2CHistory());
     const hist = page.locator('#c2c-history-modal');
     await expect(hist).toBeVisible();
-    await expect(hist).toContainText('Featherstone Rail Yard');
+    await expect(hist).toContainText(client);
     await expect(hist).toContainText(/Supplier performance/i);
     await expect(hist).toContainText(/Margin/i);
     await hist.locator('#c2c-hist-ok').click();

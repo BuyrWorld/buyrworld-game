@@ -52,6 +52,45 @@ export const FLAGSHIP_ORDER: FlagshipOrder = {
   reworkCostPerUnit: 18,
 };
 
+// ---- Per-order variation --------------------------------------------------
+// So a REPEATED order feels fresh: a seeded roll picks a client + varies the
+// quantity, deadline and revenue within tuned bounds. Deterministic (a given seed
+// always yields the same order) so it is testable and reload-safe. The mechanical
+// chain (bracket product, iron-bar material, penalties, rework) is unchanged.
+export interface FlagshipVariant { client: string; productName: string; unitRevenue: number; }
+export const FLAGSHIP_VARIANTS: FlagshipVariant[] = [
+  { client: 'Featherstone Rail Yard',  productName: 'Rail Brackets',      unitRevenue: 100 },
+  { client: 'Port Salvo Shipworks',    productName: 'Deck Brackets',      unitRevenue: 108 },
+  { client: 'Ironbridge Freight Depot',productName: 'Chassis Brackets',   unitRevenue: 96  },
+  { client: 'Hollow Pine Sawmill',     productName: 'Mill Brackets',      unitRevenue: 104 },
+  { client: 'Kestrel Aerodrome',       productName: 'Airframe Brackets',  unitRevenue: 114 },
+];
+
+function _c2cRng(seed: number){
+  let a = seed >>> 0;
+  return function(){ a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/** Roll a fresh flagship order from `seed` — a different client, order size,
+ *  deadline and price each time, all within tuned, always-valid bounds. */
+export function rollFlagshipOrder(seed: number): FlagshipOrder {
+  const r = _c2cRng(seed);
+  const v = FLAGSHIP_VARIANTS[Math.floor(r() * FLAGSHIP_VARIANTS.length) % FLAGSHIP_VARIANTS.length];
+  const qty = 8 + Math.floor(r() * 9);                 // 8..16 finished units
+  const deadlineMin = 15 + Math.floor(r() * 8);        // 15..22 min of pipeline time
+  const quotedRevenue = Math.round(qty * v.unitRevenue * (0.96 + r() * 0.1));   // ± a little market noise
+  return {
+    ...FLAGSHIP_ORDER,
+    id: 'flagship_' + (seed >>> 0).toString(36),
+    client: v.client,
+    productName: v.productName,
+    qty,
+    quotedRevenue,
+    deadlineMin,
+    warehouseCap: Math.max(FLAGSHIP_ORDER.warehouseCap, qty + 6),   // always fits the order
+  };
+}
+
 // ---- Supplier offers (no more than three — req 1) -------------------------
 export type PaymentTerms = 'prepaid' | 'on_delivery' | 'net_15';
 export interface SupplierOffer {

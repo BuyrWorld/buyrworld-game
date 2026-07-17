@@ -29,7 +29,7 @@ import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as 
 import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isTrackUnlocked, trackById, trackByFile, isExclusiveFile, collectionPct, nextTrackToUnlock, radioDefaultTrack, GLOBAL_SCENARIO_PRIORITY, inGlobalScenario } from './data/radio.ts';
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
-import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult } from './data/contractToCash.ts';
+import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult, rollFlagshipOrder } from './data/contractToCash.ts';
 import { createContract as c2cCreate, reduce as c2cReduce, migrateContract as c2cMigrate, plannedPnl as c2cPlannedPnl, actualPnl as c2cActualPnl, reservedByContract as c2cReserved, gradeOf as c2cGrade, satisfactionOf as c2cSatisfaction, C2C_ENGINE_VERSION, C2C_STAGES, isDecisionStage as c2cIsDecision } from './data/c2cEngine.ts';
 import { EXIT_BAND, inExitRegion, validReturn, isInteriorTab } from './data/interiors.ts';
 import { tutorialPhase, isTutorialRunning, contractsFrozen, classifyModal, canOpenModal, isBlocking as _modalBlocking, summariseRewards, clampTutorialCount } from './data/tutorialState.ts';
@@ -526,9 +526,13 @@ function c2cDispatch(action){
 function c2cTick(){ if (S.c2c && S.c2c.stage !== 'closed') c2cDispatch({ type: 'tick', now: gameNow() }); }
 // Start an authoritative engine order from the flagship data — reusing the QC
 // rating as finished-goods quality (extends the QC system, doesn't fork it).
-function c2cStartFlagship(customerTerms?){
+function c2cStartFlagship(customerTerms?, opts?){
   const q = (S.qc && typeof S.qc.rating === 'number') ? S.qc.rating / 100 : 0.9;
-  S.c2c = c2cCreate(FLAGSHIP_ORDER, { id: 'c2c_' + Date.now().toString(36), seed: (Date.now() >>> 0), now: gameNow(), makeQuality: q, customerTerms: customerTerms || 'on_delivery' });
+  const seed = (Date.now() >>> 0);
+  // A fresh order rolls a varied client/size/deadline/price (opts.base pins the
+  // canonical order — used by deterministic tests).
+  const order = (opts && opts.base) ? FLAGSHIP_ORDER : rollFlagshipOrder(seed);
+  S.c2c = c2cCreate(order, { id: 'c2c_' + seed.toString(36), seed, now: gameNow(), makeQuality: q, customerTerms: customerTerms || 'on_delivery' });
   try{ save(); }catch(e){}
   return S.c2c;
 }
@@ -644,7 +648,7 @@ function _renderC2C(){
     const off = committed ? offerById(c.po.offerId)! : offerById(_c2cUI.offerId)!;
     const qty = committed ? c.po.qty : _c2cUI.orderQty;
     const delId = committed ? c.po.deliveryId : _c2cUI.deliveryId;
-    const pm = c2cPlanned(FLAGSHIP_ORDER, off, { offerId: off.id, orderQty: qty, deliveryId: delId });
+    const pm = c2cPlanned(c.order as any, off, { offerId: off.id, orderQty: qty, deliveryId: delId });
     const upfront = (off.paymentTerms === 'prepaid' ? qty * off.unitPrice : 0) + off.transportCost;
     const canAfford = S.coins >= upfront;
     const delBtns = DELIVERY_OPTIONS.map(d => `<button ${committed?'disabled':''} data-c2cdel="${d.id}" style="flex:1;background:${delId===d.id?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${delId===d.id?'var(--amber)':'var(--edge)'};border-radius:6px;padding:7px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:11px">${d.icon} ${esc(d.name)}<br><span style="color:var(--dim)">${d.cost}c · ${d.timeMin}min</span></button>`).join('');
@@ -745,7 +749,7 @@ function _renderC2C(){
     if (a === 'send_invoice'){ _c2cDo({ type:'send_invoice', now:gameNow() }); return; }
     _c2cDo({ type:a });   // accept_request / accept_quote / decline_quote / run_production
   });
-  el.querySelectorAll('[data-c2coffer]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.offerId = (b as HTMLElement).dataset.c2coffer!; _c2cUI.orderQty = suggestedOrderQty(FLAGSHIP_ORDER, offerById(_c2cUI.offerId)!); _renderC2C(); });
+  el.querySelectorAll('[data-c2coffer]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.offerId = (b as HTMLElement).dataset.c2coffer!; _c2cUI.orderQty = suggestedOrderQty(S.c2c.order as any, offerById(_c2cUI.offerId)!); _renderC2C(); });
   el.querySelectorAll('[data-c2cdel]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.deliveryId = (b as HTMLElement).dataset.c2cdel!; _renderC2C(); });
   el.querySelectorAll('[data-c2cback]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.offerId = null; _renderC2C(); });
   el.querySelectorAll('[data-c2crework]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.reworkFinished = !_c2cUI.reworkFinished; _renderC2C(); });
@@ -12088,14 +12092,16 @@ function renderContracts(){
   if (flagshipAvailable()){
     const _inProg = S.c2c && S.c2c.stage !== 'closed';
     const _stageLbl = _inProg ? String(S.c2c.stage).replace(/_/g,' ') : null;
+    const _client = _inProg ? (S.c2c.order.client || 'Featherstone Rail Yard') : 'Featherstone Valley';
     const _done = Array.isArray(S.c2cHistory) ? S.c2cHistory.length : 0;
-    const _rep = (S.contractRep && S.contractRep[FLAGSHIP_ORDER.client]) || 0;
-    const _newDesc = _done > 0
-      ? `Take another order — ${FLAGSHIP_ORDER.qty}× ${esc(FLAGSHIP_ORDER.productName)} for <b>${fmt(FLAGSHIP_ORDER.quotedRevenue)}c</b>. New suppliers, fresh outcomes${_rep>0?`, reputation ${_rep} with them`:''}. ▶`
-      : `${FLAGSHIP_ORDER.qty}× ${esc(FLAGSHIP_ORDER.productName)} · pays <b>${fmt(FLAGSHIP_ORDER.quotedRevenue)}c</b>. Source it, make it, pass quality, deliver — and see your realised margin. ▶`;
+    // The order rolls fresh on open (varied client/size/deadline/price), so the
+    // teaser stays generic rather than promising specific numbers.
+    const _newDesc = _inProg
+      ? `Resume — ${S.c2c.order.qty}× ${esc(S.c2c.order.productName || 'Brackets')} for ${fmt(S.c2c.order.quotedRevenue)}c, at <b style="color:var(--text)">${esc(_stageLbl!)}</b> (stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17). ▶`
+      : `${_done>0?'Take another order':'Your first flagship order'} — a fresh client, order size and margin each time. Source it, make it, pass quality, deliver. ▶`;
     html += `<button onclick="openFlagshipOrder()" style="display:block;width:100%;text-align:left;background:linear-gradient(90deg,rgba(216,184,74,.18),rgba(216,184,74,.04));border:2px solid var(--amber);border-radius:8px;padding:10px 12px;margin-bottom:10px;cursor:pointer;color:var(--text)">
-      <div style="font-size:13px;font-weight:700;color:var(--amber)">⭐ Flagship Order — ${esc(FLAGSHIP_ORDER.client)}${_inProg?` <span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px">IN PROGRESS</span>`:(_done>0?` <span style="font-size:9px;color:var(--dim)">· ${_done} completed</span>`:'')}</div>
-      <div style="font-size:11px;color:var(--dim);margin-top:3px">${_inProg ? `Resume your order — currently at <b style="color:var(--text)">${esc(_stageLbl!)}</b> (stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17). ▶` : _newDesc}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--amber)">⭐ Flagship Order${_inProg?` — ${esc(_client)} <span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px">IN PROGRESS</span>`:(_done>0?` <span style="font-size:9px;color:var(--dim)">· ${_done} completed</span>`:'')}</div>
+      <div style="font-size:11px;color:var(--dim);margin-top:3px">${_newDesc}</div>
     </button>`;
   }
   // Performance history — realised margins + supplier reliability from closed orders.
@@ -16411,7 +16417,7 @@ if (import.meta.env.DEV) {
     // ---- Contract-to-Cash STATE ENGINE probes (this milestone) ------------
     // Drive + inspect the persistent 17-stage engine against the real inventory
     // + wallet. gameNow is overridable so time-driven stages are testable.
-    c2cStart(customerTerms?:string){ return _c2cSnap(c2cStartFlagship(customerTerms as any)); },
+    c2cStart(customerTerms?:string, opts?:any){ return _c2cSnap(c2cStartFlagship(customerTerms as any, opts)); },
     c2cAdvanceClock(mins:number){ S.gameClock = (S.gameClock||0) + (mins||0)*C2C_MIN_MS; return gameNow(); },
     c2cAction(action:any){ const r = c2cDispatch(action); try{ save(); }catch(e){} return { ok:r.ok, error:(r as any).error, stage:S.c2c?S.c2c.stage:null, effects:(r as any).effects?(r as any).effects.length:0 }; },
     c2cForceRolls(r:any){ if (S.c2c) S.c2c.rolled = Object.assign({ supplierOnTime:true, shortfallFrac:0, incomingDefectFrac:0, makeDefectFrac:0, reworkShare:0.6 }, r||{}); try{ save(); }catch(e){} return S.c2c?S.c2c.rolled:null; },

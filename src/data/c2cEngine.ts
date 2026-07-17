@@ -97,9 +97,10 @@ export interface C2CContract {
   deadlineAt: number;           // game-time by which the customer must be delivered
   // authored-order snapshot (kept on the contract so it is fully self-describing)
   order: {
-    client: string; productItem: string; qty: number;
+    client: string; productName?: string; productItem: string; qty: number;
     materialItem: string; materialPerUnit: number;
     quotedRevenue: number; productionMin: number;
+    deadlineMin?: number; warehouseCap?: number;
     latePenaltyPct: number; defectValuePct: number; reworkCostPerUnit: number;
   };
   plan: { offerId: string | null; orderQty: number; deliveryId: string | null };
@@ -172,9 +173,10 @@ export function createContract(order: FlagshipOrder, opts: CreateOpts): C2CContr
     createdAt: opts.now,
     deadlineAt: opts.now + order.deadlineMin,
     order: {
-      client: order.client, productItem: order.productItem, qty: order.qty,
+      client: order.client, productName: order.productName, productItem: order.productItem, qty: order.qty,
       materialItem: order.materialItem, materialPerUnit: order.materialPerUnit,
       quotedRevenue: order.quotedRevenue, productionMin: order.productionMin,
+      deadlineMin: order.deadlineMin, warehouseCap: order.warehouseCap,
       latePenaltyPct: order.latePenaltyPct, defectValuePct: order.defectValuePct,
       reworkCostPerUnit: order.reworkCostPerUnit,
     },
