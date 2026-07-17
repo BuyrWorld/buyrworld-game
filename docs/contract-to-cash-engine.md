@@ -125,9 +125,42 @@ The flagship order is now the **live** engine-driven pipeline — the one-shot
 `c2cInv`, `c2cHistory`, `c2cGameNow`, `c2cAdvanceClock`, `c2cForceRolls`,
 `c2cFreezeClock`.
 
+## Generalised to the standard board (built)
+
+The engine is order-agnostic — `createContract(order)` works for any order — so ANY
+standard board contract can be fulfilled through the full pipeline, not just the
+flagship:
+
+- `orderFromContract(contract, source, opts)` + `primarySource(recipeInputs)` /
+  `contractSourceable()` (in `contractToCash.ts`) map a board contract
+  `{client,item,qty,coins,tier}` onto an engine order — the finished item is the
+  product, its primary recipe input is the material to source. Raw materials (no
+  recipe) aren't pipeline-fulfillable.
+- Each board contract carries a stable `id`; `c2cStartForContract(c)` opens a
+  pipeline linked via `S.c2c.boardId`. **One active pipeline at a time** (flagship
+  or a board order). Contracts show a **"⚙️ Fulfil via pipeline"** action (sourceable
+  only) alongside the existing one-click DELIVER; the active one shows **"⚙️ In
+  pipeline — stage N/17 · Resume"**.
+- On engine close, a board-linked order is **completed off the board**: the engine
+  already credited the realised revenue + reputation, so it just grants the
+  logistics XP, counts it, and removes the contract (never double-pays; a rejected
+  order stays on the board). `sweepContracts` won't expire a contract mid-pipeline.
+- **Abandon** releases the order's reservations (the player keeps what they sourced).
+- Real different materials/products flow through (e.g. steel_bar → gearbox), with
+  real inventory movements — verified in tests.
+
+*Note:* supplier prices are flat per material unit (generic sourcing); scaling them
+by material value is possible future work — the margin preview keeps every order
+honest in the meantime.
+
+## Controller / keyboard focus (built)
+
+The stepwise modal focuses each stage's **primary action** (`data-primary`) on a
+genuine view change and **restores focus** to the same control across waiting-stage
+countdown re-renders — only for non-pointer input (`_lastInput !== 'pointer'`), so
+mouse/touch users are unaffected. Focus + ring verified in e2e.
+
 ## Possible future work
 
-- Generalise the engine to the standard contract board (currently it powers the
-  one authored, now-repeatable + varied order).
-- Controller/keyboard focus polish for the stepwise modal.
+- Scale supplier prices by material value so the economy is tuned per item.
 - Richer history analytics (trend of margin/on-time over many orders).

@@ -95,6 +95,65 @@ test.describe('Contract-to-Cash vertical slice', () => {
     expect((await gate(page, 'c2cHistory')).length).toBe(1);
   });
 
+  test('a standard board contract can be fulfilled through the pipeline (engine generalisation)', async ({ page }) => {
+    await startAndFinishTutorial(page);
+    await gate(page, 'flagGiveCoins', 3000);
+    await gate(page, 'c2cFreezeClock', true);
+    const now = () => gate(page, 'c2cGameNow');
+
+    // pick a sourceable board contract (post-tutorial the board is bracket/iron_bar)
+    const list = await gate(page, 'c2cBoardList');
+    const idx = list.findIndex((c: any) => c.canPipe);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const before = await gate(page, 'c2cContractCount');
+
+    const started = await gate(page, 'c2cStartBoard', idx);
+    expect(started.ok).toBe(true);
+    expect(started.boardId).toBe(started.contractId);   // linked to the board contract
+    const contractId = started.contractId;
+
+    // drive the engine to close through the real adapter
+    await gate(page, 'c2cAction', { type: 'accept_request' });
+    await gate(page, 'c2cAction', { type: 'accept_quote' });
+    await gate(page, 'c2cAction', { type: 'select_supplier', offerId: 'standard', qty: 16, deliveryId: 'van' });
+    await gate(page, 'c2cAction', { type: 'raise_po', now: await now() });
+    await gate(page, 'c2cForceRolls', { supplierOnTime: true });
+    await gate(page, 'c2cAdvanceClock', 12);
+    for (let i = 0; i < 6; i++) await gate(page, 'c2cTick');
+    await gate(page, 'c2cAction', { type: 'resolve_materials', quarantine: 'hold' });
+    await gate(page, 'c2cAction', { type: 'run_production' });
+    for (let i = 0; i < 3; i++) await gate(page, 'c2cTick');
+    await gate(page, 'c2cAction', { type: 'dispatch', rework: false, now: await now() });
+    await gate(page, 'c2cAdvanceClock', 6);
+    for (let i = 0; i < 3; i++) await gate(page, 'c2cTick');
+    await gate(page, 'c2cAction', { type: 'send_invoice', now: await now() });
+    await gate(page, 'c2cAdvanceClock', 2);
+    for (let i = 0; i < 3; i++) await gate(page, 'c2cTick');
+
+    // the board contract is completed + removed, counted, and recorded in history
+    expect((await gate(page, 'c2cState')).stage).toBe('closed');
+    const after = await gate(page, 'c2cContractCount');
+    expect(after.delivered).toBe(before.delivered + 1);
+    const stillListed = (await gate(page, 'c2cBoardList')).some((c: any) => c.id === contractId);
+    expect(stillListed).toBe(false);
+    expect((await gate(page, 'c2cHistory')).length).toBe(1);
+  });
+
+  test('the pipeline modal focuses its primary action for controller / keyboard', async ({ page }) => {
+    await startAndFinishTutorial(page);
+    await gate(page, 'uiSetMethod', 'gamepad');                 // non-pointer input
+    await page.evaluate(() => (window as any).openFlagshipOrder());
+    await expect(page.locator('#flagship-modal')).toBeVisible();
+    // the customer_request card's primary (Review quotation) is focused with a ring
+    let f = await gate(page, 'c2cFocus');
+    expect(f.action).toBe('accept_request');
+    expect(f.hasRing).toBe(true);
+    // advancing a stage (non-pointer activation) moves focus to the new primary
+    await page.evaluate(() => (document.querySelector('[data-c2c="accept_request"]') as HTMLElement).click());
+    f = await gate(page, 'c2cFocus');
+    expect(f.action).toBe('accept_quote');
+  });
+
   test('best / late / defective / loss outcomes settle through the wallet, safely', async ({ page }) => {
     await startAndFinishTutorial(page);
     await gate(page, 'flagGiveCoins', 5000);                // headroom so every outcome is affordable

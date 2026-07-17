@@ -71,6 +71,48 @@ function _c2cRng(seed: number){
   return function(){ a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
+// ---- Generalisation: run ANY standard board contract through the engine ------
+// A board contract only carries {client, item, qty, coins, tier}. To fulfil it via
+// the source-to-cash pipeline we map it onto a FlagshipOrder: the finished item is
+// the product, and the primary recipe input becomes the material to source. Items
+// with no recipe (raw materials) aren't pipeline-fulfillable.
+export interface BoardContractLike { id?: string; client: string; item: string; qty: number; coins: number; tier?: string; }
+export interface SourceInfo { materialItem: string; materialPerUnit: number; }
+
+/** Pick the primary source material from a recipe's inputs (the largest per-unit
+ *  requirement; ties resolve to the first). Null when there is no recipe. */
+export function primarySource(inputs: Record<string, number> | null | undefined): SourceInfo | null {
+  if (!inputs || typeof inputs !== 'object') return null;
+  const keys = Object.keys(inputs);
+  if (!keys.length) return null;
+  let best = keys[0];
+  for (const k of keys) if ((inputs[k] || 0) > (inputs[best] || 0)) best = k;
+  return { materialItem: best, materialPerUnit: Math.max(1, inputs[best] | 0) };
+}
+
+/** True when a contract's item can be produced from a material (has a recipe). */
+export function contractSourceable(inputs: Record<string, number> | null | undefined): boolean {
+  return primarySource(inputs) != null;
+}
+
+/** Build an engine order from a board contract + its resolved source material. */
+export function orderFromContract(c: BoardContractLike, src: SourceInfo, opts: { productName?: string; deadlineMin: number }): FlagshipOrder {
+  const material = Math.max(1, c.qty) * src.materialPerUnit;
+  return {
+    ...FLAGSHIP_ORDER,
+    id: 'c2c_board_' + (c.id || (c.client + '_' + c.item)),
+    client: c.client,
+    productName: opts.productName || c.item,
+    productItem: c.item,
+    qty: Math.max(1, c.qty | 0),
+    materialItem: src.materialItem,
+    materialPerUnit: src.materialPerUnit,
+    quotedRevenue: Math.max(1, c.coins | 0),
+    deadlineMin: opts.deadlineMin,
+    warehouseCap: Math.max(FLAGSHIP_ORDER.warehouseCap, material + 6),
+  };
+}
+
 /** Roll a fresh flagship order from `seed` — a different client, order size,
  *  deadline and price each time, all within tuned, always-valid bounds. */
 export function rollFlagshipOrder(seed: number): FlagshipOrder {
