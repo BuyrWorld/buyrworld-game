@@ -108,6 +108,11 @@ The flagship order is now the **live** engine-driven pipeline — the one-shot
   panel): per-order grade / on-time / satisfaction / realised margin, plus a
   supplier-performance tally (on-time record + total margin), backed by
   `S.c2cHistory`.
+- **Repeatable**: the order is available whenever the tutorial is done. Finishing
+  one (`Done`) clears the active contract so the next open starts a fresh order
+  with a new seed (new supplier/quality/logistics outcomes); the completed order
+  stays in the history and grows client reputation (which sweetens future payouts).
+  `S.flagshipDone` now only records "completed ≥ 1" (stats/tests), never a lock.
 
 ## Dev/debug surface (`window.__gate`, DEV-only)
 
@@ -117,7 +122,9 @@ The flagship order is now the **live** engine-driven pipeline — the one-shot
 
 ## Possible future work
 
-- Make the flagship order repeatable / generalise the engine to the standard
-  contract board (it is currently gated to the one authored order via `flagshipDone`).
+- Generalise the engine to the standard contract board (currently it powers the
+  one authored, now-repeatable order).
+- Per-order variation (qty/client/deadline) so repeats feel fresh beyond the
+  seeded outcome randomness.
 - Controller/keyboard focus polish for the stepwise modal.
 - Richer history analytics (trend of margin/on-time over many orders).

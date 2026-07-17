@@ -465,7 +465,11 @@ const _flagBar = (label:string, frac:number, col:string, val:string) =>
 const _flagStars = (n:number) => '★★★★'.slice(0,n) + '☆☆☆☆'.slice(0, 4-n);
 const _flagMoney = (n:number) => `${n<0?'−':''}${fmt(Math.abs(n))}c`;
 
-function flagshipAvailable(){ return !!(S.tut && S.tut.done) && !S.flagshipDone; }
+// The Contract-to-Cash order is repeatable: available whenever the tutorial is
+// done. Opening it resumes an in-flight order or starts a fresh one (new seed →
+// new supplier/quality/logistics outcomes). S.flagshipDone just records that the
+// player has completed at least one (for stats/tests), never a lock.
+function flagshipAvailable(){ return !!(S.tut && S.tut.done); }
 function openFlagshipOrder(){
   if (document.getElementById('flagship-modal')) return;
   // Seed (or resume) the authoritative engine order. A fresh order starts at
@@ -733,7 +737,7 @@ function _renderC2C(){
   el.querySelectorAll('[data-c2c]').forEach(b => (b as HTMLElement).onclick = () => {
     const a = (b as HTMLElement).dataset.c2c!;
     if (a === 'close'){ _c2cClose(); return; }
-    if (a === 'done'){ S.flagshipDone = true; try{ save(); }catch(e){} _c2cClose(); return; }
+    if (a === 'done'){ S.flagshipDone = true; S.c2c = null; try{ save(); }catch(e){} _c2cClose(); return; }   // clear the closed order so the next one starts fresh (repeatable)
     if (a === 'commit_po'){ if (!_c2cUI.offerId) return; _c2cDo({ type:'select_supplier', offerId:_c2cUI.offerId, qty:_c2cUI.orderQty, deliveryId:_c2cUI.deliveryId }); _c2cDo({ type:'raise_po', now:gameNow() }); return; }
     if (a === 'raise_po'){ _c2cDo({ type:'raise_po', now:gameNow() }); return; }
     if (a.startsWith('resolve:')){ _c2cDo({ type:'resolve_materials', quarantine:a.split(':')[1] }); return; }
@@ -12084,9 +12088,14 @@ function renderContracts(){
   if (flagshipAvailable()){
     const _inProg = S.c2c && S.c2c.stage !== 'closed';
     const _stageLbl = _inProg ? String(S.c2c.stage).replace(/_/g,' ') : null;
+    const _done = Array.isArray(S.c2cHistory) ? S.c2cHistory.length : 0;
+    const _rep = (S.contractRep && S.contractRep[FLAGSHIP_ORDER.client]) || 0;
+    const _newDesc = _done > 0
+      ? `Take another order — ${FLAGSHIP_ORDER.qty}× ${esc(FLAGSHIP_ORDER.productName)} for <b>${fmt(FLAGSHIP_ORDER.quotedRevenue)}c</b>. New suppliers, fresh outcomes${_rep>0?`, reputation ${_rep} with them`:''}. ▶`
+      : `${FLAGSHIP_ORDER.qty}× ${esc(FLAGSHIP_ORDER.productName)} · pays <b>${fmt(FLAGSHIP_ORDER.quotedRevenue)}c</b>. Source it, make it, pass quality, deliver — and see your realised margin. ▶`;
     html += `<button onclick="openFlagshipOrder()" style="display:block;width:100%;text-align:left;background:linear-gradient(90deg,rgba(216,184,74,.18),rgba(216,184,74,.04));border:2px solid var(--amber);border-radius:8px;padding:10px 12px;margin-bottom:10px;cursor:pointer;color:var(--text)">
-      <div style="font-size:13px;font-weight:700;color:var(--amber)">⭐ Flagship Order — ${esc(FLAGSHIP_ORDER.client)}${_inProg?` <span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px">IN PROGRESS</span>`:''}</div>
-      <div style="font-size:11px;color:var(--dim);margin-top:3px">${_inProg ? `Resume your order — currently at <b style="color:var(--text)">${esc(_stageLbl!)}</b> (stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17). ▶` : `${FLAGSHIP_ORDER.qty}× ${esc(FLAGSHIP_ORDER.productName)} · pays <b>${fmt(FLAGSHIP_ORDER.quotedRevenue)}c</b>. Source it, make it, pass quality, deliver — and see your realised margin. ▶`}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--amber)">⭐ Flagship Order — ${esc(FLAGSHIP_ORDER.client)}${_inProg?` <span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px">IN PROGRESS</span>`:(_done>0?` <span style="font-size:9px;color:var(--dim)">· ${_done} completed</span>`:'')}</div>
+      <div style="font-size:11px;color:var(--dim);margin-top:3px">${_inProg ? `Resume your order — currently at <b style="color:var(--text)">${esc(_stageLbl!)}</b> (stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17). ▶` : _newDesc}</div>
     </button>`;
   }
   // Performance history — realised margins + supplier reliability from closed orders.

@@ -84,6 +84,14 @@ test.describe('Contract-to-Cash vertical slice', () => {
     await expect(hist).toContainText('Featherstone Rail Yard');
     await expect(hist).toContainText(/Supplier performance/i);
     await expect(hist).toContainText(/Margin/i);
+    await hist.locator('#c2c-hist-ok').click();
+
+    // REPEATABLE: the order is available again and opening it starts a fresh one,
+    // while the completed order stays in the history.
+    expect(await gate(page, 'flagAvailable')).toBe(true);
+    await page.evaluate(() => (window as any).openFlagshipOrder());
+    expect((await gate(page, 'flagStep')).step).toBe('customer_request');
+    expect((await gate(page, 'c2cHistory')).length).toBe(1);
   });
 
   test('best / late / defective / loss outcomes settle through the wallet, safely', async ({ page }) => {
