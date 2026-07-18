@@ -86,9 +86,32 @@
   --purple:#a479ff;
   --pink:#ff6ec7;
   --teal:#35d6c1;
+  /* ---- shared UI scale + typography + spacing tokens (ten-foot ready) ----
+     One knob, --ui-scale, grows every token-based size together. Couch/TV and
+     controller modes raise it so body text (not just buttons) reads at distance. */
+  --ui-scale:1;
+  --fs-xs:calc(10px * var(--ui-scale));
+  --fs-sm:calc(12px * var(--ui-scale));
+  --fs-base:calc(14px * var(--ui-scale));
+  --fs-md:calc(16px * var(--ui-scale));
+  --fs-lg:calc(20px * var(--ui-scale));
+  --fs-xl:calc(26px * var(--ui-scale));
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+  --content-max:1760px;   /* game frame width; themed backdrop fills the rest */
+  --radius:10px;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
 html{ -webkit-text-size-adjust:100%; background:var(--bg); height:100%; }
+/* Full-bleed themed backdrop (req 2/3): a single navy console ground with soft
+   directional glows fills the ENTIRE viewport — including the surround outside the
+   centred game frame on 1440p/ultrawide — so there are never white browser gutters. */
+body::before{
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(130% 90% at 50% -25%, rgba(58,78,132,.34), transparent 58%),
+    radial-gradient(110% 80% at 50% 125%, rgba(16,24,48,.55), transparent 55%),
+    linear-gradient(180deg, #0c1224 0%, var(--bg) 60%, #080c18 100%);
+}
 body{
   background:var(--bg); color:var(--text);
   font-family:'IBM Plex Mono', ui-monospace, monospace;
@@ -196,12 +219,27 @@ body.input-pointer:not(.couch-mode) #gp-prompts{ display:none; }
 /* Couch / TV mode — scaled up for 10-foot legibility. A connected controller
    (body.input-gamepad) gets the SAME TV-readable sizing automatically (req 7),
    so text is legible at 1280×720 from the couch and controls are controller-sized. */
-body.couch-mode, body.input-gamepad{ font-size:16px; }
+body.couch-mode, body.input-gamepad{ font-size:16px; --ui-scale:1.18; }
 body.couch-mode nav button, body.input-gamepad nav button{ font-size:15px; padding:13px 18px; min-height:46px; }
 body.couch-mode #navcat button, body.input-gamepad #navcat button{ font-size:13px; padding:11px 12px; min-height:44px; }
 body.couch-mode .btn, body.couch-mode .action, body.couch-mode .chip,
 body.input-gamepad .btn, body.input-gamepad .action, body.input-gamepad .chip{ font-size:15px; }
 body.couch-mode .panel h2, body.input-gamepad .panel h2{ font-size:14px; }
+/* Req 6: BODY text (contract/trade/upgrade card copy, help + supporting text),
+   not just buttons, grows for TV distance. These are class rules (not inline), so
+   the couch/controller overrides apply cleanly. */
+body.couch-mode .contract .who, body.input-gamepad .contract .who,
+body.couch-mode .contract .pay, body.input-gamepad .contract .pay,
+body.couch-mode .contract .req, body.input-gamepad .contract .req{ font-size:14px; }
+body.couch-mode .card .body .nm, body.input-gamepad .card .body .nm,
+body.couch-mode .action .nm, body.input-gamepad .action .nm{ font-size:14px; }
+body.couch-mode .card .body .ds, body.input-gamepad .card .body .ds,
+body.couch-mode .action .meta, body.input-gamepad .action .meta,
+body.couch-mode .action .io, body.input-gamepad .action .io{ font-size:13px; }
+body.couch-mode .panel h2 small, body.input-gamepad .panel h2 small{ font-size:13.5px; }
+body.couch-mode .tr-cardtxt, body.input-gamepad .tr-cardtxt,
+body.couch-mode .cc-help, body.input-gamepad .cc-help,
+body.couch-mode .tr-sub, body.input-gamepad .tr-sub{ font-size:14px; }
 body.couch-mode .qty-sel button, body.couch-mode .qty-sel input,
 body.input-gamepad .qty-sel button, body.input-gamepad .qty-sel input{ font-size:16px; min-height:44px; }
 /* Req 10: replace tiny controls with controller-sized targets when a pad is used. */
@@ -221,7 +259,46 @@ body.input-gamepad #gp-prompts .gp-btn, body.couch-mode #gp-prompts .gp-btn{ min
 }
 
 /* ---------- layout ---------- */
-main{ flex:1; width:100%; max-width:1760px; margin:0 auto; padding:16px clamp(12px, 3vw, 40px); }
+/* One responsive game frame: fills 1280×720 → ultrawide, centred, with the themed
+   backdrop showing as a surround on wide displays (no white gutters, no page-scroll). */
+main{ flex:1; width:100%; max-width:var(--content-max); margin:0 auto; padding:16px clamp(12px, 3vw, 40px); }
+/* On 1440p+/ultrawide, a faint frame edge separates the play area from the surround. */
+@media (min-width:1900px){
+  main{ box-shadow:0 0 0 1px rgba(120,150,210,.10), 0 0 90px rgba(0,0,0,.45); border-radius:14px; }
+}
+
+/* ---------- restructured Trading (trader tabs + filter + summary) ---------- */
+.tr-summary{ display:flex; flex-wrap:wrap; gap:var(--sp-3); align-items:center; justify-content:space-between;
+  background:var(--panel2); border:1px solid var(--edge); border-radius:var(--radius); padding:10px 14px; margin-bottom:10px; }
+.tr-summary .tr-stat{ font-size:var(--fs-sm); color:var(--dim); }
+.tr-summary .tr-stat b{ color:var(--text); font-size:var(--fs-base); }
+.tr-summary .tr-stat.coins b{ color:var(--amber); }
+.tr-tabs{ display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding-bottom:4px; margin-bottom:10px; }
+.tr-tabs::-webkit-scrollbar{ display:none; height:0; }
+.tr-tab{ flex:0 0 auto; background:var(--panel2); border:1px solid var(--edge); border-radius:8px;
+  color:var(--dim); padding:8px 13px; font-size:var(--fs-sm); font-weight:700; white-space:nowrap; display:flex; gap:6px; align-items:center; }
+.tr-tab[aria-selected="true"]{ color:var(--amber); border-color:var(--amber); background:rgba(255,200,97,.10); }
+.tr-tab.locked{ opacity:.5; font-style:italic; }
+.tr-filter{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.tr-chip{ background:var(--panel2); border:1px solid var(--edge); border-radius:20px; color:var(--dim);
+  padding:5px 12px; font-size:var(--fs-xs); font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
+.tr-chip[aria-pressed="true"]{ color:var(--bg); background:var(--mint); border-color:var(--mint); }
+.tr-cardtxt{ font-size:var(--fs-sm); }
+.tr-sub{ font-size:var(--fs-sm); color:var(--dim); }
+
+/* ---------- compact expandable contract cards ---------- */
+.cc-help{ font-size:var(--fs-sm); color:var(--dim); }
+.ct-compact{ background:var(--panel2); border:2px solid var(--edge); border-radius:9px; margin-bottom:8px; overflow:hidden; }
+.ct-compact .ct-head{ display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  background:none; border:none; color:var(--text); padding:10px 12px; cursor:pointer; }
+.ct-compact .ct-head .ct-title{ flex:1; min-width:0; font-size:var(--fs-sm); font-weight:700; }
+.ct-compact .ct-head .ct-pay{ font-size:var(--fs-sm); color:var(--amber); font-weight:700; white-space:nowrap; }
+.ct-compact .ct-head .ct-caret{ color:var(--dim); font-size:var(--fs-sm); transition:transform .18s; }
+.ct-compact .ct-head[aria-expanded="true"] .ct-caret{ transform:rotate(90deg); }
+.ct-compact .ct-body{ padding:0 12px 12px; border-top:1px solid var(--edge); }
+.ct-compact .ct-body[hidden]{ display:none; }
+.ct-ready{ border-color:var(--mint); }
+.ct-urgent{ border-color:var(--red); }
 /* World view dominates the screen (console-style large viewport) */
 .village-canvas-rel{ max-width:min(100%, 155vh); margin:0 auto; }
 #village{ max-height:84vh; margin:0 auto; }

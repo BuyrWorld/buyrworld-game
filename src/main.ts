@@ -10246,7 +10246,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[],
+    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[], ui:{ padFocus:false },
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -10589,6 +10589,7 @@ function load(){
       if (!Array.isArray(S.c2cHistory)) S.c2cHistory = [];
       if (!Array.isArray(S.analytics)) S.analytics = [];
       if (!Array.isArray(S.c2cTitles)) S.c2cTitles = [];
+      if (!S.ui || typeof S.ui !== "object") S.ui = { padFocus:false };
       if (!S.supplierScore || typeof S.supplierScore !== "object") S.supplierScore = {};
       if (typeof S.seenProcTip !== "boolean") S.seenProcTip = false;
       // Back-fill stable ids on pre-existing board contracts (pipeline linkage).
@@ -12244,6 +12245,9 @@ function goTab(id){
   S.tab = id;
   _clearUiFocus();
   renderNav(); renderMain();
+  // Req 8/10: for controller/keyboard users, every screen change lands focus on
+  // that screen's one obvious default action so the focus ring never disappears.
+  if (_lastInput !== 'pointer') focusMainPrimary();
 }
 function selectNavGroup(gid){ const t = firstTabInGroup(gid); if (t) goTab(t); }
 function switchNavCategory(dir){ const avail = availableGroupIds(); selectNavGroup(cycleGroup(activeNavGroup(), dir, avail)); focusMainPrimary(); }
@@ -12549,6 +12553,18 @@ function _fmtCountdown(ms){
   if (m >= 1) return m+"m "+(s%60)+"s";
   return s+"s";
 }
+// Which secondary contract cards are expanded (user override). Deliverable/urgent
+// orders default open; the rest collapse so the active order stays the focus.
+var _ctExpanded: Record<string, boolean> = {};
+(globalThis as any).ctToggle = (id:string) => {
+  const head = document.querySelector(`[data-cthead="${id}"]`) as HTMLElement;
+  const body = document.querySelector(`[data-ctbody="${id}"]`) as HTMLElement;
+  if (!head || !body) return;
+  const open = body.hasAttribute('hidden');
+  if (open){ body.removeAttribute('hidden'); head.setAttribute('aria-expanded','true'); }
+  else { body.setAttribute('hidden',''); head.setAttribute('aria-expanded','false'); }
+  _ctExpanded[id] = open;
+};
 function renderContracts(){
   fillContracts();
   const _mp = macroPhase();
@@ -12568,7 +12584,7 @@ function renderContracts(){
     const _newDesc = _inProg
       ? `Resume — ${S.c2c.order.qty}× ${esc(S.c2c.order.productName || 'Brackets')} for ${fmt(S.c2c.order.quotedRevenue)}c, at <b style="color:var(--text)">${esc(_stageLbl!)}</b> (stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17). ▶`
       : `${_done>0?'Take another order':'Your first flagship order'} — a fresh client, order size and margin each time. Source it, make it, pass quality, deliver. ▶`;
-    html += `<button onclick="openFlagshipOrder()" style="display:block;width:100%;text-align:left;background:linear-gradient(90deg,rgba(216,184,74,.18),rgba(216,184,74,.04));border:2px solid var(--amber);border-radius:8px;padding:10px 12px;margin-bottom:10px;cursor:pointer;color:var(--text)">
+    html += `<button data-primary onclick="openFlagshipOrder()" style="display:block;width:100%;text-align:left;background:linear-gradient(90deg,rgba(216,184,74,.18),rgba(216,184,74,.04));border:2px solid var(--amber);border-radius:8px;padding:10px 12px;margin-bottom:10px;cursor:pointer;color:var(--text)">
       <div style="font-size:13px;font-weight:700;color:var(--amber)">⭐ Flagship Order${_inProg?` — ${esc(_client)} <span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px">IN PROGRESS</span>`:(_done>0?` <span style="font-size:9px;color:var(--dim)">· ${_done} completed</span>`:'')}</div>
       <div style="font-size:11px;color:var(--dim);margin-top:3px">${_newDesc}</div>
     </button>`;
@@ -12588,6 +12604,9 @@ function renderContracts(){
   const now = Date.now();
   const _frozen = _contractsFrozen();
   let _heldStandard = 0;
+  // Req 10: the screen always has ONE obvious default action. The flagship button
+  // already carries [data-primary]; if it isn't shown, the first contract card does.
+  let _primaryMarked = flagshipAvailable();
   S.contracts.forEach((c,i)=>{
     // While Frosty's tutorial runs, the standard board is held: never show a
     // countdown or an expiry warning for an unrelated order (req 2). Only the
@@ -12608,8 +12627,9 @@ function renderContracts(){
         <div style="font-size:10px;color:var(--dim);margin:1px 0 3px">❄️ Frosty lined this up for you — no deadline, no reputation risk. Just deliver.</div>
         <div class="pay">💰 ${fmt(payout)} coins · +${c.xp} Logistics XP</div>
         <div class="req">Needs <span class="${ok?'have':'short'}">${c.qty}× ${ITEMS[c.item].ic} ${ITEMS[c.item].n}</span> — you have ${have}</div>
-        <button class="btn deliver" data-deliver="${i}" ${ok?'':'disabled'}>DELIVER</button>
+        <button class="btn deliver" data-deliver="${i}" ${!_primaryMarked?'data-primary':''} ${ok?'':'disabled'}>DELIVER</button>
       </div>`;
+      _primaryMarked = true;
       return;
     }
     const _pipeActive = S.c2c && S.c2c.stage !== 'closed';
@@ -12617,7 +12637,7 @@ function renderContracts(){
     const _canPipe = contractCanPipeline(c);
     let _actions;
     if (_thisInPipe){
-      _actions = `<div style="font-size:10px;color:var(--amber);margin:2px 0 4px">⚙️ In pipeline — <b>${esc(String(S.c2c.stage).replace(/_/g,' '))}</b> (stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17)</div>
+      _actions = `<div style="font-size:11px;color:var(--amber);margin:2px 0 4px">⚙️ In pipeline — <b>${esc(String(S.c2c.stage).replace(/_/g,' '))}</b> (stage ${C2C_STAGES.indexOf(S.c2c.stage)+1}/17)</div>
         <button class="btn deliver" onclick="openFlagshipOrder()">Resume pipeline ▶</button>`;
     } else {
       const _pipeBtn = _canPipe
@@ -12626,15 +12646,34 @@ function renderContracts(){
       _actions = `<button class="btn deliver" data-deliver="${i}" ${ok?'':'disabled'}>DELIVER</button>
         <button class="btn alt" data-reroll="${i}">Re-tender (25c)</button>${_pipeBtn}`;
     }
-    html += `<div class="contract">
-      <div class="who">🏢 ${c.client} <span style="font-size:9px;color:var(--dim)">${stars} ${rank.name}</span></div>
-      <div style="font-size:10px;margin:1px 0 3px">
-        <span style="color:${tierCol};text-transform:uppercase;letter-spacing:.5px">${t.ic} ${t.label}</span>
-        · <span style="color:${urgent?'var(--red)':'var(--dim)'}">⏳ ${_fmtCountdown(left)}${urgent?' — hurry!':''}</span>
+    // Compact, expandable card: deliverable / in-pipeline / urgent orders open by
+    // default (the ones that need action); the rest collapse so the active order
+    // stays front-and-centre. A user toggle overrides the default.
+    const cid = c.id || ('idx'+i);
+    const _defOpen = ok || _thisInPipe || urgent;
+    const _open = (cid in _ctExpanded) ? _ctExpanded[cid] : _defOpen;
+    const statusPill = _thisInPipe
+      ? `<span class="status-pill warn"><span class="sg">⚙</span>in pipeline</span>`
+      : ok ? `<span class="status-pill good"><span class="sg">✓</span>ready</span>`
+      : urgent ? `<span class="status-pill bad"><span class="sg">⏳</span>${_fmtCountdown(left)}</span>`
+      : `<span class="status-pill neutral"><span class="sg">⏳</span>${_fmtCountdown(left)}</span>`;
+    const _headPrimary = !_primaryMarked; if (_headPrimary) _primaryMarked = true;
+    html += `<div class="ct-compact${ok?' ct-ready':urgent?' ct-urgent':''}">
+      <button class="ct-head" ${_headPrimary?'data-primary':''} data-cthead="${cid}" aria-expanded="${_open?'true':'false'}" aria-controls="ctb-${cid}" onclick="ctToggle('${cid}')">
+        <span class="ct-caret">▸</span>
+        <span class="ct-title">🏢 ${esc(c.client)} ${statusPill}</span>
+        <span class="ct-pay">💰 ${fmt(payout)}c</span>
+      </button>
+      <div class="ct-body" id="ctb-${cid}" data-ctbody="${cid}" ${_open?'':'hidden'}>
+        <div style="font-size:11px;margin:6px 0 3px">
+          <span style="font-size:9px;color:var(--dim)">${stars} ${rank.name}</span> ·
+          <span style="color:${tierCol};text-transform:uppercase;letter-spacing:.5px">${t.ic} ${t.label}</span> ·
+          <span style="color:${urgent?'var(--red)':'var(--dim)'}">⏳ ${_fmtCountdown(left)}${urgent?' — hurry!':''}</span>
+        </div>
+        <div class="pay">💰 ${fmt(payout)} coins · +${c.xp} Logistics XP</div>
+        <div class="req">Needs <span class="${ok?'have':'short'}">${c.qty}× ${ITEMS[c.item].ic} ${ITEMS[c.item].n}</span> — you have ${have}</div>
+        <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">${_actions}</div>
       </div>
-      <div class="pay">💰 ${fmt(payout)} coins · +${c.xp} Logistics XP</div>
-      <div class="req">Needs <span class="${ok?'have':'short'}">${c.qty}× ${ITEMS[c.item].ic} ${ITEMS[c.item].n}</span> — you have ${have}</div>
-      ${_actions}
     </div>`;
   });
   if (_frozen){
@@ -12704,38 +12743,73 @@ function _econNewsHtml(limit){
   </div>`;
 }
 const _tradeQty: Record<string, number> = {};   // per-item chosen quantity for the Buy/Sell selector
+// Trading view state (which trader tab + which item-class filter). Module-level so it
+// survives re-renders; the trader tab is validated against unlock level each render.
+var _tradeUI: { npc: string|null; filter: 'all'|'raw'|'made' } = { npc: null, filter: 'all' };
+function _itemClass(id){ return recipeMap()[id] ? 'made' : 'raw'; }   // data-driven: has a recipe → made
+(globalThis as any).trSelectTrader = (id:string) => { _tradeUI.npc = id; _tradeUI.filter = 'all'; renderMain(); focusMainPrimary(); };
+(globalThis as any).trSetFilter = (f:'all'|'raw'|'made') => { _tradeUI.filter = f; renderMain(); };
 function renderTrade(){
   ensureMarket();
   const tLvl = skillLvl("trading");
-  let html = `<div class="panel"><h2>⚖️ Traders<small>Prices move with supply, demand and the town's business cycle — buy low, sell high. Trading level bonus: ${(tradeBonus()*100).toFixed(1)}%.</small></h2>${xpBarHtml("trading")}</div>`;
-  html += _econNewsHtml(3);
-  NPCS.forEach(npc=>{
-    const locked = tLvl < npc.lvl;
-    html += `<div class="panel" ${locked?'style="opacity:.55"':''}>
-      <h2>${npc.ic} ${npc.n} — ${npc.title}<small>${locked ? `Requires Trading level ${npc.lvl}.` : `"${npc.quip}"`}</small></h2>`;
-    if (!locked){
-      npc.stock.forEach(it=>{
-        const d = S.market.drift[npc.id][it];
-        const _qk = `${npc.id}|${it}`;
-        const _qv = clampQty(_tradeQty[_qk] || 1, 9999);
-        html += `<div class="contract">
-          <div class="who">${ITEMS[it].ic} ${ITEMS[it].n} <span style="font-size:11px;">${trendArrow(d)}</span></div>
-          <div class="pay">Buy ${fmt(buyPrice(npc,it))} · Sell ${fmt(sellPrice(npc,it))} <span style="color:var(--dim)">· you have ${fmt(itemCount(it))}</span></div>
-          <div class="row" style="margin-top:0;width:100%;align-items:center;gap:8px;">
-            <div class="qty-sel" role="group" aria-label="Quantity for ${ITEMS[it].n}">
-              <button class="btn alt" data-qstep="${_qk}|-1" aria-label="Fewer">−</button>
-              <input type="number" min="1" step="1" inputmode="numeric" data-qin="${_qk}" value="${_qv}" aria-label="Quantity">
-              <button class="btn alt" data-qstep="${_qk}|1" aria-label="More">+</button>
-            </div>
-            <button class="btn alt" data-tradeq="${_qk}|buy">Buy</button>
-            <button class="btn" data-tradeq="${_qk}|sell" ${itemCount(it)<1?'disabled':''}>Sell</button>
-            <button class="btn deliver" data-trade="${npc.id}|${it}|max|sell" ${itemCount(it)<1?'disabled':''} title="Sell your entire stock">Max</button>
-          </div>
-        </div>`;
-      });
-    }
-    html += `</div>`;
+  // Resolve the active trader tab (default: first unlocked; fall back if locked).
+  let active = NPCS.find(n => n.id === _tradeUI.npc && tLvl >= n.lvl);
+  if (!active) active = NPCS.find(n => tLvl >= n.lvl) || NPCS[0];
+  _tradeUI.npc = active.id;
+
+  // ---- compact summary header (cash + holdings + trading bonus) ----
+  const heldValue = active.stock.reduce((s,it)=> s + itemCount(it)*sellPrice(active,it), 0);
+  let html = `<div class="panel"><h2>⚖️ Traders<small>Buy low, sell high — prices move with supply, demand and the town's business cycle.</small></h2>${xpBarHtml("trading")}
+    <div class="tr-summary">
+      <span class="tr-stat coins">Coins <b>${fmt(S.coins)}</b></span>
+      <span class="tr-stat">Trading bonus <b>${(tradeBonus()*100).toFixed(1)}%</b></span>
+      <span class="tr-stat">${active.ic} ${esc(active.n)}'s goods you hold <b>${fmt(heldValue)}c</b></span>
+    </div></div>`;
+
+  // ---- trader tabs (one supplier at a time, not one endless catalogue) ----
+  html += `<div class="tr-tabs" role="tablist" aria-label="Traders">`;
+  NPCS.forEach(n => {
+    const locked = tLvl < n.lvl;
+    const sel = n.id === active.id;
+    html += `<button role="tab" aria-selected="${sel?'true':'false'}" class="tr-tab${sel?'':''}${locked?' locked':''}"
+      ${locked?`title="Requires Trading level ${n.lvl}" disabled`:`onclick="trSelectTrader('${n.id}')"`}
+      ${sel?'data-primary':''}>${n.ic} <span>${esc(n.n)}</span>${locked?` 🔒${n.lvl}`:''}</button>`;
   });
+  html += `</div>`;
+
+  html += _econNewsHtml(3);
+
+  // ---- the active trader panel ----
+  html += `<div class="panel">
+    <h2>${active.ic} ${esc(active.n)} — ${esc(active.title)}<small class="tr-sub">"${esc(active.quip)}"</small></h2>`;
+  // category filter (only the classes this trader actually stocks)
+  const classes = new Set(active.stock.map(_itemClass));
+  if (classes.size > 1){
+    const chip = (f, lbl) => `<button class="tr-chip" aria-pressed="${_tradeUI.filter===f?'true':'false'}" onclick="trSetFilter('${f}')">${lbl}</button>`;
+    html += `<div class="tr-filter" role="group" aria-label="Filter goods">${chip('all','All')}${chip('raw','Raw')}${chip('made','Made')}</div>`;
+  }
+  const items = active.stock.filter(it => _tradeUI.filter==='all' || _itemClass(it)===_tradeUI.filter);
+  items.forEach(it=>{
+    const d = S.market.drift[active.id][it];
+    const _qk = `${active.id}|${it}`;
+    const _qv = clampQty(_tradeQty[_qk] || 1, 9999);
+    html += `<div class="contract">
+      <div class="who tr-cardtxt">${ITEMS[it].ic} ${ITEMS[it].n} <span style="font-size:11px;">${trendArrow(d)}</span></div>
+      <div class="pay tr-cardtxt">Buy ${fmt(buyPrice(active,it))} · Sell ${fmt(sellPrice(active,it))} <span style="color:var(--dim)">· you have ${fmt(itemCount(it))}</span></div>
+      <div class="row" style="margin-top:0;width:100%;align-items:center;gap:8px;">
+        <div class="qty-sel" role="group" aria-label="Quantity for ${ITEMS[it].n}">
+          <button class="btn alt" data-qstep="${_qk}|-1" aria-label="Fewer">−</button>
+          <input type="number" min="1" step="1" inputmode="numeric" data-qin="${_qk}" value="${_qv}" aria-label="Quantity">
+          <button class="btn alt" data-qstep="${_qk}|1" aria-label="More">+</button>
+        </div>
+        <button class="btn alt" data-tradeq="${_qk}|buy">Buy</button>
+        <button class="btn" data-tradeq="${_qk}|sell" ${itemCount(it)<1?'disabled':''}>Sell</button>
+        <button class="btn deliver" data-trade="${active.id}|${it}|max|sell" ${itemCount(it)<1?'disabled':''} title="Sell your entire stock">Max</button>
+      </div>
+    </div>`;
+  });
+  if (!items.length) html += `<div class="tr-sub" style="padding:6px 2px">No ${_tradeUI.filter} goods from this trader.</div>`;
+  html += `</div>`;
   html += renderInventoryPanel();
   return html;
 }
@@ -16010,7 +16084,9 @@ document.getElementById("btn-about")?.addEventListener("click", () => openRoadma
   if (sum && row && info){
     row.style.display=""; info.style.display="";
     info.innerHTML = `<b>${esc(sum.name)}</b> · Total Lv ${sum.totalLevel} · ${fmt(sum.coins)} coins${sum.chapter?` · ${sum.chapter}`:''}${sum.date?` · saved ${sum.date}`:''}`;
-    document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; document.body.classList.remove("title-open"); focusGameInput(); };
+    document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; document.body.classList.remove("title-open"); focusGameInput();
+      // Restore controller focus on resume for pad/couch players (req: survives reloads).
+      if ((S.ui && S.ui.padFocus) || (S.settings && S.settings.couch)){ setInputMethod('gamepad'); try{ focusMainPrimary(); }catch(e){} } };
   }
 })();
 document.getElementById("version-label")?.addEventListener("keydown", (e:any) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openRoadmap(); } });
@@ -16403,6 +16479,11 @@ var _lastInput: 'gamepad' | 'keyboard' | 'pointer' = 'pointer';
 function setInputMethod(m: 'gamepad' | 'keyboard' | 'pointer'){
   if (_lastInput === m) return;
   _lastInput = m;
+  // Remember that this player drives with a pad/keyboard so focus can be restored
+  // after a reload (req: controller focus survives reloads). Persisted once.
+  if ((m === 'gamepad' || m === 'keyboard') && !(S.ui && S.ui.padFocus)){
+    if (!S.ui) S.ui = {}; S.ui.padFocus = true; try{ save(); }catch(e){}
+  }
   const b = document.body.classList;
   b.toggle('input-gamepad', m === 'gamepad');
   b.toggle('input-keyboard', m === 'keyboard');
@@ -16998,13 +17079,19 @@ if (import.meta.env.DEV) {
     // Force a re-render of the live modal (gate actions bypass the UI, so this draws
     // the current stage — e.g. the closed-order review — without starting a new order).
     c2cRender(){ try{ _renderC2C(); }catch(e){} return { stage:S.c2c?S.c2c.stage:null, open:!!document.getElementById('flagship-modal') }; },
-    c2cAbandon(){ try{ c2cAbandon(); }catch(e){} return { cleared:!S.c2c }; },
     // Read the modal body text (for asserting the why-it-matters + result copy).
     c2cModalText(){ const el=document.getElementById('flagship-modal'); return el?(el.textContent||'').replace(/\s+/g,' ').trim():''; },
     c2cHasButton(action:string){ return !!document.querySelector(`#flagship-modal [data-c2c="${action}"]`); },
     c2cClick(action:string){ const b=document.querySelector(`#flagship-modal [data-c2c="${action}"]`) as HTMLElement; if(b){ b.click(); return true; } return false; },
     // ---- Interaction-reliability probes (this milestone) -------------------
     uiGoTab(tab:string){ try{ goTab(tab); }catch(e){} return { tab:S.tab }; },
+    // Ten-foot / couch presentation probes (this milestone).
+    uiSetCouch(on:boolean){ if(!S.settings) S.settings={}; S.settings.couch = !!on; try{ applyCouchMode(); }catch(e){} return { couch: !!(S.settings && S.settings.couch) }; },
+    uiUnlockTab(id:string){ if(!S.unlockedTabs) S.unlockedTabs={}; S.unlockedTabs[id]=true; try{ renderNav(); }catch(e){} return { unlocked:!!S.unlockedTabs[id] }; },
+    uiFinishTutorial(){ if(!S.tut) S.tut={ step:0 }; S.tut.done=true; try{ renderNav(); renderMain(); }catch(e){} return { done:!!(S.tut&&S.tut.done), flagship: (()=>{ try{ return flagshipAvailable(); }catch(e){ return false; } })() }; },
+    uiOverflow(){ const d=document.documentElement; return { pageScrollW:d.scrollWidth, innerW:window.innerWidth, overflow:d.scrollWidth - window.innerWidth, bodyBg:getComputedStyle(document.body).backgroundColor }; },
+    uiFocusRing(){ const f=document.querySelector('.gp-focus') as any; return { has:!!f, action:f?.dataset?.c2c||f?.getAttribute?.('onclick')||f?.textContent?.trim().slice(0,24)||null }; },
+    uiTradeState(){ return { npc:(_tradeUI&&_tradeUI.npc)||null, filter:(_tradeUI&&_tradeUI.filter)||null, tabs:NPCS.filter((n:any)=>skillLvl('trading')>=n.lvl).length }; },
     uiPointerHeld(){ return _uiPointerBusy(); },
     uiActive(){ const a=document.activeElement as any; return { tag:a?.tagName||null, id:a?.id||null, action:(a?.dataset?.c2c||a?.dataset?.set||null), text:(a?.textContent||'').trim().slice(0,24), pressed:a?.getAttribute?.('aria-pressed')??null }; },
     // The Flagship CTA on the contracts board (the button that opens the pipeline).
