@@ -12342,6 +12342,11 @@ function _buildShiftInput(): ShiftInput {
   const deliverable = std.filter((c:any)=> itemCount(c.item) >= c.qty).length;
   const ph = macroPhase();
   const flag = !!(S.c2c && S.c2c.stage !== 'closed');
+  // "Getting Started" welcome reward that fell due while away but hasn't auto-granted
+  // yet (the sim is paused on the title, so it's genuinely pending on resume).
+  const wClaimed = (S.welcome && S.welcome.claimed) || [];
+  const wBeat = (S.tut && S.tut.done && !allWelcomeDone(wClaimed)) ? nextBeat(wClaimed) : null;
+  const wReady = !!(wBeat && beatComplete(wBeat, welcomeCtx()));
   return {
     now, lastSeen: S.lastSeen || now,
     offline: { coins: Math.max(0, Math.round(off.passiveCoins||0)), lines: (off.lines||[]).slice(0,3) },
@@ -12351,7 +12356,7 @@ function _buildShiftInput(): ShiftInput {
     flagship: { active: flag, stageLabel: flag ? String(S.c2c.stage).replace(/_/g,' ') : null, decision: !!(flag && c2cIsDecision(S.c2c.stage)) },
     economy: { phaseName: ph.name, phaseId: ph.id, changed: !!(S.shift && S.shift.phaseId && S.shift.phaseId !== ph.id), demand: ph.demand },
     reputation: { expiredDent: _shiftBoot.expiredDelta>0, delta:0, note:null },
-    claimable: { any:false, label:null },
+    claimable: { any: wReady, label: wReady ? `Collect your “Getting Started” reward (${wBeat!.title})` : null },
     cottage: { active: _cottageActive(), band: cleanBand(_cottage().clean).label, needsClean: _cottageNeedsClean() },
     production: { running: !!S.action, label: S.action ? ((findAction(S.action.skill,S.action.id)||{}).n || S.action.skill) : null },
   };
@@ -12359,7 +12364,8 @@ function _buildShiftInput(): ShiftInput {
 // Snapshot the phase so a market change is reported ONCE, not every session.
 function _shiftSnapshot(inp: ShiftInput){ if (!S.shift) S.shift = { phaseId:null }; S.shift.phaseId = inp.economy.phaseId; try{ save(); }catch(e){} }
 function _shiftDoAction(action: string){
-  if (action==='claim'){ closeModal('shift-modal'); openJournalPanel(); return; }
+  if (action==='claim'){ try{ checkWelcome(); }catch(e){}   // grant any pending "Getting Started" reward now
+    closeModal('shift-modal'); try{ openJourney(); }catch(e){ openJournalPanel(); } return; }
   if (action==='resume'){ closeModal('shift-modal'); try{ (window as any).openFlagshipOrder(); }catch(e){} return; }
   if (action==='contracts'||action==='start'){ closeModal('shift-modal'); goTab('contracts'); return; }
   if (action==='cottage'){ closeModal('shift-modal'); goTab('myhome'); return; }

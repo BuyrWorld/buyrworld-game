@@ -81,6 +81,28 @@ describe('shift briefing — content is relevant only', () => {
     expect(b.items.find(i => i.id === 'journey')?.kind).toBe('good');
   });
 
+  it('a pending "Getting Started" welcome reward surfaces as a claimable and is recommended', () => {
+    const b = buildBriefing(base({
+      journey: { ...base().journey, claimable: false },
+      claimable: { any: true, label: 'Collect your “Getting Started” reward (Finding Your Feet)' },
+      contracts: { pending: 2, deliverable: 0, expiredDuringAbsence: 0 },
+    }), { skipShort: false });
+    expect(ids(b)).toContain('claim');
+    expect(b.items.find(i => i.id === 'claim')?.kind).toBe('good');
+    expect(b.recommended?.action).toBe('claim');
+    expect(b.recommended?.label).toContain('Getting Started');
+  });
+
+  it('a claimable journey milestone outranks a welcome reward for the recommendation', () => {
+    const b = buildBriefing(base({
+      journey: { ...base().journey, claimable: true, title: 'Trader' },
+      claimable: { any: true, label: 'Collect your “Getting Started” reward (A Knack for Trade)' },
+    }), { skipShort: false });
+    expect(b.recommended?.action).toBe('claim');
+    expect(b.recommended?.label).toContain('Trader');    // journey reward wins the top slot
+    expect(ids(b)).toContain('claim');                   // …and the welcome reward is still listed
+  });
+
   it('cottage cleaning required: shown + a cottage button, but a tidy home is never nagged', () => {
     const dirty = buildBriefing(base({ cottage: { active: true, band: 'Messy', needsClean: true } }), { skipShort: false });
     expect(ids(dirty)).toContain('cottage');
