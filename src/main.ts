@@ -4393,6 +4393,7 @@ function closeJourney(){ const e = document.getElementById("journey-modal"); if 
 function welcomeCtx(){
   return {
     actions:       S.counters?.actions || 0,
+    swings:        S.counters?.swings || 0,
     steelworksLvl: skillLvl('steelworks'),
     trades:        S.counters?.trades || 0,
     goods:         prodSum(GOODS),

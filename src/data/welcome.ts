@@ -15,23 +15,33 @@ export interface WelcomeBeat {
   reward: { coins: number; item?: string; qty?: number };
 }
 
+// A longer, purpose-driven onboarding ladder. Each beat's `desc` teaches WHY the
+// activity matters (not just what to do), and points at the breadth of the valley's
+// trades — so by the end the player understands the whole loop, not just the tutorial
+// chain. Gates use broadly-reachable metrics only, so the ladder never stalls on a
+// niche skill; the copy still names the optional trades (woodcutting, fishing,
+// foraging, cooking, farming) and what each is FOR.
 export const WELCOME_BEATS: WelcomeBeat[] = [
-  { id:'warmed_up',   ic:'✨', title:'Finding Your Feet',      metric:'actions',       target:15,
-    desc:'Complete 15 gathering or crafting actions around the valley.', reward:{ coins:50 } },
-  { id:'smelter',     ic:'🔥', title:'Getting the Hang of It', metric:'steelworksLvl', target:3,
-    desc:'Reach Smelting level 3 at the Furnace.',                        reward:{ coins:80 } },
-  { id:'first_deals', ic:'⚖️', title:'A Knack for Trade',      metric:'trades',        target:3,
-    desc:'Strike 3 deals at the Market Hall.',                            reward:{ coins:120 } },
+  { id:'warmed_up',   ic:'✨', title:'Finding Your Feet',      metric:'actions',       target:12,
+    desc:'Do 12 gathering or crafting actions. Everything in the valley starts with raw materials you gather yourself.', reward:{ coins:50 } },
+  { id:'swing_of_it', ic:'💪', title:'The Swing of It',        metric:'swings',        target:12,
+    desc:'Land 12 tool swings. Tap the rock or tree you\'re working (or press Space) to chop and mine noticeably faster.', reward:{ coins:70, item:'wood', qty:5 } },
+  { id:'smelter',     ic:'🔥', title:'Into the Furnace',       metric:'steelworksLvl', target:3,
+    desc:'Reach Smelting level 3. Raw ore is worth little — smelt it into bars, the backbone of every product you\'ll make.', reward:{ coins:90 } },
   { id:'stockpile',   ic:'🏭', title:'Building a Stockpile',   metric:'goods',         target:10,
-    desc:'Craft 10 finished goods at the Workshop.',                      reward:{ coins:150 } },
+    desc:'Craft 10 finished goods at the Workshop. Finished goods sell for far more than the materials they\'re made from.', reward:{ coins:140 } },
+  { id:'first_deals', ic:'⚖️', title:'A Knack for Trade',      metric:'trades',        target:3,
+    desc:'Strike 3 deals at the Market Hall. Prices dip when you dump stock, so sell in sensible batches and buy what you\'re short on.', reward:{ coins:120 } },
   { id:'dependable',  ic:'🚚', title:'A Dependable Name',      metric:'contracts',     target:3,
-    desc:'Deliver 3 contracts at the Depot.',                             reward:{ coins:200 } },
+    desc:'Deliver 3 contracts at the Depot. Contracts are your steadiest, best-paying work — accept, fulfil, get paid.', reward:{ coins:200 } },
+  { id:'forager',     ic:'🌿', title:'Living Off the Land',    metric:'actions',       target:40,
+    desc:'Keep working the valley — and branch out: chop timber in the forest, cast a line at the pier, forage herbs & berries. Each feeds crafts, meals and coin.', reward:{ coins:180, item:'wild_herb', qty:3 } },
   { id:'finding_way', ic:'🧭', title:'Finding Your Way',       metric:'totalLevel',    target:15,
-    desc:'Reach total level 15 across your skills.',                      reward:{ coins:250 } },
+    desc:'Reach total level 15. Levelling any skill unlocks tougher, richer resources — cook your catch at the Café, or grow crops in your garden for hands-off income.', reward:{ coins:250 } },
   { id:'first_purse', ic:'🪙', title:'A Tidy Purse',           metric:'coinsEarned',   target:500,
-    desc:'Earn 500 coins in total.',                                      reward:{ coins:150 } },
+    desc:'Earn 500 coins in total. Reinvest at the Town Hall for permanent upgrades — better tools and faster actions that pay for themselves.', reward:{ coins:150 } },
   { id:'settling_in', ic:'🌟', title:'Settling In',            metric:'totalLevel',    target:25,
-    desc:'Reach total level 25 — you know your way around now.',          reward:{ coins:400 } },
+    desc:'Reach total level 25 — you know your way around Featherstone now. The whole valley is open to you.', reward:{ coins:400 } },
 ];
 
 // Objective met? (a beat's metric has reached its target)
