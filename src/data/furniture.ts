@@ -37,6 +37,13 @@ export const FURNITURE: Record<string, FurnitureDef> = {
   furn_fridge: { id:'furn_fridge', n:'Fridge',  ic:'🧊', price:70, fw:1, fd:1, scale:0.95, rotates:false, wall:true,  colors:['#e0e8f0','#c0d0e0','#3a5a4a'] },
   furn_shower: { id:'furn_shower', n:'Shower',  ic:'🚿', price:55, fw:1, fd:1, scale:0.9,  rotates:false, wall:true,  colors:['#c8d8e8'], interact:true },
   furn_toilet: { id:'furn_toilet', n:'Toilet',  ic:'🚽', price:45, fw:1, fd:1, scale:0.85, rotates:false, wall:false, colors:['#e8e8e0'], interact:true },
+  // ---- Finn's Furniture & Homeware (also trade commodities) — now placeable décor.
+  // Ids match their items.json entries so the warehouse stock and placement reconcile.
+  lamp:      { id:'lamp',      n:'Table Lamp', ic:'💡', price:28, fw:1, fd:1, scale:0.55, rotates:false, wall:false, colors:['#d8a850','#e8e8e0','#3a3a3a'], interact:true },
+  bookcase:  { id:'bookcase',  n:'Bookcase',   ic:'📚', price:55, fw:1, fd:1, scale:0.95, rotates:false, wall:true,  colors:['#8a6040','#5a3a20','#e0d8c8'] },
+  vase:      { id:'vase',      n:'Vase',       ic:'🏺', price:22, fw:1, fd:1, scale:0.5,  rotates:false, wall:false, colors:['#b06840','#3a6a8a','#8a3a5a'] },
+  painting:  { id:'painting',  n:'Painting',   ic:'🖼️', price:40, fw:1, fd:1, scale:0.8,  rotates:false, wall:true,  colors:['#c8a850','#3a3a3a','#8a6040'] },
+  fancy_rug: { id:'fancy_rug', n:'Fancy Rug',  ic:'🟪', price:48, fw:3, fd:2, scale:1.0,  rotates:true,  wall:false, colors:['#7a3a6a','#3a5a7a','#7a5a3a','#3a6a4a'] },
 };
 export function furnitureDef(id: string): FurnitureDef | null { return FURNITURE[id] || null; }
 export function defaultColor(id: string): string { return FURNITURE[id]?.colors[0] || '#8a6a4a'; }

@@ -23,6 +23,7 @@ import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/cl
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery, TUTORIAL_STAGES, TUTORIAL_GUIDE, TUTORIAL_COMPLETE_BONUS, NAV_HINT, fillTemplate } from './data/tutorial.ts';
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
+import { itemCategory, categoryLabel, isPlaceableItem, isTradeFurniture, TRADE_FURNITURE, CATEGORY_LABELS } from './data/itemTax.ts';
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
@@ -1904,7 +1905,7 @@ const ACH = [
   { id:"full_honours", ic:"📜", n:"Full Honours",       ds:"Complete all university degrees.",   r:2000, c:()=>(S.degrees?.length||0)>=7 },
   { id:"landlord",     ic:"🏡", n:"Landlord",           ds:"Buy your first property.",           r:100,  c:()=>(S.properties?.length||0)>=1 },
   { id:"mogul",        ic:"🏰", n:"Property Mogul",     ds:"Own all three properties.",          r:500,  c:()=>(S.properties?.length||0)>=3 },
-  { id:"home_t1",      ic:"🛋️", n:"Moving In",          ds:"Upgrade your cottage to Tier 1.",    r:50,   c:()=>(S.homeTier||0)>=1 },
+  { id:"home_t1",      ic:"🛋️", n:"Moving In",          ds:"Upgrade your cottage for the first time.",    r:50,   c:()=>(S.homeTier||0)>=1 },
   { id:"home_t4",      ic:"🎹", n:"Dream Cottage",      ds:"Reach the highest home tier.",       r:500,  c:()=>(S.homeTier||0)>=4 },
   { id:"first_loan",   ic:"💳", n:"In the Red",         ds:"Take your first bank loan.",         r:15,   c:()=>(S.counters?.loansTotal||0)>=1 },
   { id:"in_the_black",  ic:"📈", n:"In the Black",       ds:"Close an exchange position at a profit.", r:200, c:()=>(S.counters?.exchangeProfits||0)>=1 },
@@ -2250,6 +2251,30 @@ function addFurniture(id: string, qty: number){
   S.ownedFurniture[id] = (S.ownedFurniture[id]||0) + qty;
   if (!S.furnNew) S.furnNew = {};
   S.furnNew[id] = true;   // M2: NEW badge / sparkle until previewed or placed
+}
+// ---- Warehouse ↔ furniture bridge --------------------------------------------
+// Finn's homeware (lamp/bookcase/vase/painting/fancy_rug) lives in the WAREHOUSE
+// (S.items) as a trade commodity but is ALSO placeable. So placement/storage/sale
+// reconcile against the right pool: warehouse for tradeable homeware, the
+// furniture-storage pool (ownedFurniture) for shop-only furn_* pieces. For any
+// furniture id, (available-to-place + placed) is conserved across place/store.
+function furnAvailable(id: string): number {
+  return isTradeFurniture(id) ? itemCount(id) : ((S.ownedFurniture && S.ownedFurniture[id]) || 0);
+}
+function furnTake(id: string){
+  if (isTradeFurniture(id)){ S.items[id] = Math.max(0, (S.items[id]||0) - 1); }
+  else { if (!S.ownedFurniture) S.ownedFurniture = {}; S.ownedFurniture[id] = Math.max(0, (S.ownedFurniture[id]||0) - 1); }
+}
+function furnReturn(id: string){
+  if (isTradeFurniture(id)){ addItem(id, 1); }
+  else { if (!S.ownedFurniture) S.ownedFurniture = {}; S.ownedFurniture[id] = (S.ownedFurniture[id]||0) + 1; }
+}
+// Placeable-furniture stock the player currently holds (both pools), for the palette.
+function furnStock(): Array<{ id:string; qty:number; source:'warehouse'|'storage' }>{
+  const out: Array<{ id:string; qty:number; source:'warehouse'|'storage' }> = [];
+  for (const id of TRADE_FURNITURE){ const q = itemCount(id); if (q > 0) out.push({ id, qty:q, source:'warehouse' }); }
+  for (const [id,q] of Object.entries(S.ownedFurniture||{})){ if ((q as number) > 0 && FURNITURE[id]) out.push({ id, qty:q as number, source:'storage' }); }
+  return out;
 }
 // ---- END FURNITURE SYSTEM ----
 const WORLD_EVENTS = [
@@ -10285,9 +10310,10 @@ function freshState(){
     garden: [null, null, null, null, null, null],
     keepsakes: [],
     festival: { raffleDate:"", raffleCount:0, gamesDate:"", feastId:"", attended:[] as string[], notified:"" },
-    ownedFurniture: {} as Record<string,number>,
+    ownedFurniture: { furn_chair:1 } as Record<string,number>,   // one free starter piece
     placedFurniture: [] as any[],
-    furnNew: {} as Record<string,boolean>,
+    furnNew: { furn_chair:true } as Record<string,boolean>,       // …flagged NEW (shimmer + badge)
+    furnStarter: true,
     cottage: { clean:START_CLEAN, mess:[] as any[], carried:0, bin:{fill:0,lastDay:-1}, intro:0, goals:{} as Record<string,boolean>, reminded:-1 },
     pintBuff: 0,
     pintsTonight: 0,
@@ -10431,6 +10457,13 @@ function load(){
       if (!S.ownedFurniture) S.ownedFurniture = {};
       if (!Array.isArray(S.placedFurniture)) S.placedFurniture = [];
       if (!S.furnNew || typeof S.furnNew !== "object") S.furnNew = {};
+      // One-time free starter furniture — granted once to pre-existing saves too, but
+      // never if the player already owns or has placed anything (no double-gift).
+      if (!S.furnStarter){
+        const _hasAny = Object.values(S.ownedFurniture).some((q:any)=>q>0) || (S.placedFurniture.length>0);
+        if (!_hasAny){ S.ownedFurniture.furn_chair = (S.ownedFurniture.furn_chair||0) + 1; S.furnNew.furn_chair = true; }
+        S.furnStarter = true;
+      }
       // M3: cottage cleanliness — default for saves that predate it (never dirty on load)
       if (!S.cottage || typeof S.cottage.clean !== "number") S.cottage = { clean:START_CLEAN, mess:[], carried:0, bin:{fill:0,lastDay:-1}, intro:0, goals:{}, reminded:-1 };
       if (!Array.isArray(S.cottage.mess)) S.cottage.mess = [];
@@ -12800,8 +12833,11 @@ function renderTrade(){
     const d = S.market.drift[active.id][it];
     const _qk = `${active.id}|${it}`;
     const _qv = clampQty(_tradeQty[_qk] || 1, 9999);
+    const _catTag = isPlaceableItem(it)
+      ? `<span style="font-size:9px;background:rgba(200,160,255,.15);color:#d0b0ff;border:1px solid #5a3a6a;border-radius:8px;padding:1px 6px;margin-left:4px">🛋️ placeable décor</span>`
+      : `<span style="font-size:9px;color:var(--dim);margin-left:4px">${categoryLabel(it)}</span>`;
     html += `<div class="contract">
-      <div class="who tr-cardtxt">${ITEMS[it].ic} ${ITEMS[it].n} <span style="font-size:11px;">${trendArrow(d)}</span></div>
+      <div class="who tr-cardtxt">${ITEMS[it].ic} ${ITEMS[it].n} <span style="font-size:11px;">${trendArrow(d)}</span>${_catTag}</div>
       <div class="pay tr-cardtxt">Buy ${fmt(buyPrice(active,it))} · Sell ${fmt(sellPrice(active,it))} <span style="color:var(--dim)">· you have ${fmt(itemCount(it))}</span></div>
       <div class="row" style="margin-top:0;width:100%;align-items:center;gap:8px;">
         <div class="qty-sel" role="group" aria-label="Quantity for ${ITEMS[it].n}">
@@ -12901,7 +12937,7 @@ function renderGarden(){
   if (slots === 0) return `<div class="panel" style="padding:10px;margin-top:8px;text-align:center">
     <p style="font-size:22px;margin:0 0 4px">🌱</p>
     <p style="font-size:12px;font-weight:600;margin:0 0 4px">Cottage Garden</p>
-    <p style="color:var(--dim);font-size:11px;margin:0">Upgrade your cottage to Tier 1 to plant your first plot.</p>
+    <p style="color:var(--dim);font-size:11px;margin:0">Upgrade your cottage to the <b>${HOME_TIERS[1]?.n || 'next'}</b> tier (at Your Cottage) to plant your first plot.</p>
   </div>`;
   const now = Date.now();
   const _nextCrop = FARM_CROPS.find(c=>c.lvl>flvl);
@@ -13296,8 +13332,8 @@ function _decorConfirm(){
     S.placedFurniture[_decor.editIdx] = { id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color, placedAt:_pa };
     toast('✔ Moved.');
   } else {
-    if((S.ownedFurniture?.[_decor.itemId]||0) < 1){ toast('You don\'t own that.'); return; }
-    S.ownedFurniture[_decor.itemId]--;
+    if(furnAvailable(_decor.itemId) < 1){ toast('You don\'t own that.'); return; }
+    furnTake(_decor.itemId);   // consume from the right pool (warehouse or storage)
     S.placedFurniture.push({ id:_decor.itemId, gx:_decor.gx, gy:_decor.gy, rot:_decor.rot, color:_decor.color, placedAt:Date.now() });   // M3: fresh shine
     toast(`✔ Placed the ${furnitureDef(_decor.itemId)?.n}.`);
   }
@@ -13307,10 +13343,9 @@ function _decorConfirm(){
 }
 function _decorStore(idx: number){
   const p=(S.placedFurniture||[])[idx]; if(!p) return;
-  if(!S.ownedFurniture) S.ownedFurniture={};
-  S.ownedFurniture[p.id]=(S.ownedFurniture[p.id]||0)+1;
+  furnReturn(p.id);   // back to the right pool (warehouse for homeware, storage for furn_*)
   S.placedFurniture.splice(idx,1);
-  toast('📦 Stored in your furniture inventory.');
+  toast(isTradeFurniture(p.id) ? '📦 Returned to your warehouse.' : '📦 Stored in your furniture inventory.');
   _decor.itemId=null; _decor.editIdx=-1; renderDecorModal(); save();
 }
 function _decorSell(idx: number){
@@ -13370,18 +13405,20 @@ function renderDecorModal(){
     ghost=`<div style="position:absolute;left:${_decor.gx*CELL}px;top:${_decor.gy*CELL}px;width:${sz.w*CELL}px;height:${sz.d*CELL}px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:${col}44;border:2px dashed ${col};border-radius:6px;pointer-events:none;font-size:${Math.round(Math.min(sz.w,sz.d)*CELL*d.scale*0.6)}px">${d.ic}</div>
       <div style="position:absolute;left:${_decor.gx*CELL}px;top:${_decor.gy*CELL - 20}px;font-size:10px;color:${col};font-weight:700;white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px #000">${chk.ok?'✔ '+chk.text:'✖ '+chk.text}</div>`;
   }
-  // inventory (owned, unplaced) with NEW badges
-  const owned=Object.entries(S.ownedFurniture||{}).filter(([,q])=>(q as number)>0);
+  // inventory (owned, unplaced) with NEW badges — pulls from BOTH the furniture-shop
+  // storage pool AND placeable homeware held in the warehouse (Finn's stall).
+  const stock=furnStock();
   const spark=_reducedMotion()?'':'animation:furnShimmer 1.4s ease-in-out infinite';
-  const inv=owned.length? owned.map(([id,q])=>{
+  const inv=stock.length? stock.map(({id,qty,source})=>{
     const d=furnitureDef(id); if(!d) return '';
     const isNew=!!(S.furnNew&&S.furnNew[id]);
     const active=_decor.itemId===id&&_decor.editIdx<0;
+    const tag=source==='warehouse'?'<span style="font-size:8px;color:#8ad0ff;margin-left:3px">warehouse</span>':'';
     return `<button data-decor-item="${id}" style="position:relative;background:${active?'#4a3a5a':'#33333c'};color:#e8e8ee;border:1px solid ${active?'#c8a0ff':'#44444e'};border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer">
-      <span style="font-size:16px;${isNew?spark:''}">${d.ic}</span> ${d.n} ×${q}
+      <span style="font-size:16px;${isNew?spark:''}">${d.ic}</span> ${d.n} ×${qty}${tag}
       ${isNew?`<span style="position:absolute;top:-6px;right:-6px;background:#ffcf33;color:#3a2a00;font-size:8px;font-weight:800;padding:1px 4px;border-radius:6px">NEW</span>`:''}
     </button>`;
-  }).join('') : '<p style="font-size:11px;color:var(--dim);margin:0">No furniture in storage — buy some at Nell\'s Home Store.</p>';
+  }).join('') : '<p style="font-size:11px;color:var(--dim);margin:0">No furniture to place — buy pieces at Nell\'s Home Store or homeware from Finn\'s stall.</p>';
   // controls / customisation
   let controls='';
   if(_decor.itemId){
@@ -13404,7 +13441,7 @@ function renderDecorModal(){
     </div>
     ${(()=>{ const c=_cottage(); const b=cleanBand(c.clean); return `<div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,.04);border-radius:6px;padding:6px 9px;margin-bottom:8px;font-size:11px">
       <span>🧹 Cleanliness: <b style="color:${b.color}">${b.label}</b> (${Math.round(c.clean)}) · 🛋️ Comfort: <b>${_cottageComfort()}</b></span>
-      <span style="color:var(--dim)">Carrying ${c.carried||0} rubbish</span>
+      ${(c.carried||0)>0?`<span style="color:#e8c94a">Carrying ${c.carried} rubbish</span>`:`<span style="color:var(--dim)">Hands empty</span>`}
     </div>`; })()}
     <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_decor.itemId?'Move the piece (click a square, arrows, or D-pad), rotate, pick a style, then Confirm. It shows green where it fits, red where it doesn\'t.':'Pick a piece from storage below, or click a placed item to move/store/sell it.'}</p>
     <div style="position:relative;width:${W}px;max-width:100%;height:${H}px;margin:0 auto;background:linear-gradient(#c9a877,#b8946a);border:3px solid #6a4a2a;border-radius:6px;overflow:hidden">
@@ -17110,6 +17147,10 @@ if (import.meta.env.DEV) {
     // Ten-foot / couch presentation probes (this milestone).
     uiSetCouch(on:boolean){ if(!S.settings) S.settings={}; S.settings.couch = !!on; try{ applyCouchMode(); }catch(e){} return { couch: !!(S.settings && S.settings.couch) }; },
     uiUnlockTab(id:string){ if(!S.unlockedTabs) S.unlockedTabs={}; S.unlockedTabs[id]=true; try{ renderNav(); }catch(e){} return { unlocked:!!S.unlockedTabs[id] }; },
+    // Cottage / furniture probes (this milestone).
+    uiCottageState(){ return { owned:JSON.parse(JSON.stringify(S.ownedFurniture||{})), placed:(S.placedFurniture||[]).map((p:any)=>({id:p.id,gx:p.gx,gy:p.gy})), lamp:itemCount('lamp'), carried:(S.cottage&&S.cottage.carried)||0, starter:!!S.furnStarter }; },
+    uiGiveItem(id:string, n:number){ addItem(id, n|0); return { have:itemCount(id) }; },
+    uiOpenDecorate(){ try{ S.tab='myhome'; openDecorate(); }catch(e){} return { open:!!document.getElementById('decor-modal') }; },
     uiFinishTutorial(){ if(!S.tut) S.tut={ step:0 }; S.tut.done=true; try{ renderNav(); renderMain(); }catch(e){} return { done:!!(S.tut&&S.tut.done), flagship: (()=>{ try{ return flagshipAvailable(); }catch(e){ return false; } })() }; },
     uiOverflow(){ const d=document.documentElement; return { pageScrollW:d.scrollWidth, innerW:window.innerWidth, overflow:d.scrollWidth - window.innerWidth, bodyBg:getComputedStyle(document.body).backgroundColor }; },
     uiFocusRing(){ const f=document.querySelector('.gp-focus') as any; return { has:!!f, action:f?.dataset?.c2c||f?.getAttribute?.('onclick')||f?.textContent?.trim().slice(0,24)||null }; },
