@@ -1175,24 +1175,24 @@ function openC2CHistory(){
   // supplier reliability tally across the history
   const bySup: Record<string, { n:number; onTime:number; margin:number }> = {};
   for (const r of recs){ const s = r.supplier || '—'; (bySup[s] = bySup[s] || { n:0, onTime:0, margin:0 }); bySup[s].n++; if (r.onTime) bySup[s].onTime++; bySup[s].margin += (r.actual?.grossProfit || 0); }
-  const supRows = Object.keys(bySup).map(s => { const b = bySup[s]; return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span>${esc(s)}</span><span style="color:var(--dim)">${b.onTime}/${b.n} on time · ${_flagMoney(b.margin)} total</span></div>`; }).join('');
+  const supRows = Object.keys(bySup).map(s => { const b = bySup[s]; return `<div style="display:flex;justify-content:space-between;font-size:calc(11px * var(--ui-scale));padding:2px 0"><span>${esc(s)}</span><span style="color:var(--dim)">${b.onTime}/${b.n} on time · ${_flagMoney(b.margin)} total</span></div>`; }).join('');
   const rows = recs.length ? recs.map(r => `
     <div style="background:var(--panel2);border:1px solid var(--edge);border-radius:6px;padding:8px 11px;margin-bottom:7px">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:12px;font-weight:700">${esc(r.client)}</span>
-        <span style="font-size:10px;font-weight:700;color:${gCol(r.grade)};text-transform:uppercase;letter-spacing:.5px">${esc(r.grade)}</span>
+        <span style="font-size:calc(12px * var(--ui-scale));font-weight:700">${esc(r.client)}</span>
+        <span style="font-size:calc(10px * var(--ui-scale));font-weight:700;color:${gCol(r.grade)};text-transform:uppercase;letter-spacing:.5px">${esc(r.grade)}</span>
       </div>
-      <div style="font-size:10px;color:var(--dim);margin:2px 0 4px">${esc(r.supplier||'—')} · ${r.onTime?'on time ✓':'late ✗'} · satisfaction ${r.satisfaction}%</div>
-      <div style="display:flex;gap:8px;font-size:11px">
+      <div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);margin:2px 0 4px">${esc(r.supplier||'—')} · ${r.onTime?'on time ✓':'late ✗'} · satisfaction ${r.satisfaction}%</div>
+      <div style="display:flex;gap:8px;font-size:calc(11px * var(--ui-scale))">
         <span>Revenue <b>${_flagMoney(r.actual?.revenue||0)}</b></span>
         <span>Margin <b style="color:${(r.actual?.grossProfit||0)>=0?'var(--mint)':'#e0705a'}">${_flagMoney(r.actual?.grossProfit||0)} (${Math.round((r.actual?.marginPct||0)*100)}%)</b></span>
       </div>
-    </div>`).join('') : `<div style="font-size:12px;color:var(--dim);text-align:center;padding:16px">No closed orders yet.</div>`;
+    </div>`).join('') : `<div style="font-size:calc(12px * var(--ui-scale));color:var(--dim);text-align:center;padding:16px">No closed orders yet.</div>`;
   const inner = () => `<div class="panel" style="padding:16px;max-width:480px;width:100%;max-height:88vh;overflow:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h2 style="margin:0;font-size:15px">📊 Order History</h2>
+      <h2 style="margin:0;font-size:calc(15px * var(--ui-scale))">📊 Order History</h2>
       <button aria-label="Close" class="modal-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer">✕</button></div>
-    ${recs.length ? `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:8px 11px;margin-bottom:10px"><div style="font-size:10px;color:var(--amber);font-weight:700;margin-bottom:3px">Supplier performance</div>${supRows}</div>` : ''}
+    ${recs.length ? `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:8px 11px;margin-bottom:10px"><div style="font-size:calc(10px * var(--ui-scale));color:var(--amber);font-weight:700;margin-bottom:3px">Supplier performance</div>${supRows}</div>` : ''}
     ${rows}
     <button data-primary id="c2c-hist-ok" class="btn" style="width:100%;margin-top:6px">Done ▶</button>`;
   const wire = (el: HTMLElement) => {
@@ -1207,14 +1207,14 @@ function openC2CHistory(){
 function openC2CScenarios(){
   const cards = C2C_SCENARIOS.map((s:any)=>`
     <button data-scn="${s.id}" style="display:block;width:100%;text-align:left;background:var(--panel2);border:2px solid var(--edge);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;color:var(--text)">
-      <div style="font-size:13px;font-weight:700;color:var(--amber)">🎬 ${esc(s.label)}</div>
-      <div style="font-size:11px;color:var(--dim);margin-top:3px">${esc(s.blurb)}</div>
+      <div style="font-size:calc(13px * var(--ui-scale));font-weight:700;color:var(--amber)">🎬 ${esc(s.label)}</div>
+      <div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin-top:3px">${esc(s.blurb)}</div>
     </button>`).join('');
   const inner = () => `<div class="panel" style="padding:16px;max-width:460px;width:100%;max-height:88vh;overflow:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <h2 style="margin:0;font-size:15px">🎬 Practice Scenarios</h2>
+      <h2 style="margin:0;font-size:calc(15px * var(--ui-scale))">🎬 Practice Scenarios</h2>
       <button aria-label="Close" class="modal-close" style="background:#333;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer">✕</button></div>
-    <p style="font-size:11px;color:var(--dim);margin:0 0 10px">Same set-up every time — a safe place to practise a strategy. Your real orders vary.</p>
+    <p style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin:0 0 10px">Same set-up every time — a safe place to practise a strategy. Your real orders vary.</p>
     ${cards}</div>`;
   const wire = (el:HTMLElement) => {
     (el.querySelector('.modal-close') as HTMLElement).onclick = () => closeModal('c2c-scenarios-modal');
@@ -10183,7 +10183,7 @@ if (typeof document !== 'undefined'){
      only needs to widen the panel + keep controller-sized button targets. */
   body.couch-mode #flagship-modal .panel{max-width:600px}
   body.couch-mode #flagship-modal .btn{min-height:44px}
-  body.couch-mode #c2c-history-modal .panel, body.couch-mode #c2c-scenarios-modal .panel{font-size:13.5px}
+  /* history + scenarios modal text also scales via --ui-scale (inline calc()) now */
   .firstrun-hint{position:absolute;top:28px;left:50%;transform:translateX(-50%);max-width:94%;background:rgba(42,26,10,.93);color:#fff8e6;border:2px solid #e8961e;border-radius:8px;padding:7px 14px;font:600 12px/1.45 'IBM Plex Mono',monospace;text-align:center;pointer-events:none;box-shadow:0 3px 10px rgba(0,0,0,.45);animation:frPulse 2.2s ease-in-out infinite}
   .firstrun-hint b{color:#ffd666}
   @keyframes frPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,150,30,.5)}50%{box-shadow:0 0 0 6px rgba(232,150,30,0)}}

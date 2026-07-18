@@ -109,6 +109,24 @@ test.describe('Ten-foot UI — responsive shell, no overflow, couch legibility',
     await page.screenshot({ path: 'e2e/screens/flagship-modal-couch-720p.png' });
   });
 
+  test('the practice-scenarios modal text scales with couch mode (migrated inline sizes)', async ({ page }) => {
+    await start(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.evaluate(() => (window as any).openC2CScenarios && (window as any).openC2CScenarios());
+    await expect(page.locator('#c2c-scenarios-modal')).toBeVisible({ timeout: 8000 });
+    const measure = () => page.evaluate(() => {
+      const t = document.querySelector('#c2c-scenarios-modal [style*="font-size:calc"]') as HTMLElement;
+      return t ? parseFloat(getComputedStyle(t).fontSize) : 0;
+    });
+    await gate(page, 'uiSetCouch', false);
+    const std = await measure();
+    await gate(page, 'uiSetCouch', true);
+    const couch = await measure();
+    expect(std).toBeGreaterThan(0);
+    expect(couch).toBeGreaterThan(std);
+    await page.screenshot({ path: 'e2e/screens/scenarios-modal-couch-720p.png' });
+  });
+
   test('Trading is trader-tabbed (not one endless catalogue) and switches trader', async ({ page }) => {
     await start(page);
     await gate(page, 'uiGoTab', 'trade');
