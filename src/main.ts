@@ -6751,7 +6751,7 @@ function drawVillage(t){
     if (!v.moving){ const _em = _villagerEmote(v, t); if (_em) drawEmojiC(ctx, _em, v.x, v.y - 22, 11); }
   }
   for (const c of CHILDREN_STATE){
-    if (c.phase==="sleep" || c.phase==="school") continue;
+    if (c.phase==="sleep" || c.phase==="school" || c.indoor) continue;
     const _csz = c.age<=6?0:c.age<=10?1:2;
     drawChild(ctx, c.x, c.y+10, c.hair, c.shirt, t, c.moving, c.dir, c.trouser, c.female, _csz);
   }
@@ -9301,6 +9301,21 @@ function activeIncidents(){ const J=_justice(), d=_gameDay(); return J.incidents
 function activeStrikePoints(){ return activeIncidents().reduce((s,i)=> s + (i.strikePoints||0), 0); }
 function outstandingFines(){ return _justice().incidents.reduce((s,i)=> s + (i.finePaid?0:(i.fine||0)), 0); }
 function outstandingCompensation(){ return _justice().incidents.reduce((s,i)=> s + (i.compPaid?0:(i.compensation||0)), 0); }
+// A resident who catches you thieving remembers it: a witnessed-crime memory plus a
+// bump to their suspicion of you. Mirrors the social test-gate path; safe if social
+// state isn't ready yet.
+function _witnessTheft(npcId){
+  try{
+    if (!npcId || !S.social || !S.social.mem) return;
+    const day = _gameDay();
+    S.social.mem[npcId] = writeMemory(_socMem(npcId), makeMemory(npcId, day, {
+      id:'crime:theft:'+npcId+':'+day, category:'crime', subject:'player',
+      summaryKey:'caught you stealing from their home', emotion:-45, strength:85,
+      source:'witnessed', confidence:95, tags:['suspicion','theft'] }));
+    const r = relApplyDeltas(_socRel(npcId), [{ dim:'suspicion', delta:30 }, { dim:'trust', delta:-20 }]);
+    S.social.rel[npcId] = r.rel;
+  }catch(e){}
+}
 // Idempotent incident creation — the same event token can never record twice.
 function recordOffence(offenceId, factors={}, opts={}){
   const J = _justice();
@@ -11598,15 +11613,27 @@ function updateChildren(dt){
   const hr = gameHour();
   const phase = (hr>=22||hr<8)?"sleep":(hr>=8.5&&hr<15.5)?"school":(hr>=15.5&&hr<18.5)?"park":"home";
   for (const c of CHILDREN_STATE){
-    c.phase = phase;
-    if (phase==="sleep"||phase==="school"){ c.moving=false; continue; }
+    if (c.phase !== phase){ c.phase = phase; c.wTarget = null; if (phase!=="home") c.indoor = false; }
+    // Asleep at night, or at school during the day → tucked away indoors (not drawn out
+    // in the world). School kids are shown inside the school interior instead.
+    if (phase==="sleep"){ c.indoor=true; c.moving=false; continue; }
+    if (phase==="school"){ c.indoor=false; c.moving=false; continue; }
+    // Evening "home" phase: head straight to their own front door and go INSIDE — once
+    // there they stay in for the night (this is the "after school, go home" behaviour).
+    if (phase==="home"){
+      if (c.indoor){ c.moving=false; continue; }
+      const dx=c.homePos.x-c.x, dy=c.homePos.y-c.y, dist=Math.hypot(dx,dy);
+      if (dist<6){ c.indoor=true; c.moving=false; continue; }   // reached the doorstep → inside
+      const sp=30*dt, nx=c.x+(dx/dist)*sp, ny=c.y+(dy/dist)*sp;
+      if(_villagerTileOk(nx,ny)){ c.x=nx; c.y=ny; }
+      c.moving=true; c.dir=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up"); c.facing=dx>=0?1:-1;
+      continue;
+    }
+    // Park phase: play out in the park.
+    c.indoor=false;
     c.wanderTimer -= dt;
     if (!c.wTarget || c.wanderTimer<=0){
-      if (phase==="park"){
-        c.wTarget={ x:(78+Math.random()*5)*TILE, y:(6.8+Math.random()*2.4)*TILE };
-      } else {
-        c.wTarget={ x:c.homePos.x+(Math.random()*16-8), y:c.homePos.y };
-      }
+      c.wTarget={ x:(78+Math.random()*5)*TILE, y:(6.8+Math.random()*2.4)*TILE };
       c.wanderTimer=4+Math.random()*6;
     }
     const dx=c.wTarget.x-c.x, dy=c.wTarget.y-c.y, dist=Math.hypot(dx,dy);
@@ -16206,13 +16233,26 @@ function bindMain(){
     S.items[_item] = (S.items[_item]||0) + 1;
     S.stolen = true;
     S.stolenItem = _item;   // track for confiscation + ledger value on arrest
-    const _stir = Math.random() < 0.25;
-    if (_stir){
-      toast(`😬 You heard something stir… grab what you can and get out!`);
+    const _res = VILLAGERS.find(v=>v.homeId===S.roomObjId);
+    const _resName = _res?.n || "someone";
+    log(`🦹 ${pName()} pinched a <b>${_item.replace(/_/g," ")}</b> from ${_resName}'s fridge.`);
+    // The occupant now REACTS to being robbed. At night they're asleep in the house, so
+    // rummaging the fridge can wake them; by day the place is empty (they're out at work).
+    // If they catch you: they remember it (suspicion) and you get a flee window.
+    const _asleepHome = isNight();
+    const _caught = _asleepHome && Math.random() < 0.45;
+    if (_caught && S.fleeUntil === 0){
+      S.fleeUntil = Date.now() + 10000;
+      toast(`😱 ${_resName} woke up and caught you red-handed! 10 seconds to flee!`);
+      log(`🚨 ${_resName} caught ${pName()} stealing — flee before the police arrive!`, "bad");
+      _homeVilBubble = { x: icanvasW()*0.75, y: 54, text: "THIEF! GET OUT! 🚨", name:_resName, mood:'scared' };
+      if (_res) _witnessTheft(_res.id);
+      try{ SFX.play("error"); }catch(e){}
+    } else if (_asleepHome){
+      toast(`😬 You heard ${_resName} stir upstairs… grab what you can and GET OUT!`);
     } else {
-      toast(`🤫 Grabbed: ${_item.replace(/_/g," ")}. Now get out before they wake!`);
+      toast(`🤫 Grabbed: ${_item.replace(/_/g," ")}. The place is empty — slip out before anyone sees.`);
     }
-    log(`🦹 ${pName()} pinched a <b>${_item.replace(/_/g," ")}</b> from ${VILLAGERS.find(v=>v.homeId===S.roomObjId)?.n||"someone"}'s fridge.`);
     renderMain(); updateHud(); save();
   });
   document.querySelectorAll("[data-leave-cell]").forEach(b=> (b as HTMLElement).onclick = ()=>{
