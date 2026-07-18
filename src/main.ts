@@ -695,10 +695,10 @@ function _c2cWaitCard(title, sub, arriveAt){
   const secs = _c2cSecs(rem);
   const total = 1; // fraction unknown per-stage; show a pulsing bar
   return `<div style="text-align:center;padding:6px 0 2px">
-    <div style="font-size:34px;line-height:1;margin-bottom:4px">⏳</div>
-    <div style="font-size:14px;font-weight:700">${title}</div>
-    <div style="font-size:11px;color:var(--dim);margin:3px 0 8px">${sub}</div>
-    <div style="font-size:13px;color:var(--amber);font-weight:700">${secs > 0 ? `~${secs}s remaining` : 'arriving…'}</div>
+    <div style="font-size:calc(34px * var(--ui-scale));line-height:1;margin-bottom:4px">⏳</div>
+    <div style="font-size:calc(14px * var(--ui-scale));font-weight:700">${title}</div>
+    <div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin:3px 0 8px">${sub}</div>
+    <div style="font-size:calc(13px * var(--ui-scale));color:var(--amber);font-weight:700">${secs > 0 ? `~${secs}s remaining` : 'arriving…'}</div>
     <div style="height:6px;background:var(--panel);border-radius:4px;overflow:hidden;margin:8px 20px 0"><div style="height:100%;width:100%;background:linear-gradient(90deg,transparent,var(--amber),transparent);animation:c2cPulse 1.4s linear infinite"></div></div>
   </div>`;
 }
@@ -708,7 +708,7 @@ function _c2cDeadlineChip(c){
   const secs = _c2cSecs(Math.max(0, rem));
   const overdue = rem <= 0;
   const col = overdue ? 'var(--red)' : rem < 5 ? '#e0a45a' : 'var(--dim)';
-  return `<div style="text-align:center;font-size:10px;color:${col};margin:-2px 0 8px">⏳ Delivery deadline: <b>${overdue ? 'overdue' : '~' + secs + 's'}</b></div>`;
+  return `<div style="text-align:center;font-size:calc(10px * var(--ui-scale));color:${col};margin:-2px 0 8px">⏳ Delivery deadline: <b>${overdue ? 'overdue' : '~' + secs + 's'}</b></div>`;
 }
 // The one seeded disruption, surfaced as a clear banner once its stage is reached
 // (a persistent panel during the affected stages — not a repeating toast, so no spam).
@@ -716,7 +716,7 @@ function _c2cDisruptionAlert(c){
   const d = disruptionDef(c.disruption); if (!d) return '';
   const surfIdx = C2C_STAGES.indexOf(d.stage), curIdx = C2C_STAGES.indexOf(c.stage);
   if (curIdx < surfIdx || c.stage === 'closed') return '';
-  return `<div style="background:rgba(224,112,90,.1);border:1px solid #a4523a;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;line-height:1.5">
+  return `<div style="background:rgba(224,112,90,.1);border:1px solid #a4523a;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:calc(11px * var(--ui-scale));line-height:1.5">
     <div style="font-weight:700;color:#e0a45a">${d.icon} Disruption — ${esc(d.title)}</div>
     <div style="color:var(--text)">${esc(d.blurb)}</div>
     <div style="color:var(--dim);margin-top:2px"><b>Your options:</b> ${d.responses.map(esc).join(' · ')}.</div>
@@ -727,7 +727,7 @@ function _c2cStageStrip(c){
   const pct = Math.round((idx / (C2C_STAGES.length - 1)) * 100);
   const label = String(c.stage).replace(/_/g, ' ');
   return `<div style="margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-bottom:3px"><span>Pipeline</span><span>stage ${idx + 1}/17 · <b style="color:var(--text)">${esc(label)}</b></span></div>
+    <div style="display:flex;justify-content:space-between;font-size:calc(10px * var(--ui-scale));color:var(--dim);margin-bottom:3px"><span>Pipeline</span><span>stage ${idx + 1}/17 · <b style="color:var(--text)">${esc(label)}</b></span></div>
     <div style="height:6px;background:var(--panel);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--amber);transition:width .3s"></div></div>
   </div>`;
 }
@@ -745,11 +745,11 @@ function _c2cJourneyRail(c){
   ];
   const cells = stops.map((s,i)=>{
     const col = s.ok ? 'var(--mint)' : '#e0a45a';
-    const arrow = i < stops.length-1 ? `<span style="color:var(--dim);font-size:10px;align-self:center">→</span>` : '';
+    const arrow = i < stops.length-1 ? `<span style="color:var(--dim);font-size:calc(10px * var(--ui-scale));align-self:center">→</span>` : '';
     return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0">
-        <div style="font-size:17px;line-height:1">${s.icon}</div>
-        <div style="font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.3px">${s.label}</div>
-        <div style="font-size:8.5px;color:${col};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px">${s.note}</div>
+        <div style="font-size:calc(17px * var(--ui-scale));line-height:1">${s.icon}</div>
+        <div style="font-size:calc(8px * var(--ui-scale));color:var(--dim);text-transform:uppercase;letter-spacing:.3px">${s.label}</div>
+        <div style="font-size:calc(8.5px * var(--ui-scale));color:${col};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px">${s.note}</div>
       </div>${arrow}`;
   }).join('');
   return `<div style="display:flex;align-items:stretch;justify-content:space-between;gap:2px;background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:6px;padding:8px 6px;margin-bottom:8px">${cells}</div>`;
@@ -813,42 +813,42 @@ function _c2cReviewTitle(c){
 // The full settlement: every revenue + cost line, reconciling to the cash delta.
 function _c2cSettlementBlock(c){
   const s = c2cSettlement(c); const r = s.revenue, k = s.costs;
-  const line = (l, v, dim?) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span style="color:${dim?'var(--dim)':'var(--text)'}">${l}</span><b style="color:${v<0?'#e0a45a':'var(--text)'};font-variant-numeric:tabular-nums">${_flagMoney(v)}</b></div>`;
-  const rev = `<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Revenue</div>
+  const line = (l, v, dim?) => `<div style="display:flex;justify-content:space-between;font-size:calc(11px * var(--ui-scale));padding:1px 0"><span style="color:${dim?'var(--dim)':'var(--text)'}">${l}</span><b style="color:${v<0?'#e0a45a':'var(--text)'};font-variant-numeric:tabular-nums">${_flagMoney(v)}</b></div>`;
+  const rev = `<div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Revenue</div>
     ${line('Contract price', r.contract)}
     ${r.qualityAdj!==0?line('Quality '+(r.qualityAdj>0?'bonus':'penalty'), r.qualityAdj):''}
     ${r.timingAdj!==0?line('Timing '+(r.timingAdj>0?'bonus (early)':'penalty (late)'), r.timingAdj):''}
     ${r.shortfallAdj!==0?line('Shortfall (undelivered units)', r.shortfallAdj):''}
     ${r.goodwillAdj!==0?line('Goodwill / rounding', r.goodwillAdj):''}
-    <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;border-top:1px solid var(--edge);padding-top:3px;margin-top:2px"><span>Net revenue</span><b style="font-variant-numeric:tabular-nums">${_flagMoney(r.net)}</b></div>`;
-  const cost = `<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 2px">Costs</div>
+    <div style="display:flex;justify-content:space-between;font-size:calc(11px * var(--ui-scale));font-weight:700;border-top:1px solid var(--edge);padding-top:3px;margin-top:2px"><span>Net revenue</span><b style="font-variant-numeric:tabular-nums">${_flagMoney(r.net)}</b></div>`;
+  const cost = `<div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 2px">Costs</div>
     ${line('Purchased materials', -k.materials)}
     ${k.inboundFreight?line('Inbound freight', -k.inboundFreight):''}
     ${k.expediting?line('Expediting', -k.expediting):''}
     ${line('Manufacturing (in-house)', -k.manufacturing)}
     ${k.rework?line('Rework', -k.rework):''}
     ${k.outbound?line('Outbound logistics', -k.outbound):''}
-    ${c.fin.scrapped>0?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0"><span style="color:var(--dim)">Scrapped units (lost, not cash)</span><span style="color:var(--dim)">${c.fin.scrapped}</span></div>`:''}
-    ${s.costs.gatheredValue>0?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0"><span style="color:var(--dim)">Gathered materials (saved)</span><span style="color:var(--mint)">${_flagMoney(s.costs.gatheredValue)}</span></div>`:''}
-    <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;border-top:1px solid var(--edge);padding-top:3px;margin-top:2px"><span>Total cost</span><b style="font-variant-numeric:tabular-nums">${_flagMoney(-k.total)}</b></div>`;
+    ${c.fin.scrapped>0?`<div style="display:flex;justify-content:space-between;font-size:calc(10px * var(--ui-scale));padding:1px 0"><span style="color:var(--dim)">Scrapped units (lost, not cash)</span><span style="color:var(--dim)">${c.fin.scrapped}</span></div>`:''}
+    ${s.costs.gatheredValue>0?`<div style="display:flex;justify-content:space-between;font-size:calc(10px * var(--ui-scale));padding:1px 0"><span style="color:var(--dim)">Gathered materials (saved)</span><span style="color:var(--mint)">${_flagMoney(s.costs.gatheredValue)}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between;font-size:calc(11px * var(--ui-scale));font-weight:700;border-top:1px solid var(--edge);padding-top:3px;margin-top:2px"><span>Total cost</span><b style="font-variant-numeric:tabular-nums">${_flagMoney(-k.total)}</b></div>`;
   const pc = s.grossProfit >= 0 ? 'var(--mint)' : '#e0705a';
   return `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:10px 12px;margin-bottom:8px">${rev}${cost}
-    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;border-top:2px solid var(--edge);padding-top:5px;margin-top:5px"><span>Gross profit</span><b style="color:${pc};font-variant-numeric:tabular-nums">${_flagMoney(s.grossProfit)} (${Math.round(s.marginPct*100)}%)</b></div>
-    <div style="font-size:9px;color:var(--dim);text-align:right;margin-top:2px">✓ cash moved by exactly ${_flagMoney(s.cashDelta)}</div>
+    <div style="display:flex;justify-content:space-between;font-size:calc(13px * var(--ui-scale));font-weight:800;border-top:2px solid var(--edge);padding-top:5px;margin-top:5px"><span>Gross profit</span><b style="color:${pc};font-variant-numeric:tabular-nums">${_flagMoney(s.grossProfit)} (${Math.round(s.marginPct*100)}%)</b></div>
+    <div style="font-size:calc(9px * var(--ui-scale));color:var(--dim);text-align:right;margin-top:2px">✓ cash moved by exactly ${_flagMoney(s.cashDelta)}</div>
   </div>`;
 }
 function _c2cPnlBlock(c){
   const p = c2cPlannedPnl(c), a = c2cActualPnl(c);
-  const row = (l, pv, av) => `<div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;font-size:11px;padding:1px 0"><span style="color:var(--dim)">${l}</span><span style="text-align:right;color:var(--dim)">${_flagMoney(pv)}</span><span style="text-align:right;font-weight:600">${_flagMoney(av)}</span></div>`;
+  const row = (l, pv, av) => `<div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;font-size:calc(11px * var(--ui-scale));padding:1px 0"><span style="color:var(--dim)">${l}</span><span style="text-align:right;color:var(--dim)">${_flagMoney(pv)}</span><span style="text-align:right;font-weight:600">${_flagMoney(av)}</span></div>`;
   return `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;margin:8px 0">
-    <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;font-size:10px;color:var(--dim);border-bottom:1px solid var(--edge);padding-bottom:3px;margin-bottom:3px"><span>P&amp;L</span><span style="text-align:right">planned</span><span style="text-align:right;color:var(--text)">actual</span></div>
+    <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;font-size:calc(10px * var(--ui-scale));color:var(--dim);border-bottom:1px solid var(--edge);padding-bottom:3px;margin-bottom:3px"><span>P&amp;L</span><span style="text-align:right">planned</span><span style="text-align:right;color:var(--text)">actual</span></div>
     ${row('Revenue', p.revenue, a.revenue)}
     ${row('− Material', -p.materialCost, -a.materialCost)}
     ${row('− Inbound logistics', -p.inboundLogistics, -a.inboundLogistics)}
     ${row('− Production / rework', -p.productionCost, -a.productionCost)}
     ${row('− Outbound logistics', -p.outboundLogistics, -a.outboundLogistics)}
     ${row('− Penalties', -p.penalties, -a.penalties)}
-    <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;font-size:12px;font-weight:700;border-top:1px solid var(--edge);padding-top:4px;margin-top:3px"><span>Gross profit</span><span style="text-align:right;color:var(--dim)">${_flagMoney(p.grossProfit)}</span><span style="text-align:right;color:${a.grossProfit>=0?'var(--mint)':'#e0705a'}">${_flagMoney(a.grossProfit)} (${Math.round(a.marginPct*100)}%)</span></div>
+    <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;font-size:calc(12px * var(--ui-scale));font-weight:700;border-top:1px solid var(--edge);padding-top:4px;margin-top:3px"><span>Gross profit</span><span style="text-align:right;color:var(--dim)">${_flagMoney(p.grossProfit)}</span><span style="text-align:right;color:${a.grossProfit>=0?'var(--mint)':'#e0705a'}">${_flagMoney(a.grossProfit)} (${Math.round(a.marginPct*100)}%)</span></div>
   </div>`;
 }
 function _renderC2C(){
@@ -858,17 +858,17 @@ function _renderC2C(){
   if (!c){ _c2cClose(); return; }
   const O = c.order, offer = c.po ? offerById(c.po.offerId) : (_c2cUI && _c2cUI.offerId ? offerById(_c2cUI.offerId) : null);
   const panel = (inner) => `<div class="panel" style="padding:16px;max-width:540px;width:100%;max-height:92vh;overflow:auto">${inner}</div>`;
-  const head = (t, sub) => `<div style="text-align:center;margin-bottom:8px"><h2 style="margin:0;font-size:16px">${t}</h2><p style="font-size:11px;color:var(--dim);margin:3px 0 0">${sub}</p></div>`;
+  const head = (t, sub) => `<div style="text-align:center;margin-bottom:8px"><h2 style="margin:0;font-size:calc(16px * var(--ui-scale))">${t}</h2><p style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin:3px 0 0">${sub}</p></div>`;
   const _boardOrder = !!(c as any).boardId;
   const closeBtn = `<div style="display:flex;gap:6px;margin-top:6px">
-    <button data-c2c="close" style="flex:1;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">Close (resumes later)</button>
-    <button data-c2c="abandon" style="flex:0 0 auto;background:var(--panel2);color:#e0705a;border:1px solid var(--edge);padding:8px 10px;border-radius:6px;cursor:pointer;font-size:12px">Abandon</button>
+    <button data-c2c="close" style="flex:1;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale))">Close (resumes later)</button>
+    <button data-c2c="abandon" style="flex:0 0 auto;background:var(--panel2);color:#e0705a;border:1px solid var(--edge);padding:8px 10px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale))">Abandon</button>
   </div>`;
   let body = '';
 
   if (c.stage === 'customer_request'){
     body = head((_boardOrder?'📋 ':'⭐ ') + esc(O.client) + ' — Customer Request', _boardOrder ? 'Fulfil this board contract through the full pipeline.' : 'A career-making order: source it, make it, pass quality, deliver.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9">
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:calc(12px * var(--ui-scale));line-height:1.9">
           <b>${esc(O.client)}</b> wants <b>${O.qty}× ${esc(ITEMS[O.productItem]?.n || O.productItem)}</b>.<br>
           They will pay <b style="color:var(--amber)">${fmt(O.quotedRevenue)} coins</b> · terms <b>${String(c.customerTerms).replace('_',' ')}</b>.<br>
           You'll source <b>${O.qty}× ${esc(ITEMS[O.materialItem]?.n || O.materialItem)}</b>, press brackets, pass QC and ship.</div>`
@@ -876,12 +876,12 @@ function _renderC2C(){
   }
   else if (c.stage === 'quotation_review'){
     body = head('📄 Quotation', 'The agreed price for the finished order.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9">
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:calc(12px * var(--ui-scale));line-height:1.9">
           Order: <b>${O.qty}× ${esc(ITEMS[O.productItem]?.n || O.productItem)}</b><br>
           Quoted revenue: <b style="color:var(--amber)">${fmt(O.quotedRevenue)} coins</b><br>
           Payment terms: <b>${String(c.customerTerms).replace('_',' ')}</b> · deadline <b>${O.deadlineMin} min</b> of pipeline time</div>`
       + `<button data-c2c="accept_quote" data-primary class="btn" style="width:100%;margin:8px 0 6px">Accept quote — choose supplier ▶</button>`
-      + `<button data-c2c="decline_quote" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">Decline order</button>`;
+      + `<button data-c2c="decline_quote" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale))">Decline order</button>`;
   }
   else if (c.stage === 'supplier_selection' && !(_c2cUI && _c2cUI.offerId)){
     const maxPrice = Math.max(...SUPPLIER_OFFERS.map(o => o.unitPrice));
@@ -891,17 +891,17 @@ function _renderC2C(){
       const scoreLine = st.orders ? `📊 ${st.onTimePct}% on-time · ${st.avgQualityPct}% quality · ${st.orders} order${st.orders>1?'s':''}` : `📊 no history yet`;
       return `
       <button data-c2coffer="${o.id}" style="display:block;width:100%;text-align:left;background:var(--panel2);border:2px solid var(--edge);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;color:var(--text)">
-        <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:13px;font-weight:700">${o.icon} ${esc(o.supplier)}</div>${q.bestFor?`<span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px;font-weight:800">${esc(q.bestFor)}</span>`:''}</div>
-        <div style="font-size:10.5px;color:var(--text);margin:3px 0 5px">${esc(q.tradeoff)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:calc(13px * var(--ui-scale));font-weight:700">${o.icon} ${esc(o.supplier)}</div>${q.bestFor?`<span style="font-size:calc(9px * var(--ui-scale));background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px;font-weight:800">${esc(q.bestFor)}</span>`:''}</div>
+        <div style="font-size:calc(10.5px * var(--ui-scale));color:var(--text);margin:3px 0 5px">${esc(q.tradeoff)}</div>
         ${_flagBar('Price', o.unitPrice/maxPrice, '#d88', o.unitPrice+'c/unit')}
         ${_flagBar('Lead', o.leadMin/maxLead, '#dc8', o.leadMin+' min')}
         ${_flagBar('Reliable', o.reliability, '#8c8', _flagStars(o.reliability>=.95?4:o.reliability>=.85?3:o.reliability>=.75?2:1))}
         ${_flagBar('Quality', o.expectedQuality, '#8bd', Math.round(o.expectedQuality*100)+'%')}
         ${_flagBar('Green', o.sustainability, '#7c9', o.sustainability>=.8?'local':o.sustainability<=.4?'low':'ok')}
-        <div style="font-size:10px;color:var(--dim);margin-top:4px">MOQ ${o.moq} · capacity ${o.capacity} · inbound ${o.transportCost}c · pay ${o.paymentTerms.replace('_',' ')}</div>
-        <div style="font-size:10px;color:var(--dim);margin-top:2px">${scoreLine}</div>
+        <div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);margin-top:4px">MOQ ${o.moq} · capacity ${o.capacity} · inbound ${o.transportCost}c · pay ${o.paymentTerms.replace('_',' ')}</div>
+        <div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);margin-top:2px">${scoreLine}</div>
       </button>`; }).join('');
-    const frosty = !S.seenProcTip ? `<div style="font-size:11px;color:#bfe8f7;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;line-height:1.5">❄️ Frosty: "Cheapest isn't always best, ${pName()}. A dodgy supplier that short-ships can cost you the whole order. Weigh reliability and the deadline too."</div>` : '';
+    const frosty = !S.seenProcTip ? `<div style="font-size:calc(11px * var(--ui-scale));color:#bfe8f7;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;line-height:1.5">❄️ Frosty: "Cheapest isn't always best, ${pName()}. A dodgy supplier that short-ships can cost you the whole order. Weigh reliability and the deadline too."</div>` : '';
     if (!S.seenProcTip){ S.seenProcTip = true; try{ save(); }catch(e){} }   // guidance shows ONCE
     body = head('🏭 Compare Suppliers', 'Weigh price, speed, reliability, quality &amp; ethics — pick one to plan.') + frosty + cards;
   }
@@ -923,28 +923,28 @@ function _renderC2C(){
     const canAfford = S.coins >= upfront;
     const riskCol = est.risk === 'low' ? 'var(--mint)' : est.risk === 'medium' ? '#dc8' : '#e0705a';
     const marginCol = est.margin > 0 ? 'var(--mint)' : '#e08a4a';
-    const gBtn = (v, l) => `<button ${committed?'disabled':''} data-c2cgather="${v}" style="flex:1;background:${(_c2cUI.gatherQty===v || (v==='all'&&gatherQty>=Math.min(need,available)&&available>0))?'rgba(216,184,74,.15)':'var(--panel2)'};border:1px solid var(--edge);border-radius:6px;padding:6px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:11px">${l}</button>`;
-    const inbBtn = (v, l, sub) => `<button ${committed?'disabled':''} data-c2cinbound="${v}" style="flex:1;background:${mode===v?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${mode===v?'var(--amber)':'var(--edge)'};border-radius:6px;padding:6px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:11px">${l}<br><span style="color:var(--dim);font-size:9px">${sub}</span></button>`;
+    const gBtn = (v, l) => `<button ${committed?'disabled':''} data-c2cgather="${v}" style="flex:1;background:${(_c2cUI.gatherQty===v || (v==='all'&&gatherQty>=Math.min(need,available)&&available>0))?'rgba(216,184,74,.15)':'var(--panel2)'};border:1px solid var(--edge);border-radius:6px;padding:6px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:calc(11px * var(--ui-scale))">${l}</button>`;
+    const inbBtn = (v, l, sub) => `<button ${committed?'disabled':''} data-c2cinbound="${v}" style="flex:1;background:${mode===v?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${mode===v?'var(--amber)':'var(--edge)'};border-radius:6px;padding:6px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:calc(11px * var(--ui-scale))">${l}<br><span style="color:var(--dim);font-size:calc(9px * var(--ui-scale))">${sub}</span></button>`;
     body = head('📝 Purchase Order', 'Gather or buy, choose inbound speed, then confirm.')
-      + `<div style="font-size:11px;color:var(--dim);margin-bottom:4px">Supplier: <b style="color:var(--text)">${off.icon} ${esc(off.supplier)}</b> · need <b style="color:var(--text)">${need}× ${esc(ITEMS[O.materialItem]?.n || O.materialItem)}</b></div>`
-      + (available > 0 || gatherQty > 0 ? `<div style="font-size:11px;color:var(--dim);margin-bottom:3px">Use your own stock (${available} on hand) — gathered bars are free &amp; clean:</div>
+      + `<div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin-bottom:4px">Supplier: <b style="color:var(--text)">${off.icon} ${esc(off.supplier)}</b> · need <b style="color:var(--text)">${need}× ${esc(ITEMS[O.materialItem]?.n || O.materialItem)}</b></div>`
+      + (available > 0 || gatherQty > 0 ? `<div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin-bottom:3px">Use your own stock (${available} on hand) — gathered bars are free &amp; clean:</div>
          <div style="display:flex;gap:6px;margin-bottom:8px">${gBtn(0,'Buy all')}${gBtn('half','Gather ½')}${gBtn('all','Gather all')}</div>` : '')
-      + `<div style="font-size:11px;color:var(--dim);margin-bottom:3px">Inbound freight:</div>
+      + `<div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin-bottom:3px">Inbound freight:</div>
          <div style="display:flex;gap:6px;margin-bottom:8px">${inbBtn('standard','Standard','quoted lead')}${inbBtn('expedited','Expedited','~½ wait, +80% freight')}</div>
-        <div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.85">
+        <div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;font-size:calc(12px * var(--ui-scale));line-height:1.85">
           <div style="display:flex;justify-content:space-between"><span>Gather / Buy</span><b>${gatherQty} gathered · ${buyQty} bought</b></div>
           <div style="display:flex;justify-content:space-between"><span>Committed cash</span><b style="color:${canAfford?'var(--text)':'#e0705a'}">${fmt(est.committedCost)}c</b></div>
           <div style="display:flex;justify-content:space-between"><span>Expected arrival</span><b>~${est.worstLeadMin} min lead</b></div>
           <div style="display:flex;justify-content:space-between"><span>Risk</span><b style="color:${riskCol};text-transform:capitalize">${est.risk}</b></div>
           <hr style="border:none;border-top:1px solid var(--edge);margin:5px 0">
-          <div style="display:flex;justify-content:space-between;font-weight:700"><span>Margin <span style="font-size:9px;color:var(--dim)">(estimate)</span></span><b style="color:${marginCol}">${_flagMoney(est.margin)} (${Math.round(est.marginPct*100)}%)</b></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700"><span>Margin <span style="font-size:calc(9px * var(--ui-scale));color:var(--dim)">(estimate)</span></span><b style="color:${marginCol}">${_flagMoney(est.margin)} (${Math.round(est.marginPct*100)}%)</b></div>
         </div>
-        ${est.warnings.length ? `<div style="font-size:10px;color:#e0a45a;margin-top:6px;line-height:1.5">${est.warnings.map(w=>'⚠️ '+esc(w)).join('<br>')}</div>` : `<div style="font-size:10px;color:var(--mint);margin-top:6px">✓ On paper this plan covers the order and beats the deadline.</div>`}
-        <div style="font-size:10px;color:var(--dim);margin:8px 0">You have ${fmt(S.coins)}c${canAfford?'':' — not enough for this plan; gather more or pick a cheaper supplier.'}</div>`
+        ${est.warnings.length ? `<div style="font-size:calc(10px * var(--ui-scale));color:#e0a45a;margin-top:6px;line-height:1.5">${est.warnings.map(w=>'⚠️ '+esc(w)).join('<br>')}</div>` : `<div style="font-size:calc(10px * var(--ui-scale));color:var(--mint);margin-top:6px">✓ On paper this plan covers the order and beats the deadline.</div>`}
+        <div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);margin:8px 0">You have ${fmt(S.coins)}c${canAfford?'':' — not enough for this plan; gather more or pick a cheaper supplier.'}</div>`
       + (committed
           ? `<button data-c2c="raise_po" data-primary class="btn" style="width:100%;margin-bottom:6px" ${canAfford?'':'disabled'}>Place the purchase order ▶</button>`
           : `<button data-c2c="commit_po" data-primary class="btn" style="width:100%;margin-bottom:6px" ${canAfford?'':'disabled'}>Confirm PO — ${gatherQty>0?`gather ${gatherQty}, `:''}buy ${buyQty} ▶</button>
-             <button data-c2cback="1" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">← Back to suppliers</button>`);
+             <button data-c2cback="1" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale))">← Back to suppliers</button>`);
   }
   else if (c.stage === 'supplier_in_progress'){
     const dueVsDeadline = (c.t.inboundArriveAt ?? 0) + (c.po ? c.po.deliveryTimeMin : 0);
@@ -952,11 +952,11 @@ function _renderC2C(){
     const expFee = c.po ? Math.max(10, Math.round(c.po.qty * c.po.unitPrice * 0.15)) : 0;
     body = head('🏭 Supplier — In Progress', esc(c.po.supplier) + ' is making your order.')
       + _c2cWaitCard('Supplier producing your bars', tight ? '⚠️ On this pace it may arrive too late.' : 'On pace to arrive in good time.', c.t.supplierReadyAt)
-      + `<div style="font-size:11px;color:var(--dim);text-align:center;margin:8px 0 6px">Your move while they work — <b>why it matters:</b> a tight deadline may need a nudge.</div>
+      + `<div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);text-align:center;margin:8px 0 6px">Your move while they work — <b>why it matters:</b> a tight deadline may need a nudge.</div>
          <button data-c2c="intervene:expedite" data-primary class="btn" style="width:100%;margin-bottom:6px" ${c.did.expedited?'disabled':''}>⚡ Expedite (−${expFee}c) — fast-track the batch</button>
          <div style="display:flex;gap:6px;margin-bottom:6px">
-           <button data-c2c="intervene:chase" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px" ${c.did.chased?'disabled':''}>📞 Chase (free)</button>
-           <button data-c2c="intervene:wait" style="flex:1;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">⏳ Wait it out</button>
+           <button data-c2c="intervene:chase" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale))" ${c.did.chased?'disabled':''}>📞 Chase (free)</button>
+           <button data-c2c="intervene:wait" style="flex:1;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale))">⏳ Wait it out</button>
          </div>` + closeBtn;
   }
   else if (c.stage === 'inbound_transport'){
@@ -970,7 +970,7 @@ function _renderC2C(){
     const reworkCost = q * O.reworkCostPerUnit;
     const seen = !!c.inspected;
     const insp = c.goodsInQc;
-    const inspLine = (seen && insp) ? `<div style="font-size:10px;color:var(--dim);margin-top:3px">🔬 Inspected ${insp.sampleSize} of ${rec}: <b style="color:var(--mint)">${insp.passed} passed</b>, <b style="color:#e0a45a">${insp.defective} defective</b> — quality score <b>${insp.qualityScore}%</b></div>` : '';
+    const inspLine = (seen && insp) ? `<div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);margin-top:3px">🔬 Inspected ${insp.sampleSize} of ${rec}: <b style="color:var(--mint)">${insp.passed} passed</b>, <b style="color:#e0a45a">${insp.defective} defective</b> — quality score <b>${insp.qualityScore}%</b></div>` : '';
     const summary = seen
       ? `Received <b>${rec}</b> bars → <b style="color:var(--mint)">${ac} on-spec</b>${q>0?` · <b style="color:#e0a45a">${q} out of spec</b>`:''}.${inspLine}`
       : `Received <b>${rec}</b> bars. The paperwork looks fine, but you haven't checked the metal yet.`;
@@ -978,14 +978,14 @@ function _renderC2C(){
       ? `<b>Why it matters:</b> out-of-spec bars make out-of-spec brackets. Quarantine keeps quality high but loses the bad ones; rework saves them for a fee; accepting the lot is cheap but risky.`
       : (seen ? `All bars passed — good sourcing.` : `<b>Why it matters:</b> a bad batch tanks your final quality. A quick sample check tells you before you commit.`);
     body = head('🔬 Goods-In QC', 'Check the batch, then decide.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9;margin-bottom:8px">${summary}<br><span style="font-size:11px;color:var(--dim)">${why}</span></div>`
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:calc(12px * var(--ui-scale));line-height:1.9;margin-bottom:8px">${summary}<br><span style="font-size:calc(11px * var(--ui-scale));color:var(--dim)">${why}</span></div>`
       + (seen ? '' : `<button data-c2c="inspect" data-primary class="btn" style="width:100%;margin-bottom:6px">🔍 Inspect a sample</button>`)
       + `<button data-c2c="resolve:hold" ${seen?'data-primary':''} class="btn" style="width:100%;margin-bottom:6px">${q>0?`Quarantine the ${q} bad · use ${ac}`:`Accept ${ac}`} &amp; start production ▶</button>`
       + (q>0 ? `<div style="display:flex;gap:6px;margin-bottom:6px">
-          <button data-c2c="resolve:rework" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:11px">🔧 Rework all (−${reworkCost}c)</button>
-          <button data-c2c="resolve:accept" style="flex:1;background:var(--panel2);color:#e0a45a;border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:11px">⚠️ Accept the lot</button>
+          <button data-c2c="resolve:rework" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(11px * var(--ui-scale))">🔧 Rework all (−${reworkCost}c)</button>
+          <button data-c2c="resolve:accept" style="flex:1;background:var(--panel2);color:#e0a45a;border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(11px * var(--ui-scale))">⚠️ Accept the lot</button>
         </div>
-        <button data-c2c="resolve:reject" style="width:100%;background:var(--panel2);color:#e0705a;border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:11px">🚫 Reject batch (part-refund, ship short)</button>` : '');
+        <button data-c2c="resolve:reject" style="width:100%;background:var(--panel2);color:#e0705a;border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(11px * var(--ui-scale))">🚫 Reject batch (part-refund, ship short)</button>` : '');
   }
   else if (c.stage === 'production'){
     const perUnit = Math.max(1, O.materialPerUnit);
@@ -998,9 +998,9 @@ function _renderC2C(){
     const expQual = Math.round(Math.max(0, Math.min(1, baseQ - batchDef(batch).defectAdd)) * 100);
     const reserved = reservedQty(O.materialItem);
     const timeLeft = _c2cSecs(Math.max(0, c.deadlineAt - gameNow()));
-    const bBtn = (b) => { const d = batchDef(b as any); return `<button data-c2cbatch="${b}" style="flex:1;background:${batch===b?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${batch===b?'var(--amber)':'var(--edge)'};border-radius:6px;padding:7px 5px;cursor:pointer;color:var(--text);font-size:11px">${d.icon} ${d.label.replace(' batch','')}<br><span style="color:var(--dim);font-size:9px">${b==='fast'?'faster, riskier':b==='careful'?'slower, cleaner':'balanced'}</span></button>`; };
-    const assist = (S.settings && S.settings.assisted) ? `<div style="font-size:10px;color:#8bd;margin:-2px 0 6px">💡 Assisted: with time to spare, a Careful batch keeps quality high.</div>` : '';
-    const row = (l, v, col?) => `<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--dim)">${l}</span><b${col?` style="color:${col}"`:''}>${v}</b></div>`;
+    const bBtn = (b) => { const d = batchDef(b as any); return `<button data-c2cbatch="${b}" style="flex:1;background:${batch===b?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${batch===b?'var(--amber)':'var(--edge)'};border-radius:6px;padding:7px 5px;cursor:pointer;color:var(--text);font-size:calc(11px * var(--ui-scale))">${d.icon} ${d.label.replace(' batch','')}<br><span style="color:var(--dim);font-size:calc(9px * var(--ui-scale))">${b==='fast'?'faster, riskier':b==='careful'?'slower, cleaner':'balanced'}</span></button>`; };
+    const assist = (S.settings && S.settings.assisted) ? `<div style="font-size:calc(10px * var(--ui-scale));color:#8bd;margin:-2px 0 6px">💡 Assisted: with time to spare, a Careful batch keeps quality high.</div>` : '';
+    const row = (l, v, col?) => `<div style="display:flex;justify-content:space-between;font-size:calc(11px * var(--ui-scale))"><span style="color:var(--dim)">${l}</span><b${col?` style="color:${col}"`:''}>${v}</b></div>`;
     body = head('🏭 Production Plan', 'Pick a batch mode, then run the line.')
       + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:10px 12px;line-height:1.7;margin-bottom:8px">
           ${row('Required', `${O.qty}× ${esc(ITEMS[O.productItem]?.n || O.productItem)}`)}
@@ -1011,9 +1011,9 @@ function _renderC2C(){
           ${row('Expected quality', `${expQual}%`)}
           ${row('Time to deadline', `~${timeLeft}s`)}
           ${row('Est. cost / margin', `${_flagMoney(c2cActualPnl(c).materialCost + c2cActualPnl(c).inboundLogistics)} in · ${_flagMoney(c2cPlannedPnl(c).grossProfit)} est.`)}
-          ${willMake<O.qty?`<div style="font-size:10px;color:#e0705a;margin-top:3px">Short of ${O.qty} — you'll deliver ${willMake}.</div>`:''}</div>
+          ${willMake<O.qty?`<div style="font-size:calc(10px * var(--ui-scale));color:#e0705a;margin-top:3px">Short of ${O.qty} — you'll deliver ${willMake}.</div>`:''}</div>
         ${assist}
-        <div style="font-size:11px;color:var(--dim);margin-bottom:3px">Batch mode:</div>
+        <div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin-bottom:3px">Batch mode:</div>
         <div style="display:flex;gap:6px;margin-bottom:8px">${bBtn('standard')}${bBtn('fast')}${bBtn('careful')}</div>`
       + `<button data-c2c="run_production" data-primary class="btn" style="width:100%">Run ${batchDef(batch).label} ▶</button>` + closeBtn;
   }
@@ -1036,19 +1036,19 @@ function _renderC2C(){
     const readyCol = (!short && !willBeLate) ? 'var(--mint)' : '#e0a45a';
     const readyLbl = (!short && !willBeLate) ? 'READY — on time & in full' : short && willBeLate ? 'short & late' : short ? 'short' : 'running late';
     body = head('🚚 Dispatch — Delivery Readiness', 'Ship the finished order — timing and completeness both pay.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.8;margin-bottom:8px">
-          <div style="display:flex;justify-content:space-between"><span>Status</span><b style="color:${readyCol};text-transform:uppercase;font-size:11px">${readyLbl}</b></div>
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:calc(12px * var(--ui-scale));line-height:1.8;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between"><span>Status</span><b style="color:${readyCol};text-transform:uppercase;font-size:calc(11px * var(--ui-scale))">${readyLbl}</b></div>
           <div style="display:flex;justify-content:space-between"><span>Quantity ready</span><b>${willShip}/${O.qty}</b></div>
           ${fi?`<div style="display:flex;justify-content:space-between"><span>Quality score</span><b>${fi.qualityScore}%</b></div>`:''}
           <div style="display:flex;justify-content:space-between"><span>Deadline</span><b>~${_c2cSecs(Math.max(0, c.deadlineAt - gameNow()))}s left</b></div>
           <hr style="border:none;border-top:1px solid var(--edge);margin:5px 0">
           Finished: <b style="color:var(--mint)">${c.fin.good} good</b>${rw>0?` · <b style="color:#e0a45a">${rw} reworkable</b>`:''}${c.fin.scrapped>0?` · <b style="color:#e0705a">${c.fin.scrapped} scrapped</b>`:''}.<br>
-          <span style="font-size:11px;color:var(--dim)">${why}</span></div>`
-      + (rw>0 ? `<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:8px"><button data-c2crework="1" style="width:22px;height:22px;border-radius:4px;border:2px solid var(--amber);background:${_c2cUI.reworkFinished?'var(--amber)':'transparent'};cursor:pointer;color:#12240f;font-weight:800">${_c2cUI.reworkFinished?'✓':''}</button> Rework the ${rw} reworkable units first (−${reworkCost}c)</label>` : '')
-      + (belowMin ? `<div style="font-size:11px;color:#e0a45a;background:rgba(224,164,90,.08);border:1px solid #a4523a;border-radius:6px;padding:7px 9px;margin-bottom:6px;line-height:1.5">⚠️ Final quality <b>${fi.qualityScore}%</b> is below ${esc(O.client)}'s minimum of <b>${minQ}%</b>. Shipping it risks your reputation — you may reject the delivery instead.</div>` : '')
+          <span style="font-size:calc(11px * var(--ui-scale));color:var(--dim)">${why}</span></div>`
+      + (rw>0 ? `<label style="display:flex;align-items:center;gap:8px;font-size:calc(12px * var(--ui-scale));cursor:pointer;margin-bottom:8px"><button data-c2crework="1" style="width:22px;height:22px;border-radius:4px;border:2px solid var(--amber);background:${_c2cUI.reworkFinished?'var(--amber)':'transparent'};cursor:pointer;color:#12240f;font-weight:800">${_c2cUI.reworkFinished?'✓':''}</button> Rework the ${rw} reworkable units first (−${reworkCost}c)</label>` : '')
+      + (belowMin ? `<div style="font-size:calc(11px * var(--ui-scale));color:#e0a45a;background:rgba(224,164,90,.08);border:1px solid #a4523a;border-radius:6px;padding:7px 9px;margin-bottom:6px;line-height:1.5">⚠️ Final quality <b>${fi.qualityScore}%</b> is below ${esc(O.client)}'s minimum of <b>${minQ}%</b>. Shipping it risks your reputation — you may reject the delivery instead.</div>` : '')
       + `<button data-c2c="dispatch" data-primary class="btn" style="width:100%;margin-bottom:6px">Dispatch ${willShip} units ▶</button>`
-      + (willBeLate && !c.did.extended ? `<button data-c2c="extend" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">🗓️ Request deadline extension (−${extFee}c) — land on time</button>` : '')
-      + `<button data-c2c="reject_delivery" style="width:100%;background:var(--panel2);color:#e0705a;border:1px solid ${belowMin?'#a4523a':'var(--edge)'};padding:8px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">🚫 Reject delivery — keep the stock, forfeit the pay</button>`
+      + (willBeLate && !c.did.extended ? `<button data-c2c="extend" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale));margin-bottom:6px">🗓️ Request deadline extension (−${extFee}c) — land on time</button>` : '')
+      + `<button data-c2c="reject_delivery" style="width:100%;background:var(--panel2);color:#e0705a;border:1px solid ${belowMin?'#a4523a':'var(--edge)'};padding:8px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--ui-scale));margin-bottom:6px">🚫 Reject delivery — keep the stock, forfeit the pay</button>`
       + closeBtn;
   }
   else if (c.stage === 'outbound_transport'){
@@ -1060,7 +1060,7 @@ function _renderC2C(){
   else if (c.stage === 'invoiced'){
     const late = c.onTime === false;
     body = head('🧾 Invoice', 'Send the invoice — payment timing follows the terms.')
-      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.9;margin-bottom:8px">
+      + `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:11px 13px;font-size:calc(12px * var(--ui-scale));line-height:1.9;margin-bottom:8px">
           Delivered <b>${c.fin.deliveredToCustomer}/${O.qty}</b> · <b style="color:${late?'#e0705a':'var(--mint)'}">${late?'late':'on time'}</b>.<br>
           Customer terms: <b>${String(c.customerTerms).replace('_',' ')}</b> — ${c.customerTerms==='net_15'?'pays 15 min after invoicing':'pays on invoicing'}.</div>`
       + `<button data-c2c="send_invoice" data-primary class="btn" style="width:100%">Send invoice ▶</button>`;
@@ -1083,23 +1083,23 @@ function _renderC2C(){
     const frosty = otif && profit > 0 ? `❄️ Frosty: "On time, in full, in profit — that's a proper job, ${pName()}!"`
       : profit > 0 ? `❄️ Frosty: "Money's money — but a cleaner run next time and ${esc(O.client)} will love you."`
       : `❄️ Frosty: "Ouch. But you sourced, made and shipped it — and you're still standing. Lesson banked."`;
-    const row = (l,v,col?) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span style="color:var(--dim)">${l}</span><span${col?` style="color:${col}"`:''}>${v}</span></div>`;
+    const row = (l,v,col?) => `<div style="display:flex;justify-content:space-between;font-size:calc(11px * var(--ui-scale));padding:1px 0"><span style="color:var(--dim)">${l}</span><span${col?` style="color:${col}"`:''}>${v}</span></div>`;
     const highlights = _c2cDecisionHighlights(c);
     const alt = _c2cAltStrategy(c);
     const title = _c2cReviewTitle(c);
     const otifLbl = c.customerRejected ? 'DELIVERY REJECTED' : otif ? 'ON TIME & IN FULL ✓' : (c.onTime?'on time':'late')+(inFull?'':' · short');
     body = head('📊 Order Review — ' + esc(O.client), 'The whole journey, from request to realised margin.')
-      + `<div style="text-align:center;margin-bottom:8px"><span style="font-size:14px;font-weight:800;color:${gCol};text-transform:uppercase;letter-spacing:1px">${grade}</span>
-          <div style="font-size:11px;color:var(--dim)">Delivered ${c.fin.deliveredToCustomer}/${O.qty} · <b style="color:${otif?'var(--mint)':'#e0a45a'}">${otifLbl}</b> · satisfaction ${sat}%</div></div>`
+      + `<div style="text-align:center;margin-bottom:8px"><span style="font-size:calc(14px * var(--ui-scale));font-weight:800;color:${gCol};text-transform:uppercase;letter-spacing:1px">${grade}</span>
+          <div style="font-size:calc(11px * var(--ui-scale));color:var(--dim)">Delivered ${c.fin.deliveredToCustomer}/${O.qty} · <b style="color:${otif?'var(--mint)':'#e0a45a'}">${otifLbl}</b> · satisfaction ${sat}%</div></div>`
       + _c2cJourneyRail(c)
       + (title ? `<div style="display:flex;align-items:center;gap:10px;background:linear-gradient(90deg,rgba(216,184,74,.16),rgba(216,184,74,.03));border:1px solid var(--amber);border-radius:6px;padding:9px 11px;margin-bottom:8px">
-          <div style="font-size:22px;line-height:1">🏅</div>
-          <div style="min-width:0"><div style="font-size:12px;font-weight:800;color:var(--amber)">${esc(title.name)}${title.isNew?' <span style="font-size:8px;background:var(--amber);color:#12240f;border-radius:6px;padding:1px 5px;vertical-align:middle;font-weight:800">NEW</span>':''}</div>
-          <div style="font-size:10px;color:var(--dim)">${esc(title.desc)}</div></div></div>` : '')
+          <div style="font-size:calc(22px * var(--ui-scale));line-height:1">🏅</div>
+          <div style="min-width:0"><div style="font-size:calc(12px * var(--ui-scale));font-weight:800;color:var(--amber)">${esc(title.name)}${title.isNew?' <span style="font-size:calc(8px * var(--ui-scale));background:var(--amber);color:#12240f;border-radius:6px;padding:1px 5px;vertical-align:middle;font-weight:800">NEW</span>':''}</div>
+          <div style="font-size:calc(10px * var(--ui-scale));color:var(--dim)">${esc(title.desc)}</div></div></div>` : '')
       + `<div style="background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;margin-bottom:8px">
-          <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Your key decisions</div>
-          <ul style="margin:0;padding-left:16px;font-size:11px;line-height:1.7;color:var(--text)">${highlights.map(h=>`<li>${h}</li>`).join('')}</ul>
-          <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.5"><b style="color:var(--text)">Why:</b> ${_c2cWhy(c)}</div>
+          <div style="font-size:calc(10px * var(--ui-scale));color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Your key decisions</div>
+          <ul style="margin:0;padding-left:16px;font-size:calc(11px * var(--ui-scale));line-height:1.7;color:var(--text)">${highlights.map(h=>`<li>${h}</li>`).join('')}</ul>
+          <div style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin-top:6px;line-height:1.5"><b style="color:var(--text)">Why:</b> ${_c2cWhy(c)}</div>
         </div>`
       + _c2cSettlementBlock(c)
       + `<div style="background:var(--panel2);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;margin-bottom:8px">
@@ -1108,9 +1108,9 @@ function _renderC2C(){
           ${row('Reputation with client', `${repDelta>=0?'+':''}${repDelta} → ${rep}`, repDelta>=0?'var(--mint)':'#e0705a')}
           ${row('Valley demand', demand)}
         </div>`
-      + (alt ? `<div style="background:rgba(120,180,220,.06);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;line-height:1.5">
+      + (alt ? `<div style="background:rgba(120,180,220,.06);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:calc(11px * var(--ui-scale));line-height:1.5">
           <b style="color:#bfe8f7">Another way to play it:</b> had you sourced from <b>${esc(alt.name)}</b> (${alt.tag}), an estimated <b style="color:${alt.better?'var(--mint)':'#e0a45a'}">~${alt.altPct}% margin</b> vs your <b>${alt.actualPct}%</b>.</div>` : '')
-      + `<div style="font-size:11px;color:#bfe8f7;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;line-height:1.5">${frosty}</div>`
+      + `<div style="font-size:calc(11px * var(--ui-scale));color:#bfe8f7;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;line-height:1.5">${frosty}</div>`
       + `<button data-c2c="done" data-primary class="btn" style="width:100%">Deliver another order ▶</button>`;
   }
 
@@ -10179,9 +10179,10 @@ if (typeof document !== 'undefined'){
   #flagship-modal .btn{min-height:38px}
   #flagship-modal button{touch-action:manipulation}
   @media (max-height:760px){ #flagship-modal .panel{max-height:97vh;padding:12px} #flagship-modal h2{font-size:15px} }
-  body.couch-mode #flagship-modal .panel{max-width:600px;font-size:13.5px}
-  body.couch-mode #flagship-modal h2{font-size:18px}
-  body.couch-mode #flagship-modal .btn{min-height:44px;font-size:14px}
+  /* Flagship modal text now scales via --ui-scale (inline calc()), so couch mode
+     only needs to widen the panel + keep controller-sized button targets. */
+  body.couch-mode #flagship-modal .panel{max-width:600px}
+  body.couch-mode #flagship-modal .btn{min-height:44px}
   body.couch-mode #c2c-history-modal .panel, body.couch-mode #c2c-scenarios-modal .panel{font-size:13.5px}
   .firstrun-hint{position:absolute;top:28px;left:50%;transform:translateX(-50%);max-width:94%;background:rgba(42,26,10,.93);color:#fff8e6;border:2px solid #e8961e;border-radius:8px;padding:7px 14px;font:600 12px/1.45 'IBM Plex Mono',monospace;text-align:center;pointer-events:none;box-shadow:0 3px 10px rgba(0,0,0,.45);animation:frPulse 2.2s ease-in-out infinite}
   .firstrun-hint b{color:#ffd666}

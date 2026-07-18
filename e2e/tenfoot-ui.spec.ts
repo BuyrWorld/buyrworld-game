@@ -90,6 +90,25 @@ test.describe('Ten-foot UI — responsive shell, no overflow, couch legibility',
     expect(parseFloat(couch.scale)).toBeGreaterThan(parseFloat(std.scale || '1'));
   });
 
+  test('the flagship modal text scales with couch mode (migrated inline sizes)', async ({ page }) => {
+    await start(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await gate(page, 'c2cStartScenario', 'trailer');            // opens the flagship modal
+    await expect(page.locator('#flagship-modal')).toBeVisible({ timeout: 8000 });
+    // a modal text node now carries font-size:calc(Npx * var(--ui-scale))
+    const measure = () => page.evaluate(() => {
+      const t = document.querySelector('#flagship-modal [style*="font-size:calc"]') as HTMLElement;
+      return t ? parseFloat(getComputedStyle(t).fontSize) : 0;
+    });
+    await gate(page, 'uiSetCouch', false);
+    const std = await measure();
+    await gate(page, 'uiSetCouch', true);
+    const couch = await measure();
+    expect(std).toBeGreaterThan(0);
+    expect(couch).toBeGreaterThan(std);                        // whole modal grows for TV distance
+    await page.screenshot({ path: 'e2e/screens/flagship-modal-couch-720p.png' });
+  });
+
   test('Trading is trader-tabbed (not one endless catalogue) and switches trader', async ({ page }) => {
     await start(page);
     await gate(page, 'uiGoTab', 'trade');
