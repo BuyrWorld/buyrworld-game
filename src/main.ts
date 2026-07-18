@@ -3481,8 +3481,13 @@ function interactObj(o){
   }
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
+// Map a world NPC id to its social/dialogue profile id (Frosty wanders as "frost").
+function _socNpcId(worldId){ return worldId === 'frost' ? 'frosty' : worldId; }
 function showWandererProfile(w){
   if (!S.npcMet){ S.npcMet = true; }   // Task 9: "First Hello" journal milestone
+  // Important NPCs (those with an authored dialogue profile) open the cinematic
+  // conversation instead of the plain info card. Falls through if there's nothing to say.
+  { const sid = _socNpcId(w.id); if (profileFor(sid) && openConversation(sid)) return; }
   const existing = document.getElementById("villager-profile-modal");
   if (existing) existing.remove();
   const p = w.profile || {};
@@ -3508,6 +3513,8 @@ function _scheduleStr(phase, workKind){
 }
 function showVillagerProfile(v){
   if (!S.npcMet){ S.npcMet = true; }   // Task 9: "First Hello" journal milestone
+  // Residents with an authored profile (e.g. Edna) get the cinematic conversation.
+  { const sid = _socNpcId(v.id); if (profileFor(sid) && openConversation(sid)) return; }
   const existing = document.getElementById("villager-profile-modal");
   if (existing) existing.remove();
   const homeObj = V_OBJECTS.find(o => o.id === v.homeId);
@@ -17682,6 +17689,8 @@ if (import.meta.env.DEV) {
     socHistory(){ return (S.social&&S.social.history)||[]; },
     socOpenModal(){ return !!document.getElementById('conv-modal'); },
     socWitnessCrime(npc:string){ const day=_gameDay(); S.social.mem[npc]=writeMemory(_socMem(npc), makeMemory(npc,day,{id:'crime:test:'+npc,category:'crime',subject:'player',summaryKey:'saw you take something',emotion:-40,strength:80,source:'witnessed',confidence:90,tags:['suspicion']})); const r=relApplyDeltas(_socRel(npc),[{dim:'suspicion',delta:25}]); S.social.rel[npc]=r.rel; return { susp:_socRel(npc).suspicion, hasCrime: memHas(_socMem(npc),{category:'crime'}) }; },
+    // Exercise the REAL in-world interaction path (tapping a villager/wanderer NPC).
+    socTap(worldId:string){ const v = VILLAGER_STATE.find((x:any)=>x.id===worldId); const w = WANDERERS.find((x:any)=>x.id===worldId); if(v) showVillagerProfile(v); else if(w) showWandererProfile(w); else return {err:'no_npc'}; return { conv: !!document.getElementById('conv-modal'), npc: _conv?_conv.npc:null }; },
     // Starter-skill differentiation probes (this milestone).
     uiApproaches(skill:string){ return isStarterSkill(skill) ? APPROACHES[skill].map((a:any)=>a.id) : []; },
     uiRunSkill(skill:string, approachId:string){

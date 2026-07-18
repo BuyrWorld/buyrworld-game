@@ -129,6 +129,20 @@ test.describe('NPC dialogue system', () => {
     expect((await gate(page, 'c2cState'))?.stage).toBe(stage0);   // order unchanged, still primary
   });
 
+  test('9) tapping Edna or Frosty in the world opens the cinematic conversation', async ({ page }) => {
+    await start(page);
+    // Edna (a resident villager) and Frosty (a wanderer) both route to the dialogue screen
+    const edna = await gate(page, 'socTap', 'edna');
+    expect(edna.conv).toBe(true);
+    expect(edna.npc).toBe('edna');
+    await expect(page.locator('#conv-modal')).toBeVisible({ timeout: 8000 });
+    await gate(page, 'socClose');
+    const frost = await gate(page, 'socTap', 'frost');   // wanders as "frost", profile "frosty"
+    expect(frost.conv).toBe(true);
+    expect(frost.npc).toBe('frosty');
+    await gate(page, 'socClose');
+  });
+
   test('8) controller-only: enter, select and exit a conversation', async ({ page }) => {
     await start(page);
     await gate(page, 'uiSetMethod', 'gamepad');
