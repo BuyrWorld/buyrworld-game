@@ -498,8 +498,10 @@ body.title-open{ overflow:hidden; }   /* no page scrollbar behind the creator */
 #title-preview{ image-rendering:pixelated; display:block; border:2px solid var(--edge); border-radius:4px; background:#9fd6a8; }
 #title input{
   width:100%; padding:8px 10px; font-family:inherit; font-size:14px; text-align:center;
-  background:#fff; border:2px solid var(--edge); color:var(--text); margin-bottom:6px;
+  background:var(--panel2); border:2px solid var(--edge); color:var(--text); margin-bottom:6px; border-radius:6px;
 }
+#title input::placeholder{ color:var(--dim); }
+#title input:focus{ border-color:var(--amber); outline:none; }
 #name-err{ display:none; color:var(--red); font-size:11px; margin-bottom:8px; }
 /* ---- character-creation wizard ---- */
 #wiz-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:10px; }
@@ -672,11 +674,11 @@ body.title-open{ overflow:hidden; }   /* no page scrollbar behind the creator */
 /* ---------- HUD badge ---------- */
 .hud-badge{
   display:flex; align-items:center; gap:8px; padding:4px 8px;
-  border:2px solid transparent; border-radius:2px; cursor:default;
+  border:2px solid transparent; border-radius:6px; cursor:default;
 }
-.badge-info{ display:flex; flex-direction:column; }
-.badge-pre{ font-size:7px; color:var(--dim); letter-spacing:0.5px; line-height:1.2; }
-.badge-name{ font-family:'Press Start 2P',monospace; font-size:10px; color:var(--orange); line-height:1.4; }
+.badge-info{ display:flex; flex-direction:column; min-width:0; }
+.badge-pre{ font-size:7px; color:var(--dim); letter-spacing:0.5px; line-height:1.2; text-transform:uppercase; }
+.badge-name{ font-family:'Press Start 2P',monospace; font-size:10px; color:var(--orange); line-height:1.4; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .badge-title{ font-size:8px; color:var(--amber); font-weight:600; letter-spacing:0.3px; line-height:1.3; margin-top:2px; }
 .fullscreen-mode .badge-title{ font-size:11px; }
 .badge-edit{
@@ -684,9 +686,10 @@ body.title-open{ overflow:hidden; }   /* no page scrollbar behind the creator */
   opacity:0.6; transition:opacity 0.12s;
 }
 .badge-edit:hover{ opacity:1; }
+/* Named badge fits the dark HUD: a subtle panel chip with an amber edge — not a white sticker. */
 #hud-name-stat.named{
-  background:#fff; border-color:#1a3a6a;
-  box-shadow:2px 2px 0 #1a3a6a;
+  background:var(--panel2); border-color:var(--amber);
+  box-shadow:0 1px 0 var(--edge), inset 0 0 0 1px rgba(0,0,0,.2);
 }
 #hud-name-stat.named-anim{ animation:hudBadgeIn .45s cubic-bezier(.34,1.56,.64,1); }
 

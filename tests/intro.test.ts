@@ -2,25 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { stageAt, isDone, qcApproved, skipTo, durationFor, FULL_DURATION_MS, SHORT_DURATION_MS, REDUCED_DURATION_MS, INPUT_GUARD_MS, inputAccepted, FULL_STAGES, SHORT_STAGES, type IntroVariant } from '../src/data/intro.ts';
 
 describe('intro timeline', () => {
-  it('the full intro communicates order → supply → production → QC → delivery, under 8s', () => {
-    expect(FULL_STAGES.map(s => s.id)).toEqual(['order', 'materials', 'processing', 'assembly', 'qc', 'delivery', 'hold']);
+  it('the intro is a clean QC-scan reveal, comfortably under 8s', () => {
+    expect(FULL_STAGES.map(s => s.id)).toEqual(['reveal', 'qc', 'pass', 'hold']);
     expect(FULL_DURATION_MS).toBeLessThanOrEqual(8000);
     expect(SHORT_DURATION_MS).toBeGreaterThanOrEqual(1500);
     expect(SHORT_DURATION_MS).toBeLessThanOrEqual(2500);
   });
 
   it('stageAt maps time to the right beat with local progress', () => {
-    expect(stageAt(0, 'full').id).toBe('order');
-    expect(stageAt(500, 'full')).toMatchObject({ id: 'order', local: 0.5 });
-    expect(stageAt(2750, 'full').id).toBe('processing');
-    expect(stageAt(5600, 'full').id).toBe('qc');
-    expect(stageAt(7000, 'full').id).toBe('delivery');
+    expect(stageAt(0, 'full').id).toBe('reveal');
+    expect(stageAt(1600, 'full').id).toBe('qc');
+    expect(stageAt(2500, 'full').id).toBe('pass');
     expect(stageAt(99999, 'full').id).toBe('hold');
   });
 
   it('short + reduced variants have their own beats', () => {
-    expect(SHORT_STAGES.map(s => s.id)).toEqual(['slidein', 'qc', 'delivery', 'hold']);
-    expect(stageAt(0, 'short').id).toBe('slidein');
+    expect(SHORT_STAGES.map(s => s.id)).toEqual(['reveal', 'qc', 'pass', 'hold']);
+    expect(stageAt(0, 'short').id).toBe('reveal');
     expect(stageAt(0, 'reduced').id).toBe('reveal');
   });
 
@@ -34,8 +32,8 @@ describe('intro timeline', () => {
   });
 
   it('QC greens in the second half of the QC beat (charming, not stuck red)', () => {
-    expect(qcApproved(5100, 'full')).toBe(false);        // still scanning / red
-    expect(qcApproved(6100, 'full')).toBe(true);         // approved
+    expect(qcApproved(1000, 'full')).toBe(false);        // still scanning / red
+    expect(qcApproved(2200, 'full')).toBe(true);         // approved
   });
 
   it('an early-input guard prevents accidental skips in the first ~400ms', () => {

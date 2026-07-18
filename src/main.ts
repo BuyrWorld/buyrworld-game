@@ -1295,8 +1295,9 @@ function swingHintHtml(){
   if ((S.counters?.swings || 0) >= 6) return "";
   const sx = (VP.x + TILE/2 - CAM.x) / VIEW_W * 100;
   const sy = (VP.y - TILE*0.4 - CAM.y) / VIEW_H * 100;
-  const x = Math.max(8, Math.min(92, sx)), y = Math.max(12, Math.min(86, sy));
-  return `<div class="swing-hint" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">🪓 Tap it (or press Space) to swing — faster than the timer!</div>`;
+  const x = Math.max(12, Math.min(88, sx)), y = Math.max(14, Math.min(84, sy));
+  const _msg = S.action.skill === 'mining' ? '⛏️ Tap to mine faster' : '🪓 Tap to chop faster';
+  return `<div class="swing-hint" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">${_msg}</div>`;
 }
 /* ---------- original soundtrack (Web Audio chiptune, per-location) ---------- */
 function zoneForTab(tab){
@@ -1410,6 +1411,9 @@ function currentScenario(){
   if (S.tab === "police_cell") c.push('holding');
   if (S.tab === "nightclub") c.push('nightclub');
   if (S.tab === "woodcutting" || S.tab === "foraging" || S.tab === "lore_stone") c.push('forest');
+  // Actively chopping/foraging out in the village (trees are world objects) → the forest
+  // soundtrack too, so the "wrong song" doesn't play while you're at a tree.
+  else if (S.action && (S.action.skill === "woodcutting" || S.action.skill === "foraging")) c.push('forest');
   c.push('general');
   return resolveScenario(c);
 }
@@ -3430,6 +3434,7 @@ function interactObj(o){
     S.action = { skill:"woodcutting", id:o.ore, objId:o.id, progress:0 };
     toast(`🪓 ${act ? act.n : "Chopping"}...`);
     log(`▶ Started: ${act ? act.n : "Chop Tree"}`);
+    try{ updateMusicZone(); }catch(e){}   // forest soundtrack while chopping in the village
     renderNav(); save(); return;
   }
   if (o.kind==="rock"){
@@ -3721,9 +3726,14 @@ function drawSwingTool(ctx, type, color){
     ctx.beginPath(); ctx.moveTo(6,12);  ctx.lineTo(10,15);  ctx.lineTo(6,16);  ctx.closePath(); ctx.fill();  // right point
     ctx.fillStyle = "#ffffff66"; ctx.fillRect(-5, 13, 10, 1);   // top highlight
   } else if (type === "axe"){
-    ctx.fillRect(1, 11, 6, 8);               // blade
-    ctx.beginPath(); ctx.moveTo(7,11); ctx.lineTo(9,15); ctx.lineTo(7,19); ctx.closePath(); ctx.fill();      // curved edge
-    ctx.fillStyle = "#dfe6ef"; ctx.fillRect(6, 12, 1, 6);       // edge shine
+    // A felling-axe head crowning the handle tip: the poll sits on the shaft and the
+    // bit flares OUT to +x, so after the facing-mirror the cutting edge always leads
+    // into the tree (never trailing "the wrong way").
+    ctx.fillRect(0, 12, 4, 7);               // poll (back of the head, on the shaft)
+    ctx.beginPath();                         // bit — a wedge flaring out to the sharp edge
+    ctx.moveTo(4, 12); ctx.lineTo(11, 13); ctx.lineTo(11, 18); ctx.lineTo(4, 19); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#dfe6ef"; ctx.fillRect(10, 13, 1, 5);     // edge shine at the cutting edge
+    ctx.fillStyle = "#00000033"; ctx.fillRect(0, 18, 4, 1);    // underside shade
   } else { // hammer
     ctx.fillRect(-4, 11, 8, 6);              // block head
     ctx.fillStyle = "#dfe6ef"; ctx.fillRect(-4, 11, 8, 1);      // shine
@@ -10257,7 +10267,7 @@ if (typeof document !== 'undefined'){
   @keyframes qaPulse{0%,100%{opacity:.65}50%{opacity:1}}
   .quest-arrow-lbl{position:absolute;transform:translate(-50%,0);color:#ffd666;font:700 10px 'IBM Plex Mono',monospace;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;white-space:nowrap}
   .fullscreen-mode .quest-rock{font-size:14px}.fullscreen-mode .quest-arrow{font-size:32px}
-  .swing-hint{position:absolute;transform:translate(-50%,-120%);background:rgba(58,90,26,.96);color:#eaffd0;border:2px solid #8adf4a;border-radius:8px;padding:4px 10px;font:700 12px 'IBM Plex Mono',monospace;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.5);animation:qaPulse 1s ease-in-out infinite;z-index:5}
+  .swing-hint{position:absolute;transform:translate(-50%,-120%);background:rgba(58,90,26,.96);color:#eaffd0;border:2px solid #8adf4a;border-radius:8px;padding:4px 10px;font:700 12px 'IBM Plex Mono',monospace;white-space:nowrap;max-width:min(200px,44vw);text-align:center;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.5);animation:qaPulse 1s ease-in-out infinite;z-index:5}
   .fullscreen-mode .swing-hint{font-size:14px}
   @media (prefers-reduced-motion: reduce){.firstrun-hint,.int-canvas-wrap .ilbl-exit,.quest-rock,.quest-arrow,.swing-hint{animation:none}}
   .vhint{text-align:center}
@@ -12006,6 +12016,7 @@ function completeAction(act, skill, silent){
     if (!S.treeRespawn) S.treeRespawn = {};
     S.treeRespawn[S.action.objId] = { choppedAt: Date.now() };
     S.action = null;
+    try{ updateMusicZone(); }catch(e){}   // restore village soundtrack once the tree's down
   }
   // Tutorial auto-stop: the moment the exact tutorial amount is in hand, stop the
   // job so no delayed/idle/swing cycle produces a surplus.
@@ -16611,6 +16622,21 @@ function _presSfx(name: string){
   if (!MUSIC.unlocked || (S.settings && S.settings.sfx === false)) return;
   try{ if (SFX && SFX.ui) SFX.ui(name); }catch(e){}
 }
+// "Life in Blackburn" plays over the boot presentation and carries into the character
+// creator. Autoplay-safe: attempted at the intro (browser may block silently — no error),
+// then guaranteed on the first user gesture. Not restarted if already playing.
+const _PRES_MUSIC_SRC = 'music/frosty/title/Frosty - Life In Blackburn (Instrumental).mp3';
+function _presMusicPlaying(){ return _pres.music === true; }
+function _presPlayMusic(){
+  try{
+    if (!(S.settings && S.settings.music)) return;   // respect Music-off
+    if (_pres.music) return;                          // already playing — don't overlap
+    MUSIC.unlocked = true;
+    MUSIC.playFile('title-lib', _PRES_MUSIC_SRC);     // diegetic title track, regardless of soundtrack mode
+    MUSIC.setVol(volLevel());
+    _pres.music = true;
+  }catch(e){}
+}
 function _presEnterPlaying(){
   _presStopIntro();
   const p = _PEL('presentation'); if (p){ p.classList.remove('on'); p.setAttribute('aria-hidden', 'true'); }
@@ -16680,7 +16706,7 @@ function _startIntro(variant: 'full' | 'short' | 'reduced'){
     for (const pad of pads){ if (!pad) continue; for (let b = 0; b < pad.buttons.length; b++){ if (pad.buttons[b] && pad.buttons[b].pressed){ setInputMethod('gamepad'); _skipIntro(); return; } } }
   }, 60) as any;
 }
-function _skipIntro(){ if (_presState !== 'intro') return; _finishIntro(); }
+function _skipIntro(){ if (_presState !== 'intro') return; _presPlayMusic(); _finishIntro(); }   // first gesture also starts the music
 function _finishIntro(){
   _presStopIntro();
   if (!S.settings) S.settings = {};
@@ -16688,99 +16714,58 @@ function _finishIntro(){
   _toPressAny();
 }
 
-// Draw one intro frame at elapsed time `t`. Virtual 480×270 stage, letterboxed inside
-// the navy backdrop (no stretch, no white strips at any aspect ratio).
+// Draw one intro frame at elapsed time `t` — a clean QC-scan reveal of the BUYRWORLD
+// logo. Virtual 480×270 stage, letterboxed inside the navy backdrop (no stretch, no
+// white strips at any aspect ratio).
 function _drawIntroFrame(ctx: any, W: number, H: number, t: number, variant: string){
   ctx.clearRect(0, 0, W, H);
   const sc = Math.min(W / 480, H / 270), ox = (W - 480 * sc) / 2, oy = (H - 270 * sc) / 2;
   ctx.save(); ctx.translate(ox, oy); ctx.scale(sc, sc);
   ctx.imageSmoothingEnabled = false;
-  // stage backdrop + conveyor floor
+  // backdrop
   const g = ctx.createLinearGradient(0, 0, 0, 270); g.addColorStop(0, '#16233f'); g.addColorStop(1, '#0a1120');
   ctx.fillStyle = g; ctx.fillRect(0, 0, 480, 270);
-  ctx.fillStyle = '#2a3a58'; ctx.fillRect(0, 196, 480, 8);                        // conveyor belt
-  ctx.fillStyle = '#1a2740'; for (let x = ((t / 12) % 16); x < 480; x += 16) ctx.fillRect(x, 196, 8, 8);   // moving belt segments
-  ctx.fillStyle = '#0e1830'; ctx.fillRect(0, 204, 480, 66);
 
   const st = introStageAt(t, variant as any);
   const approved = introQcApproved(t, variant as any);
-  const beat = st.id, k = st.local;
-  const cx = 240;
-  // ---- how much of the wordmark is built + whether a letter is flipped ----
-  const letters = 'BUYRWORLD'.split('');
-  let shown = letters.length; let flipIdx = -1; let logoY = 108; let logoAlpha = 1;
-  if (variant === 'full'){
-    if (beat === 'order' || beat === 'materials' || beat === 'processing') shown = 0;
-    else if (beat === 'assembly') shown = Math.floor(k * letters.length + 0.001);
-    else shown = letters.length;
-    if (beat === 'qc' && !approved) flipIdx = 4;                                   // one letter fitted backwards
-  } else if (variant === 'short'){
-    if (beat === 'slidein'){ shown = letters.length; logoY = 108 - (1 - k) * 60; logoAlpha = k; }
-    if (beat === 'qc' && !approved) flipIdx = 4;
-  } else { // reduced
-    shown = letters.length; logoAlpha = beat === 'reveal' ? k : 1;
+  const beat = st.id, k = st.local, cx = 240, logoY = 118;
+
+  // logo entrance: fade + gentle scale-in during the reveal beat
+  const reveal = beat === 'reveal' ? k : 1;
+  const scaleIn = variant === 'reduced' ? 1 : (0.92 + 0.08 * reveal);
+
+  // ---- QC scan bar (sweeps across the logo, red → green) ----
+  const boxX = cx - 120, boxW = 240, boxTop = logoY - 26, boxH = 52;
+  if (beat === 'qc' || beat === 'pass' || beat === 'hold'){
+    const sweep = beat === 'qc' ? k : 1;                              // scan progress across the logo
+    const sx = boxX + sweep * boxW;
+    const col = approved ? '60,220,120' : '255,80,80';
+    ctx.fillStyle = `rgba(${col},.16)`; ctx.fillRect(boxX, boxTop, Math.max(0, sx - boxX), boxH);   // scanned region tint
+    ctx.fillStyle = `rgba(${col},.95)`; ctx.fillRect(sx - 1, boxTop, 2, boxH);                       // scan line
+    ctx.fillStyle = `rgba(${col},.5)`; ctx.fillRect(sx - 6, boxTop, 12, boxH);
+    // status label
+    ctx.font = '8px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillStyle = approved ? '#3cdc78' : '#ff6a6a';
+    ctx.fillText(approved ? '✓ QUALITY APPROVED' : 'QC SCAN…', cx, logoY + 34);
   }
 
-  // ---- Stage props (full variant beats) ----
-  if (variant === 'full' && beat === 'order'){
-    ctx.fillStyle = '#8a94a8'; ctx.fillRect(cx - 26, 70, 52, 34);                  // printer
-    ctx.fillStyle = (Math.floor(t / 220) % 2) ? '#ff5a5a' : '#5a2020'; ctx.fillRect(cx + 18, 74, 4, 4);   // status light
-    const paperH = Math.round(k * 40);
-    ctx.fillStyle = '#f4f0e2'; ctx.fillRect(cx - 22, 104, 44, paperH);            // paper feeding out
-    ctx.fillStyle = '#2a2a2a'; ctx.font = '7px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    if (paperH > 12) ctx.fillText('CUSTOMER ORDER', cx, 110);
-    if (paperH > 30){ ctx.fillStyle = '#8a3a1a'; ctx.fillText('BUILD: BUYRWORLD', cx, 122); }
-  }
-  if (variant === 'full' && beat === 'materials'){
-    const p = k; const items = ['🪨', '🪵', '📦'];
-    for (let i = 0; i < 3; i++){ const fromLeft = i % 2 === 0; const startX = fromLeft ? -40 : 520; const tx = 150 + i * 90; const x = startX + (tx - startX) * Math.min(1, p * 1.3 - i * 0.15); if (x > -40 && x < 520){ ctx.fillStyle = '#6a4a28'; ctx.fillRect(x - 12, 176, 24, 20); drawEmojiC(ctx, items[i], x, 186, 14); } }
-  }
-  if (variant === 'full' && beat === 'processing'){
-    drawEmojiC(ctx, '🔥', cx - 70, 150, 34);                                       // furnace
-    drawEmojiC(ctx, '⚙️', cx + 70, 150, 30);                                       // processing station
-    for (let s = 0; s < 6; s++){ const sp = ((t / 60) + s) % 10; ctx.fillStyle = `rgba(255,${160 - s * 10},40,${(1 - sp / 10).toFixed(2)})`; ctx.fillRect(cx - 70 + Math.sin(sp * 2) * 14, 150 - sp * 8, 2, 2); }
-    ctx.fillStyle = 'rgba(255,180,80,.10)'; ctx.fillRect(0, 120, 480, 90);        // warm glow
-  }
-  if (variant === 'full' && beat === 'assembly'){
-    drawEmojiC(ctx, '🦾', cx, 70, 28);                                             // robotic arm placing letters
-  }
-  if ((variant === 'full' || variant === 'short') && beat === 'qc'){
-    // scanner sweep + light
-    const sx = 140 + (approved ? 200 : (Math.sin(t / 140) * 0.5 + 0.5) * 200);
-    ctx.fillStyle = approved ? 'rgba(60,220,120,.9)' : 'rgba(255,70,70,.9)'; ctx.fillRect(sx, 78, 2, 70);
-    ctx.fillStyle = approved ? 'rgba(60,220,120,.14)' : 'rgba(255,70,70,.12)'; ctx.fillRect(sx - 8, 78, 16, 70);
-    if (!approved){ if (Math.floor(t / 180) % 2) drawEmojiC(ctx, '⚠️', cx, 60, 16); drawEmojiC(ctx, '❄️', 150 + flipIdx * 8, 150, 20); }   // Frosty steps in to fix it
-    ctx.fillStyle = approved ? '#3cdc78' : '#ff5a5a'; ctx.font = '8px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(approved ? 'QC PASS' : 'QC SCAN', cx, 158);
-  }
-  if ((variant === 'full' || variant === 'short') && beat === 'delivery'){
-    drawEmojiC(ctx, '🚜', cx - 120 + k * 80, 168, 30);                             // forklift delivers
-    // DELIVERED stamp
-    const sp = Math.min(1, k * 2); ctx.save(); ctx.translate(cx + 96, 78); ctx.rotate(-0.18); ctx.globalAlpha = sp; ctx.strokeStyle = '#3cdc78'; ctx.lineWidth = 3; ctx.strokeRect(-42, -14, 84, 28); ctx.fillStyle = '#3cdc78'; ctx.font = '9px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('DELIVERED', 0, 0); ctx.restore();
-    if (k > 0.4){ ctx.fillStyle = 'rgba(255,220,120,' + Math.min(0.18, (k - 0.4) * 0.4).toFixed(2) + ')'; ctx.fillRect(0, 60, 480, 90); }   // illuminate
-  }
-
-  // ---- the BUYRWORLD wordmark (progressive) ----
-  ctx.globalAlpha = logoAlpha;
+  // ---- the BUYRWORLD wordmark ----
+  ctx.save(); ctx.translate(cx, logoY); ctx.scale(scaleIn, scaleIn); ctx.globalAlpha = reveal;
   ctx.font = '22px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const lw = 24; const total = letters.length * lw; let lx = cx - total / 2 + lw / 2;
+  const letters = 'BUYRWORLD'.split(''); const lw = 24; const total = letters.length * lw; let lx = -total / 2 + lw / 2;
+  const lit = (beat === 'pass' || beat === 'hold');
   for (let i = 0; i < letters.length; i++){
-    if (i < shown){
-      const flip = i === flipIdx;
-      ctx.save(); ctx.translate(lx, logoY); if (flip) ctx.scale(-1, 1);
-      // impact drop for the just-placed letter in assembly
-      let dy = 0; if (variant === 'full' && beat === 'assembly' && i === shown - 1){ const lp = (k * letters.length) % 1; dy = -(1 - lp) * 22; }
-      ctx.fillStyle = '#5a3a12'; ctx.fillText(letters[i], 0, 3 + dy);              // shadow
-      ctx.fillStyle = (i >= 4) ? '#ffc861' : '#e9eefb'; ctx.fillText(letters[i], 0, dy);
-      ctx.restore();
-    }
+    ctx.fillStyle = '#5a3a12'; ctx.fillText(letters[i], lx, 3);                        // drop shadow
+    ctx.fillStyle = (i >= 4) ? '#ffc861' : '#e9eefb'; ctx.fillText(letters[i], lx, 0);  // BUYR white · WORLD gold
     lx += lw;
   }
-  ctx.globalAlpha = 1;
-  // tagline on delivery/hold
-  if ((beat === 'delivery' && k > 0.4) || beat === 'hold' || (variant === 'reduced' && beat === 'hold')){
-    ctx.fillStyle = '#ffc861'; ctx.font = '8px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('BUILD YOUR LIFE. YOUR WORLD. YOUR CHOICES.', cx, 150);
+  ctx.restore();
+
+  // approved glow + tagline on pass/hold
+  if (lit){
+    ctx.fillStyle = `rgba(96,220,140,${(0.10 * Math.min(1, (beat === 'pass' ? k : 1) * 2)).toFixed(2)})`; ctx.fillRect(boxX - 10, boxTop - 6, boxW + 20, boxH + 12);
+    ctx.fillStyle = '#ffc861'; ctx.font = '7px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText('BUILD YOUR LIFE. YOUR WORLD. YOUR CHOICES.', cx, logoY + 52);
   }
   ctx.restore();
 }
@@ -16795,7 +16780,7 @@ function _toPressAny(){
   _presAmbient('press-scene');
   const go = (method: 'pointer' | 'keyboard' | 'gamepad') => {
     cleanup(); try{ setInputMethod(method); }catch(e){}
-    _bootstrapAudio && _bootstrapAudio();          // a user gesture — audio may now start (title music handled by zones)
+    _presPlayMusic();                              // user gesture — start/continue "Life in Blackburn"
     _showTitleMenu();
   };
   const kh = (e: KeyboardEvent) => { e.preventDefault(); e.stopPropagation(); go('keyboard'); };
@@ -17089,6 +17074,9 @@ window.addEventListener("blur", () => { _pointerHeld = false; }, { passive:true 
 let _audioBootstrapped = false;
 function _bootstrapAudio(){
   if (_audioBootstrapped) return;
+  // During the boot presentation, "Life in Blackburn" owns the audio — don't let the
+  // generic zone-music bootstrap override it. It runs once the game is actually playing.
+  if (document.body.classList.contains('pre-game')) return;
   if (!(S.settings && S.settings.music)) return;   // music off: try again on a later gesture
   try{ MUSIC.unlocked = true; MUSIC.setVol(volLevel()); updateMusicZone(); _audioBootstrapped = true; }
   catch(e){ _audioBootstrapped = false; }
