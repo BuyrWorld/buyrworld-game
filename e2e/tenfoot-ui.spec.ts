@@ -72,6 +72,37 @@ test.describe('Ten-foot UI — responsive shell, no overflow, couch legibility',
     }
   });
 
+  test('controller focus survives screen changes and a reload', async ({ page }) => {
+    await start(page);
+    await gate(page, 'uiSetMethod', 'gamepad');          // now driving with a pad → persists padFocus
+    // a screen change lands the focus ring on a default action (poll: tolerate a
+    // background re-render frame, which must RESTORE — not drop — the ring)
+    await gate(page, 'uiGoTab', 'trade');
+    await expect.poll(async () => (await gate(page, 'uiFocusRing')).has, { timeout: 4000 }).toBe(true);
+    await gate(page, 'uiGoTab', 'contracts');
+    await expect.poll(async () => (await gate(page, 'uiFocusRing')).has, { timeout: 4000 }).toBe(true);
+    // the contracts screen auto-refreshes every 1s — the ring must persist across it
+    await page.waitForTimeout(1300);
+    expect((await gate(page, 'uiFocusRing')).has, 'focus ring survives the 1s contracts auto-refresh').toBe(true);
+
+    // the pad-focus flag is persisted, which is what drives focus restore on reload
+    const saved = await page.evaluate((k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } }, SAVE_KEY);
+    expect(saved?.ui?.padFocus, 'padFocus persisted to the save').toBe(true);
+
+    // reload and resume: the game boots from the save and controller focus is
+    // restorable on the (persisted) current screen — the exact path the Continue
+    // handler runs on resume for a pad/couch player.
+    await page.reload({ waitUntil: 'commit', timeout: 45_000 });
+    await page.waitForFunction(() => !!(window as any).__gate, null, { timeout: 45_000 });
+    await page.evaluate(() => {
+      const t = document.getElementById('title');
+      const cont = document.getElementById('btn-continue') as HTMLElement;
+      if (t && getComputedStyle(t).display !== 'none' && cont) cont.click();
+    });
+    await gate(page, 'uiSetMethod', 'gamepad');
+    await expect.poll(async () => (await gate(page, 'uiFocusPrimary')).has, { timeout: 8000 }).toBe(true);
+  });
+
   test('couch mode scales body text larger than standard (not just buttons)', async ({ page }) => {
     await start(page);
     await page.setViewportSize({ width: 1280, height: 720 });

@@ -12291,7 +12291,13 @@ function openControlsReference(){
 // [data-primary], else the first focusable control in the main panel.
 function focusMainPrimary(){
   const main = document.getElementById('main'); if (!main) return;
-  const el = (main.querySelector('[data-primary]:not([disabled])') as HTMLElement) || _firstFocusable(main);
+  // Req 10: land focus on the screen's one obvious default action. Prefer an explicit
+  // [data-primary]; else the most action-like control (deliver/buy/run/gather button)
+  // so every screen has a sensible default without a collapse header stealing focus;
+  // else the first focusable.
+  const el = (main.querySelector('[data-primary]:not([disabled])') as HTMLElement)
+    || (main.querySelector('.btn.deliver:not([disabled]), .action:not(:disabled), .btn:not(.alt):not([disabled])') as HTMLElement)
+    || _firstFocusable(main);
   if (el) _setUiFocus(el);
 }
 function renderNav(){
@@ -14998,6 +15004,14 @@ function renderAch(){
 let _lastRoomTab = null;
 function renderMain(){
   const m = $("#main");
+  // Controller/keyboard focus survival: if a background re-render (e.g. the contracts
+  // 1s deadline tick) rebuilds #main, remember the focused control's POSITION so we can
+  // restore the ring to the same slot afterwards instead of dropping focus.
+  let _focusIdx = -1;
+  if (_lastInput !== 'pointer' && _uiFocusEl && m && m.contains(_uiFocusEl) && !_topModal()){
+    const fs = (Array.from(m.querySelectorAll(FOCUS_SEL)) as HTMLElement[]).filter(_isVisible);
+    _focusIdx = fs.indexOf(_uiFocusEl);
+  }
   const _entering = INTERIOR_TABS.has(S.tab) && S.tab !== _lastRoomTab;
   if (_entering){
     IP.x = icanvasW()/2; IP.y = icanvasH() - 34;
@@ -15376,6 +15390,13 @@ function renderMain(){
   updateMusicZone();
   if (_entering) showZoneCard(S.tab); // after innerHTML so zone-card-canvas exists
   if (S.tab==="character") drawCharPreview("char-preview");
+  // Restore controller/keyboard focus to the same slot after a background rebuild,
+  // so the focus ring survives auto-refreshes (req: focus survives screen changes).
+  if (_focusIdx >= 0 && !_topModal()){
+    const fs = (Array.from(m.querySelectorAll(FOCUS_SEL)) as HTMLElement[]).filter(_isVisible);
+    const target = fs[Math.min(_focusIdx, fs.length - 1)];
+    if (target) _setUiFocus(target);
+  }
 }
 function bindMain(){
   document.querySelectorAll(".action").forEach(el=>{
@@ -17092,6 +17113,7 @@ if (import.meta.env.DEV) {
     uiFinishTutorial(){ if(!S.tut) S.tut={ step:0 }; S.tut.done=true; try{ renderNav(); renderMain(); }catch(e){} return { done:!!(S.tut&&S.tut.done), flagship: (()=>{ try{ return flagshipAvailable(); }catch(e){ return false; } })() }; },
     uiOverflow(){ const d=document.documentElement; return { pageScrollW:d.scrollWidth, innerW:window.innerWidth, overflow:d.scrollWidth - window.innerWidth, bodyBg:getComputedStyle(document.body).backgroundColor }; },
     uiFocusRing(){ const f=document.querySelector('.gp-focus') as any; return { has:!!f, action:f?.dataset?.c2c||f?.getAttribute?.('onclick')||f?.textContent?.trim().slice(0,24)||null }; },
+    uiFocusPrimary(){ try{ focusMainPrimary(); }catch(e){} return { has:!!document.querySelector('.gp-focus') }; },
     uiTradeState(){ return { npc:(_tradeUI&&_tradeUI.npc)||null, filter:(_tradeUI&&_tradeUI.filter)||null, tabs:NPCS.filter((n:any)=>skillLvl('trading')>=n.lvl).length }; },
     uiPointerHeld(){ return _uiPointerBusy(); },
     uiActive(){ const a=document.activeElement as any; return { tag:a?.tagName||null, id:a?.id||null, action:(a?.dataset?.c2c||a?.dataset?.set||null), text:(a?.textContent||'').trim().slice(0,24), pressed:a?.getAttribute?.('aria-pressed')??null }; },
