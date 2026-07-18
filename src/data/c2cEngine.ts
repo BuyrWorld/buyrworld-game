@@ -27,6 +27,7 @@
 
 import type { FlagshipOrder, SupplierOffer, PaymentTerms } from './contractToCash.ts';
 import { offerById, deliveryById, plannedMargin } from './contractToCash.ts';
+import { batchDef, disruptionFor, disruptionMods, inspect, type BatchMode, type DisruptionId, type Inspection } from './disruptions.ts';
 
 // ---- Stages ---------------------------------------------------------------
 export const C2C_STAGES = [
@@ -113,6 +114,11 @@ export interface C2CContract {
   // whether inbound freight is standard or expedited. Defaults reproduce the old
   // single-supplier / standard-inbound behaviour exactly.
   sourcing?: { gatherQty: number; mode: 'standard' | 'expedited' };
+  batchMode?: BatchMode;              // production batch mode (standard/fast/careful)
+  disruption?: DisruptionId | null;   // the one seeded disruption for this order
+  disruptionSeen?: boolean;           // the alert has been surfaced to the player
+  goodsInQc?: Inspection | null;      // goods-in inspection snapshot
+  finalInspect?: Inspection | null;   // final QC inspection snapshot
   inspected?: boolean;      // player inspected the goods-in sample (reveals defects)
   extended?: boolean;       // a deadline extension was granted (small satisfaction hit)
   // finished-goods buckets (units)
@@ -121,7 +127,7 @@ export interface C2CContract {
   // time thresholds (game-minutes), null until scheduled
   t: { supplierReadyAt: number | null; inboundArriveAt: number | null;
        outboundArriveAt: number | null; invoiceAt: number | null; payDueAt: number | null;
-       deliveredAt: number | null; supplierPayAt: number | null };
+       deliveredAt: number | null; supplierPayAt: number | null; productionReadyAt?: number | null };
   // persisted outcome rolls (for reload-safety + performance history)
   rolled: { supplierOnTime: boolean; shortfallFrac: number; incomingDefectFrac: number;
             makeDefectFrac: number; reworkShare: number } | null;
@@ -169,7 +175,7 @@ const okRes = (c: C2CContract, effects: C2CEffect[] = [], changed = true): Actio
 const noRes = (c: C2CContract, error: string): ActionResult => ({ contract: c, effects: [], ok: false, error, changed: false });
 
 // ---- Construction ---------------------------------------------------------
-export interface CreateOpts { id: string; seed: number; now: number; makeQuality?: number; customerTerms?: PaymentTerms; }
+export interface CreateOpts { id: string; seed: number; now: number; makeQuality?: number; customerTerms?: PaymentTerms; disruption?: DisruptionId | null; }
 export function createContract(order: FlagshipOrder, opts: CreateOpts): C2CContract {
   return {
     ver: C2C_ENGINE_VERSION,
@@ -180,7 +186,9 @@ export function createContract(order: FlagshipOrder, opts: CreateOpts): C2CContr
     makeQuality: clamp(opts.makeQuality ?? 0.9, 0, 1),
     customerTerms: opts.customerTerms ?? 'on_delivery',
     createdAt: opts.now,
-    deadlineAt: opts.now + order.deadlineMin,
+    // one seeded disruption per LIVE order (opt-in via opts.disruption; tests omit
+    // it → no disruption, identical to the old behaviour). expedite tightens the deadline.
+    deadlineAt: opts.now + Math.round(order.deadlineMin * (opts.disruption ? disruptionMods(opts.disruption).deadlineMult : 1)),
     order: {
       client: order.client, productName: order.productName, productItem: order.productItem, qty: order.qty,
       materialItem: order.materialItem, materialPerUnit: order.materialPerUnit,
@@ -192,9 +200,14 @@ export function createContract(order: FlagshipOrder, opts: CreateOpts): C2CContr
     plan: { offerId: null, orderQty: 0, deliveryId: null },
     po: null,
     sourcing: { gatherQty: 0, mode: 'standard' },
+    batchMode: 'standard',
+    disruption: opts.disruption ?? null,
+    disruptionSeen: false,
+    goodsInQc: null,
+    finalInspect: null,
     mat: { ordered: 0, delivered: 0, shortfall: 0, received: 0, accepted: 0, quarantined: 0, scrapped: 0, consumed: 0, gathered: 0 },
     fin: { produced: 0, good: 0, reworkable: 0, scrapped: 0, reworked: 0, dispatched: 0, deliveredToCustomer: 0 },
-    t: { supplierReadyAt: null, inboundArriveAt: null, outboundArriveAt: null, invoiceAt: null, payDueAt: null, deliveredAt: null, supplierPayAt: null },
+    t: { supplierReadyAt: null, inboundArriveAt: null, outboundArriveAt: null, invoiceAt: null, payDueAt: null, deliveredAt: null, supplierPayAt: null, productionReadyAt: null },
     rolled: null,
     onTime: null,
     customerRejected: false,
@@ -215,7 +228,9 @@ export function migrateContract(raw: any): C2CContract | null {
   c.mat = Object.assign({ ordered: 0, delivered: 0, shortfall: 0, received: 0, accepted: 0, quarantined: 0, scrapped: 0, consumed: 0, gathered: 0 }, c.mat || {});
   if (!c.sourcing || typeof c.sourcing !== 'object') c.sourcing = { gatherQty: 0, mode: 'standard' };
   c.fin = Object.assign({ produced: 0, good: 0, reworkable: 0, scrapped: 0, reworked: 0, dispatched: 0, deliveredToCustomer: 0 }, c.fin || {});
-  c.t = Object.assign({ supplierReadyAt: null, inboundArriveAt: null, outboundArriveAt: null, invoiceAt: null, payDueAt: null, deliveredAt: null, supplierPayAt: null }, c.t || {});
+  c.t = Object.assign({ supplierReadyAt: null, inboundArriveAt: null, outboundArriveAt: null, invoiceAt: null, payDueAt: null, deliveredAt: null, supplierPayAt: null, productionReadyAt: null }, c.t || {});
+  if (c.batchMode == null) c.batchMode = 'standard';
+  if (c.disruption === undefined) c.disruption = null;
   c.cash = Object.assign({ supplierPaid: 0, inboundPaid: 0, reworkPaid: 0, outboundPaid: 0, revenue: 0, penalties: 0 }, c.cash || {});
   c.did = Object.assign({ poRaised: false, supplierPaid: false, goodsMoved: false, materialsResolved: false, produced: false, finalQc: false, dispatched: false, invoiced: false, paid: false, closed: false }, c.did || {});
   c.plan = Object.assign({ offerId: null, orderQty: 0, deliveryId: null }, c.plan || {});
@@ -330,7 +345,7 @@ export type C2CAction =
   | { type: 'intervene'; kind: 'wait' | 'chase' | 'expedite'; now: number }
   | { type: 'inspect' }
   | { type: 'resolve_materials'; quarantine: 'scrap' | 'rework' | 'hold' | 'accept' | 'reject' }
-  | { type: 'run_production' }
+  | { type: 'run_production'; mode?: BatchMode; now?: number }
   | { type: 'extend_deadline'; now: number }
   | { type: 'dispatch'; rework: boolean; now: number }
   | { type: 'send_invoice'; now: number }
@@ -417,8 +432,9 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       c.cash.inboundPaid += c.po.transportCost;
       effects.push({ kind: 'debit', amount: c.po.transportCost, source: 'c2c_inbound', key: keyOf(c, 'inbound') });
       // schedule the whole inbound timeline in game-time up front (absolute
-      // thresholds, so a single clock read flows the mechanical stages through).
-      c.t.supplierReadyAt = now + c.po.promisedLeadMin;
+      // thresholds, so a single clock read flows the mechanical stages through). A
+      // supplier_delay disruption adds lead here.
+      c.t.supplierReadyAt = now + c.po.promisedLeadMin + disruptionMods(c.disruption).leadAddMin;
       c.t.inboundArriveAt = c.t.supplierReadyAt + INBOUND_TRANSIT;
       c.stage = 'supplier_in_progress';
       c.history.push(`PO raised — supplier working (lead ${c.po.promisedLeadMin} min).`);
@@ -530,8 +546,15 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       const produced = Math.min(O.qty, canMake);
       const consumed = produced * perUnit;
       c.did.produced = true;
+      c.batchMode = action.mode || 'standard';
       c.mat.consumed += consumed;
       c.fin.produced = produced;
+      // production TAKES TIME: base time × batch time × any machine_slowdown. Final
+      // QC is gated on productionReadyAt, so Fast/Careful + slowdown really bite.
+      const bd = batchDef(c.batchMode);
+      const prodTime = O.productionMin * bd.timeMult * disruptionMods(c.disruption).productionTimeMult;
+      const now = (typeof action.now === 'number') ? action.now : (c.po?.raisedAt ?? 0);
+      c.t.productionReadyAt = now + prodTime;
       const effects: C2CEffect[] = [];
       // consume accepted material (real movement out of inventory)…
       if (consumed > 0) effects.push({ kind: 'inv_remove', item: O.materialItem, qty: consumed });
@@ -547,7 +570,7 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
         effects.push({ kind: 'reserve', item: O.productItem, qty: produced });
       }
       c.stage = 'final_qc';
-      c.history.push(`Produced ${produced}× ${O.productItem} (consumed ${consumed} bars).`);
+      c.history.push(`Started a ${bd.label} — ${produced}× ${O.productItem} (consumed ${consumed} bars).`);
       return okRes(c, effects);
     }
     case 'dispatch': {
@@ -620,7 +643,10 @@ function tick(c: C2CContract, now: number): ActionResult {
       // roll the supplier outcome ONCE (persisted)
       if (!c.rolled) c.rolled = rollAll(c);
       const onTime = c.rolled.supplierOnTime;
-      c.mat.shortfall = onTime ? 0 : Math.round(c.mat.ordered * clamp(c.rolled.shortfallFrac, 0, 1));
+      const rolledShort = onTime ? 0 : Math.round(c.mat.ordered * clamp(c.rolled.shortfallFrac, 0, 1));
+      // a partial_shortage disruption forces at least this shortfall even when "on time"
+      const forcedShort = Math.round(c.mat.ordered * disruptionMods(c.disruption).forceShortfallFrac);
+      c.mat.shortfall = Math.min(c.mat.ordered, Math.max(rolledShort, forcedShort));
       c.mat.delivered = Math.max(0, c.mat.ordered - c.mat.shortfall);
       // inbound transit was scheduled at PO time; just hand off to it
       c.stage = 'inbound_transport';
@@ -668,25 +694,30 @@ function tick(c: C2CContract, now: number): ActionResult {
       const defects = Math.round(bought * clamp(c.rolled.incomingDefectFrac, 0, 1));
       c.mat.quarantined = defects;
       c.mat.accepted = Math.max(0, c.mat.received - defects);
+      c.goodsInQc = inspect(c.mat.received, defects);   // sample/passed/defective/quality-score snapshot
       c.stage = 'materials_accepted_or_quarantined';
       c.history.push(defects > 0 ? `Goods-in QC quarantined ${defects} defective bars (${c.mat.accepted} accepted).` : `Goods-in QC passed all ${c.mat.accepted} bars.`);
       return okRes(c, effects);
     }
     case 'final_qc': {
+      // production takes time — wait for the line to finish (batch mode + slowdown)
+      if (c.t.productionReadyAt != null && now < c.t.productionReadyAt) return still(c);
       // AUTO: classify produced units accepted / reworkable / scrapped
       if (!c.did.finalQc) {
         c.did.finalQc = true;
         if (!c.rolled) c.rolled = rollAll(c);
-        // Accepting defective material at goods-in raises the finished defect rate.
+        // Accepting defective material at goods-in raises the finished defect rate;
+        // the batch mode adds (Fast) or trims (Careful) the finished defect rate.
         const badMat = c.mat.defectiveAccepted || 0;
         const matPenalty = badMat > 0 ? 0.4 * (badMat / Math.max(1, c.mat.received)) : 0;
-        const defectRate = clamp(c.rolled.makeDefectFrac + matPenalty, 0, 1);
+        const defectRate = clamp(c.rolled.makeDefectFrac + matPenalty + batchDef(c.batchMode || 'standard').defectAdd, 0, 1);
         const defects = Math.round(c.fin.produced * defectRate);
         const reworkable = Math.round(defects * clamp(c.rolled.reworkShare, 0, 1));
         const scrapped = defects - reworkable;
         c.fin.good = Math.max(0, c.fin.produced - defects);
         c.fin.reworkable = reworkable;
         c.fin.scrapped = scrapped;
+        c.finalInspect = inspect(c.fin.produced, defects);   // final inspection snapshot
         if (scrapped > 0) {
           // scrapped finished goods leave inventory + release reservation
           effects.push({ kind: 'inv_remove', item: c.order.productItem, qty: scrapped });
@@ -790,9 +821,11 @@ function rollAll(c: C2CContract) {
   const offer = c.po ? offerById(c.po.offerId) : null;
   const reliability = offer ? offer.reliability : 0.9;
   const expQ = offer ? offer.expectedQuality : c.po ? c.po.expectedQuality : 0.9;
+  const mods = disruptionMods(c.disruption);
   const supplierOnTime = seededUnit(c.seed, SALT.supplier) <= reliability;
   const shortfallFrac = supplierOnTime ? 0 : 0.12 + seededUnit(c.seed, SALT.shortfall) * 0.4;
-  const incomingDefectFrac = clamp((1 - expQ) * (0.6 + seededUnit(c.seed, SALT.incoming) * 0.9), 0, 1);
+  // a defective_materials disruption adds to the incoming defect fraction
+  const incomingDefectFrac = clamp((1 - expQ) * (0.6 + seededUnit(c.seed, SALT.incoming) * 0.9) + mods.incomingDefectAdd, 0, 1);
   const makeBase = Math.max(0.02, 0.06 * (1 - (c.makeQuality - 0.5) * 1.6));
   const makeDefectFrac = clamp(makeBase + (seededUnit(c.seed, SALT.make) - 0.5) * 0.03, 0, 1);
   const reworkShare = 0.5 + seededUnit(c.seed, SALT.reworkShare) * 0.35;
