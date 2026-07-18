@@ -103,6 +103,7 @@ export interface C2CContract {
     quotedRevenue: number; productionMin: number;
     deadlineMin?: number; warehouseCap?: number;
     latePenaltyPct: number; defectValuePct: number; reworkCostPerUnit: number;
+    minQuality?: number;   // customer's minimum acceptable final-QC score (0..1); below this you may reject the delivery
   };
   plan: { offerId: string | null; orderQty: number; deliveryId: string | null };
   po: C2CPO | null;
@@ -135,7 +136,7 @@ export interface C2CContract {
   customerRejected: boolean;
   // actual cash movements accrued (coins)
   cash: { supplierPaid: number; inboundPaid: number; reworkPaid: number; outboundPaid: number;
-          revenue: number; penalties: number };
+          revenue: number; penalties: number; expeditePaid?: number };
   // one-shot side-effect guards (idempotency / no-skip)
   did: { poRaised: boolean; supplierPaid: boolean; goodsMoved: boolean; materialsResolved: boolean;
          produced: boolean; finalQc: boolean; dispatched: boolean; invoiced: boolean; paid: boolean; closed: boolean;
@@ -196,6 +197,7 @@ export function createContract(order: FlagshipOrder, opts: CreateOpts): C2CContr
       deadlineMin: order.deadlineMin, warehouseCap: order.warehouseCap,
       latePenaltyPct: order.latePenaltyPct, defectValuePct: order.defectValuePct,
       reworkCostPerUnit: order.reworkCostPerUnit,
+      minQuality: typeof (order as any).minQuality === 'number' ? (order as any).minQuality : 0.6,
     },
     plan: { offerId: null, orderQty: 0, deliveryId: null },
     po: null,
@@ -211,7 +213,7 @@ export function createContract(order: FlagshipOrder, opts: CreateOpts): C2CContr
     rolled: null,
     onTime: null,
     customerRejected: false,
-    cash: { supplierPaid: 0, inboundPaid: 0, reworkPaid: 0, outboundPaid: 0, revenue: 0, penalties: 0 },
+    cash: { supplierPaid: 0, inboundPaid: 0, reworkPaid: 0, outboundPaid: 0, revenue: 0, penalties: 0, expeditePaid: 0 },
     did: { poRaised: false, supplierPaid: false, goodsMoved: false, materialsResolved: false, produced: false, finalQc: false, dispatched: false, invoiced: false, paid: false, closed: false },
     history: [`Order opened for ${order.client} — ${order.qty}× ${order.productItem}.`],
   };
@@ -231,12 +233,13 @@ export function migrateContract(raw: any): C2CContract | null {
   c.t = Object.assign({ supplierReadyAt: null, inboundArriveAt: null, outboundArriveAt: null, invoiceAt: null, payDueAt: null, deliveredAt: null, supplierPayAt: null, productionReadyAt: null }, c.t || {});
   if (c.batchMode == null) c.batchMode = 'standard';
   if (c.disruption === undefined) c.disruption = null;
-  c.cash = Object.assign({ supplierPaid: 0, inboundPaid: 0, reworkPaid: 0, outboundPaid: 0, revenue: 0, penalties: 0 }, c.cash || {});
+  c.cash = Object.assign({ supplierPaid: 0, inboundPaid: 0, reworkPaid: 0, outboundPaid: 0, revenue: 0, penalties: 0, expeditePaid: 0 }, c.cash || {});
   c.did = Object.assign({ poRaised: false, supplierPaid: false, goodsMoved: false, materialsResolved: false, produced: false, finalQc: false, dispatched: false, invoiced: false, paid: false, closed: false }, c.did || {});
   c.plan = Object.assign({ offerId: null, orderQty: 0, deliveryId: null }, c.plan || {});
   if (typeof c.customerTerms !== 'string') c.customerTerms = 'on_delivery';
   if (typeof c.makeQuality !== 'number') c.makeQuality = 0.9;
   if (typeof c.customerRejected !== 'boolean') c.customerRejected = false;
+  if (c.order && typeof c.order.minQuality !== 'number') c.order.minQuality = 0.6;
   if (!Array.isArray(c.history)) c.history = [];
   if (c.onTime === undefined) c.onTime = null;
   if (c.rolled === undefined) c.rolled = null;
@@ -301,7 +304,11 @@ export function plannedPnl(c: C2CContract): C2CPnl {
  *  (net received = gross − penalties) − costs. `c.cash.revenue` is the NET amount
  *  actually banked, so gross = net + penalties. */
 export function actualPnl(c: C2CContract): C2CPnl {
-  return pnl(c.cash.revenue + c.cash.penalties, c.cash.supplierPaid, c.cash.inboundPaid, c.cash.reworkPaid, c.cash.outboundPaid, c.cash.penalties);
+  // expediting folds into inbound logistics for the headline P&L (so grossProfit
+  // still equals the exact cash delta); the settlement breakdown shows it as its
+  // own line via cash.expeditePaid.
+  const inbound = c.cash.inboundPaid + (c.cash.expeditePaid || 0);
+  return pnl(c.cash.revenue + c.cash.penalties, c.cash.supplierPaid, inbound, c.cash.reworkPaid, c.cash.outboundPaid, c.cash.penalties);
 }
 export function gradeOf(c: C2CContract): OrderGrade {
   const a = actualPnl(c);
@@ -347,7 +354,7 @@ export type C2CAction =
   | { type: 'resolve_materials'; quarantine: 'scrap' | 'rework' | 'hold' | 'accept' | 'reject' }
   | { type: 'run_production'; mode?: BatchMode; now?: number }
   | { type: 'extend_deadline'; now: number }
-  | { type: 'dispatch'; rework: boolean; now: number }
+  | { type: 'dispatch'; rework: boolean; now: number; reject?: boolean }
   | { type: 'send_invoice'; now: number }
   | { type: 'tick'; now: number }
   | { type: 'close' };
@@ -417,7 +424,11 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       c.mat.gathered = gq;
       if (c.sourcing && c.sourcing.mode === 'expedited') {
         c.po.promisedLeadMin = Math.max(1, Math.ceil(c.po.promisedLeadMin * 0.5));
-        c.po.transportCost = Math.round(c.po.transportCost * 1.8);
+        // the expedite surcharge is booked as a separate cost line (po.transportCost
+        // stays as the base freight so the settlement can show both distinctly).
+        const surcharge = Math.round(c.po.transportCost * 0.8);
+        c.cash.expeditePaid = (c.cash.expeditePaid || 0) + surcharge;
+        effects.push({ kind: 'debit', amount: surcharge, source: 'c2c_expedite', key: keyOf(c, 'expedite_inbound') });
       }
       // Reserve gathered stock from your own inventory now — it's committed to this
       // order (real reservation, no magic grant), free and already on hand.
@@ -458,7 +469,7 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
         if (!c.po) return noRes(c0, 'no_po');
         c.did.expedited = true;
         const fee = Math.max(10, Math.round(c.po.qty * c.po.unitPrice * 0.15));
-        c.cash.inboundPaid += fee;   // a rush freight surcharge (logistics)
+        c.cash.expeditePaid = (c.cash.expeditePaid || 0) + fee;   // rush surcharge (its own line)
         effects.push({ kind: 'debit', amount: fee, source: 'c2c_expedite', key: keyOf(c, 'expedite') });
         if (c.t.supplierReadyAt != null) { const rem = Math.max(0, c.t.supplierReadyAt - now); c.t.supplierReadyAt = now + Math.ceil(rem / 2); c.t.inboundArriveAt = c.t.supplierReadyAt + INBOUND_TRANSIT; }
         c.history.push(`Paid ${fee}c to expedite — the batch is fast-tracked.`);
@@ -578,6 +589,19 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       if (c.did.dispatched) return noRes(c0, 'already_dispatched');
       const effects: C2CEffect[] = [];
       c.did.dispatched = true;
+      // Reject the delivery (quality below the customer's minimum): ship nothing,
+      // pay no outbound freight, keep the finished stock (reservation released),
+      // and take the reputation hit. Reconciles like any other non-paying close.
+      if (action.reject) {
+        c.fin.dispatched = 0; c.fin.deliveredToCustomer = 0;
+        c.customerRejected = true;
+        const finReserved0 = Math.max(0, c.fin.produced - c.fin.scrapped);
+        if (finReserved0 > 0) effects.push({ kind: 'release', item: O.productItem, qty: finReserved0 });
+        c.t.outboundArriveAt = action.now;   // no freight, arrives "immediately" to finalise
+        c.stage = 'outbound_transport';
+        c.history.push('Rejected the delivery — quality below the customer minimum. Kept the stock, forfeited the pay.');
+        return okRes(c, effects);
+      }
       // optional rework of reworkable finished goods → good
       if (action.rework && c.fin.reworkable > 0) {
         const cost = c.fin.reworkable * O.reworkCostPerUnit;
@@ -792,18 +816,79 @@ function realisedRevenue(c: C2CContract): { revenue: number; penalties: number }
   const shortLoss = O.quotedRevenue * (shortUnits / O.qty);
   const defectLoss = O.quotedRevenue * O.defectValuePct * c.fin.scrapped;
   const lateLoss = c.onTime === false ? O.quotedRevenue * O.latePenaltyPct : 0;
-  let revenue = Math.max(0, O.quotedRevenue - shortLoss - defectLoss - lateLoss);
+  // a small QUALITY BONUS for a spotless, in-full order and an EARLY bonus for
+  // delivering comfortably ahead of the deadline (the upside, not just penalties).
+  const bonus = qualityEarlyBonus(c);
+  let revenue = Math.max(0, O.quotedRevenue - shortLoss - defectLoss - lateLoss + bonus);
   // goodwill floor for a genuine attempt (safe recovery)
   const floor = Math.round(O.quotedRevenue * 0.40);
   if (c.fin.deliveredToCustomer > 0 && revenue < floor) revenue = floor;
   const penalties = Math.round(shortLoss + defectLoss + lateLoss);
   return { revenue: Math.round(revenue), penalties };
 }
+// The revenue upside: a quality bonus (spotless + in-full) and an early bonus
+// (delivered well ahead of the deadline). Bounded + deterministic.
+export function qualityEarlyBonus(c: C2CContract): number {
+  const O = c.order;
+  if (c.fin.deliveredToCustomer < O.qty) return 0;   // only on a full delivery
+  let bonus = 0;
+  if (c.finalInspect && c.finalInspect.qualityScore >= 98 && c.fin.scrapped === 0) bonus += Math.round(O.quotedRevenue * 0.03);
+  if (c.onTime === true && c.t.deliveredAt != null && c.t.deliveredAt <= c.deadlineAt * 0.6) bonus += Math.round(O.quotedRevenue * 0.02);
+  return bonus;
+}
 function repDeltaOf(c: C2CContract): number {
   const s = satisfactionOf(c);
   return s >= 90 ? 2 : s >= 70 ? 1 : s >= 45 ? 0 : -1;
 }
 export function isInFull(c: C2CContract): boolean { return c.fin.deliveredToCustomer >= c.order.qty; }
+
+// ---- Full settlement breakdown (the post-order review) ---------------------
+export interface Settlement {
+  revenue: { contract: number; qualityAdj: number; timingAdj: number; shortfallAdj: number; goodwillAdj: number; net: number };
+  costs: { materials: number; gatheredValue: number; inboundFreight: number; expediting: number; manufacturing: number; rework: number; scrap: number; outbound: number; total: number };
+  grossProfit: number; marginPct: number;
+  onTime: boolean; inFull: boolean; qualityScore: number; satisfaction: number; reputationDelta: number; cashDelta: number;
+  supplierId: string | null; supplierDelta: { onTime: boolean; short: boolean; quality: number } | null;
+}
+/** The complete settlement — every revenue + cost line, reconciling EXACTLY:
+ *  revenue.net − costs.total === grossProfit === the real cash delta. */
+export function settlementBreakdown(c: C2CContract): Settlement {
+  const O = c.order;
+  const shortUnits = Math.max(0, O.qty - c.fin.deliveredToCustomer);
+  const shortLoss = Math.round(O.quotedRevenue * (shortUnits / O.qty));
+  const defectLoss = Math.round(O.quotedRevenue * O.defectValuePct * c.fin.scrapped);
+  const lateLoss = c.onTime === false ? Math.round(O.quotedRevenue * O.latePenaltyPct) : 0;
+  const bonus = qualityEarlyBonus(c);
+  const qualityBonus = (c.fin.deliveredToCustomer >= O.qty && c.finalInspect && c.finalInspect.qualityScore >= 98 && c.fin.scrapped === 0) ? Math.round(O.quotedRevenue * 0.03) : 0;
+  const earlyBonus = bonus - qualityBonus;
+  const net = c.cash.revenue;
+  const qualityAdj = qualityBonus - defectLoss;
+  const timingAdj = earlyBonus - lateLoss;
+  const shortfallAdj = -shortLoss;
+  // any residual (goodwill floor + rounding) so the lines always sum to net exactly
+  const goodwillAdj = net - (O.quotedRevenue + qualityAdj + timingAdj + shortfallAdj);
+
+  const materials = c.cash.supplierPaid;
+  const inboundFreight = c.cash.inboundPaid;
+  const expediting = c.cash.expeditePaid || 0;
+  const rework = c.cash.reworkPaid;
+  const outbound = c.cash.outboundPaid;
+  const manufacturing = 0;   // in-house — no cash cost in this slice
+  const scrap = 0;           // scrap is a lost-unit cost (shown in quality), not cash
+  const total = materials + inboundFreight + expediting + rework + outbound + manufacturing + scrap;
+  const gatheredValue = (c.mat.gathered || 0) * (c.po ? c.po.unitPrice : 0);   // notional saving
+
+  return {
+    revenue: { contract: O.quotedRevenue, qualityAdj, timingAdj, shortfallAdj, goodwillAdj, net },
+    costs: { materials, gatheredValue, inboundFreight, expediting, manufacturing, rework, scrap, outbound, total },
+    grossProfit: net - total, marginPct: O.quotedRevenue ? (net - total) / O.quotedRevenue : 0,
+    onTime: c.onTime === true, inFull: c.fin.deliveredToCustomer >= O.qty,
+    qualityScore: c.finalInspect ? c.finalInspect.qualityScore : 100,
+    satisfaction: satisfactionOf(c), reputationDelta: repDeltaOf(c), cashDelta: net - total,
+    supplierId: c.po ? c.po.offerId : null,
+    supplierDelta: c.po ? { onTime: c.onTime === true, short: (c.mat.shortfall || 0) > 0, quality: c.mat.received > 0 ? 1 - ((c.mat.quarantined || 0) + (c.mat.defectiveAccepted || 0)) / c.mat.received : 1 } : null,
+  };
+}
 function perfRecord(c: C2CContract): C2CPerfRecord {
   return {
     id: c.id, orderId: c.orderId, client: c.order.client,

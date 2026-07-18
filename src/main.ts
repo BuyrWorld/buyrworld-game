@@ -30,8 +30,9 @@ import { FROSTY_TRACKS, FROSTY_EXCLUSIVE_DIR, radioUnlocked, unlockedTracks, isT
 import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './data/wallet.ts';
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
 import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult, rollFlagshipOrder, primarySource, contractSourceable, orderFromContract } from './data/contractToCash.ts';
-import { createContract as c2cCreate, reduce as c2cReduce, migrateContract as c2cMigrate, plannedPnl as c2cPlannedPnl, actualPnl as c2cActualPnl, reservedByContract as c2cReserved, gradeOf as c2cGrade, satisfactionOf as c2cSatisfaction, C2C_ENGINE_VERSION, C2C_STAGES, isDecisionStage as c2cIsDecision, scenarioById as c2cScenarioById, C2C_SCENARIOS } from './data/c2cEngine.ts';
+import { createContract as c2cCreate, reduce as c2cReduce, migrateContract as c2cMigrate, plannedPnl as c2cPlannedPnl, actualPnl as c2cActualPnl, settlementBreakdown as c2cSettlement, qualityEarlyBonus as c2cQualBonus, reservedByContract as c2cReserved, gradeOf as c2cGrade, satisfactionOf as c2cSatisfaction, C2C_ENGINE_VERSION, C2C_STAGES, isDecisionStage as c2cIsDecision, scenarioById as c2cScenarioById, C2C_SCENARIOS } from './data/c2cEngine.ts';
 import { quotesFor, planProcurement, scoreStats as procScoreStats, recordSupplierResult as procRecord } from './data/procurement.ts';
+import { appendEvent as anAppend, eventCounts as anCounts } from './data/analytics.ts';
 import { BATCH_MODES, batchDef, disruptionFor, disruptionDef, type BatchMode } from './data/disruptions.ts';
 import { EXIT_BAND, inExitRegion, validReturn, isInteriorTab } from './data/interiors.ts';
 import { tutorialPhase, isTutorialRunning, contractsFrozen, classifyModal, canOpenModal, isBlocking as _modalBlocking, summariseRewards, clampTutorialCount } from './data/tutorialState.ts';
@@ -549,11 +550,39 @@ function _c2cApplyEffect(e){
     }
   }
 }
+// ---- Privacy-safe analytics (the 9 flagship funnel events) ----------------
+// Append-only, capped, no PII (props sanitised to primitive game values).
+function _c2cTrack(ev, props?){
+  try{
+    if (!Array.isArray(S.analytics)) S.analytics = [];
+    S.analytics = anAppend(S.analytics, ev as any, gameNow(), props || {});
+  }catch(e){}
+}
+// Emit the right funnel event for a just-applied action / stage transition.
+function _c2cAnalytics(action, prevStage, c){
+  const dis = c.disruption || 'none';
+  switch (action.type){
+    case 'accept_quote':      _c2cTrack('quotation_reviewed', { qty: c.order.qty, revenue: c.order.quotedRevenue }); break;
+    case 'select_supplier':   _c2cTrack('supplier_selected', { supplier: action.offerId, qty: action.qty || 0 }); break;
+    case 'run_production':    _c2cTrack('production_strategy_selected', { batch: action.mode || 'standard' }); break;
+    case 'resolve_materials': _c2cTrack('quality_decision', { choice: action.quarantine, quarantined: c.mat.quarantined || 0 }); break;
+    case 'intervene':         _c2cTrack('disruption_response', { kind: action.kind, disruption: dis }); break;
+    case 'extend_deadline':   _c2cTrack('disruption_response', { kind: 'extend', disruption: dis }); break;
+    case 'decline_quote':     _c2cTrack('abandoned', { stage: prevStage, reason: 'declined' }); break;
+  }
+  if (prevStage !== 'delivered' && c.stage === 'delivered')
+    _c2cTrack('delivered', { delivered: c.fin.deliveredToCustomer, inFull: c.fin.deliveredToCustomer >= c.order.qty, onTime: c.onTime === true });
+  if (prevStage !== 'closed' && c.stage === 'closed'){
+    const a = c2cActualPnl(c);
+    _c2cTrack('final_margin', { grossProfit: a.grossProfit, marginPct: Math.round(a.marginPct * 100), onTime: c.onTime === true, inFull: c.fin.deliveredToCustomer >= c.order.qty });
+  }
+}
 // The single entry point to advance the persisted engine order + apply its effects.
 function c2cDispatch(action){
   if (!S.c2c) return { ok: false, error: 'no_contract' };
+  const prevStage = S.c2c.stage;
   const res = c2cReduce(S.c2c, action);
-  if (res.ok){ S.c2c = res.contract; res.effects.forEach(_c2cApplyEffect); }
+  if (res.ok){ S.c2c = res.contract; res.effects.forEach(_c2cApplyEffect); try{ _c2cAnalytics(action, prevStage, S.c2c); }catch(e){} }
   return res;
 }
 // Advance time-driven stages each sim tick (never crosses a decision stage).
@@ -569,6 +598,7 @@ function c2cStartFlagship(customerTerms?, opts?){
   // live intro orders carry one seeded disruption; the base test order carries none.
   const disruption = (opts && opts.base) ? null : disruptionFor(seed);
   S.c2c = c2cCreate(order, { id: 'c2c_' + seed.toString(36), seed, now: gameNow(), makeQuality: q, customerTerms: customerTerms || 'on_delivery', disruption });
+  _c2cTrack('flagship_opened', { qty: order.qty, revenue: order.quotedRevenue, disruption: disruption || 'none', kind: 'flagship' });
   try{ save(); }catch(e){}
   return S.c2c;
 }
@@ -582,6 +612,7 @@ function c2cStartScenario(id){
   S.c2c = c2cCreate(order, { id: 'c2c_scn_' + id + '_' + Date.now().toString(36), seed, now: gameNow(), makeQuality: 0.9, customerTerms: scn.customerTerms || 'on_delivery' });
   S.c2c.rolled = Object.assign({}, scn.rolled);   // lock the world outcomes
   (S.c2c as any).scenario = id;
+  _c2cTrack('flagship_opened', { qty: order.qty, revenue: order.quotedRevenue, disruption: 'none', kind: 'scenario' });
   try{ save(); }catch(e){}
   _c2cUI = { offerId: null, orderQty: 0, deliveryId: 'van', reworkFinished: false };
   _renderC2C(); _c2cStartPoll();
@@ -603,6 +634,7 @@ function c2cStartForContract(c){
   const seed = (Date.now() >>> 0);
   S.c2c = c2cCreate(order, { id: 'c2c_' + seed.toString(36), seed, now: gameNow(), makeQuality: q, customerTerms: 'on_delivery' });
   (S.c2c as any).boardId = c.id;   // link back to the board contract (engine ignores this field)
+  _c2cTrack('flagship_opened', { qty: order.qty, revenue: order.quotedRevenue, disruption: 'none', kind: 'board' });
   try{ save(); }catch(e){}
   _c2cUI = { offerId: null, orderQty: 0, deliveryId: 'van', reworkFinished: false };
   _renderC2C(); _c2cStartPoll();
@@ -612,6 +644,7 @@ function c2cStartForContract(c){
 // whatever materials/goods were already sourced) and clear it.
 function c2cAbandon(){
   if (!S.c2c) return;
+  _c2cTrack('abandoned', { stage: S.c2c.stage, reason: 'abandoned' });
   const O = S.c2c.order;
   for (const item of [O.materialItem, O.productItem]){
     const r = c2cReserved(S.c2c, item);
@@ -696,6 +729,112 @@ function _c2cStageStrip(c){
   return `<div style="margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-bottom:3px"><span>Pipeline</span><span>stage ${idx + 1}/17 · <b style="color:var(--text)">${esc(label)}</b></span></div>
     <div style="height:6px;background:var(--panel);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--amber);transition:width .3s"></div></div>
+  </div>`;
+}
+// ---- Post-order review pieces (the Steam-trailer settlement) --------------
+// The order's journey as a six-stop rail: each stop lights up with how it went.
+function _c2cJourneyRail(c){
+  const O = c.order;
+  const stops = [
+    { icon:'📋', label:'Customer', ok:true, note:esc(O.client) },
+    { icon:'🏭', label:'Supplier', ok:(c.mat.shortfall||0)===0, note:c.po?esc(c.po.supplier.split(' ')[0]):'—' },
+    { icon:'📦', label:'Warehouse', ok:(c.mat.quarantined||0)===0, note:`${c.mat.received||0} in` },
+    { icon:'⚙️', label:'Production', ok:(c.fin.scrapped||0)===0, note:`${c.fin.produced||0} made` },
+    { icon:'🔎', label:'Quality', ok:(c.finalInspect?c.finalInspect.qualityScore:100)>=90, note:`${c.finalInspect?c.finalInspect.qualityScore:100}%` },
+    { icon:'🚚', label:'Delivery', ok:c.onTime===true && c.fin.deliveredToCustomer>=O.qty, note:c.customerRejected?'rejected':`${c.fin.deliveredToCustomer}/${O.qty}` },
+  ];
+  const cells = stops.map((s,i)=>{
+    const col = s.ok ? 'var(--mint)' : '#e0a45a';
+    const arrow = i < stops.length-1 ? `<span style="color:var(--dim);font-size:10px;align-self:center">→</span>` : '';
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0">
+        <div style="font-size:17px;line-height:1">${s.icon}</div>
+        <div style="font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.3px">${s.label}</div>
+        <div style="font-size:8.5px;color:${col};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px">${s.note}</div>
+      </div>${arrow}`;
+  }).join('');
+  return `<div style="display:flex;align-items:stretch;justify-content:space-between;gap:2px;background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:6px;padding:8px 6px;margin-bottom:8px">${cells}</div>`;
+}
+// Estimate how a contrasting supplier choice might have performed (clearly an estimate).
+function _c2cAltStrategy(c){
+  try{
+    const O = c.order;
+    const chosen = c.po ? c.po.offerId : 'standard';
+    const alt = ['premium','standard','budget'].find(id => id !== chosen && offerById(id)) || null;
+    if (!alt) return null;
+    const altOffer = offerById(alt); if (!altOffer) return null;
+    const need = O.qty * O.materialPerUnit;
+    const buyQty = Math.max(altOffer.moq, need);
+    const est = planProcurement(O as any, SUPPLIER_OFFERS, { gatherQty:0, lines:[{ offerId:alt, qty:buyQty }], mode:'standard' }, { available:0, ownQuality:(S.qc?.rating ?? 90)/100 });
+    const actualPct = Math.round(c2cActualPnl(c).marginPct * 100);
+    const altPct = Math.round(est.marginPct * 100);
+    const tag = alt==='premium' ? 'pricier but faster & cleaner' : alt==='budget' ? 'cheaper but slower & riskier' : 'a balanced middle ground';
+    const better = altPct > actualPct;
+    return { name: altOffer.supplier, altPct, actualPct, tag, better };
+  }catch(e){ return null; }
+}
+// The one strategy note: name the biggest lever the player pulled + one contrast.
+function _c2cDecisionHighlights(c){
+  const O = c.order, hi:string[] = [];
+  if (c.po) hi.push(`Sourced from <b>${esc(c.po.supplier)}</b>${(c.mat.gathered||0)>0?` (gathered ${c.mat.gathered}, bought ${c.po.qty})`:''}.`);
+  if (c.sourcing && c.sourcing.mode === 'expedited') hi.push(`Paid to <b>expedite inbound</b> freight.`);
+  hi.push(`Ran a <b>${esc((c.batchMode||'standard'))}</b> production batch.`);
+  if (c.disruption){ const d = disruptionDef(c.disruption); const handled = c.did.expedited||c.did.chased||c.did.extended; if (d) hi.push(`Hit by <b>${esc(d.title)}</b> — ${handled?'you responded':'you rode it out'}.`); }
+  if (c.customerRejected) hi.push(`<b>Rejected the delivery</b> to protect your reputation.`);
+  else if (c.fin.deliveredToCustomer < O.qty) hi.push(`Shipped <b>short</b> (${c.fin.deliveredToCustomer}/${O.qty}).`);
+  if (c.fin.reworked > 0) hi.push(`Reworked <b>${c.fin.reworked}</b> units to recover value.`);
+  return hi;
+}
+// One plain-language "why this result" line.
+function _c2cWhy(c){
+  const O = c.order, a = c2cActualPnl(c);
+  if (c.customerRejected) return `You rejected a sub-standard delivery: no revenue this time, but you kept the stock and spared your reputation.`;
+  if (a.grossProfit <= 0) return `Costs outran the ${fmt(O.quotedRevenue)}c price — ${(c.mat.shortfall||0)>0?'a short supplier ':''}${c.onTime===false?'a late delivery ':''}${c.fin.scrapped>0?'and scrap ':''}ate the margin.`;
+  const drivers:string[] = [];
+  if (c.onTime===true) drivers.push('you delivered on time'); else drivers.push('a late penalty applied');
+  if (c.fin.deliveredToCustomer>=O.qty) drivers.push('shipped in full'); else drivers.push('shipped short');
+  if ((c.finalInspect?c.finalInspect.qualityScore:100)>=98 && c.fin.scrapped===0) drivers.push('spotless quality earned a bonus');
+  return `Profit of ${fmt(a.grossProfit)}c because ${drivers.join(', ')}.`;
+}
+// Award a single fitting title, once (gated — never spams multiple rewards).
+function _c2cReviewTitle(c){
+  const O = c.order, a = c2cActualPnl(c), sat = c2cSatisfaction(c);
+  const inFull = c.fin.deliveredToCustomer >= O.qty, otif = c.onTime===true && inFull;
+  let t:any = null;
+  if (c.customerRejected) t = { id:'quality_guardian', name:'Quality Guardian', desc:'Rejected a sub-standard order rather than ship it.' };
+  else if (a.marginPct >= 0.4) t = { id:'margin_master', name:'Margin Master', desc:'Closed an order at 40%+ margin.' };
+  else if (c.disruption && a.grossProfit > 0) t = { id:'crisis_manager', name:'Crisis Manager', desc:'Turned a disrupted order into a profit.' };
+  else if (otif && a.grossProfit > 0) t = { id:'reliable_supplier', name:'Reliable Supplier', desc:'Delivered on time and in full, in profit.' };
+  if (!t) return null;
+  if (!Array.isArray(S.c2cTitles)) S.c2cTitles = [];
+  const isNew = !S.c2cTitles.includes(t.id);
+  if (isNew){ S.c2cTitles.push(t.id); try{ save(); }catch(e){} }
+  return Object.assign({ isNew }, t);
+}
+// The full settlement: every revenue + cost line, reconciling to the cash delta.
+function _c2cSettlementBlock(c){
+  const s = c2cSettlement(c); const r = s.revenue, k = s.costs;
+  const line = (l, v, dim?) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span style="color:${dim?'var(--dim)':'var(--text)'}">${l}</span><b style="color:${v<0?'#e0a45a':'var(--text)'};font-variant-numeric:tabular-nums">${_flagMoney(v)}</b></div>`;
+  const rev = `<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Revenue</div>
+    ${line('Contract price', r.contract)}
+    ${r.qualityAdj!==0?line('Quality '+(r.qualityAdj>0?'bonus':'penalty'), r.qualityAdj):''}
+    ${r.timingAdj!==0?line('Timing '+(r.timingAdj>0?'bonus (early)':'penalty (late)'), r.timingAdj):''}
+    ${r.shortfallAdj!==0?line('Shortfall (undelivered units)', r.shortfallAdj):''}
+    ${r.goodwillAdj!==0?line('Goodwill / rounding', r.goodwillAdj):''}
+    <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;border-top:1px solid var(--edge);padding-top:3px;margin-top:2px"><span>Net revenue</span><b style="font-variant-numeric:tabular-nums">${_flagMoney(r.net)}</b></div>`;
+  const cost = `<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 2px">Costs</div>
+    ${line('Purchased materials', -k.materials)}
+    ${k.inboundFreight?line('Inbound freight', -k.inboundFreight):''}
+    ${k.expediting?line('Expediting', -k.expediting):''}
+    ${line('Manufacturing (in-house)', -k.manufacturing)}
+    ${k.rework?line('Rework', -k.rework):''}
+    ${k.outbound?line('Outbound logistics', -k.outbound):''}
+    ${c.fin.scrapped>0?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0"><span style="color:var(--dim)">Scrapped units (lost, not cash)</span><span style="color:var(--dim)">${c.fin.scrapped}</span></div>`:''}
+    ${s.costs.gatheredValue>0?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0"><span style="color:var(--dim)">Gathered materials (saved)</span><span style="color:var(--mint)">${_flagMoney(s.costs.gatheredValue)}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;border-top:1px solid var(--edge);padding-top:3px;margin-top:2px"><span>Total cost</span><b style="font-variant-numeric:tabular-nums">${_flagMoney(-k.total)}</b></div>`;
+  const pc = s.grossProfit >= 0 ? 'var(--mint)' : '#e0705a';
+  return `<div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:10px 12px;margin-bottom:8px">${rev}${cost}
+    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;border-top:2px solid var(--edge);padding-top:5px;margin-top:5px"><span>Gross profit</span><b style="color:${pc};font-variant-numeric:tabular-nums">${_flagMoney(s.grossProfit)} (${Math.round(s.marginPct*100)}%)</b></div>
+    <div style="font-size:9px;color:var(--dim);text-align:right;margin-top:2px">✓ cash moved by exactly ${_flagMoney(s.cashDelta)}</div>
   </div>`;
 }
 function _c2cPnlBlock(c){
@@ -892,6 +1031,8 @@ function _renderC2C(){
       ? `<b>Why it matters:</b> shipping short forfeits pay for the missing units, but a late full order costs a ${Math.round(O.latePenaltyPct*100)}% penalty. Pick your poison.`
       : `<b>Why it matters:</b> reworking recovers value; the courier costs more but arrives sooner.`;
     const fi = c.finalInspect;
+    const minQ = Math.round((O.minQuality ?? 0.6) * 100);
+    const belowMin = !!(fi && fi.qualityScore < minQ);
     const readyCol = (!short && !willBeLate) ? 'var(--mint)' : '#e0a45a';
     const readyLbl = (!short && !willBeLate) ? 'READY — on time & in full' : short && willBeLate ? 'short & late' : short ? 'short' : 'running late';
     body = head('🚚 Dispatch — Delivery Readiness', 'Ship the finished order — timing and completeness both pay.')
@@ -904,8 +1045,10 @@ function _renderC2C(){
           Finished: <b style="color:var(--mint)">${c.fin.good} good</b>${rw>0?` · <b style="color:#e0a45a">${rw} reworkable</b>`:''}${c.fin.scrapped>0?` · <b style="color:#e0705a">${c.fin.scrapped} scrapped</b>`:''}.<br>
           <span style="font-size:11px;color:var(--dim)">${why}</span></div>`
       + (rw>0 ? `<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:8px"><button data-c2crework="1" style="width:22px;height:22px;border-radius:4px;border:2px solid var(--amber);background:${_c2cUI.reworkFinished?'var(--amber)':'transparent'};cursor:pointer;color:#12240f;font-weight:800">${_c2cUI.reworkFinished?'✓':''}</button> Rework the ${rw} reworkable units first (−${reworkCost}c)</label>` : '')
+      + (belowMin ? `<div style="font-size:11px;color:#e0a45a;background:rgba(224,164,90,.08);border:1px solid #a4523a;border-radius:6px;padding:7px 9px;margin-bottom:6px;line-height:1.5">⚠️ Final quality <b>${fi.qualityScore}%</b> is below ${esc(O.client)}'s minimum of <b>${minQ}%</b>. Shipping it risks your reputation — you may reject the delivery instead.</div>` : '')
       + `<button data-c2c="dispatch" data-primary class="btn" style="width:100%;margin-bottom:6px">Dispatch ${willShip} units ▶</button>`
       + (willBeLate && !c.did.extended ? `<button data-c2c="extend" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">🗓️ Request deadline extension (−${extFee}c) — land on time</button>` : '')
+      + `<button data-c2c="reject_delivery" style="width:100%;background:var(--panel2);color:#e0705a;border:1px solid ${belowMin?'#a4523a':'var(--edge)'};padding:8px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">🚫 Reject delivery — keep the stock, forfeit the pay</button>`
       + closeBtn;
   }
   else if (c.stage === 'outbound_transport'){
@@ -941,18 +1084,34 @@ function _renderC2C(){
       : profit > 0 ? `❄️ Frosty: "Money's money — but a cleaner run next time and ${esc(O.client)} will love you."`
       : `❄️ Frosty: "Ouch. But you sourced, made and shipped it — and you're still standing. Lesson banked."`;
     const row = (l,v,col?) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span style="color:var(--dim)">${l}</span><span${col?` style="color:${col}"`:''}>${v}</span></div>`;
-    body = head('📊 Order Review — ' + esc(O.client), 'Request to realised margin, all in one place.')
-      + `<div style="text-align:center;margin-bottom:6px"><span style="font-size:14px;font-weight:800;color:${gCol};text-transform:uppercase;letter-spacing:1px">${grade}</span>
-          <div style="font-size:11px;color:var(--dim)">Delivered ${c.fin.deliveredToCustomer}/${O.qty} · <b style="color:${otif?'var(--mint)':'#e0a45a'}">${otif?'ON TIME & IN FULL ✓':(c.onTime?'on time':'late')+(inFull?'':' · short')}</b> · satisfaction ${sat}%</div></div>`
-      + _c2cPnlBlock(c)
+    const highlights = _c2cDecisionHighlights(c);
+    const alt = _c2cAltStrategy(c);
+    const title = _c2cReviewTitle(c);
+    const otifLbl = c.customerRejected ? 'DELIVERY REJECTED' : otif ? 'ON TIME & IN FULL ✓' : (c.onTime?'on time':'late')+(inFull?'':' · short');
+    body = head('📊 Order Review — ' + esc(O.client), 'The whole journey, from request to realised margin.')
+      + `<div style="text-align:center;margin-bottom:8px"><span style="font-size:14px;font-weight:800;color:${gCol};text-transform:uppercase;letter-spacing:1px">${grade}</span>
+          <div style="font-size:11px;color:var(--dim)">Delivered ${c.fin.deliveredToCustomer}/${O.qty} · <b style="color:${otif?'var(--mint)':'#e0a45a'}">${otifLbl}</b> · satisfaction ${sat}%</div></div>`
+      + _c2cJourneyRail(c)
+      + (title ? `<div style="display:flex;align-items:center;gap:10px;background:linear-gradient(90deg,rgba(216,184,74,.16),rgba(216,184,74,.03));border:1px solid var(--amber);border-radius:6px;padding:9px 11px;margin-bottom:8px">
+          <div style="font-size:22px;line-height:1">🏅</div>
+          <div style="min-width:0"><div style="font-size:12px;font-weight:800;color:var(--amber)">${esc(title.name)}${title.isNew?' <span style="font-size:8px;background:var(--amber);color:#12240f;border-radius:6px;padding:1px 5px;vertical-align:middle;font-weight:800">NEW</span>':''}</div>
+          <div style="font-size:10px;color:var(--dim)">${esc(title.desc)}</div></div></div>` : '')
+      + `<div style="background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;margin-bottom:8px">
+          <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Your key decisions</div>
+          <ul style="margin:0;padding-left:16px;font-size:11px;line-height:1.7;color:var(--text)">${highlights.map(h=>`<li>${h}</li>`).join('')}</ul>
+          <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.5"><b style="color:var(--text)">Why:</b> ${_c2cWhy(c)}</div>
+        </div>`
+      + _c2cSettlementBlock(c)
       + `<div style="background:var(--panel2);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;margin-bottom:8px">
-          ${row('Supplier', `${esc(supName)} · ${supNote} · ${supQ}% clean`)}
+          ${row('Supplier scorecard', `${esc(supName)} · ${supNote} · ${supQ}% clean`)}
           ${row('Customer satisfaction', `${sat}%`, sat>=70?'var(--mint)':'#e0a45a')}
           ${row('Reputation with client', `${repDelta>=0?'+':''}${repDelta} → ${rep}`, repDelta>=0?'var(--mint)':'#e0705a')}
           ${row('Valley demand', demand)}
         </div>`
+      + (alt ? `<div style="background:rgba(120,180,220,.06);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;line-height:1.5">
+          <b style="color:#bfe8f7">Another way to play it:</b> had you sourced from <b>${esc(alt.name)}</b> (${alt.tag}), an estimated <b style="color:${alt.better?'var(--mint)':'#e0a45a'}">~${alt.altPct}% margin</b> vs your <b>${alt.actualPct}%</b>.</div>` : '')
       + `<div style="font-size:11px;color:#bfe8f7;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;line-height:1.5">${frosty}</div>`
-      + `<button data-c2c="done" data-primary class="btn" style="width:100%">Done ▶</button>`;
+      + `<button data-c2c="done" data-primary class="btn" style="width:100%">Deliver another order ▶</button>`;
   }
 
   el.innerHTML = panel(_c2cStageStrip(c) + _c2cDeadlineChip(c) + _c2cDisruptionAlert(c) + body);
@@ -981,6 +1140,7 @@ function _renderC2C(){
     if (a === 'extend'){ _c2cDo({ type:'extend_deadline', now:gameNow() }); return; }
     if (a.startsWith('resolve:')){ _c2cDo({ type:'resolve_materials', quarantine:a.split(':')[1] as any }); return; }
     if (a === 'dispatch'){ _c2cDo({ type:'dispatch', rework:!!_c2cUI.reworkFinished, now:gameNow() }); return; }
+    if (a === 'reject_delivery'){ _c2cDo({ type:'dispatch', rework:false, reject:true, now:gameNow() }); return; }
     if (a === 'send_invoice'){ _c2cDo({ type:'send_invoice', now:gameNow() }); return; }
     if (a === 'run_production'){ _c2cDo({ type:'run_production', mode:((_c2cUI && _c2cUI.batch) || 'standard'), now:gameNow() }); return; }
     _c2cDo({ type:a });   // accept_request / accept_quote / decline_quote
@@ -10086,7 +10246,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false,
+    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[],
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -10427,6 +10587,8 @@ function load(){
       if (typeof S.gameClock !== "number") S.gameClock = 0;
       if (!S.c2cReserved || typeof S.c2cReserved !== "object") S.c2cReserved = {};
       if (!Array.isArray(S.c2cHistory)) S.c2cHistory = [];
+      if (!Array.isArray(S.analytics)) S.analytics = [];
+      if (!Array.isArray(S.c2cTitles)) S.c2cTitles = [];
       if (!S.supplierScore || typeof S.supplierScore !== "object") S.supplierScore = {};
       if (typeof S.seenProcTip !== "boolean") S.seenProcTip = false;
       // Back-fill stable ids on pre-existing board contracts (pipeline linkage).
@@ -16824,10 +16986,19 @@ if (import.meta.env.DEV) {
     // ---- Procurement probes (this milestone) ------------------------------
     c2cGiveMaterial(item:string, n:number){ addItem(item, n|0); return { item, have: itemCount(item) }; },
     // Start a live order with a SPECIFIC seeded disruption (deterministic testing).
-    c2cStartDisruption(id:string){ const seed = 777; S.c2c = c2cCreate(FLAGSHIP_ORDER, { id:'c2c_dis_'+id, seed, now:gameNow(), makeQuality:0.9, customerTerms:'on_delivery', disruption:id as any } as any); try{ save(); }catch(e){} _c2cUI = { offerId:null, orderQty:0, deliveryId:'van', reworkFinished:false }; return _c2cSnap(S.c2c); },
+    c2cStartDisruption(id:string){ const seed = 777; S.c2c = c2cCreate(FLAGSHIP_ORDER, { id:'c2c_dis_'+id, seed, now:gameNow(), makeQuality:0.9, customerTerms:'on_delivery', disruption:id as any } as any); _c2cTrack('flagship_opened', { qty:FLAGSHIP_ORDER.qty, revenue:FLAGSHIP_ORDER.quotedRevenue, disruption:id, kind:'disruption' }); try{ save(); }catch(e){} _c2cUI = { offerId:null, orderQty:0, deliveryId:'van', reworkFinished:false }; return _c2cSnap(S.c2c); },
     c2cDisruption(){ return S.c2c ? { id:(S.c2c as any).disruption, seen:!!(S.c2c as any).disruptionSeen, batch:(S.c2c as any).batchMode, goodsInQc:(S.c2c as any).goodsInQc, finalInspect:(S.c2c as any).finalInspect } : null; },
     c2cSupplierScore(){ return JSON.parse(JSON.stringify(S.supplierScore || {})); },
     c2cSeenProcTip(){ return !!S.seenProcTip; },
+    // ---- Delivery / settlement / analytics probes (this milestone) --------
+    c2cAnalytics(){ return { counts: anCounts(S.analytics || []), total:(S.analytics||[]).length, events:(S.analytics||[]).map((r:any)=>r.e) }; },
+    c2cResetAnalytics(){ S.analytics = []; return true; },
+    c2cSettlement(){ return S.c2c ? c2cSettlement(S.c2c) : null; },
+    c2cTitles(){ return (S.c2cTitles||[]).slice(); },
+    // Force a re-render of the live modal (gate actions bypass the UI, so this draws
+    // the current stage — e.g. the closed-order review — without starting a new order).
+    c2cRender(){ try{ _renderC2C(); }catch(e){} return { stage:S.c2c?S.c2c.stage:null, open:!!document.getElementById('flagship-modal') }; },
+    c2cAbandon(){ try{ c2cAbandon(); }catch(e){} return { cleared:!S.c2c }; },
     // Read the modal body text (for asserting the why-it-matters + result copy).
     c2cModalText(){ const el=document.getElementById('flagship-modal'); return el?(el.textContent||'').replace(/\s+/g,' ').trim():''; },
     c2cHasButton(action:string){ return !!document.querySelector(`#flagship-modal [data-c2c="${action}"]`); },

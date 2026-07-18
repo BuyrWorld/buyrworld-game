@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createContract, reduce, migrateContract, seededUnit,
-  plannedPnl, actualPnl, reservedByContract, satisfactionOf, gradeOf,
+  plannedPnl, actualPnl, settlementBreakdown, qualityEarlyBonus, reservedByContract, satisfactionOf, gradeOf,
   C2C_STAGES, DECISION_STAGES, isDecisionStage, C2C_ENGINE_VERSION,
   type C2CContract, type C2CAction, type C2CEffect,
 } from '../src/data/c2cEngine.ts';
@@ -113,16 +113,114 @@ describe('c2c engine — happy path', () => {
     expect(w.reserved.bracket).toBe(0);
     expect(w.inv.iron_bar).toBe(0);
     expect(w.inv.bracket).toBe(0);
-    // money: -55 inbound -576 material -30 outbound +1200 revenue
-    expect(w.coins).toBe(5000 - 55 - 576 - 30 + 1200);
+    // money: -55 inbound -576 material -30 outbound +1236 revenue (1200 + a 36 = 3%
+    // spotless-order quality bonus)
+    expect(w.coins).toBe(5000 - 55 - 576 - 30 + 1236);
     // P&L
     const a = actualPnl(w.c);
-    expect(a).toMatchObject({ revenue: 1200, materialCost: 576, inboundLogistics: 55, outboundLogistics: 30, penalties: 0 });
-    expect(a.grossProfit).toBe(1200 - 576 - 55 - 30);
-    expect(a.marginPct).toBeCloseTo(a.grossProfit / 1200, 5);
+    expect(a).toMatchObject({ revenue: 1236, materialCost: 576, inboundLogistics: 55, outboundLogistics: 30, penalties: 0 });
+    expect(a.grossProfit).toBe(1236 - 576 - 55 - 30);
+    expect(a.marginPct).toBeCloseTo(a.grossProfit / a.revenue, 5);
     expect(gradeOf(w.c)).toBe('excellent');
     expect(w.closed).toHaveLength(1);
     expect(w.rep['Featherstone Rail Yard']).toBe(2);
+  });
+});
+
+describe('c2c engine — settlement breakdown reconciles to the penny', () => {
+  // Drive a clean order to close and prove every displayed line adds up.
+  function driveClose(w: World) {
+    act(w, { type: 'accept_request' }); act(w, { type: 'accept_quote' });
+    act(w, { type: 'select_supplier', offerId: 'standard', qty: 12, deliveryId: 'van' });
+    act(w, { type: 'raise_po', now: 0 });
+    force(w, { supplierOnTime: true });
+    pump(w, 6); pump(w, 7);
+    act(w, { type: 'resolve_materials', quarantine: 'hold' });
+    act(w, { type: 'run_production' });
+    pump(w, 7);
+    act(w, { type: 'dispatch', rework: false, now: 7 });
+    pump(w, 12);
+    act(w, { type: 'send_invoice', now: 12 });
+    pump(w, 12);
+  }
+
+  it('revenue lines sum to net, cost lines sum to total, and profit == cash delta', () => {
+    const w = fresh();
+    const c0 = w.coins;
+    driveClose(w);
+    expect(w.c.stage).toBe('closed');
+    const s = settlementBreakdown(w.c);
+    // revenue lines sum to net exactly (contract + adjustments + goodwill residual)
+    const r = s.revenue;
+    expect(r.contract + r.qualityAdj + r.timingAdj + r.shortfallAdj + r.goodwillAdj).toBe(r.net);
+    // cost lines sum to the cost total exactly
+    const k = s.costs;
+    expect(k.materials + k.inboundFreight + k.expediting + k.manufacturing + k.rework + k.scrap + k.outbound).toBe(k.total);
+    // the headline identity: revenue − costs == gross profit == actualPnl == real cash movement
+    expect(s.grossProfit).toBe(r.net - k.total);
+    expect(s.grossProfit).toBe(actualPnl(w.c).grossProfit);
+    expect(w.coins - c0).toBe(s.grossProfit);
+    expect(s.cashDelta).toBe(w.coins - c0);
+    // a spotless run earns the quality bonus and nothing was short/late
+    expect(s.inFull).toBe(true);
+    expect(s.qualityScore).toBeGreaterThanOrEqual(98);
+    expect(qualityEarlyBonus(w.c)).toBeGreaterThan(0);
+  });
+
+  it('rejecting the delivery pays nothing, keeps the stock, and still reconciles', () => {
+    const w = fresh();
+    const c0 = w.coins;
+    act(w, { type: 'accept_request' }); act(w, { type: 'accept_quote' });
+    act(w, { type: 'select_supplier', offerId: 'standard', qty: 12, deliveryId: 'van' });
+    act(w, { type: 'raise_po', now: 0 });
+    force(w, { supplierOnTime: true });
+    pump(w, 6); pump(w, 7);
+    act(w, { type: 'resolve_materials', quarantine: 'hold' });
+    act(w, { type: 'run_production' });
+    pump(w, 7);
+    expect(w.c.stage).toBe('dispatch_decision');
+    const made = w.inv.bracket;                       // finished goods on hand
+    act(w, { type: 'dispatch', rework: false, reject: true, now: 7 });   // REJECT
+    pump(w, 20);
+    act(w, { type: 'send_invoice', now: 20 });
+    pump(w, 40);
+    expect(w.c.stage).toBe('closed');
+    expect(w.c.customerRejected).toBe(true);
+    expect(w.c.fin.deliveredToCustomer).toBe(0);       // nothing shipped
+    expect(w.inv.bracket).toBe(made);                  // player KEEPS the finished stock
+    expect(w.reserved.bracket || 0).toBe(0);           // but the reservation is released
+    const a = actualPnl(w.c);
+    expect(w.c.cash.revenue).toBe(0);                  // no cash revenue banked
+    expect(a.outboundLogistics).toBe(0);               // no outbound freight paid
+    expect(a.grossProfit).toBeLessThan(0);             // a rejected order is a loss (costs only)
+    expect(w.coins - c0).toBe(a.grossProfit);          // reconciles exactly (a loss = the costs)
+    expect(w.coins - c0).toBe(settlementBreakdown(w.c).grossProfit);
+  });
+
+  it('a short, defective, late order still reconciles exactly', () => {
+    const w = fresh();
+    const c0 = w.coins;
+    act(w, { type: 'accept_request' }); act(w, { type: 'accept_quote' });
+    act(w, { type: 'select_supplier', offerId: 'budget', qty: 12, deliveryId: 'van' });
+    act(w, { type: 'raise_po', now: 0 });
+    force(w, { supplierOnTime: false, shortfallFrac: 0.25, incomingDefectFrac: 0.2, makeDefectFrac: 0.2, reworkShare: 0.5 });
+    pump(w, receiveAt('budget'));
+    act(w, { type: 'resolve_materials', quarantine: 'scrap' });
+    act(w, { type: 'run_production' });
+    pump(w, receiveAt('budget'));
+    // dispatch very late so the late penalty bites
+    act(w, { type: 'dispatch', rework: false, now: 400 });
+    pump(w, 420);
+    act(w, { type: 'send_invoice', now: 420 });
+    pump(w, 440);
+    expect(w.c.stage).toBe('closed');
+    const s = settlementBreakdown(w.c);
+    const r = s.revenue, k = s.costs;
+    expect(r.contract + r.qualityAdj + r.timingAdj + r.shortfallAdj + r.goodwillAdj).toBe(r.net);
+    expect(k.materials + k.inboundFreight + k.expediting + k.manufacturing + k.rework + k.scrap + k.outbound).toBe(k.total);
+    expect(s.grossProfit).toBe(r.net - k.total);
+    expect(s.grossProfit).toBe(actualPnl(w.c).grossProfit);
+    expect(w.coins - c0).toBe(s.grossProfit);   // reconciles even when the order goes badly
   });
 });
 
@@ -278,7 +376,7 @@ describe('c2c engine — delivery + invoicing + payment', () => {
     expect(w.c.t.payDueAt).toBe(12);
     pump(w, 12);                                            // same instant → paid
     expect(w.c.stage).toBe('closed');
-    expect(w.c.cash.revenue).toBe(1200);
+    expect(w.c.cash.revenue).toBe(1236);
   });
 
   it('Net 15 payment: revenue is withheld until the terms fall due', () => {
@@ -293,7 +391,7 @@ describe('c2c engine — delivery + invoicing + payment', () => {
     expect(w.c.stage).toBe('paid');
     pump(w, 27);                                            // due → paid → closed
     expect(w.c.did.paid).toBe(true);
-    expect(w.c.cash.revenue).toBe(1200);
+    expect(w.c.cash.revenue).toBe(1236);
     expect(w.c.stage).toBe('closed');
   });
 });
@@ -362,7 +460,7 @@ describe('c2c engine — duplicate-action protection', () => {
     const paidCoins = w.coins;
     pump(w, 99);                                             // extra ticks — already closed
     expect(w.coins).toBe(paidCoins);                         // never paid twice
-    expect(w.coins).toBe(coinsBeforePay + 1200);
+    expect(w.coins).toBe(coinsBeforePay + 1236);
   });
 
   it('an out-of-order action for a different stage is rejected', () => {

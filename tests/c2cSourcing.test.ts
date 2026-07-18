@@ -77,7 +77,8 @@ describe('sourcing: gather + expedited inbound (real inventory + reconciliation)
     act(std, { type: 'raise_po', now: 0 });
     act(exp, { type: 'raise_po', now: 0 });
     expect(exp.c.po!.promisedLeadMin).toBeLessThan(std.c.po!.promisedLeadMin);   // ~half
-    expect(exp.c.cash.inboundPaid).toBeGreaterThan(std.c.cash.inboundPaid);      // rush freight
+    expect(exp.c.cash.expeditePaid!).toBeGreaterThan(0);                         // rush surcharge, its own line
+    expect(std.c.cash.expeditePaid || 0).toBe(0);
     expect(exp.c.po!.qty).toBe(std.c.po!.qty);                                   // materials unchanged
   });
 
