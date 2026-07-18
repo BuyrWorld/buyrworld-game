@@ -25,6 +25,7 @@ import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
 import { itemCategory, categoryLabel, isPlaceableItem, isTradeFurniture, TRADE_FURNITURE, CATEGORY_LABELS } from './data/itemTax.ts';
 import { buildBriefing as buildShift, awayLabel as shiftAwayLabel, SHORT_ABSENCE_MS, type ShiftInput } from './data/shiftBriefing.ts';
+import { stageAt as introStageAt, isDone as introIsDone, qcApproved as introQcApproved, inputAccepted as introInputAccepted } from './data/intro.ts';
 import { APPROACHES, STARTER_SKILLS, isStarterSkill, approachById, defaultApproach, automationCost as skillAutoCost, outcomeSummary as approachSummary, rareDrops, reel as fishReel, costWithCarry, BITE_WINDOW_MS } from './data/skillPlay.ts';
 // ---- Social / dialogue engine (data-driven NPC conversations, relationships, memory)
 import { SOCIAL_CONTENT_VERSION, type Effect as SocEffect, type DialogueGraph } from './data/social/types.ts';
@@ -4876,7 +4877,11 @@ function openRoadmap(){
     <div style="font-weight:800;font-size:14px;color:#e8a648;margin:14px 0 4px">🔜 Coming next</div>
     <ul style="font-size:12.5px;line-height:1.5;color:#f2ead6;margin:0 0 12px;padding-left:18px">${list(nextItems)}</ul>
     <div style="font-weight:800;font-size:14px;margin-bottom:2px;color:#f2ead6">💬 Feedback</div>
-    <p style="font-size:12.5px;color:#c8bd9e;margin:0">${feedback}</p>
+    <p style="font-size:12.5px;color:#c8bd9e;margin:0 0 12px">${feedback}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid rgba(255,255,255,.1);padding-top:10px">
+      <button class="btn alt" onclick="document.getElementById('roadmap-modal').remove(); replayIntro()">🎬 Replay Intro</button>
+      <span style="font-size:11px;color:#8a8478">BuyrWorld v0.10 · © Featherstone Valley</span>
+    </div>
   </div>`;
   document.body.appendChild(el);
   el.addEventListener("click", e => { if (e.target === el) el.remove(); });
@@ -10175,6 +10180,7 @@ function showTitle(){
     setTimeout(()=>{
       tEl.style.display = "none";
       document.body.classList.remove("title-open");
+      _presEnterPlaying();   // hide the boot presentation layer + reveal the game HUD/world
       MUSIC.unlocked = true; updateMusicZone();
       const stat = document.getElementById("hud-name-stat");
       if (stat){ stat.classList.add("named","named-anim"); setTimeout(()=>stat.classList.remove("named-anim"),500); }
@@ -10306,7 +10312,7 @@ function freshState(){
   return {
     v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[], ui:{ padFocus:false }, skillApproach:{}, approachAcc:{},
     social:{ v:SOCIAL_CONTENT_VERSION, rel:{}, mem:{}, flags:{}, chose:{}, seen:{}, graphs:{}, followups:[], applied:{}, history:[], lastDecayDay:0 },
-    playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty", briefSkipShort:false }, shift:{ phaseId:null }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
+    playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty", briefSkipShort:false, introSeen:false }, shift:{ phaseId:null }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -10659,6 +10665,7 @@ function load(){
       if (!S.ui || typeof S.ui !== "object") S.ui = { padFocus:false };
       if (!S.settings) S.settings = {};
       if (typeof S.settings.briefSkipShort !== "boolean") S.settings.briefSkipShort = false;   // Back-on-Shift preference
+      if (typeof S.settings.introSeen !== "boolean") S.settings.introSeen = false;             // M23: full boot intro once, then short
       if (!S.shift || typeof S.shift !== "object") S.shift = { phaseId:null };                  // returning-briefing snapshot
       if (!S.skillApproach || typeof S.skillApproach !== "object") S.skillApproach = {};          // starter-skill differentiation
       if (!S.approachAcc || typeof S.approachAcc !== "object") S.approachAcc = {};                // exact input-cost carry
@@ -16589,6 +16596,336 @@ function updateProgressBar(){
   }
 }
 
+// ================= Premium boot presentation (M23) =================
+// A typed presentation flow: boot → intro → pressAny → titleMenu → (creator | continue
+// | quick) → loading → playing. The world/HUD stay hidden (body.pre-game) throughout.
+type PresState = 'boot' | 'intro' | 'pressAny' | 'titleMenu' | 'characterCreator' | 'loadingGame' | 'playing';
+var _presState: PresState = 'boot';
+var _pres: any = { raf: 0, sceneRaf: 0, start: 0, variant: 'full', kh: null, ph: null, padPoll: 0, padPrev: {}, focusIdx: 0 };
+const _PEL = (id: string) => document.getElementById(id);
+function _introSeen(){ return !!(S.settings && S.settings.introSeen); }
+function _presReduced(){ try{ return _reducedMotion(); }catch(e){ return false; } }
+function _presSfx(name: string){
+  // Autoplay-safe: only after audio is unlocked (a user gesture) + SFX enabled. Silent
+  // otherwise — never an error, never blocks the visual intro.
+  if (!MUSIC.unlocked || (S.settings && S.settings.sfx === false)) return;
+  try{ if (SFX && SFX.ui) SFX.ui(name); }catch(e){}
+}
+function _presEnterPlaying(){
+  _presStopIntro();
+  const p = _PEL('presentation'); if (p){ p.classList.remove('on'); p.setAttribute('aria-hidden', 'true'); }
+  const pa = _PEL('press-any'); if (pa) pa.style.display = 'none';
+  const tm = _PEL('title-menu'); if (tm) tm.style.display = 'none';
+  document.body.classList.remove('pre-game');
+  // Entering the game counts as having seen the intro → returning launches use the short one.
+  if (S.settings && !S.settings.introSeen){ S.settings.introSeen = true; }
+  _presState = 'playing';
+}
+function _presStopIntro(){
+  if (_pres.raf){ cancelAnimationFrame(_pres.raf); _pres.raf = 0; }
+  if (_pres.sceneRaf){ cancelAnimationFrame(_pres.sceneRaf); _pres.sceneRaf = 0; }
+  if (_pres.padPoll){ clearInterval(_pres.padPoll); _pres.padPoll = 0; }
+  if (_pres.kh){ window.removeEventListener('keydown', _pres.kh, true); _pres.kh = null; }
+  if (_pres.ph){ const c = _PEL('presentation'); if (c) c.removeEventListener('pointerdown', _pres.ph); _pres.ph = null; }
+}
+function startPresentation(){
+  document.body.classList.add('pre-game');
+  // Documented dev/test mechanism: ?pres=off skips straight to the title menu (or the
+  // creator when no save); ?pres=full|short|reduced forces an intro variant.
+  let forced: string | null = null;
+  try{ forced = new URLSearchParams(location.search).get('pres'); }catch(e){}
+  if (forced === 'off'){ _presStartCreator(); return; }   // straight to the creator (legacy/e2e fast path)
+  const p = _PEL('presentation'); if (p){ p.classList.add('on'); p.setAttribute('aria-hidden', 'false'); }
+  ['press-ver', 'menu-ver'].forEach(id => { const e = _PEL(id); if (e) e.textContent = 'v0.10'; });
+  _pres.variant = (forced === 'full' || forced === 'short' || forced === 'reduced') ? forced
+    : (_presReduced() ? 'reduced' : (_introSeen() ? 'short' : 'full'));
+  _startIntro(_pres.variant as any);
+}
+(globalThis as any).startPresentation = startPresentation;
+
+// ---- intro (programmatic pixel-art supply-chain construction) ----
+function _startIntro(variant: 'full' | 'short' | 'reduced'){
+  _presState = 'intro';
+  const cv = _PEL('intro-canvas') as HTMLCanvasElement; if (!cv){ _toPressAny(); return; }
+  const skip = _PEL('intro-skip');
+  _pres.start = performance.now(); _pres.variant = variant;
+  const resize = () => { const r = cv.getBoundingClientRect(); const dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr)); };
+  resize(); const onResize = () => resize(); window.addEventListener('resize', onResize);
+  const done = () => { window.removeEventListener('resize', onResize); _finishIntro(); };
+  const frame = () => {
+    if (document.hidden){ _pres.raf = requestAnimationFrame(frame); return; }   // don't animate a hidden tab
+    const t = performance.now() - _pres.start;
+    const ctx = cv.getContext('2d'); if (!ctx){ done(); return; }
+    try{ _drawIntroFrame(ctx, cv.width, cv.height, t, variant); }catch(e){ done(); return; }   // any draw error → graceful finish
+    if (skip && t > 700) skip.classList.add('show');
+    if (introIsDone(t, variant)){ done(); return; }
+    _pres.raf = requestAnimationFrame(frame);
+  };
+  _pres.raf = requestAnimationFrame(frame);
+  // ---- skip: keyboard / pointer / touch / controller ----
+  _pres.kh = (e: KeyboardEvent) => {
+    const t = performance.now() - _pres.start;
+    if (!introInputAccepted(t)) return;                 // guard the first ~400ms
+    e.preventDefault(); e.stopPropagation();            // consume so it can't hit the menu
+    _skipIntro();
+  };
+  window.addEventListener('keydown', _pres.kh, true);
+  _pres.ph = (e: Event) => { const t = performance.now() - _pres.start; if (!introInputAccepted(t)) return; e.preventDefault(); _skipIntro(); };
+  const p = _PEL('presentation'); if (p) p.addEventListener('pointerdown', _pres.ph);
+  // controller face/start button poll (ignore axis drift — buttons only)
+  _pres.padPrev = {};
+  _pres.padPoll = setInterval(() => {
+    const t = performance.now() - _pres.start; if (!introInputAccepted(t)) return;
+    const pads = (navigator.getGamepads ? navigator.getGamepads() : []) || [];
+    for (const pad of pads){ if (!pad) continue; for (let b = 0; b < pad.buttons.length; b++){ if (pad.buttons[b] && pad.buttons[b].pressed){ setInputMethod('gamepad'); _skipIntro(); return; } } }
+  }, 60) as any;
+}
+function _skipIntro(){ if (_presState !== 'intro') return; _finishIntro(); }
+function _finishIntro(){
+  _presStopIntro();
+  if (!S.settings) S.settings = {};
+  if (!S.settings.introSeen){ S.settings.introSeen = true; try{ save(); }catch(e){} }
+  _toPressAny();
+}
+
+// Draw one intro frame at elapsed time `t`. Virtual 480×270 stage, letterboxed inside
+// the navy backdrop (no stretch, no white strips at any aspect ratio).
+function _drawIntroFrame(ctx: any, W: number, H: number, t: number, variant: string){
+  ctx.clearRect(0, 0, W, H);
+  const sc = Math.min(W / 480, H / 270), ox = (W - 480 * sc) / 2, oy = (H - 270 * sc) / 2;
+  ctx.save(); ctx.translate(ox, oy); ctx.scale(sc, sc);
+  ctx.imageSmoothingEnabled = false;
+  // stage backdrop + conveyor floor
+  const g = ctx.createLinearGradient(0, 0, 0, 270); g.addColorStop(0, '#16233f'); g.addColorStop(1, '#0a1120');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 480, 270);
+  ctx.fillStyle = '#2a3a58'; ctx.fillRect(0, 196, 480, 8);                        // conveyor belt
+  ctx.fillStyle = '#1a2740'; for (let x = ((t / 12) % 16); x < 480; x += 16) ctx.fillRect(x, 196, 8, 8);   // moving belt segments
+  ctx.fillStyle = '#0e1830'; ctx.fillRect(0, 204, 480, 66);
+
+  const st = introStageAt(t, variant as any);
+  const approved = introQcApproved(t, variant as any);
+  const beat = st.id, k = st.local;
+  const cx = 240;
+  // ---- how much of the wordmark is built + whether a letter is flipped ----
+  const letters = 'BUYRWORLD'.split('');
+  let shown = letters.length; let flipIdx = -1; let logoY = 108; let logoAlpha = 1;
+  if (variant === 'full'){
+    if (beat === 'order' || beat === 'materials' || beat === 'processing') shown = 0;
+    else if (beat === 'assembly') shown = Math.floor(k * letters.length + 0.001);
+    else shown = letters.length;
+    if (beat === 'qc' && !approved) flipIdx = 4;                                   // one letter fitted backwards
+  } else if (variant === 'short'){
+    if (beat === 'slidein'){ shown = letters.length; logoY = 108 - (1 - k) * 60; logoAlpha = k; }
+    if (beat === 'qc' && !approved) flipIdx = 4;
+  } else { // reduced
+    shown = letters.length; logoAlpha = beat === 'reveal' ? k : 1;
+  }
+
+  // ---- Stage props (full variant beats) ----
+  if (variant === 'full' && beat === 'order'){
+    ctx.fillStyle = '#8a94a8'; ctx.fillRect(cx - 26, 70, 52, 34);                  // printer
+    ctx.fillStyle = (Math.floor(t / 220) % 2) ? '#ff5a5a' : '#5a2020'; ctx.fillRect(cx + 18, 74, 4, 4);   // status light
+    const paperH = Math.round(k * 40);
+    ctx.fillStyle = '#f4f0e2'; ctx.fillRect(cx - 22, 104, 44, paperH);            // paper feeding out
+    ctx.fillStyle = '#2a2a2a'; ctx.font = '7px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    if (paperH > 12) ctx.fillText('CUSTOMER ORDER', cx, 110);
+    if (paperH > 30){ ctx.fillStyle = '#8a3a1a'; ctx.fillText('BUILD: BUYRWORLD', cx, 122); }
+  }
+  if (variant === 'full' && beat === 'materials'){
+    const p = k; const items = ['🪨', '🪵', '📦'];
+    for (let i = 0; i < 3; i++){ const fromLeft = i % 2 === 0; const startX = fromLeft ? -40 : 520; const tx = 150 + i * 90; const x = startX + (tx - startX) * Math.min(1, p * 1.3 - i * 0.15); if (x > -40 && x < 520){ ctx.fillStyle = '#6a4a28'; ctx.fillRect(x - 12, 176, 24, 20); drawEmojiC(ctx, items[i], x, 186, 14); } }
+  }
+  if (variant === 'full' && beat === 'processing'){
+    drawEmojiC(ctx, '🔥', cx - 70, 150, 34);                                       // furnace
+    drawEmojiC(ctx, '⚙️', cx + 70, 150, 30);                                       // processing station
+    for (let s = 0; s < 6; s++){ const sp = ((t / 60) + s) % 10; ctx.fillStyle = `rgba(255,${160 - s * 10},40,${(1 - sp / 10).toFixed(2)})`; ctx.fillRect(cx - 70 + Math.sin(sp * 2) * 14, 150 - sp * 8, 2, 2); }
+    ctx.fillStyle = 'rgba(255,180,80,.10)'; ctx.fillRect(0, 120, 480, 90);        // warm glow
+  }
+  if (variant === 'full' && beat === 'assembly'){
+    drawEmojiC(ctx, '🦾', cx, 70, 28);                                             // robotic arm placing letters
+  }
+  if ((variant === 'full' || variant === 'short') && beat === 'qc'){
+    // scanner sweep + light
+    const sx = 140 + (approved ? 200 : (Math.sin(t / 140) * 0.5 + 0.5) * 200);
+    ctx.fillStyle = approved ? 'rgba(60,220,120,.9)' : 'rgba(255,70,70,.9)'; ctx.fillRect(sx, 78, 2, 70);
+    ctx.fillStyle = approved ? 'rgba(60,220,120,.14)' : 'rgba(255,70,70,.12)'; ctx.fillRect(sx - 8, 78, 16, 70);
+    if (!approved){ if (Math.floor(t / 180) % 2) drawEmojiC(ctx, '⚠️', cx, 60, 16); drawEmojiC(ctx, '❄️', 150 + flipIdx * 8, 150, 20); }   // Frosty steps in to fix it
+    ctx.fillStyle = approved ? '#3cdc78' : '#ff5a5a'; ctx.font = '8px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(approved ? 'QC PASS' : 'QC SCAN', cx, 158);
+  }
+  if ((variant === 'full' || variant === 'short') && beat === 'delivery'){
+    drawEmojiC(ctx, '🚜', cx - 120 + k * 80, 168, 30);                             // forklift delivers
+    // DELIVERED stamp
+    const sp = Math.min(1, k * 2); ctx.save(); ctx.translate(cx + 96, 78); ctx.rotate(-0.18); ctx.globalAlpha = sp; ctx.strokeStyle = '#3cdc78'; ctx.lineWidth = 3; ctx.strokeRect(-42, -14, 84, 28); ctx.fillStyle = '#3cdc78'; ctx.font = '9px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('DELIVERED', 0, 0); ctx.restore();
+    if (k > 0.4){ ctx.fillStyle = 'rgba(255,220,120,' + Math.min(0.18, (k - 0.4) * 0.4).toFixed(2) + ')'; ctx.fillRect(0, 60, 480, 90); }   // illuminate
+  }
+
+  // ---- the BUYRWORLD wordmark (progressive) ----
+  ctx.globalAlpha = logoAlpha;
+  ctx.font = '22px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const lw = 24; const total = letters.length * lw; let lx = cx - total / 2 + lw / 2;
+  for (let i = 0; i < letters.length; i++){
+    if (i < shown){
+      const flip = i === flipIdx;
+      ctx.save(); ctx.translate(lx, logoY); if (flip) ctx.scale(-1, 1);
+      // impact drop for the just-placed letter in assembly
+      let dy = 0; if (variant === 'full' && beat === 'assembly' && i === shown - 1){ const lp = (k * letters.length) % 1; dy = -(1 - lp) * 22; }
+      ctx.fillStyle = '#5a3a12'; ctx.fillText(letters[i], 0, 3 + dy);              // shadow
+      ctx.fillStyle = (i >= 4) ? '#ffc861' : '#e9eefb'; ctx.fillText(letters[i], 0, dy);
+      ctx.restore();
+    }
+    lx += lw;
+  }
+  ctx.globalAlpha = 1;
+  // tagline on delivery/hold
+  if ((beat === 'delivery' && k > 0.4) || beat === 'hold' || (variant === 'reduced' && beat === 'hold')){
+    ctx.fillStyle = '#ffc861'; ctx.font = '8px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('BUILD YOUR LIFE. YOUR WORLD. YOUR CHOICES.', cx, 150);
+  }
+  ctx.restore();
+}
+
+// ---- Press Any Button ----
+function _toPressAny(){
+  _presState = 'pressAny';
+  const cv = _PEL('intro-canvas'); if (cv) (cv as HTMLElement).style.display = 'none';
+  const skip = _PEL('intro-skip'); if (skip) skip.classList.remove('show');
+  const pa = _PEL('press-any') as HTMLElement; if (!pa){ _showTitleMenu(); return; }
+  pa.style.display = 'flex';
+  _presAmbient('press-scene');
+  const go = (method: 'pointer' | 'keyboard' | 'gamepad') => {
+    cleanup(); try{ setInputMethod(method); }catch(e){}
+    _bootstrapAudio && _bootstrapAudio();          // a user gesture — audio may now start (title music handled by zones)
+    _showTitleMenu();
+  };
+  const kh = (e: KeyboardEvent) => { e.preventDefault(); e.stopPropagation(); go('keyboard'); };
+  const ph = (e: Event) => { e.preventDefault(); go('pointer'); };
+  const padPoll = setInterval(() => { const pads = (navigator.getGamepads ? navigator.getGamepads() : []) || []; for (const pad of pads){ if (!pad) continue; for (const b of pad.buttons){ if (b && b.pressed){ go('gamepad'); return; } } } }, 60);
+  function cleanup(){ window.removeEventListener('keydown', kh, true); pa.removeEventListener('pointerdown', ph); clearInterval(padPoll); }
+  window.addEventListener('keydown', kh, true); pa.addEventListener('pointerdown', ph);
+  _pres._paCleanup = cleanup;
+}
+// A calm living-valley ambience canvas (warehouse lights, drifting smoke, a distant
+// train, silhouettes) — subtle, reduced-motion aware.
+function _presAmbient(canvasId: string){
+  const cv = _PEL(canvasId) as HTMLCanvasElement; if (!cv) return;
+  const reduced = _presReduced();
+  const resize = () => { const r = cv.getBoundingClientRect(); const dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr)); };
+  resize();
+  const draw = () => {
+    const W = cv.width, H = cv.height; const ctx = cv.getContext('2d'); if (!ctx) return;
+    const sc = Math.min(W / 480, H / 270), ox = (W - 480 * sc) / 2, oy = (H - 270 * sc) / 2;
+    ctx.clearRect(0, 0, W, H); ctx.save(); ctx.translate(ox, oy); ctx.scale(sc, sc); ctx.imageSmoothingEnabled = false;
+    const t = reduced ? 0 : performance.now();
+    // sky + distant hills
+    const g = ctx.createLinearGradient(0, 0, 0, 270); g.addColorStop(0, '#1a2748'); g.addColorStop(1, '#0c1426'); ctx.fillStyle = g; ctx.fillRect(0, 0, 480, 270);
+    ctx.fillStyle = '#12203a'; ctx.beginPath(); ctx.moveTo(0, 200); ctx.lineTo(120, 170); ctx.lineTo(260, 195); ctx.lineTo(400, 165); ctx.lineTo(480, 190); ctx.lineTo(480, 270); ctx.lineTo(0, 270); ctx.fill();
+    ctx.fillStyle = '#0e1a30'; ctx.fillRect(0, 210, 480, 60);                       // ground
+    // warehouses with lit windows
+    for (let i = 0; i < 4; i++){ const bx = 40 + i * 110; ctx.fillStyle = '#0e1830'; ctx.fillRect(bx, 175, 70, 40); const lit = reduced ? true : (Math.floor(t / 700 + i) % 3 !== 0); ctx.fillStyle = lit ? 'rgba(255,210,120,.85)' : 'rgba(60,80,110,.5)'; for (let w = 0; w < 3; w++) ctx.fillRect(bx + 10 + w * 20, 185, 8, 8); }
+    // chimney smoke
+    if (!reduced){ for (let p = 0; p < 3; p++){ const ph = ((t / 900) + p * 0.4) % 1; ctx.fillStyle = `rgba(200,200,210,${(0.18 * (1 - ph)).toFixed(2)})`; ctx.beginPath(); ctx.arc(96 + Math.sin(ph * 6) * 4, 172 - ph * 30, 2 + ph * 4, 0, 7); ctx.fill(); } }
+    // distant delivery train
+    const trainX = reduced ? 300 : ((t / 30) % 620) - 80; ctx.fillStyle = '#3a4a68'; ctx.fillRect(trainX, 205, 46, 10); ctx.fillStyle = '#ffdf9a'; ctx.fillRect(trainX + 42, 207, 3, 4);
+    // NPC silhouettes
+    ctx.fillStyle = '#0a1220'; for (let i = 0; i < 3; i++){ const nx = 150 + i * 70 + (reduced ? 0 : Math.sin(t / 1000 + i) * 6); ctx.fillRect(nx, 224, 5, 12); ctx.fillRect(nx + 1, 219, 3, 4); }
+    ctx.restore();
+    if (!reduced) _pres.sceneRaf = requestAnimationFrame(draw);
+  };
+  if (_pres.sceneRaf){ cancelAnimationFrame(_pres.sceneRaf); _pres.sceneRaf = 0; }
+  draw();
+}
+
+// ---- Title menu ----
+function _menuHasSave(){ return !!(S.playerName && S.playerName.length); }
+function _saveSummaryLine(){
+  if (!_menuHasSave()) return '';
+  try{ const s = saveSummary({ name: S.playerName, totalLevel: totalLvl(), coins: S.coins, lastSeen: S.lastSeen, legacy: S.legacy }); return `${esc(s.name)} · Total Lv ${s.totalLevel} · ${fmt(s.coins)} coins${s.chapter ? ` · ${s.chapter}` : ''}`; }catch(e){ return esc(S.playerName); }
+}
+function _isPackagedApp(){ return !!((window as any).buyrworld && (window as any).buyrworld.isDesktop && (window as any).buyrworld.quit); }
+function _canInstall(){ try{ return !!((window as any).__bwPWA && (window as any).__bwPWA.canInstall()); }catch(e){ return false; } }
+function _showTitleMenu(){
+  if (_pres._paCleanup){ try{ _pres._paCleanup(); }catch(e){} _pres._paCleanup = null; }
+  _presState = 'titleMenu';
+  const pa = _PEL('press-any'); if (pa) (pa as HTMLElement).style.display = 'none';
+  const tm = _PEL('title-menu') as HTMLElement; if (!tm){ _presStartCreator(); return; }
+  tm.style.display = 'flex';
+  _presAmbient('menu-scene');
+  try{ if ((window as any).__bwPWA) (window as any).__bwPWA.hideFloating(); }catch(e){}
+  const hasSave = _menuHasSave();
+  const items: any[] = [];
+  // Continue is always listed but disabled until a valid save exists.
+  items.push({ id: 'continue', ic: '▶', label: 'Continue', primary: hasSave, disabled: !hasSave, sub: hasSave ? _saveSummaryLine() : '' });
+  items.push({ id: 'newgame', ic: '✦', label: 'New Game', primary: !hasSave });
+  items.push({ id: 'quick', ic: '⚡', label: 'Quick Start' });
+  items.push({ id: 'settings', ic: '⚙️', label: 'Settings' });
+  items.push({ id: 'about', ic: '📖', label: 'About & Credits' });
+  if (_canInstall()) items.push({ id: 'install', ic: '📲', label: 'Install BuyrWorld' });
+  if (_isPackagedApp()) items.push({ id: 'quit', ic: '⏻', label: 'Quit' });
+  const list = _PEL('tm-list') as HTMLElement;
+  list.innerHTML = items.map((it, i) => `
+    <button class="tm-item${it.primary ? ' primary' : ''}" role="menuitem" data-tm="${it.id}" ${it.disabled ? 'disabled aria-disabled="true"' : ''}>
+      <span class="tm-ic">${it.ic}</span><span style="flex:1">${it.label}${it.sub ? `<div class="tm-continue-info">${it.sub}</div>` : ''}</span>
+    </button>`).join('');
+  list.querySelectorAll('[data-tm]').forEach(b => (b as HTMLElement).onclick = () => _menuAction((b as HTMLElement).dataset.tm!));
+  // controller/keyboard focus starts on the primary (Continue if a save exists, else New
+  // Game) — indexed against the ENABLED items so a disabled Continue doesn't offset it.
+  const primaryId = (items.find(it => it.primary) || items[0]).id;
+  const enabledIds = items.filter(it => !it.disabled).map(it => it.id);
+  _pres.focusIdx = Math.max(0, enabledIds.indexOf(primaryId));
+  _menuFocus();
+  // keyboard nav for the menu
+  if (_pres.menuKh) window.removeEventListener('keydown', _pres.menuKh, true);
+  _pres.menuKh = (e: KeyboardEvent) => {
+    const btns = Array.from(list.querySelectorAll('.tm-item:not([disabled])')) as HTMLElement[];
+    if (!btns.length) return;
+    if (e.key === 'ArrowDown' || e.key === 's'){ e.preventDefault(); _pres.focusIdx = (_pres.focusIdx + 1) % btns.length; _menuFocus(); }
+    else if (e.key === 'ArrowUp' || e.key === 'w'){ e.preventDefault(); _pres.focusIdx = (_pres.focusIdx - 1 + btns.length) % btns.length; _menuFocus(); }
+    else if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); const el = btns[Math.min(_pres.focusIdx, btns.length - 1)]; if (el) el.click(); }
+  };
+  window.addEventListener('keydown', _pres.menuKh, true);
+}
+function _menuFocus(){
+  const list = _PEL('tm-list'); if (!list) return;
+  const btns = Array.from(list.querySelectorAll('.tm-item:not([disabled])')) as HTMLElement[];
+  btns.forEach(b => b.classList.remove('gp-focus'));
+  const el = btns[Math.min(_pres.focusIdx, btns.length - 1)]; if (el){ el.classList.add('gp-focus'); try{ el.focus({ preventScroll: true }); }catch(e){} }
+}
+function _menuCleanup(){ if (_pres.menuKh){ window.removeEventListener('keydown', _pres.menuKh, true); _pres.menuKh = null; } }
+function _menuAction(id: string){
+  _presSfx('confirm');
+  if (id === 'continue'){ _menuCleanup(); const b = _PEL('btn-continue') as HTMLElement; if (b) b.click(); return; }
+  if (id === 'newgame'){ _menuNewGame(); return; }
+  if (id === 'quick'){ _menuCleanup(); _presEnterCreatorThen(() => { const q = _PEL('btn-quick') as HTMLElement; if (q) q.click(); }); return; }
+  if (id === 'settings'){ try{ openSettings(); }catch(e){} return; }
+  if (id === 'about'){ try{ openAbout(); }catch(e){ try{ openRoadmap(); }catch(_e){} } return; }
+  if (id === 'install'){ try{ (window as any).__bwPWA.prompt(); }catch(e){} return; }
+  if (id === 'quit'){ try{ (window as any).buyrworld.quit(); }catch(e){} return; }
+}
+// New Game — if a save would be overwritten, confirm first (never mutate until accepted).
+function _menuNewGame(){
+  if (_menuHasSave()){
+    if (!window.confirm('Start a NEW game? Your current founder’s save will be overwritten. This cannot be undone.')) return;
+  }
+  _menuCleanup(); _presStartCreator();
+}
+function _presEnterCreatorThen(fn: () => void){ _presStartCreator(); try{ fn(); }catch(e){} }
+// Show the existing character creator with the presentation layer hidden behind it.
+function _presStartCreator(){
+  _presState = 'characterCreator';
+  const tm = _PEL('title-menu'); if (tm) (tm as HTMLElement).style.display = 'none';
+  const p = _PEL('presentation'); if (p){ p.classList.remove('on'); p.setAttribute('aria-hidden', 'true'); }   // creator has its own full backdrop; keep pre-game so HUD stays hidden
+  try{ showTitle(); }catch(e){}
+}
+(globalThis as any).replayIntro = function(){ // for About → Replay Full Intro (does not touch the save)
+  const tm = _PEL('title-menu'); if (tm) (tm as HTMLElement).style.display = 'none';
+  const cv = _PEL('intro-canvas'); if (cv) (cv as HTMLElement).style.display = '';
+  const p = _PEL('presentation'); if (p){ p.classList.add('on'); p.setAttribute('aria-hidden', 'false'); }
+  document.body.classList.add('pre-game');
+  _menuCleanup();
+  _startIntro('full');
+};
+
 /* ---------- boot ---------- */
 const hadSave = load();
 applyOffline();
@@ -16658,7 +16995,7 @@ document.getElementById("btn-about")?.addEventListener("click", () => openRoadma
   if (sum && row && info){
     row.style.display=""; info.style.display="";
     info.innerHTML = `<b>${esc(sum.name)}</b> · Total Lv ${sum.totalLevel} · ${fmt(sum.coins)} coins${sum.chapter?` · ${sum.chapter}`:''}${sum.date?` · saved ${sum.date}`:''}`;
-    document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; document.body.classList.remove("title-open"); focusGameInput();
+    document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; document.body.classList.remove("title-open"); _presEnterPlaying(); focusGameInput();
       // Restore controller focus on resume for pad/couch players (req: survives reloads).
       if ((S.ui && S.ui.padFocus) || (S.settings && S.settings.couch)){ setInputMethod('gamepad'); try{ focusMainPrimary(); }catch(e){} }
       // Back on Shift: a returning player who resumes an existing save gets the briefing
@@ -16758,11 +17095,10 @@ function _bootstrapAudio(){
 }
 ["pointerdown","keydown","touchstart"].forEach(ev => window.addEventListener(ev, _bootstrapAudio, { passive:true }));
 requestAnimationFrame(villageFrame);
-if (!S.playerName){
-  showTitle();
-} else {
-  log(`👷 Back on shift, <b>${pName()}</b>. The supply chain never sleeps.`, "good");
-}
+// Premium boot flow (M23): logo intro → Press Any Button → title menu. Never opens
+// straight into the creator or the game world; Continue/New Game/Quick Start come from
+// the menu. The gameplay HUD stays hidden (body.pre-game) until a game starts/resumes.
+startPresentation();
 if (window._offlineSummary){
   const _os = window._offlineSummary;
   const _coinStr = _os.passiveCoins > 0 ? ` +<b>${fmt(_os.passiveCoins)} coins</b>` : '';
@@ -17691,6 +18027,19 @@ if (import.meta.env.DEV) {
     socWitnessCrime(npc:string){ const day=_gameDay(); S.social.mem[npc]=writeMemory(_socMem(npc), makeMemory(npc,day,{id:'crime:test:'+npc,category:'crime',subject:'player',summaryKey:'saw you take something',emotion:-40,strength:80,source:'witnessed',confidence:90,tags:['suspicion']})); const r=relApplyDeltas(_socRel(npc),[{dim:'suspicion',delta:25}]); S.social.rel[npc]=r.rel; return { susp:_socRel(npc).suspicion, hasCrime: memHas(_socMem(npc),{category:'crime'}) }; },
     // Exercise the REAL in-world interaction path (tapping a villager/wanderer NPC).
     socTap(worldId:string){ const v = VILLAGER_STATE.find((x:any)=>x.id===worldId); const w = WANDERERS.find((x:any)=>x.id===worldId); if(v) showVillagerProfile(v); else if(w) showWandererProfile(w); else return {err:'no_npc'}; return { conv: !!document.getElementById('conv-modal'), npc: _conv?_conv.npc:null }; },
+    // ---- Boot presentation probes (this milestone) ----
+    presState(){ return _presState; },
+    presVisible(){ const vis=(id:string)=>{ const e=document.getElementById(id); return !!(e && getComputedStyle(e).display!=='none' && (id==='presentation'? e.classList.contains('on'): true)); };
+      return { state:_presState, presentation:vis('presentation'), pressAny:vis('press-any'), titleMenu:vis('title-menu'), creator:vis('title'),
+        hudHidden: document.body.classList.contains('pre-game'), variant:_pres.variant, introSeen:!!(S.settings&&S.settings.introSeen) }; },
+    presSkip(){ _skipIntro(); return { state:_presState }; },
+    presFinishIntro(){ _finishIntro(); return { state:_presState }; },
+    presToMenu(){ if(_presState==='intro') _finishIntro(); if(_presState==='pressAny') _showTitleMenu(); return { state:_presState }; },
+    presMenuItems(){ return Array.from(document.querySelectorAll('#tm-list [data-tm]')).map((b:any)=>({ id:b.dataset.tm, disabled:b.disabled, focus:b.classList.contains('gp-focus') })); },
+    presMenuAction(id:string){ _menuAction(id); return { state:_presState, creator: !!(document.getElementById('title') && getComputedStyle(document.getElementById('title')!).display!=='none') }; },
+    presMenuFocusIdx(){ return _pres.focusIdx; },
+    presReplayIntro(){ (window as any).replayIntro(); return { state:_presState, name:S.playerName }; },
+    presStartCreator(){ _presStartCreator(); return { creator: getComputedStyle(document.getElementById('title')!).display!=='none' }; },
     // Starter-skill differentiation probes (this milestone).
     uiApproaches(skill:string){ return isStarterSkill(skill) ? APPROACHES[skill].map((a:any)=>a.id) : []; },
     uiRunSkill(skill:string, approachId:string){

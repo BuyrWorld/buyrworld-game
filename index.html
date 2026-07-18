@@ -946,6 +946,58 @@ body.title-open{ overflow:hidden; }   /* no page scrollbar behind the creator */
 #modal-layer:empty{ display:none; }
 #modal-layer > .bw-modal{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.6); pointer-events:auto; }
 body.modal-open{ overflow:hidden; }
+
+/* ===================== Premium boot / intro / title presentation =====================
+   One full-bleed presentation layer sits above the HUD/world and below modals. While a
+   pre-game screen is up, the gameplay HUD + world are fully hidden and inert (req: the
+   HUD never shows behind the title/creator). */
+body.pre-game > header, body.pre-game > #nav, body.pre-game > #navcat, body.pre-game > #main,
+body.pre-game > #log, body.pre-game > #log-header, body.pre-game > footer.credit,
+body.pre-game > #gp-prompts, body.pre-game > #zone-card, body.pre-game > #toast{ display:none !important; }
+#presentation{ position:fixed; inset:0; z-index:150; display:none; overflow:hidden;
+  background:radial-gradient(130% 90% at 50% -20%, #16233f 0%, #0d1526 45%, #070b16 100%); }
+#presentation.on{ display:block; }
+#intro-canvas{ position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); box-sizing:border-box; }
+/* skip hint, discreet, bottom-centre */
+#intro-skip{ position:absolute; left:0; right:0; bottom:calc(18px + env(safe-area-inset-bottom)); text-align:center;
+  font-family:'IBM Plex Mono',monospace; font-size:12px; color:rgba(255,255,255,.5); letter-spacing:1px; pointer-events:none; opacity:0; transition:opacity .4s; }
+#intro-skip.show{ opacity:1; }
+@media (prefers-reduced-motion: reduce){ #intro-skip{ transition:none; } }
+
+/* ---- shared pre-game scene (press-any + title share this backdrop) ---- */
+.pg-scene{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:clamp(16px,4vh,48px) clamp(16px,4vw,64px); box-sizing:border-box; text-align:center; }
+.pg-canvas{ position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated; opacity:.9; }
+.pg-scene::after{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(120% 100% at 50% 40%, rgba(7,11,22,.05), rgba(7,11,22,.72) 100%); }
+.pg-inner{ position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; gap:10px; max-width:min(760px,92vw); }
+.pg-wordmark{ font-family:'Press Start 2P',monospace; font-size:clamp(28px,5.5vw,56px); line-height:1.15; letter-spacing:2px;
+  color:#e9eefb; text-shadow:0 3px 0 #6a4a1a, 0 5px 14px rgba(0,0,0,.7); }
+.pg-wordmark span{ color:var(--amber); }
+.pg-tagline{ font-family:'IBM Plex Mono',monospace; font-size:clamp(13px,1.6vw,18px); color:var(--amber); letter-spacing:1px; text-shadow:0 2px 6px rgba(0,0,0,.8); }
+.pg-press{ margin-top:14px; font-family:'Press Start 2P',monospace; font-size:clamp(11px,1.5vw,16px); color:#e9eefb; text-shadow:0 2px 6px rgba(0,0,0,.9); animation:pgBlink 1.4s ease-in-out infinite; }
+@keyframes pgBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+@media (prefers-reduced-motion: reduce){ .pg-press{ animation:none; opacity:.9; } }
+.pg-foot{ position:absolute; left:0; right:0; bottom:calc(12px + env(safe-area-inset-bottom)); display:flex; justify-content:space-between;
+  padding:0 clamp(14px,3vw,40px); font-family:'IBM Plex Mono',monospace; font-size:11px; color:rgba(255,255,255,.42); z-index:3; }
+
+/* ---- title menu ---- */
+#title-menu .pg-inner{ gap:6px; }
+.tm-list{ display:flex; flex-direction:column; gap:8px; width:min(360px,82vw); margin-top:14px; }
+.tm-item{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:rgba(22,29,46,.82);
+  border:2px solid var(--edge); border-radius:10px; color:var(--text); padding:12px 16px; cursor:pointer;
+  font-size:clamp(14px,1.6vw,17px); font-weight:700; transition:border-color .12s, background .12s; }
+.tm-item .tm-ic{ font-size:1.1em; width:1.4em; text-align:center; }
+.tm-item:hover:not(:disabled){ border-color:var(--amber); background:rgba(31,41,66,.9); }
+.tm-item:disabled{ opacity:.4; cursor:not-allowed; }
+.tm-item.gp-focus, .tm-item:focus-visible{ outline:3px solid var(--mint); outline-offset:2px; border-color:var(--mint); }
+.tm-item.primary{ border-color:var(--amber); background:linear-gradient(90deg,rgba(255,200,97,.16),rgba(255,200,97,.04)); }
+.tm-continue-info{ font-size:clamp(11px,1.2vw,13px); color:var(--dim); margin-top:2px; line-height:1.5; }
+.tm-sub{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
+.tm-sub button{ background:none; border:none; color:var(--dim); font-size:12px; cursor:pointer; text-decoration:underline dotted; text-underline-offset:2px; }
+.tm-sub button:hover, .tm-sub button.gp-focus, .tm-sub button:focus-visible{ color:var(--amber); outline:2px solid var(--mint); outline-offset:2px; border-radius:4px; }
+body.couch-mode .tm-item, body.input-gamepad .tm-item{ font-size:18px; padding:15px 18px; }
 </style>
 </head>
 <body>
@@ -1011,6 +1063,30 @@ body.modal-open{ overflow:hidden; }
     <div class="ks-item-name" id="ks-item-name"></div>
     <div class="ks-bonus" id="ks-bonus"></div>
     <button class="ks-close" id="ks-close-btn">Treasure it ✨</button>
+  </div>
+</div>
+
+<!-- ===== Premium boot presentation: logo intro → press any button → title menu ===== -->
+<div id="presentation" aria-hidden="true">
+  <canvas id="intro-canvas"></canvas>
+  <div id="intro-skip">Press any button to skip</div>
+  <div id="press-any" class="pg-scene" style="display:none" role="button" tabindex="0" aria-label="Press any button to start">
+    <canvas class="pg-canvas" id="press-scene"></canvas>
+    <div class="pg-inner">
+      <div class="pg-wordmark" id="press-logo">BUYR<span>WORLD</span></div>
+      <div class="pg-tagline">Build your life. Your world. Your choices.</div>
+      <div class="pg-press">PRESS ANY BUTTON</div>
+    </div>
+    <div class="pg-foot"><span id="press-ver">v0.10</span><span>© BuyrWorld · Featherstone Valley</span></div>
+  </div>
+  <div id="title-menu" class="pg-scene" style="display:none" role="dialog" aria-label="Main menu">
+    <canvas class="pg-canvas" id="menu-scene"></canvas>
+    <div class="pg-inner">
+      <div class="pg-wordmark" id="menu-logo" style="font-size:clamp(22px,4vw,40px)">BUYR<span>WORLD</span></div>
+      <div class="pg-tagline" style="font-size:clamp(11px,1.3vw,15px)">Build your life. Your world. Your choices.</div>
+      <nav class="tm-list" id="tm-list" role="menu" aria-label="Main menu"></nav>
+    </div>
+    <div class="pg-foot"><span id="menu-ver">v0.10</span><span>© BuyrWorld</span></div>
   </div>
 </div>
 
@@ -1110,6 +1186,12 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('appinstalled', function(){ btn.style.display = 'none'; deferred = null; });
   btn.addEventListener('click', function(){ if (!deferred) { btn.style.display='none'; return; } deferred.prompt(); deferred.userChoice.finally(function(){ deferred = null; btn.style.display = 'none'; }); });
   window.addEventListener('load', function(){ document.body.appendChild(btn); if (deferred) btn.style.display = 'block'; });
+  // Expose the deferred prompt to the title menu (only functional when actually available).
+  window.__bwPWA = {
+    canInstall: function(){ return !!deferred; },
+    hideFloating: function(){ btn.style.display = 'none'; },
+    prompt: function(){ if (!deferred) return; deferred.prompt(); deferred.userChoice.finally(function(){ deferred = null; btn.style.display = 'none'; }); },
+  };
 })();
 </script>
 </body>

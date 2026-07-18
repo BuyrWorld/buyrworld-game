@@ -24,7 +24,7 @@ async function cleanLoad(page: Page) {
     try {
       // 'commit' resolves as soon as the navigation commits (before load), so a
       // slow/detaching first load can't hang or abort the goto itself.
-      await page.goto('/', { waitUntil: 'commit', timeout: 30_000 });
+      await page.goto('/?pres=off', { waitUntil: 'commit', timeout: 30_000 });
       await expect(page.locator('#title')).toBeVisible({ timeout: 30_000 });
       return;
     } catch (e) { lastErr = e; }
@@ -250,7 +250,7 @@ test.describe('First-hour release gate', () => {
     let ok = false, lastErr: unknown;
     for (let i = 0; i < 4 && !ok; i++) {
       try {
-        await page2.goto('/', { waitUntil: 'commit', timeout: 30_000 });
+        await page2.goto('/?pres=off', { waitUntil: 'commit', timeout: 30_000 });
         await expect(page2.locator('#hud-coins')).toBeVisible({ timeout: 30_000 });
         ok = true;
       } catch (e) { lastErr = e; }

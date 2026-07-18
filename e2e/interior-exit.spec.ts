@@ -16,7 +16,7 @@ async function cleanLoad(page: Page) {
   await page.addInitScript((k) => { try { localStorage.removeItem(k); } catch (e) {} }, SAVE_KEY);
   let lastErr: unknown;
   for (let a = 0; a < 4; a++) {
-    try { await page.goto('/', { waitUntil: 'commit', timeout: 30_000 }); await expect(page.locator('#title')).toBeVisible({ timeout: 30_000 }); return; }
+    try { await page.goto('/?pres=off', { waitUntil: 'commit', timeout: 30_000 }); await expect(page.locator('#title')).toBeVisible({ timeout: 30_000 }); return; }
     catch (e) { lastErr = e; }
   }
   throw lastErr;
@@ -141,7 +141,7 @@ test.describe('Interior transition & recovery', () => {
     const p2 = await page.context().newPage();
     let ok = false, lastErr: unknown;
     for (let i = 0; i < 4 && !ok; i++) {
-      try { await p2.goto('/', { waitUntil: 'commit', timeout: 30_000 }); await expect(p2.locator('#hud-coins')).toBeVisible({ timeout: 30_000 }); ok = true; }
+      try { await p2.goto('/?pres=off', { waitUntil: 'commit', timeout: 30_000 }); await expect(p2.locator('#hud-coins')).toBeVisible({ timeout: 30_000 }); ok = true; }
       catch (e) { lastErr = e; }
     }
     if (!ok) throw lastErr;

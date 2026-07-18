@@ -15,7 +15,7 @@ async function cleanLoad(page: Page) {
   await page.addInitScript((k) => { try { localStorage.removeItem(k); } catch (e) {} }, SAVE_KEY);
   let lastErr: unknown;
   for (let attempt = 0; attempt < 4; attempt++) {
-    try { await page.goto('/', { waitUntil: 'commit', timeout: 30_000 }); await expect(page.locator('#title')).toBeVisible({ timeout: 30_000 }); return; }
+    try { await page.goto('/?pres=off', { waitUntil: 'commit', timeout: 30_000 }); await expect(page.locator('#title')).toBeVisible({ timeout: 30_000 }); return; }
     catch (e) { lastErr = e; }
   }
   throw lastErr;
