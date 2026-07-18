@@ -31,6 +31,7 @@ import { applyTxn, normalizeLedger, ledgerTail, ledgerTotalBySource } from './da
 import { shouldDeferDuringTutorial, ambientBlockedDuringTutorial, NEXT_STEPS, nextStepById, recommendNextStep, recommendReason, UNLOCK_GROUPS, nextUnlockGroup, summariseDeferred } from './data/pacing.ts';
 import { FLAGSHIP_ORDER, SUPPLIER_OFFERS, offerById, DELIVERY_OPTIONS, deliveryById, requiredMaterial, suggestedOrderQty, plannedMargin as c2cPlanned, expectedRolls, computeOrderResult, rollFlagshipOrder, primarySource, contractSourceable, orderFromContract } from './data/contractToCash.ts';
 import { createContract as c2cCreate, reduce as c2cReduce, migrateContract as c2cMigrate, plannedPnl as c2cPlannedPnl, actualPnl as c2cActualPnl, reservedByContract as c2cReserved, gradeOf as c2cGrade, satisfactionOf as c2cSatisfaction, C2C_ENGINE_VERSION, C2C_STAGES, isDecisionStage as c2cIsDecision, scenarioById as c2cScenarioById, C2C_SCENARIOS } from './data/c2cEngine.ts';
+import { quotesFor, planProcurement, scoreStats as procScoreStats, recordSupplierResult as procRecord } from './data/procurement.ts';
 import { EXIT_BAND, inExitRegion, validReturn, isInteriorTab } from './data/interiors.ts';
 import { tutorialPhase, isTutorialRunning, contractsFrozen, classifyModal, canOpenModal, isBlocking as _modalBlocking, summariseRewards, clampTutorialCount } from './data/tutorialState.ts';
 import { hitTest as ixHitTest, inRange as ixInRange, npcBox, footprintBox, interactVerb as ixVerb, cycleTarget as ixCycle, HIT_PAD, INTERACT_RANGE, NEARBY_RADIUS } from './data/interaction.ts';
@@ -515,6 +516,16 @@ function _c2cApplyEffect(e){
     case 'rep':        if (!S.contractRep) S.contractRep = {}; S.contractRep[e.client] = Math.max(0, (S.contractRep[e.client] || 0) + e.delta); break;
     case 'closed': {
       if (!Array.isArray(S.c2cHistory)) S.c2cHistory = []; S.c2cHistory.push(e.record);
+      // Update the persistent supplier scorecard from this order's real outcome.
+      try {
+        const cc = S.c2c;
+        if (cc && cc.po && cc.po.offerId){
+          if (!S.supplierScore) S.supplierScore = {};
+          const rec = cc.mat.received || 0;
+          const quality = rec > 0 ? Math.max(0, 1 - ((cc.mat.quarantined || 0) + (cc.mat.defectiveAccepted || 0)) / rec) : 1;
+          S.supplierScore[cc.po.offerId] = procRecord(S.supplierScore[cc.po.offerId], { onTime: cc.onTime === true, short: (cc.mat.shortfall || 0) > 0, quality });
+        }
+      } catch(_e){}
       // If this pipeline fulfilled a board contract, complete it now: the engine
       // already credited the (realised) revenue + reputation, so we just grant the
       // logistics XP, count it, and clear it from the board (never double-pay).
@@ -619,6 +630,15 @@ function c2cAbandon(){
 // presentation layer for the state engine — every button dispatches a real action.
 var _c2cUI: any = null; var _c2cPoll: any = null; var _c2cLastStage = ''; var _c2cLastView = '';
 function _c2cDo(action){ const r = c2cDispatch(action); try{ save(); }catch(e){} _renderC2C(); return r; }
+// Resolve the UI gather choice (0 | 'half' | 'all') into an actual bar count,
+// capped at the order need and what the player actually holds.
+function _c2cGatherQty(){
+  if (!S.c2c || !_c2cUI) return 0;
+  const need = S.c2c.order.qty * S.c2c.order.materialPerUnit;
+  const cap = Math.min(need, availableItem(S.c2c.order.materialItem));
+  const g = _c2cUI.gatherQty;
+  return g === 'all' ? cap : g === 'half' ? Math.floor(cap / 2) : 0;
+}
 function _c2cClose(){ const e = document.getElementById('flagship-modal'); if (e) e.remove(); if (_c2cPoll){ clearInterval(_c2cPoll); _c2cPoll = null; } _c2cUI = null; _c2cLastStage = ''; _c2cLastView = ''; try{ if (S.tab === 'contracts') renderMain(); }catch(e){} }
 function _c2cStartPoll(){
   if (_c2cPoll) clearInterval(_c2cPoll);
@@ -711,41 +731,64 @@ function _renderC2C(){
   else if (c.stage === 'supplier_selection' && !(_c2cUI && _c2cUI.offerId)){
     const maxPrice = Math.max(...SUPPLIER_OFFERS.map(o => o.unitPrice));
     const maxLead = Math.max(...SUPPLIER_OFFERS.map(o => o.leadMin));
-    const cards = SUPPLIER_OFFERS.map(o => `
+    const quotes = quotesFor(SUPPLIER_OFFERS, S.supplierScore || {});
+    const cards = quotes.map(q => { const o = q.offer; const st = q.stats;
+      const scoreLine = st.orders ? `📊 ${st.onTimePct}% on-time · ${st.avgQualityPct}% quality · ${st.orders} order${st.orders>1?'s':''}` : `📊 no history yet`;
+      return `
       <button data-c2coffer="${o.id}" style="display:block;width:100%;text-align:left;background:var(--panel2);border:2px solid var(--edge);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;color:var(--text)">
-        <div style="font-size:13px;font-weight:700">${o.icon} ${esc(o.supplier)}</div>
-        <div style="font-size:10px;color:var(--dim);margin:2px 0 4px">${esc(o.blurb)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:13px;font-weight:700">${o.icon} ${esc(o.supplier)}</div>${q.bestFor?`<span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px;font-weight:800">${esc(q.bestFor)}</span>`:''}</div>
+        <div style="font-size:10.5px;color:var(--text);margin:3px 0 5px">${esc(q.tradeoff)}</div>
         ${_flagBar('Price', o.unitPrice/maxPrice, '#d88', o.unitPrice+'c/unit')}
         ${_flagBar('Lead', o.leadMin/maxLead, '#dc8', o.leadMin+' min')}
         ${_flagBar('Reliable', o.reliability, '#8c8', _flagStars(o.reliability>=.95?4:o.reliability>=.85?3:o.reliability>=.75?2:1))}
         ${_flagBar('Quality', o.expectedQuality, '#8bd', Math.round(o.expectedQuality*100)+'%')}
-        <div style="font-size:10px;color:var(--dim);margin-top:4px">Min order ${o.moq} · inbound ${o.transportCost}c · pay supplier ${o.paymentTerms.replace('_',' ')}</div>
-      </button>`).join('');
-    body = head('🏭 Compare Suppliers', 'Weigh price vs speed vs reliability vs quality.') + cards;
+        ${_flagBar('Green', o.sustainability, '#7c9', o.sustainability>=.8?'local':o.sustainability<=.4?'low':'ok')}
+        <div style="font-size:10px;color:var(--dim);margin-top:4px">MOQ ${o.moq} · capacity ${o.capacity} · inbound ${o.transportCost}c · pay ${o.paymentTerms.replace('_',' ')}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">${scoreLine}</div>
+      </button>`; }).join('');
+    const frosty = !S.seenProcTip ? `<div style="font-size:11px;color:#bfe8f7;background:rgba(120,180,220,.08);border:1px solid #3a5a7a;border-radius:6px;padding:8px 10px;margin-bottom:8px;line-height:1.5">❄️ Frosty: "Cheapest isn't always best, ${pName()}. A dodgy supplier that short-ships can cost you the whole order. Weigh reliability and the deadline too."</div>` : '';
+    if (!S.seenProcTip){ S.seenProcTip = true; try{ save(); }catch(e){} }   // guidance shows ONCE
+    body = head('🏭 Compare Suppliers', 'Weigh price, speed, reliability, quality &amp; ethics — pick one to plan.') + frosty + cards;
   }
   else if (c.stage === 'supplier_selection' || c.stage === 'purchase_order_raised'){
-    // plan / confirm PO
+    // plan / confirm PO — supplier + how much to gather vs buy + inbound speed
     const committed = c.stage === 'purchase_order_raised';
     const off = committed ? offerById(c.po.offerId)! : offerById(_c2cUI.offerId)!;
-    const qty = committed ? c.po.qty : _c2cUI.orderQty;
+    const need = O.qty * O.materialPerUnit;
+    const available = committed ? (c.mat.gathered || 0) : availableItem(O.materialItem);
+    if (_c2cUI && _c2cUI.gatherQty == null) _c2cUI.gatherQty = 0;
+    if (_c2cUI && _c2cUI.inbound == null) _c2cUI.inbound = 'standard';
+    const gatherQty = committed ? (c.mat.gathered || 0) : _c2cGatherQty();
+    let buyQty = Math.max(0, need - gatherQty);
+    if (!committed && buyQty > 0 && buyQty < off.moq) buyQty = off.moq;   // meet the supplier MOQ
+    const mode = committed ? (c.sourcing?.mode || 'standard') : _c2cUI.inbound;
     const delId = committed ? c.po.deliveryId : _c2cUI.deliveryId;
-    const pm = c2cPlanned(c.order as any, off, { offerId: off.id, orderQty: qty, deliveryId: delId });
-    const upfront = (off.paymentTerms === 'prepaid' ? qty * off.unitPrice : 0) + off.transportCost;
+    const est = planProcurement(c.order as any, SUPPLIER_OFFERS, { gatherQty, lines: buyQty>0 ? [{ offerId: off.id, qty: buyQty }] : [], mode }, { available, ownQuality: (S.qc?.rating ?? 90)/100 });
+    const upfront = est.committedCost;
     const canAfford = S.coins >= upfront;
-    const delBtns = DELIVERY_OPTIONS.map(d => `<button ${committed?'disabled':''} data-c2cdel="${d.id}" style="flex:1;background:${delId===d.id?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${delId===d.id?'var(--amber)':'var(--edge)'};border-radius:6px;padding:7px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:11px">${d.icon} ${esc(d.name)}<br><span style="color:var(--dim)">${d.cost}c · ${d.timeMin}min</span></button>`).join('');
-    const marginCol = pm.margin > 0 ? 'var(--mint)' : '#e08a4a';
-    body = head('📝 Quotation & Purchase Order', 'Plan delivery, then commit — you see the planned margin first.')
-      + `<div style="font-size:11px;color:var(--dim);margin-bottom:4px">Supplier: <b style="color:var(--text)">${off.icon} ${esc(off.supplier)}</b> · ordering <b style="color:var(--text)">${qty}× ${esc(ITEMS[O.materialItem]?.n || O.materialItem)}</b> @ ${off.unitPrice}c</div>
-        <div style="font-size:11px;color:var(--dim);margin-bottom:3px">Deliver the finished brackets by:</div>
-        <div style="display:flex;gap:6px;margin-bottom:8px">${delBtns}</div>
-        <div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.8">
-          <div style="display:flex;justify-content:space-between"><span>Planned margin</span><b style="color:${marginCol}">${_flagMoney(pm.margin)} (${Math.round(pm.marginPct*100)}%)</b></div>
+    const riskCol = est.risk === 'low' ? 'var(--mint)' : est.risk === 'medium' ? '#dc8' : '#e0705a';
+    const marginCol = est.margin > 0 ? 'var(--mint)' : '#e08a4a';
+    const gBtn = (v, l) => `<button ${committed?'disabled':''} data-c2cgather="${v}" style="flex:1;background:${(_c2cUI.gatherQty===v || (v==='all'&&gatherQty>=Math.min(need,available)&&available>0))?'rgba(216,184,74,.15)':'var(--panel2)'};border:1px solid var(--edge);border-radius:6px;padding:6px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:11px">${l}</button>`;
+    const inbBtn = (v, l, sub) => `<button ${committed?'disabled':''} data-c2cinbound="${v}" style="flex:1;background:${mode===v?'rgba(216,184,74,.15)':'var(--panel2)'};border:2px solid ${mode===v?'var(--amber)':'var(--edge)'};border-radius:6px;padding:6px;cursor:${committed?'default':'pointer'};color:var(--text);font-size:11px">${l}<br><span style="color:var(--dim);font-size:9px">${sub}</span></button>`;
+    body = head('📝 Purchase Order', 'Gather or buy, choose inbound speed, then confirm.')
+      + `<div style="font-size:11px;color:var(--dim);margin-bottom:4px">Supplier: <b style="color:var(--text)">${off.icon} ${esc(off.supplier)}</b> · need <b style="color:var(--text)">${need}× ${esc(ITEMS[O.materialItem]?.n || O.materialItem)}</b></div>`
+      + (available > 0 || gatherQty > 0 ? `<div style="font-size:11px;color:var(--dim);margin-bottom:3px">Use your own stock (${available} on hand) — gathered bars are free &amp; clean:</div>
+         <div style="display:flex;gap:6px;margin-bottom:8px">${gBtn(0,'Buy all')}${gBtn('half','Gather ½')}${gBtn('all','Gather all')}</div>` : '')
+      + `<div style="font-size:11px;color:var(--dim);margin-bottom:3px">Inbound freight:</div>
+         <div style="display:flex;gap:6px;margin-bottom:8px">${inbBtn('standard','Standard','quoted lead')}${inbBtn('expedited','Expedited','~½ wait, +80% freight')}</div>
+        <div style="background:rgba(255,255,255,.04);border:1px solid var(--edge);border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.85">
+          <div style="display:flex;justify-content:space-between"><span>Gather / Buy</span><b>${gatherQty} gathered · ${buyQty} bought</b></div>
+          <div style="display:flex;justify-content:space-between"><span>Committed cash</span><b style="color:${canAfford?'var(--text)':'#e0705a'}">${fmt(est.committedCost)}c</b></div>
+          <div style="display:flex;justify-content:space-between"><span>Expected arrival</span><b>~${est.worstLeadMin} min lead</b></div>
+          <div style="display:flex;justify-content:space-between"><span>Risk</span><b style="color:${riskCol};text-transform:capitalize">${est.risk}</b></div>
+          <hr style="border:none;border-top:1px solid var(--edge);margin:5px 0">
+          <div style="display:flex;justify-content:space-between;font-weight:700"><span>Margin <span style="font-size:9px;color:var(--dim)">(estimate)</span></span><b style="color:${marginCol}">${_flagMoney(est.margin)} (${Math.round(est.marginPct*100)}%)</b></div>
         </div>
-        ${pm.warnings.length ? `<div style="font-size:10px;color:#e0a45a;margin-top:6px;line-height:1.5">${pm.warnings.map(w=>'⚠️ '+esc(w)).join('<br>')}</div>` : `<div style="font-size:10px;color:var(--mint);margin-top:6px">✓ On paper this plan beats the deadline.</div>`}
-        <div style="font-size:10px;color:var(--dim);margin:8px 0">Upfront (${off.paymentTerms==='prepaid'?'materials + ':''}inbound freight): <b style="color:${canAfford?'var(--text)':'#e0705a'}">${fmt(upfront)}c</b> · you have ${fmt(S.coins)}c${canAfford?'':' — pick a cheaper supplier.'}</div>`
+        ${est.warnings.length ? `<div style="font-size:10px;color:#e0a45a;margin-top:6px;line-height:1.5">${est.warnings.map(w=>'⚠️ '+esc(w)).join('<br>')}</div>` : `<div style="font-size:10px;color:var(--mint);margin-top:6px">✓ On paper this plan covers the order and beats the deadline.</div>`}
+        <div style="font-size:10px;color:var(--dim);margin:8px 0">You have ${fmt(S.coins)}c${canAfford?'':' — not enough for this plan; gather more or pick a cheaper supplier.'}</div>`
       + (committed
           ? `<button data-c2c="raise_po" data-primary class="btn" style="width:100%;margin-bottom:6px" ${canAfford?'':'disabled'}>Place the purchase order ▶</button>`
-          : `<button data-c2c="commit_po" data-primary class="btn" style="width:100%;margin-bottom:6px" ${canAfford?'':'disabled'}>Accept order &amp; place PO ▶</button>
+          : `<button data-c2c="commit_po" data-primary class="btn" style="width:100%;margin-bottom:6px" ${canAfford?'':'disabled'}>Confirm PO — ${gatherQty>0?`gather ${gatherQty}, `:''}buy ${buyQty} ▶</button>
              <button data-c2cback="1" style="width:100%;background:var(--panel2);color:var(--dim);border:1px solid var(--edge);padding:8px;border-radius:6px;cursor:pointer;font-size:12px">← Back to suppliers</button>`);
   }
   else if (c.stage === 'supplier_in_progress'){
@@ -880,7 +923,18 @@ function _renderC2C(){
     if (a === 'close'){ _c2cClose(); return; }
     if (a === 'done'){ if (S.c2c && !(S.c2c as any).boardId) S.flagshipDone = true; S.c2c = null; try{ save(); }catch(e){} _c2cClose(); try{ if (S.tab==='contracts') renderMain(); }catch(e){} return; }   // clear the closed order so the next one starts fresh (repeatable)
     if (a === 'abandon'){ c2cAbandon(); return; }
-    if (a === 'commit_po'){ if (!_c2cUI.offerId) return; _c2cDo({ type:'select_supplier', offerId:_c2cUI.offerId, qty:_c2cUI.orderQty, deliveryId:_c2cUI.deliveryId }); _c2cDo({ type:'raise_po', now:gameNow() }); return; }
+    if (a === 'commit_po'){
+      if (!_c2cUI.offerId) return;
+      const off = offerById(_c2cUI.offerId)!;
+      const need = S.c2c.order.qty * S.c2c.order.materialPerUnit;
+      const gatherQty = _c2cGatherQty();
+      let buyQty = Math.max(0, need - gatherQty);
+      if (buyQty > 0 && buyQty < off.moq) buyQty = off.moq;   // meet the supplier's MOQ
+      _c2cDo({ type:'select_supplier', offerId:_c2cUI.offerId, qty:buyQty, deliveryId:_c2cUI.deliveryId });
+      _c2cDo({ type:'set_sourcing', gatherQty, mode:(_c2cUI.inbound === 'expedited' ? 'expedited' : 'standard') });
+      _c2cDo({ type:'raise_po', now:gameNow() });
+      return;
+    }
     if (a === 'raise_po'){ _c2cDo({ type:'raise_po', now:gameNow() }); return; }
     if (a.startsWith('intervene:')){ _c2cDo({ type:'intervene', kind:a.split(':')[1] as any, now:gameNow() }); return; }
     if (a === 'inspect'){ _c2cDo({ type:'inspect' }); return; }
@@ -892,6 +946,8 @@ function _renderC2C(){
   });
   el.querySelectorAll('[data-c2coffer]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.offerId = (b as HTMLElement).dataset.c2coffer!; _c2cUI.orderQty = suggestedOrderQty(S.c2c.order as any, offerById(_c2cUI.offerId)!); _renderC2C(); });
   el.querySelectorAll('[data-c2cdel]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.deliveryId = (b as HTMLElement).dataset.c2cdel!; _renderC2C(); });
+  el.querySelectorAll('[data-c2cgather]').forEach(b => (b as HTMLElement).onclick = () => { const v = (b as HTMLElement).dataset.c2cgather!; _c2cUI.gatherQty = (v === '0' ? 0 : v); _renderC2C(); });
+  el.querySelectorAll('[data-c2cinbound]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.inbound = (b as HTMLElement).dataset.c2cinbound!; _renderC2C(); });
   el.querySelectorAll('[data-c2cback]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.offerId = null; _renderC2C(); });
   el.querySelectorAll('[data-c2crework]').forEach(b => (b as HTMLElement).onclick = () => { _c2cUI.reworkFinished = !_c2cUI.reworkFinished; _renderC2C(); });
   // ---- controller / keyboard focus (req: focus polish) ----
@@ -9985,7 +10041,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[],
+    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false,
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -10325,6 +10381,8 @@ function load(){
       if (typeof S.gameClock !== "number") S.gameClock = 0;
       if (!S.c2cReserved || typeof S.c2cReserved !== "object") S.c2cReserved = {};
       if (!Array.isArray(S.c2cHistory)) S.c2cHistory = [];
+      if (!S.supplierScore || typeof S.supplierScore !== "object") S.supplierScore = {};
+      if (typeof S.seenProcTip !== "boolean") S.seenProcTip = false;
       // Back-fill stable ids on pre-existing board contracts (pipeline linkage).
       if (Array.isArray(S.contracts)) for (const _bc of S.contracts){ if (_bc && !_bc.id && !_bc.tutorial) _bc.id = 'ct_' + Math.random().toString(36).slice(2, 10); }
       if (S.c2c){
@@ -16717,6 +16775,10 @@ if (import.meta.env.DEV) {
     // Deterministic scenarios (opens the live modal on a locked set-up).
     c2cScenarios(){ return C2C_SCENARIOS.map((s:any)=>({ id:s.id, label:s.label })); },
     c2cStartScenario(id:string){ const c=c2cStartScenario(id); return _c2cSnap(c); },
+    // ---- Procurement probes (this milestone) ------------------------------
+    c2cGiveMaterial(item:string, n:number){ addItem(item, n|0); return { item, have: itemCount(item) }; },
+    c2cSupplierScore(){ return JSON.parse(JSON.stringify(S.supplierScore || {})); },
+    c2cSeenProcTip(){ return !!S.seenProcTip; },
     // Read the modal body text (for asserting the why-it-matters + result copy).
     c2cModalText(){ const el=document.getElementById('flagship-modal'); return el?(el.textContent||'').replace(/\s+/g,' ').trim():''; },
     c2cHasButton(action:string){ return !!document.querySelector(`#flagship-modal [data-c2c="${action}"]`); },

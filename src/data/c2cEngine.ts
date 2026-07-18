@@ -108,7 +108,11 @@ export interface C2CContract {
   // material buckets (units)
   mat: { ordered: number; delivered: number; shortfall: number; received: number;
          accepted: number; quarantined: number; scrapped: number; consumed: number;
-         defectiveAccepted?: number; rejected?: number };
+         defectiveAccepted?: number; rejected?: number; gathered?: number };
+  // sourcing plan: how much material you supply from your OWN stock (gathered), and
+  // whether inbound freight is standard or expedited. Defaults reproduce the old
+  // single-supplier / standard-inbound behaviour exactly.
+  sourcing?: { gatherQty: number; mode: 'standard' | 'expedited' };
   inspected?: boolean;      // player inspected the goods-in sample (reveals defects)
   extended?: boolean;       // a deadline extension was granted (small satisfaction hit)
   // finished-goods buckets (units)
@@ -187,7 +191,8 @@ export function createContract(order: FlagshipOrder, opts: CreateOpts): C2CContr
     },
     plan: { offerId: null, orderQty: 0, deliveryId: null },
     po: null,
-    mat: { ordered: 0, delivered: 0, shortfall: 0, received: 0, accepted: 0, quarantined: 0, scrapped: 0, consumed: 0 },
+    sourcing: { gatherQty: 0, mode: 'standard' },
+    mat: { ordered: 0, delivered: 0, shortfall: 0, received: 0, accepted: 0, quarantined: 0, scrapped: 0, consumed: 0, gathered: 0 },
     fin: { produced: 0, good: 0, reworkable: 0, scrapped: 0, reworked: 0, dispatched: 0, deliveredToCustomer: 0 },
     t: { supplierReadyAt: null, inboundArriveAt: null, outboundArriveAt: null, invoiceAt: null, payDueAt: null, deliveredAt: null, supplierPayAt: null },
     rolled: null,
@@ -207,7 +212,8 @@ export function migrateContract(raw: any): C2CContract | null {
   const c: any = { ...raw };
   c.ver = C2C_ENGINE_VERSION;
   if (!C2C_STAGES.includes(c.stage)) c.stage = 'customer_request';
-  c.mat = Object.assign({ ordered: 0, delivered: 0, shortfall: 0, received: 0, accepted: 0, quarantined: 0, scrapped: 0, consumed: 0 }, c.mat || {});
+  c.mat = Object.assign({ ordered: 0, delivered: 0, shortfall: 0, received: 0, accepted: 0, quarantined: 0, scrapped: 0, consumed: 0, gathered: 0 }, c.mat || {});
+  if (!c.sourcing || typeof c.sourcing !== 'object') c.sourcing = { gatherQty: 0, mode: 'standard' };
   c.fin = Object.assign({ produced: 0, good: 0, reworkable: 0, scrapped: 0, reworked: 0, dispatched: 0, deliveredToCustomer: 0 }, c.fin || {});
   c.t = Object.assign({ supplierReadyAt: null, inboundArriveAt: null, outboundArriveAt: null, invoiceAt: null, payDueAt: null, deliveredAt: null, supplierPayAt: null }, c.t || {});
   c.cash = Object.assign({ supplierPaid: 0, inboundPaid: 0, reworkPaid: 0, outboundPaid: 0, revenue: 0, penalties: 0 }, c.cash || {});
@@ -319,6 +325,7 @@ export type C2CAction =
   | { type: 'accept_quote' }
   | { type: 'decline_quote' }
   | { type: 'select_supplier'; offerId: string; qty: number; deliveryId: string }
+  | { type: 'set_sourcing'; gatherQty: number; mode: 'standard' | 'expedited' }
   | { type: 'raise_po'; now: number }
   | { type: 'intervene'; kind: 'wait' | 'chase' | 'expedite'; now: number }
   | { type: 'inspect' }
@@ -372,6 +379,14 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       c.history.push(`Drafted PO: ${qty}× ${O.materialItem} from ${offer.supplier} @ ${offer.unitPrice}c (${offer.paymentTerms}).`);
       return okRes(c);
     }
+    case 'set_sourcing': {
+      // Configure how much you supply from your OWN stock + inbound speed, before
+      // the PO is raised. (gathered material is free, instant and your own quality.)
+      if (c.did.poRaised) return noRes(c0, 'already_raised');
+      if (!(c.stage === 'supplier_selection' || c.stage === 'purchase_order_raised')) return noRes(c0, 'wrong_stage');
+      c.sourcing = { gatherQty: Math.max(0, action.gatherQty | 0), mode: action.mode === 'expedited' ? 'expedited' : 'standard' };
+      return okRes(c, [], false);
+    }
     case 'raise_po': {
       if (c.stage !== 'purchase_order_raised') return noRes(c0, 'wrong_stage');
       if (!c.po) return noRes(c0, 'no_po');
@@ -381,6 +396,17 @@ export function reduce(c0: C2CContract, action: C2CAction): ActionResult {
       c.did.poRaised = true;
       c.mat.ordered = c.po.qty;
       const effects: C2CEffect[] = [];
+      // Apply the inbound mode (expedited = ~half lead, ~1.8× freight). Standard
+      // leaves the quoted numbers untouched (identical to the old behaviour).
+      const gq = Math.max(0, (c.sourcing && c.sourcing.gatherQty) || 0);
+      c.mat.gathered = gq;
+      if (c.sourcing && c.sourcing.mode === 'expedited') {
+        c.po.promisedLeadMin = Math.max(1, Math.ceil(c.po.promisedLeadMin * 0.5));
+        c.po.transportCost = Math.round(c.po.transportCost * 1.8);
+      }
+      // Reserve gathered stock from your own inventory now — it's committed to this
+      // order (real reservation, no magic grant), free and already on hand.
+      if (gq > 0) effects.push({ kind: 'reserve', item: O.materialItem, qty: gq });
       // Prepaid terms: cash leaves now (cash-timing lever, req).
       if (c.po.paymentTerms === 'prepaid') {
         c.cash.supplierPaid += c.po.qty * c.po.unitPrice;
@@ -611,7 +637,10 @@ function tick(c: C2CContract, now: number): ActionResult {
       // AUTO: create the actual inbound inventory movement + reserve it to this order
       if (!c.did.goodsMoved) {
         c.did.goodsMoved = true;
-        c.mat.received = c.mat.delivered;
+        // received = the bought material that turned up + your gathered stock (which
+        // is already on hand and reserved). Only the BOUGHT bars are a new movement.
+        const gq = Math.max(0, c.mat.gathered || 0);
+        c.mat.received = c.mat.delivered + gq;
         // pay the supplier now if terms are on_delivery; schedule net_15
         if (c.po && !c.did.supplierPaid) {
           if (c.po.paymentTerms === 'on_delivery') {
@@ -621,9 +650,9 @@ function tick(c: C2CContract, now: number): ActionResult {
             c.t.supplierPayAt = now + 15;
           }
         }
-        if (c.mat.received > 0) {
-          effects.push({ kind: 'inv_add', item: c.order.materialItem, qty: c.mat.received });
-          effects.push({ kind: 'reserve', item: c.order.materialItem, qty: c.mat.received });
+        if (c.mat.delivered > 0) {   // real inbound movement for the purchased bars only
+          effects.push({ kind: 'inv_add', item: c.order.materialItem, qty: c.mat.delivered });
+          effects.push({ kind: 'reserve', item: c.order.materialItem, qty: c.mat.delivered });
         }
       }
       c.stage = 'goods_in_qc';
@@ -631,9 +660,12 @@ function tick(c: C2CContract, now: number): ActionResult {
       return okRes(c, effects);
     }
     case 'goods_in_qc': {
-      // AUTO: incoming inspection → accepted vs quarantined (roll persisted)
+      // AUTO: incoming inspection → accepted vs quarantined (roll persisted). Only
+      // the BOUGHT bars can be defective; your gathered stock is your own, clean —
+      // so gathering more of the order is a genuine quality lever.
       if (!c.rolled) c.rolled = rollAll(c);
-      const defects = Math.round(c.mat.received * clamp(c.rolled.incomingDefectFrac, 0, 1));
+      const bought = c.mat.delivered;
+      const defects = Math.round(bought * clamp(c.rolled.incomingDefectFrac, 0, 1));
       c.mat.quarantined = defects;
       c.mat.accepted = Math.max(0, c.mat.received - defects);
       c.stage = 'materials_accepted_or_quarantined';

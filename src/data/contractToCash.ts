@@ -147,20 +147,24 @@ export interface SupplierOffer {
   moq: number;              // minimum order quantity
   paymentTerms: PaymentTerms;
   transportCost: number;    // inbound logistics cost
+  sustainability: number;   // 0..1 local/green reputation (higher = cleaner, more community-minded)
+  capacity: number;         // max units this supplier can fulfil in one order
 }
 
 // Exactly three, spanning the classic trade-offs: cheap-but-risky, dependable
-// middle, and premium-fast-flawless.
+// local middle, and premium-fast-flawless. No single axis wins outright — the
+// cheapest is dirty + capacity-limited + unreliable; the local yard is the green,
+// dependable community choice; the express is flawless-but-pricey with a carbon cost.
 export const SUPPLIER_OFFERS: SupplierOffer[] = [
   { id: 'budget', supplier: 'Cutprice Metals Co.', icon: '🏷️',
     blurb: 'Cheapest bars in the valley — if the lorry turns up and the metal is clean.',
-    unitPrice: 34, leadMin: 12, reliability: 0.70, expectedQuality: 0.72, moq: 14, paymentTerms: 'prepaid', transportCost: 40 },
+    unitPrice: 34, leadMin: 12, reliability: 0.70, expectedQuality: 0.72, moq: 14, paymentTerms: 'prepaid', transportCost: 40, sustainability: 0.35, capacity: 16 },
   { id: 'standard', supplier: 'Featherstone Foundry', icon: '🏭',
     blurb: 'The dependable local yard. Fair price, steady service, decent quality.',
-    unitPrice: 48, leadMin: 6, reliability: 0.92, expectedQuality: 0.90, moq: 12, paymentTerms: 'on_delivery', transportCost: 55 },
+    unitPrice: 48, leadMin: 6, reliability: 0.92, expectedQuality: 0.90, moq: 12, paymentTerms: 'on_delivery', transportCost: 55, sustainability: 0.85, capacity: 40 },
   { id: 'premium', supplier: 'Rapid Rail Freight', icon: '🚄',
     blurb: 'Premium express — near-certain, near-flawless, and you pay for it.',
-    unitPrice: 62, leadMin: 3, reliability: 0.98, expectedQuality: 0.98, moq: 12, paymentTerms: 'net_15', transportCost: 70 },
+    unitPrice: 62, leadMin: 3, reliability: 0.98, expectedQuality: 0.98, moq: 12, paymentTerms: 'net_15', transportCost: 70, sustainability: 0.55, capacity: 60 },
 ];
 export function offerById(id: string): SupplierOffer | null { return SUPPLIER_OFFERS.find(o => o.id === id) || null; }
 
