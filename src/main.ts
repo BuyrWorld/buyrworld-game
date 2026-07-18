@@ -25,6 +25,8 @@ import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
 import { itemCategory, categoryLabel, isPlaceableItem, isTradeFurniture, TRADE_FURNITURE, CATEGORY_LABELS } from './data/itemTax.ts';
 import { buildBriefing as buildShift, awayLabel as shiftAwayLabel, SHORT_ABSENCE_MS, type ShiftInput } from './data/shiftBriefing.ts';
+import { APPROACHES, STARTER_SKILLS, isStarterSkill, approachById, defaultApproach, automationCost as skillAutoCost, outcomeSummary as approachSummary, rareDrops, reel as fishReel, costWithCarry, BITE_WINDOW_MS } from './data/skillPlay.ts';
+const SKILL_RARE_ITEM: Record<string,string> = { mining:'diamond', woodcutting:'rare_wood' };
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
@@ -10274,7 +10276,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 
 function freshState(){
   return {
-    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[], ui:{ padFocus:false },
+    v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[], ui:{ padFocus:false }, skillApproach:{}, approachAcc:{},
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty", briefSkipShort:false }, shift:{ phaseId:null }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -10629,6 +10631,8 @@ function load(){
       if (!S.settings) S.settings = {};
       if (typeof S.settings.briefSkipShort !== "boolean") S.settings.briefSkipShort = false;   // Back-on-Shift preference
       if (!S.shift || typeof S.shift !== "object") S.shift = { phaseId:null };                  // returning-briefing snapshot
+      if (!S.skillApproach || typeof S.skillApproach !== "object") S.skillApproach = {};          // starter-skill differentiation
+      if (!S.approachAcc || typeof S.approachAcc !== "object") S.approachAcc = {};                // exact input-cost carry
       if (!S.supplierScore || typeof S.supplierScore !== "object") S.supplierScore = {};
       if (typeof S.seenProcTip !== "boolean") S.seenProcTip = false;
       // Back-fill stable ids on pre-existing board contracts (pipeline linkage).
@@ -10922,6 +10926,9 @@ function speedMult(skill){
   if (_kb > 0) m *= (1 - _kb);
   m *= renownSpeedMult(S.renown?.bought);   // Hall of Renown: Well Rested
   m *= warehouseSpeedFactor();              // M19: a lean/expanded warehouse runs a touch faster
+  // Starter-skill approach: the chosen way of working sets the pace (deep seam slower,
+  // fast chop quicker, …). Preserves all other progression multipliers above.
+  if (isStarterSkill(skill)) m *= approachById(skill, S.skillApproach && S.skillApproach[skill]).timeMult;
   return Math.max(0.20, m);
 }
 // M19 — Warehouse Management: total stock, capacity, and the "organised" speed bonus.
@@ -11812,24 +11819,68 @@ function rollPet(src){
   });
 }
 
+// The active starter-skill approach for a manual (non-silent) run, or null.
+function _activeApproach(skill, silent){
+  if (silent || !isStarterSkill(skill)) return null;
+  return approachById(skill, S.skillApproach && S.skillApproach[skill]);
+}
+// Per-input integer cost this action after the approach's costMult, carrying the
+// fraction so aggregate consumption over many actions is EXACT and deterministic.
+function _approachInputCosts(skill, act, silent){
+  const ap = _activeApproach(skill, silent);
+  const out: any = { __carry: {} };
+  if (!S.approachAcc) S.approachAcc = {};
+  for (const [id,q] of Object.entries(act.in)){
+    const base = effCost(act, id, q);
+    if (!ap || ap.costMult === 1){ out[id] = base; continue; }
+    const key = skill+'|'+id;
+    const { take, carry } = costWithCarry(base, ap.costMult, S.approachAcc[key] || 0);
+    out[id] = take;
+    out.__carry[key] = carry;
+  }
+  return out;
+}
+function _approachCommitCarry(costs){ if (costs && costs.__carry){ if (!S.approachAcc) S.approachAcc = {}; for (const k of Object.keys(costs.__carry)) S.approachAcc[k] = costs.__carry[k]; } }
 function completeAction(act, skill, silent){
   if (act.in){
-    for (const [id,q] of Object.entries(act.in)){
-      const cost = effCost(act, id, q);
-      if (itemCount(id) < cost) return false;
-    }
-    for (const [id,q] of Object.entries(act.in)) S.items[id] -= effCost(act, id, q);
+    // Approach-adjusted input cost (e.g. an economical furnace burns less fuel). Applied
+    // only to a present player's manual work — an automaton/offline run uses the base
+    // recipe (the measurable cost of automating). Exact in aggregate via a fractional carry.
+    const _costs = _approachInputCosts(skill, act, silent);
+    for (const id of Object.keys(act.in)){ if (itemCount(id) < _costs[id]) return false; }
+    for (const id of Object.keys(act.in)){ S.items[id] -= _costs[id]; }
+    _approachCommitCarry(_costs);
   }
   // Fishing lands a probabilistic catch (rarer/pricier fish need a better rod),
   // rather than a fixed output — everything below uses this rolled `_out`.
   let _out = act.out, _fishCaught = null;
   if (skill === "fishing"){
-    _fishCaught = _rollCatch(toolTier(), Math.random);
+    // A well-timed reel (or assisted mode) fishes as if with a better rod — biasing
+    // toward prize species. A passive/early catch still lands a fair fish (cosy).
+    const _reelBump = (!silent && _fishReelPending >= 0.6) ? 1 : 0;
+    _fishCaught = _rollCatch(toolTier() + _reelBump, Math.random);
     _out = { [_fishCaught]: 1 };
+    _fishReelPending = 0;
   }
   for (const [id,q] of Object.entries(_out)){ addItem(id, q); S.prod[id] = (S.prod[id]||0) + q; }
   // Tutorial: never let a yield/pet/automaton bonus overshoot the exact tutorial amount.
   const _tutSuppress = _tutorialActive() && isTutorialItem(Object.keys(_out)[0]);
+  // Starter-skill approach payoff (manual play only — an automaton/offline run gets the
+  // base recipe). Exact integer yield + a deterministic rare-find roll + a quality nudge
+  // for the producing skills, so choices feed quality/contracts/profit, not just XP.
+  const _ap = _activeApproach(skill, silent);
+  if (_ap && !_tutSuppress){
+    const _pid = Object.keys(_out)[0];
+    if (_ap.bonusYield > 0 && _pid && ITEMS[_pid]){ addItem(_pid, _ap.bonusYield); S.prod[_pid] = (S.prod[_pid]||0) + _ap.bonusYield; }
+    const _rare = SKILL_RARE_ITEM[skill];
+    if (_rare && ITEMS[_rare] && rareDrops(_ap, Math.random())){
+      addItem(_rare, 1); S.prod[_rare] = (S.prod[_rare]||0) + 1;
+      if (!silent) toast(`✨ Rare find — ${ITEMS[_rare].n}!`);
+    }
+    if (_ap.qualityDelta !== 0 && (skill === 'steelworks' || skill === 'manufacturing') && S.qc && typeof S.qc.rating === 'number'){
+      S.qc.rating = Math.max(0, Math.min(100, S.qc.rating + _ap.qualityDelta * 0.2));
+    }
+  }
   // Occy: 20% chance to yield a bonus crafted item
   if (!_tutSuppress && S.pets.active === "occy" && skill === "crafting" && Math.random() < 0.20){
     const _bonusId = Object.keys(_out)[0];
@@ -11996,6 +12047,27 @@ function swing(){
   }
   updateProgressBar();
   if (completed > 0) updateHud();
+  return true;
+}
+// Fishing bite-and-reel: ONE press, generous window, assist-friendly. Once the line
+// has been out long enough the fish is biting — reel to land it now, and a good bite
+// (or assisted mode) hooks a better catch. Reeling too early just misses the bite (no
+// harm). Never a mash: the passive timer still lands fish on its own for cosy play.
+var _fishReelPending = 0;
+function reelFish(){
+  if (!S.action || S.action.skill !== 'fishing') return false;
+  const act = findAction('fishing', S.action.id); if (!act) return false;
+  const dur = act.ms * speedMult('fishing');
+  const prog = dur > 0 ? (S.action.progress / dur) : 1;
+  const assisted = !!(S.settings && S.settings.assisted);
+  const biteAt = dur * 0.5;   // the fish starts biting halfway through the cast — a generous window
+  if (S.action.progress < biteAt && !assisted){ toast('🎣 Wait for the bite…'); return false; }
+  const r = fishReel(S.action.progress, biteAt, { assisted, windowMs: Math.max(1, dur - biteAt) });
+  _fishReelPending = r.ok ? r.quality : 0.4;
+  S.action.progress = dur;                 // land the catch now
+  if (!completeAction(act, 'fishing', false)) { S.action = null; return false; }
+  if (S.action) S.action.progress = 0;     // …and re-cast (fishing continues)
+  updateProgressBar(); updateHud(); renderMain();
   return true;
 }
 
@@ -12571,6 +12643,34 @@ function renderBikeShop(){
   if (!b.owned) html += `</div>`;
   return html;
 }
+// The distinct, optional per-skill "approach" chooser — visually unique per skill via
+// its own icons/labels, controller-friendly buttons (no mashing), each showing its
+// consequence BEFORE you commit. Reduced-motion safe (no animation). Assisted players
+// can simply leave it on the balanced default.
+(globalThis as any).setSkillApproach = (skill, id) => { if (!S.skillApproach) S.skillApproach = {}; S.skillApproach[skill] = id; try{ renderMain(); save(); }catch(e){} };
+function _approachSelectorHtml(skill){
+  if (!isStarterSkill(skill)) return '';
+  const list = APPROACHES[skill];
+  const cur = approachById(skill, S.skillApproach && S.skillApproach[skill]);
+  const assisted = !!(S.settings && S.settings.assisted);
+  const flavour = { mining:'Pick your seam', woodcutting:'Chopping style', fishing:'Casting style', steelworks:'Furnace profile', manufacturing:'Batch tolerance' }[skill] || 'Approach';
+  const cards = list.map(a => {
+    const on = a.id === cur.id;
+    return `<button data-approach="${skill}|${a.id}" aria-pressed="${on?'true':'false'}" title="${esc(a.desc)}"
+      style="flex:1;min-width:120px;text-align:left;background:${on?'rgba(216,184,74,.14)':'var(--panel2)'};border:2px solid ${on?'var(--amber)':'var(--edge)'};border-radius:8px;padding:7px 9px;cursor:pointer;color:var(--text)">
+      <div style="font-size:12px;font-weight:700">${a.ic} ${esc(a.label)}</div>
+      <div style="font-size:9.5px;color:${on?'var(--amber)':'var(--dim)'};margin-top:2px;text-transform:uppercase;letter-spacing:.3px">${esc(approachSummary(a))}</div>
+    </button>`;
+  }).join('');
+  return `<div style="background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:8px;padding:8px 10px;margin:2px 0 10px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <span style="font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">🎚️ ${flavour}</span>
+      <span style="font-size:10px;color:var(--dim)">${esc(cur.desc)}</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${cards}</div>
+    ${assisted?`<div style="font-size:9.5px;color:#8bd;margin-top:5px">💡 Assisted: the balanced default is always a fine choice.</div>`:''}
+  </div>`;
+}
 function renderSkillPanel(skill){
   const sk = SKILLS[skill];
   const lvl = skillLvl(skill);
@@ -12597,6 +12697,7 @@ function renderSkillPanel(skill){
     const _activePerks = [10,25,40].map(t=>S.perks?.[skill+'_'+t]).filter(Boolean).map(id=>PERK_DEFS[id]).filter(Boolean);
     if (_activePerks.length) html += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 8px">${_activePerks.map(d=>`<span style="background:#1a3a08;border:1px solid #4a8020;border-radius:3px;padding:2px 7px;font-size:10px;color:#8adf4a">⭐ ${d.label}</span>`).join('')}</div>`;
   }
+  html += _approachSelectorHtml(skill);
   html += `<div class="actions">`;
   sk.actions.forEach(act => {
     const seasonLocked = act.season !== undefined && act.season !== getSeason();
@@ -12618,6 +12719,7 @@ function renderSkillPanel(skill){
       html += `<div class="job-controls" style="display:flex;gap:6px;align-items:center;margin:3px 0 9px">
         <span style="font-size:10px;color:#8adf4a;font-weight:700">▶ Working…${_rem!=null?` <span style="color:#e8b24a">${_rem} more to go</span>`:''}</span>
         ${SWING_SKILLS.has(skill)?`<button type="button" class="job-btn" data-jobswing="1" style="background:#3a5a1a;border:1px solid #6aaa2a;color:#cfeeb0;border-radius:4px;padding:3px 11px;font-size:11px;cursor:pointer" title="Swing! ~${swingClicks(toolTier())} clicks per resource at your tool tier">🪓 SWING</button>`:""}
+        ${skill==="fishing"?`<button type="button" class="job-btn" data-jobreel="1" style="background:#1a4a6a;border:1px solid #3a8ac0;color:#bfe6ff;border-radius:4px;padding:3px 11px;font-size:11px;cursor:pointer" title="Wait for the bite, then reel — a good bite hooks a better fish. Assisted mode reels for you.">🎣 REEL</button>`:""}
         <button type="button" class="job-btn" data-jobstop="1" style="background:#5a2a2a;border:1px solid #aa4a4a;color:#ffd0d0;border-radius:4px;padding:3px 11px;font-size:11px;cursor:pointer">⏹ Stop job</button>
       </div>`;
     }
@@ -15541,6 +15643,8 @@ function bindMain(){
   // separate job-control buttons (Stop is its own button, not inside the recipe)
   document.querySelectorAll(".job-btn[data-jobswing]").forEach(b=> (b as HTMLElement).onclick = ()=> swing());
   document.querySelectorAll(".job-btn[data-jobstop]").forEach(b=> (b as HTMLElement).onclick = ()=>{ S.action = null; renderMain(); renderNav(); save(); });
+  document.querySelectorAll("[data-approach]").forEach(b=> (b as HTMLElement).onclick = ()=>{ const [sk,id]=(b as HTMLElement).dataset.approach!.split('|'); (window as any).setSkillApproach(sk, id); });
+  document.querySelectorAll(".job-btn[data-jobreel]").forEach(b=> (b as HTMLElement).onclick = ()=> reelFish());
   document.querySelectorAll("[data-trade]").forEach(b=> b.onclick = ()=>{
     const [npc, it, q, mode] = b.dataset.trade.split("|");
     doTrade(npc, it, q==="max" ? "max" : +q, mode);
@@ -17256,6 +17360,20 @@ if (import.meta.env.DEV) {
     uiSetLastSeen(msAgo:number){ S.lastSeen = Date.now() - (msAgo|0); return { lastSeen:S.lastSeen }; },
     uiShiftPreview(){ try{ return buildShift(_buildShiftInput(), { skipShort:_briefSkipShort() }); }catch(e){ return { err:String(e) }; } },
     uiShiftSkipShort(){ return _briefSkipShort(); },
+    // Starter-skill differentiation probes (this milestone).
+    uiApproaches(skill:string){ return isStarterSkill(skill) ? APPROACHES[skill].map((a:any)=>a.id) : []; },
+    uiRunSkill(skill:string, approachId:string){
+      if (!isStarterSkill(skill)) return { err:'not_starter' };
+      if (approachId){ if(!S.skillApproach) S.skillApproach={}; S.skillApproach[skill]=approachId; }
+      const act = SKILLS[skill].actions[0]; if(!act) return { err:'no_act' };
+      const pid = Object.keys(act.out)[0];
+      if (act.in){ for (const [id,q] of Object.entries(act.in)) S.items[id] = (S.items[id]||0) + (q as number)*8; }
+      const inBefore = act.in ? Object.fromEntries(Object.keys(act.in).map(id=>[id,itemCount(id)])) : {};
+      const before = itemCount(pid);
+      const ok = completeAction(act, skill, false);
+      const inUsed = act.in ? Object.fromEntries(Object.keys(act.in).map(id=>[id, inBefore[id]-itemCount(id)])) : {};
+      return { ok, primary:pid, delta: itemCount(pid)-before, inUsed, qc:(S.qc&&S.qc.rating)||0, approach:(S.skillApproach&&S.skillApproach[skill])||null };
+    },
     uiFinishTutorial(){ if(!S.tut) S.tut={ step:0 }; S.tut.done=true; try{ renderNav(); renderMain(); }catch(e){} return { done:!!(S.tut&&S.tut.done), flagship: (()=>{ try{ return flagshipAvailable(); }catch(e){ return false; } })() }; },
     uiOverflow(){ const d=document.documentElement; return { pageScrollW:d.scrollWidth, innerW:window.innerWidth, overflow:d.scrollWidth - window.innerWidth, bodyBg:getComputedStyle(document.body).backgroundColor }; },
     uiFocusRing(){ const f=document.querySelector('.gp-focus') as any; return { has:!!f, action:f?.dataset?.c2c||f?.getAttribute?.('onclick')||f?.textContent?.trim().slice(0,24)||null }; },
