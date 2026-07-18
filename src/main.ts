@@ -24,6 +24,7 @@ import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data
 import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery, TUTORIAL_STAGES, TUTORIAL_GUIDE, TUTORIAL_COMPLETE_BONUS, NAV_HINT, fillTemplate } from './data/tutorial.ts';
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
 import { itemCategory, categoryLabel, isPlaceableItem, isTradeFurniture, TRADE_FURNITURE, CATEGORY_LABELS } from './data/itemTax.ts';
+import { buildBriefing as buildShift, awayLabel as shiftAwayLabel, SHORT_ABSENCE_MS, type ShiftInput } from './data/shiftBriefing.ts';
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
 import { notifyPriority, PRIORITY_RANK, notifyDuration, isManaged, nextIndex as _notifyNext, groupedText, TUTORIAL_REWARDS, tutorialCoinTotal, NEXT_ACTIONS, UNLOCK_SCHEDULE } from './data/notify.ts';
@@ -4770,6 +4771,7 @@ function renderJournal(){
     <div style="background:rgba(90,150,60,.1);border:1px solid rgba(90,150,60,.3);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:12px">
       Rewards are added automatically the moment you complete each first.
     </div>
+    <button onclick="document.getElementById('journal-modal').remove(); openShiftBriefing(true)" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--edge);border-radius:6px;padding:8px;margin-bottom:8px;cursor:pointer;font-size:12px">☕ Back on Shift briefing — where things stand</button>
     <div>${rows}</div>
   </div>`;
   const open = document.getElementById("journal-modal");
@@ -10273,7 +10275,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[], ui:{ padFocus:false },
-    playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty" }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
+    playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty", briefSkipShort:false }, shift:{ phaseId:null }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
     upgrades:{}, pets:{ owned:[], active:null },
@@ -10624,6 +10626,9 @@ function load(){
       if (!Array.isArray(S.analytics)) S.analytics = [];
       if (!Array.isArray(S.c2cTitles)) S.c2cTitles = [];
       if (!S.ui || typeof S.ui !== "object") S.ui = { padFocus:false };
+      if (!S.settings) S.settings = {};
+      if (typeof S.settings.briefSkipShort !== "boolean") S.settings.briefSkipShort = false;   // Back-on-Shift preference
+      if (!S.shift || typeof S.shift !== "object") S.shift = { phaseId:null };                  // returning-briefing snapshot
       if (!S.supplierScore || typeof S.supplierScore !== "object") S.supplierScore = {};
       if (typeof S.seenProcTip !== "boolean") S.seenProcTip = false;
       // Back-fill stable ids on pre-existing board contracts (pipeline linkage).
@@ -12320,6 +12325,84 @@ function openControlsReference(){
   openModal('controls-modal', inner, { label:'Controls', backdrop:'rgba(0,0,0,.62)', initialFocus:'#controls-ok', wire });
 }
 (globalThis as any).openControlsReference = openControlsReference;
+// ============ Back on Shift — returning-player briefing ============
+// A concise, skippable summary after a meaningful absence, built from REAL state.
+// The pure decision of WHAT to show lives in data/shiftBriefing.ts.
+var _shiftBoot: { offline:{coins:number;lines:string[]}, expiredDelta:number } = { offline:{coins:0,lines:[]}, expiredDelta:0 };
+function _briefSkipShort(){ return !!(S.settings && S.settings.briefSkipShort); }
+function _cottageNeedsClean(){ return _cottageActive() && (_cottage().clean||100) < 45; }
+function _buildShiftInput(): ShiftInput {
+  const now = Date.now();
+  const off = (window as any)._offlineSummary || { passiveCoins:0, lines:[] };
+  const claimed = (S.journey && S.journey.claimed) || [];
+  const stage = currentStage(claimed);
+  const ctx = journeyCtx();
+  const prog = stage ? stageProgress(stage, ctx) : { cur:0, max:0, pct:0 };
+  const std = (S.contracts||[]).filter((c:any)=>!c.tutorial);
+  const deliverable = std.filter((c:any)=> itemCount(c.item) >= c.qty).length;
+  const ph = macroPhase();
+  const flag = !!(S.c2c && S.c2c.stage !== 'closed');
+  return {
+    now, lastSeen: S.lastSeen || now,
+    offline: { coins: Math.max(0, Math.round(off.passiveCoins||0)), lines: (off.lines||[]).slice(0,3) },
+    journey: { title: stage?stage.title:null, desc: stage?stage.desc:null, cur:prog.cur, max:prog.max, pct:prog.pct,
+      claimable: !!(stage && canClaim(claimed, ctx)), complete: isJourneyComplete(claimed) },
+    contracts: { pending: std.length, deliverable, expiredDuringAbsence: _shiftBoot.expiredDelta },
+    flagship: { active: flag, stageLabel: flag ? String(S.c2c.stage).replace(/_/g,' ') : null, decision: !!(flag && c2cIsDecision(S.c2c.stage)) },
+    economy: { phaseName: ph.name, phaseId: ph.id, changed: !!(S.shift && S.shift.phaseId && S.shift.phaseId !== ph.id), demand: ph.demand },
+    reputation: { expiredDent: _shiftBoot.expiredDelta>0, delta:0, note:null },
+    claimable: { any:false, label:null },
+    cottage: { active: _cottageActive(), band: cleanBand(_cottage().clean).label, needsClean: _cottageNeedsClean() },
+    production: { running: !!S.action, label: S.action ? ((findAction(S.action.skill,S.action.id)||{}).n || S.action.skill) : null },
+  };
+}
+// Snapshot the phase so a market change is reported ONCE, not every session.
+function _shiftSnapshot(inp: ShiftInput){ if (!S.shift) S.shift = { phaseId:null }; S.shift.phaseId = inp.economy.phaseId; try{ save(); }catch(e){} }
+function _shiftDoAction(action: string){
+  if (action==='claim'){ closeModal('shift-modal'); openJournalPanel(); return; }
+  if (action==='resume'){ closeModal('shift-modal'); try{ (window as any).openFlagshipOrder(); }catch(e){} return; }
+  if (action==='contracts'||action==='start'){ closeModal('shift-modal'); goTab('contracts'); return; }
+  if (action==='cottage'){ closeModal('shift-modal'); goTab('myhome'); return; }
+  closeModal('shift-modal');
+}
+(globalThis as any).openShiftBriefing = openShiftBriefing;
+function openShiftBriefing(reopen=false){
+  const inp = _buildShiftInput();
+  const b = buildShift(inp, { skipShort: _briefSkipShort() });
+  _shiftSnapshot(inp);                              // record the phase either way (report once)
+  if (!reopen && !b.show) return;                   // respected the absence/skip rules — no nag
+  const rec = b.recommended;
+  const kindCol = (k:string)=> k==='good'?'var(--mint)':k==='warn'?'#e8a04a':k==='action'?'var(--amber)':'var(--dim)';
+  const itemsHtml = b.items.length
+    ? b.items.map(it=>`<div style="display:flex;gap:8px;align-items:flex-start;font-size:calc(12px * var(--ui-scale));padding:4px 0;border-top:1px solid var(--edge)"><span style="font-size:15px;line-height:1.3">${it.icon}</span><span style="color:${kindCol(it.kind)};line-height:1.4">${esc(it.text)}</span></div>`).join('')
+    : `<div style="font-size:calc(12px * var(--ui-scale));color:var(--dim);padding:6px 0">All quiet — nothing needs your attention. Here's a good next move.</div>`;
+  const recBtn = rec
+    ? `<button data-shift="rec" data-primary class="btn" style="width:100%;text-align:left;margin-bottom:6px">▶ ${esc(rec.label)}<br><span style="font-size:calc(10px * var(--ui-scale));color:#12240f;opacity:.8">Recommended — ${esc(rec.why)}</span></button>`
+    : '';
+  const secBtn = (a:string,l:string)=>`<button data-shift="${a}" style="flex:1;min-width:120px;background:var(--panel2);color:var(--text);border:1px solid var(--edge);border-radius:6px;padding:8px;cursor:pointer;font-size:calc(12px * var(--ui-scale))">${l}</button>`;
+  const inner = () => `<div class="panel" style="padding:16px;max-width:460px;width:100%;max-height:92vh;overflow:auto">
+    <div style="text-align:center;margin-bottom:8px">
+      <h2 style="margin:0;font-size:calc(16px * var(--ui-scale))">☕ Back on Shift</h2>
+      <p style="font-size:calc(11px * var(--ui-scale));color:var(--dim);margin:3px 0 0">Welcome back${S.playerName?`, ${esc(S.playerName)}`:''} — away ${esc(b.awayLabel)}. Here's where things stand.</p>
+    </div>
+    <div style="background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:6px;padding:4px 11px;margin-bottom:10px">${itemsHtml}</div>
+    ${recBtn}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${secBtn('contracts','📋 View contracts')}${b.showCottageButton?secBtn('cottage','🧹 Visit cottage'):''}${secBtn('dismiss','Dismiss')}</div>
+    <button data-shift="skipshort" style="width:100%;background:none;color:var(--dim);border:none;padding:5px;cursor:pointer;font-size:calc(10px * var(--ui-scale))">Don't show this again for short breaks</button>
+  </div>`;
+  const wire = (el: HTMLElement) => {
+    el.querySelectorAll('[data-shift]').forEach(btn => (btn as HTMLElement).onclick = () => {
+      const a = (btn as HTMLElement).dataset.shift!;
+      if (a==='rec'){ _shiftDoAction(rec ? rec.action : 'none'); return; }
+      if (a==='skipshort'){ if(!S.settings) S.settings={}; S.settings.briefSkipShort = true; try{ save(); }catch(e){} toast('👍 Short-break briefings are off. Reopen anytime from the Journal.'); closeModal('shift-modal'); return; }
+      if (a==='dismiss'){ closeModal('shift-modal'); return; }
+      _shiftDoAction(a);   // contracts / cottage
+    });
+  };
+  // Dismiss/close returns the player to the world (never traps focus, never blocks play).
+  const onClose = () => { try{ if ((S.tab==='village' || INTERIOR_TABS.has(S.tab)) && _lastInput!=='pointer') focusGameInput(); }catch(e){} };
+  openModal('shift-modal', inner, { label:'Back on Shift', backdrop:'rgba(0,0,0,.6)', initialFocus:'[data-primary]', wire, onClose });
+}
 // Req 3: opening a screen places focus on its PRIMARY action — the element marked
 // [data-primary], else the first focusable control in the main panel.
 function focusMainPrimary(){
@@ -16090,6 +16173,15 @@ syncTabUnlocks(true);   // back-fill tab unlocks for existing saves (never lose 
 checkVoyages(true);     // land voyages that returned while away (offline)
 ensureMarket(); rollMarket(false);
 fillContracts();
+// Back on Shift: capture what actually changed while away — real offline catch-up
+// (never invented) + any contracts that lapsed — so the returning briefing is accurate.
+try {
+  const _os = (window as any)._offlineSummary || {};
+  _shiftBoot.offline = { coins: Math.max(0, Math.round(_os.passiveCoins||0)), lines: (_os.lines||[]).slice(0,3) };
+  const _expBefore = (S.counters && S.counters.contractsExpired) || 0;
+  sweepContracts();
+  _shiftBoot.expiredDelta = Math.max(0, ((S.counters && S.counters.contractsExpired)||0) - _expBefore);
+} catch(e){}
 // ---- Interior state on load (req 8) --------------------------------------
 // Resolve where the player should be when a save is loaded inside a building:
 //  • a resumable interior (skill/shop — a real nav tab) with sound state → resume
@@ -16145,7 +16237,10 @@ document.getElementById("btn-about")?.addEventListener("click", () => openRoadma
     info.innerHTML = `<b>${esc(sum.name)}</b> · Total Lv ${sum.totalLevel} · ${fmt(sum.coins)} coins${sum.chapter?` · ${sum.chapter}`:''}${sum.date?` · saved ${sum.date}`:''}`;
     document.getElementById("btn-continue")!.onclick = ()=>{ const t=document.getElementById("title"); if(t) t.style.display="none"; document.body.classList.remove("title-open"); focusGameInput();
       // Restore controller focus on resume for pad/couch players (req: survives reloads).
-      if ((S.ui && S.ui.padFocus) || (S.settings && S.settings.couch)){ setInputMethod('gamepad'); try{ focusMainPrimary(); }catch(e){} } };
+      if ((S.ui && S.ui.padFocus) || (S.settings && S.settings.couch)){ setInputMethod('gamepad'); try{ focusMainPrimary(); }catch(e){} }
+      // Back on Shift: a returning player who resumes an existing save gets the briefing
+      // (never for a brand-new game — a fresh save has no meaningful absence).
+      try{ openShiftBriefing(); }catch(e){} };
   }
 })();
 document.getElementById("version-label")?.addEventListener("keydown", (e:any) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openRoadmap(); } });
@@ -17151,6 +17246,10 @@ if (import.meta.env.DEV) {
     uiCottageState(){ return { owned:JSON.parse(JSON.stringify(S.ownedFurniture||{})), placed:(S.placedFurniture||[]).map((p:any)=>({id:p.id,gx:p.gx,gy:p.gy})), lamp:itemCount('lamp'), carried:(S.cottage&&S.cottage.carried)||0, starter:!!S.furnStarter }; },
     uiGiveItem(id:string, n:number){ addItem(id, n|0); return { have:itemCount(id) }; },
     uiOpenDecorate(){ try{ S.tab='myhome'; openDecorate(); }catch(e){} return { open:!!document.getElementById('decor-modal') }; },
+    // Back-on-Shift briefing probes (this milestone).
+    uiSetLastSeen(msAgo:number){ S.lastSeen = Date.now() - (msAgo|0); return { lastSeen:S.lastSeen }; },
+    uiShiftPreview(){ try{ return buildShift(_buildShiftInput(), { skipShort:_briefSkipShort() }); }catch(e){ return { err:String(e) }; } },
+    uiShiftSkipShort(){ return _briefSkipShort(); },
     uiFinishTutorial(){ if(!S.tut) S.tut={ step:0 }; S.tut.done=true; try{ renderNav(); renderMain(); }catch(e){} return { done:!!(S.tut&&S.tut.done), flagship: (()=>{ try{ return flagshipAvailable(); }catch(e){ return false; } })() }; },
     uiOverflow(){ const d=document.documentElement; return { pageScrollW:d.scrollWidth, innerW:window.innerWidth, overflow:d.scrollWidth - window.innerWidth, bodyBg:getComputedStyle(document.body).backgroundColor }; },
     uiFocusRing(){ const f=document.querySelector('.gp-focus') as any; return { has:!!f, action:f?.dataset?.c2c||f?.getAttribute?.('onclick')||f?.textContent?.trim().slice(0,24)||null }; },
