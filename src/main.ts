@@ -26,6 +26,16 @@ import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, foot
 import { itemCategory, categoryLabel, isPlaceableItem, isTradeFurniture, TRADE_FURNITURE, CATEGORY_LABELS } from './data/itemTax.ts';
 import { buildBriefing as buildShift, awayLabel as shiftAwayLabel, SHORT_ABSENCE_MS, type ShiftInput } from './data/shiftBriefing.ts';
 import { APPROACHES, STARTER_SKILLS, isStarterSkill, approachById, defaultApproach, automationCost as skillAutoCost, outcomeSummary as approachSummary, rareDrops, reel as fishReel, costWithCarry, BITE_WINDOW_MS } from './data/skillPlay.ts';
+// ---- Social / dialogue engine (data-driven NPC conversations, relationships, memory)
+import { SOCIAL_CONTENT_VERSION, type Effect as SocEffect, type DialogueGraph } from './data/social/types.ts';
+import { profileFor, PROFILE_IDS } from './data/social/content/profiles.ts';
+import { ALL_GRAPHS, greetingGraph } from './data/social/content/graphs.ts';
+import { defaultRelationship, applyDeltas as relApplyDeltas, touchInteraction as relTouch, moodLabel as relMood } from './data/social/relationships.ts';
+import { makeMemory, writeMemory, recallMemories, hasMemory as memHas, decayMemories, referenceMemory, rumourFromEvent } from './data/social/memory.ts';
+import { evaluate as socEval, type SocialCtx } from './data/social/conditions.ts';
+import { selectGraph as socSelectGraph, eligibleTopics as socTopics } from './data/social/priority.ts';
+import { nodeById as socNode, resolveText as socText, availableChoices as socChoices } from './data/social/engine.ts';
+import { relationshipSummary as socRelSummary } from './data/social/effects.ts';
 const SKILL_RARE_ITEM: Record<string,string> = { mining:'diamond', woodcutting:'rare_wood' };
 import { CLEAN_BANDS, cleanBand, START_CLEAN, applyActivity, cappedOfflineDecline, MESS_KINDS, messKindById, targetMessCount, messKindsFor, MAX_MESS, cleanGain, BIN_CAPACITY, binLevel, binHasRoom, isCollectionDay, daysUntilCollection, SHINE_MS, shineRemaining, isShiny, comfortScore, CLEAN_GOALS, cleanGoalById } from './data/cleanliness.ts';
 import { NEW_GAME_FIRST_ORE, simulationActive, cleanName, NAME_MAX, saveSummary, TEXT_SCALES, textScaleValue, DEFAULT_SETTINGS } from './data/titlestate.ts';
@@ -1743,7 +1753,7 @@ function openSettings(){
 let _radioOn = false;   // runtime only — never persisted playing (no autoplay on re-entry)
 function _radio(){ if (!S.frostyRadio) S.frostyRadio = { announced:[], selected:null, volume:'med' }; return S.frostyRadio; }
 // "Frosty quests" = Frosty-guided milestones: his tutorial + Founder's Journey stages.
-function _frostyQuests(){ return (S.tut && S.tut.done ? 1 : 0) + (S.journey?.claimed?.length || 0); }
+function _frostyQuests(){ return (S.tut && S.tut.done ? 1 : 0) + (S.journey?.claimed?.length || 0) + ((S.social && S.social.radioBonus) || 0); }
 function _radioIsUnlocked(){ return radioUnlocked(_frostyQuests()); }
 // Fixed clickable rect for the radio inside Frosty's House (interior canvas coords).
 function _radioHotspot(){ const W=icanvasW(), H=icanvasH(); return { x: Math.round(W*0.30), y: Math.round(H-60), w: 28, h: 18 }; }
@@ -3434,6 +3444,8 @@ function interactObj(o){
     return;
   }
   if (o.kind==="npc"){
+    // Frosty gets the cinematic conversation layer (data-driven, remembers you).
+    if (o.w.id==="frost"){ if (openConversation('frosty')) return; }
     // Frost is welcoming and help-oriented after dark (home at the lodge)
     const _line = (o.w.id==="frost" && isNight())
       ? FROST_NIGHT_LINES[Math.floor(Math.random()*FROST_NIGHT_LINES.length)].replace(/\{p\}/g, pName())
@@ -10286,6 +10298,7 @@ const OFFLINE_CAP_MS = 8 * 3600 * 1000;
 function freshState(){
   return {
     v:1, coins:0, ledger:{ seen:{}, entries:[] }, items:{}, lastSeen:Date.now(), market:null, econ:{ pressure:{}, news:[], phaseId:null }, netWorth:{ history:[], last:0 }, automatons:{}, grid:{ tier:0 }, announcedDistricts:[], seenTips:{}, journey:{ claimed:[], notified:"" }, welcome:{ claimed:[], notified:"" }, procurement:{ orders:[] }, qc:{ rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 }, warehouse:{ tier:0 }, seenControls:false, logCollapsed:true, unlockShown:[], lastUnlockAt:0, gameClock:0, c2c:null, c2cReserved:{}, c2cHistory:[], supplierScore:{}, seenProcTip:false, analytics:[], c2cTitles:[], ui:{ padFocus:false }, skillApproach:{}, approachAcc:{},
+    social:{ v:SOCIAL_CONTENT_VERSION, rel:{}, mem:{}, flags:{}, chose:{}, seen:{}, graphs:{}, followups:[], applied:{}, history:[], lastDecayDay:0 },
     playerName:"", settings:{ music:true, vol:"low", sfx:true, soundtrack:"frosty", briefSkipShort:false }, shift:{ phaseId:null }, prod:{}, tut:{ step:0, done:false }, ach:{}, unlockedTabs:{}, firsts:{}, npcMet:false, school:{ raised:0, notifiedTier:0 }, legacy:0, voyages:[], story:{ done:0, seen:0, title:"" }, renown:{ bought:{} }, lore:{}, fleet:{ tier:0 }, arcade:{ medals:0, plays:0 }, poolCue:"house", poolCues:["house"], darts:{ wins:0, beatRinger:false }, commissions:{ rep:0, board:[], boardDay:"", active:[], done:0 },
     skills:{ mining:{xp:0}, steelworks:{xp:0}, manufacturing:{xp:0}, logistics:{xp:0}, trading:{xp:0}, woodcutting:{xp:0}, fishing:{xp:0}, foraging:{xp:0}, crafting:{xp:0}, farming:{xp:0} },
     treeRespawn:{},
@@ -10642,6 +10655,22 @@ function load(){
       if (!S.shift || typeof S.shift !== "object") S.shift = { phaseId:null };                  // returning-briefing snapshot
       if (!S.skillApproach || typeof S.skillApproach !== "object") S.skillApproach = {};          // starter-skill differentiation
       if (!S.approachAcc || typeof S.approachAcc !== "object") S.approachAcc = {};                // exact input-cost carry
+      // Social/dialogue engine — versioned migration: safe defaults for pre-existing saves.
+      // Never replays effects (applied[] is preserved); progression is untouched.
+      if (!S.social || typeof S.social !== "object") S.social = {};
+      const _soc = S.social;
+      if (typeof _soc.v !== "number") _soc.v = 0;
+      if (!_soc.rel || typeof _soc.rel !== "object") _soc.rel = {};          // per-npc NpcRelationship
+      if (!_soc.mem || typeof _soc.mem !== "object") _soc.mem = {};          // per-npc NpcMemory[]
+      if (!_soc.flags || typeof _soc.flags !== "object") _soc.flags = {};    // dialogue flags
+      if (!_soc.chose || typeof _soc.chose !== "object") _soc.chose = {};    // committed choice ids
+      if (!_soc.seen || typeof _soc.seen !== "object") _soc.seen = {};       // node id -> last day
+      if (!_soc.graphs || typeof _soc.graphs !== "object") _soc.graphs = {}; // graph id -> {playedDay}
+      if (!Array.isArray(_soc.followups)) _soc.followups = [];               // scheduled callbacks
+      if (!_soc.applied || typeof _soc.applied !== "object") _soc.applied = {}; // effect id -> true (idempotency)
+      if (!Array.isArray(_soc.history)) _soc.history = [];                   // auditable consequence history
+      if (typeof _soc.lastDecayDay !== "number") _soc.lastDecayDay = 0;
+      if (_soc.v < SOCIAL_CONTENT_VERSION) _soc.v = SOCIAL_CONTENT_VERSION;  // bring the content version forward
       if (!S.supplierScore || typeof S.supplierScore !== "object") S.supplierScore = {};
       if (typeof S.seenProcTip !== "boolean") S.seenProcTip = false;
       // Back-fill stable ids on pre-existing board contracts (pipeline linkage).
@@ -12406,6 +12435,270 @@ function openControlsReference(){
   openModal('controls-modal', inner, { label:'Controls', backdrop:'rgba(0,0,0,.62)', initialFocus:'#controls-ok', wire });
 }
 (globalThis as any).openControlsReference = openControlsReference;
+// ============ Social / dialogue runtime ============
+// Bridges the pure engine (data/social/*) to live game state: builds the condition
+// context, applies typed effects idempotently, and records an auditable history.
+const ALL_SOCIAL_GRAPHS: DialogueGraph[] = ALL_GRAPHS;
+function _graphsForNpc(npc){ const g = ALL_SOCIAL_GRAPHS.filter(x => x.npc === npc); return g.length ? g : [greetingGraph(npc)]; }
+function _socRel(npc){ if(!S.social.rel[npc]) S.social.rel[npc] = defaultRelationship(profileFor(npc)?.relationshipConfig || {}); return S.social.rel[npc]; }
+function _socMem(npc){ if(!Array.isArray(S.social.mem[npc])) S.social.mem[npc] = []; return S.social.mem[npc]; }
+function _socTimeOfDay(){ const h = gameHour(); return h < 6 ? 'night' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : h < 21 ? 'evening' : 'night'; }
+function _socCrimeSuspicion(){ try{ return Math.min(100, activeIncidents().reduce((s,i)=>s+(i.level||0)*12, 0)); }catch(e){ return 0; } }
+// Assemble the immutable condition snapshot for one NPC from real game state.
+function _buildSocialCtx(npc): SocialCtx {
+  const day = _gameDay();
+  const std = (S.contracts||[]).filter((c:any)=>!c.tutorial);
+  const flag = !!(S.c2c && S.c2c.stage !== 'closed');
+  const custRep: Record<string,number> = {}; for (const k of Object.keys(S.contractRep||{})) custRep[k] = S.contractRep[k];
+  const supShort: Record<string,boolean> = {};
+  try{ if (flag && S.c2c && (S.c2c.mat?.shortfall||0) > 0 && S.c2c.po) supShort[S.c2c.po.offerId] = true; }catch(e){}
+  const ph = (()=>{ try{ return macroPhase(); }catch(e){ return { id:'steady', demand:1 }; } })();
+  return {
+    npc, day, timeOfDay: _socTimeOfDay() as any, season: (()=>{ try{ return getSeason(); }catch(e){ return 'spring'; } })(),
+    location: S.tab || 'village', mood: relMood(_socRel(npc)), rel: _socRel(npc), memories: _socMem(npc),
+    flags: S.social.flags, chose: undefined as any, choseIds: S.social.chose, seenNodes: S.social.seen, cooldowns: {},
+    tutDone: !!(S.tut && S.tut.done),
+    contract: { active: flag, deliverable: std.some((c:any)=>itemCount(c.item) >= c.qty) || (flag && S.c2c.stage === 'dispatch_decision'),
+      expiredRecently: (S.counters?.contractsExpired||0) > (S.social.expAck||0), stage: flag ? String(S.c2c.stage) : null },
+    customerRep: custRep, supplierShort: supShort, items: S.items || {}, cash: S.coins || 0,
+    skills: Object.fromEntries(Object.keys(SKILLS).map(s=>[s, skillLvl(s)])),
+    businesses: {}, economy: { phase: ph.id, demand: ph.demand }, crimeSuspicion: _socCrimeSuspicion(),
+    companion: (S.pets && S.pets.active) || null, homeTier: S.homeTier || 0,
+  } as any;
+}
+// Apply ONE typed effect via the right adapter, idempotently (by stable effect id).
+// Returns a short human note for the after-commit summary, or null.
+function _applySocEffect(npc, eff: SocEffect): string | null {
+  if (!eff || !eff.id) return null;
+  if (S.social.applied[eff.id]) return null;   // already applied — never duplicate
+  S.social.applied[eff.id] = true;
+  const day = _gameDay();
+  let note: string | null = null;
+  switch (eff.kind){
+    case 'relationship': { const r = relApplyDeltas(_socRel(npc), [{ dim: eff.dim, delta: eff.delta }]); S.social.rel[npc] = r.rel; break; }
+    case 'memory': { const w:any = eff.write; S.social.mem[w.npc || npc] = writeMemory(_socMem(w.npc || npc), makeMemory(w.npc || npc, day, w)); break; }
+    case 'forget': { S.social.mem[npc] = _socMem(npc).filter((m:any)=>m.id !== eff.memoryId); break; }
+    case 'flag': { S.social.flags[eff.key] = eff.value; break; }
+    case 'log': { try{ log(esc ? eff.text : eff.text, eff.tone || ''); }catch(e){} break; }
+    case 'followup': { S.social.followups.push({ graph: eff.graph, dueDay: day + (eff.afterDays||0), npc }); break; }
+    case 'radio_unlock': { S.social.radioBonus = (S.social.radioBonus||0) + 1; note = eff.label || 'Radio track unlocked'; try{ log(`📻 ${note}.`, 'good'); }catch(e){} break; }
+    case 'grant_coins': { credit(eff.amount, 'journal', 'social:'+eff.id, 'social:'+eff.id); note = `+${fmt(eff.amount)} coins`; break; }
+    case 'grant_item': { addItem(eff.item, eff.qty); note = `+${eff.qty}× ${ITEMS[eff.item]?.n||eff.item}`; break; }
+    case 'take_item': { S.items[eff.item] = Math.max(0, (S.items[eff.item]||0) - eff.qty); break; }
+    case 'reputation': { if(!S.contractRep) S.contractRep = {}; S.contractRep[eff.client] = Math.max(0, (S.contractRep[eff.client]||0) + eff.delta); break; }
+    case 'contract_offer': { S.social.flags['offer_'+(eff.tag||'gen')] = true; note = 'New opportunity'; break; }
+    case 'supplier_intel': { if(!S.social.intel) S.social.intel = {}; S.social.intel[eff.offer] = eff.note; note = 'Supplier intel'; break; }
+    case 'crime_suspicion': { /* adapter: nudge suspicion via a memory the witness holds */ S.social.mem[npc] = writeMemory(_socMem(npc), makeMemory(npc, day, { id:'susp:'+eff.id, category:'crime', subject:'player', summaryKey:'Grew suspicious of you', emotion:-eff.delta, strength:Math.min(100,50+eff.delta), source:'witnessed', confidence:80, tags:['suspicion'] })); break; }
+    case 'rumour': { /* deliberate rumour seeding — bounded, sourced */ break; }
+  }
+  S.social.history.push({ day, npc, effect: eff.id, kind: eff.kind });
+  if (S.social.history.length > 200) S.social.history = S.social.history.slice(-200);
+  return note;
+}
+function _socFrostyBonus(){ return (S.social && S.social.radioBonus) || 0; }
+// Commit a chosen response: apply its effects, record the choice, advance relationship.
+function _socCommitChoice(npc, choice): string[] {
+  const notes: string[] = [];
+  S.social.chose[choice.id] = true;
+  for (const e of (choice.effects || [])){ const n = _applySocEffect(npc, e); if (n) notes.push(n); }
+  S.social.rel[npc] = relTouch(_socRel(npc), _gameDay());
+  return notes;
+}
+function _socShowNode(npc, node){
+  S.social.seen[node.id] = _gameDay();
+  for (const e of (node.autoEffects || [])) _applySocEffect(npc, e);
+}
+// Due follow-ups become eligible graphs; returns the graph ids that are ready now.
+function _socDueFollowups(npc): string[] {
+  const day = _gameDay();
+  return (S.social.followups||[]).filter((f:any)=>f.npc === npc && day >= f.dueDay).map((f:any)=>f.graph);
+}
+function _socClearFollowup(graphId){ S.social.followups = (S.social.followups||[]).filter((f:any)=>f.graph !== graphId); }
+// Daily maintenance (deliberate tick): decay flavour memories, keep saves lean.
+function socDailyTick(){
+  const day = _gameDay();
+  if (day <= (S.social.lastDecayDay||0)) return;
+  S.social.lastDecayDay = day;
+  for (const npc of Object.keys(S.social.mem||{})) S.social.mem[npc] = decayMemories(_socMem(npc), day);
+}
+
+// ============ Cinematic conversation screen ============
+// A premium, controller-first dialogue layer: the world stays behind, dimmed and
+// softened; a portrait + lower-third panel present short beats and 2–4 choices.
+var _conv: any = null; var _convKey: any = null; var _convTyper: any = null;
+(globalThis as any).openConversation = openConversation;
+function _dialogTextScale(){ return ({ sm:0.9, md:1.0, lg:1.18 } as any)[(S.settings && S.settings.dialogText) || 'md'] || 1; }
+function _convReducedMotion(){ try{ return _reducedMotion(); }catch(e){ return false; } }
+function openConversation(npc, opts:any = {}){
+  if (!profileFor(npc)) return false;
+  try{ socDailyTick(); }catch(e){}
+  const ctx = _buildSocialCtx(npc);
+  const graph = opts.graphId ? _graphsForNpc(npc).find(g=>g.id===opts.graphId) : socSelectGraph(_graphsForNpc(npc), ctx, S.social.graphs);
+  if (!graph) return false;
+  S.social.graphs[graph.id] = { playedDay: _gameDay() };     // mark opened (once/cooldown bookkeeping)
+  if (graph.id === 'frosty_contract_fail') S.social.expAck = (S.counters?.contractsExpired||0);   // acknowledged the lapse
+  _socClearFollowup(graph.id);
+  _conv = { npc, graphId: graph.id, nodeId: graph.entry, beats: [], panel: 'main', textDone: _convReducedMotion(), notes: [], relBefore: JSON.parse(JSON.stringify(_socRel(npc))) };
+  try{ save(); }catch(e){}
+  if (!document.getElementById('conv-modal')){
+    const el = document.createElement('div'); el.id = 'conv-modal';
+    el.style.cssText = 'position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(6,9,18,.5);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)';
+    document.body.appendChild(el);
+  }
+  _convKey = (e:any)=>_convKeydown(e); window.addEventListener('keydown', _convKey);
+  _renderConversation();
+  return true;
+}
+function closeConversation(){
+  if (_convTyper){ clearInterval(_convTyper); _convTyper = null; }
+  if (_convKey){ window.removeEventListener('keydown', _convKey); _convKey = null; }
+  const el = document.getElementById('conv-modal'); if (el) el.remove();
+  _conv = null;
+  try{ save(); }catch(e){}
+  // return focus to the world (never trap)
+  try{ if ((S.tab==='village' || INTERIOR_TABS.has(S.tab)) && _lastInput!=='pointer') focusGameInput(); }catch(e){}
+  try{ if (S.tab==='trade' || S.tab==='contracts') renderMain(); }catch(e){}
+}
+(globalThis as any).closeConversation = closeConversation;
+function _convGraph(){ return _graphsForNpc(_conv.npc).find(g=>g.id===_conv.graphId) || null; }
+function _convCtx(){ return _buildSocialCtx(_conv.npc); }
+function _convContextChips(ctx){
+  const chips:string[] = [];
+  if (ctx.contract.active) chips.push(`⭐ Order: ${esc(String(ctx.contract.stage||'').replace(/_/g,' '))}`);
+  else if (ctx.contract.deliverable) chips.push('📋 Contract ready');
+  if (Object.values(ctx.supplierShort).some(Boolean)) chips.push('⚠️ Supplier short');
+  const promise = recallMemories(_socMem(_conv.npc), { tag:'promise' })[0];
+  if (promise) chips.push(`🤝 ${esc(promise.summaryKey)}`);
+  if (ctx.contract.expiredRecently) chips.push('⌛ Order lapsed');
+  return chips.slice(0,4);
+}
+function _convChoose(choice){
+  if (_conv.panel !== 'main') return;
+  if (!choice.available){ toast(choice.reason || 'Not available yet.'); return; }
+  const notes = _socCommitChoice(_conv.npc, choice);   // effects apply AFTER commit
+  _conv.notes = notes;
+  const g = _convGraph(); const node = g && socNode(g, _conv.nodeId);
+  // record the beat in history
+  if (node) _conv.beats.push({ speaker: profileFor(_conv.npc)?.displayName || _conv.npc, text: socText(node, _convCtx()) });
+  _conv.beats.push({ speaker: 'You', text: choice.text });
+  if (choice.next){ _conv.nodeId = choice.next; _conv.textDone = _convReducedMotion(); _renderConversation(); }
+  else { _showRelChangeThenMaybeClose(); }
+}
+function _showRelChangeThenMaybeClose(){
+  // brief relationship-change feedback (after the choice, never before), then close
+  _conv.panel = 'summary'; _renderConversation();
+}
+function _advanceNode(){
+  const g = _convGraph(); if(!g) { closeConversation(); return; }
+  const node = socNode(g, _conv.nodeId); if(!node){ closeConversation(); return; }
+  if (node.next){ _conv.beats.push({ speaker: profileFor(_conv.npc)?.displayName || _conv.npc, text: socText(node, _convCtx()) }); _conv.nodeId = node.next; _conv.textDone = _convReducedMotion(); _renderConversation(); }
+  else { closeConversation(); }
+}
+function _convKeydown(e){
+  if (!_conv) return;
+  const k = e.key;
+  if (k === 'Escape'){ e.preventDefault(); if (_conv.panel !== 'main'){ _conv.panel = 'main'; _renderConversation(); } else closeConversation(); return; }
+  if ((k === 'x' || k === 'X')){ e.preventDefault(); _conv.panel = _conv.panel === 'history' ? 'main' : 'history'; _renderConversation(); return; }
+  if ((k === 'y' || k === 'Y')){ e.preventDefault(); _conv.panel = _conv.panel === 'profile' ? 'main' : 'profile'; _renderConversation(); return; }
+  if (_conv.panel === 'summary' && (k === 'Enter' || k === ' ')){ e.preventDefault(); closeConversation(); return; }
+  // a first input completes the typewriter; a node with no choices advances on input
+  if ((k === 'Enter' || k === ' ') && _conv.panel === 'main'){
+    if (!_conv.textDone){ e.preventDefault(); _completeTyper(); return; }
+    const g = _convGraph(); const node = g && socNode(g, _conv.nodeId);
+    if (node && !(node.choices && node.choices.length)){ e.preventDefault(); _advanceNode(); return; }
+  }
+  // number shortcuts select choices
+  if (/^[1-4]$/.test(k) && _conv.panel === 'main' && _conv.textDone){
+    const g = _convGraph(); const node = g && socNode(g, _conv.nodeId);
+    const ch = node ? socChoices(node, _convCtx()).filter((c:any)=>c.available) : [];
+    const pick = ch[parseInt(k,10)-1]; if (pick){ e.preventDefault(); _convChoose(pick); }
+  }
+}
+function _completeTyper(){ if (_convTyper){ clearInterval(_convTyper); _convTyper = null; } _conv.textDone = true; _renderConversation(); }
+function _renderConversation(){
+  const el = document.getElementById('conv-modal'); if (!el || !_conv) return;
+  const g = _convGraph(); if (!g){ closeConversation(); return; }
+  const node = socNode(g, _conv.nodeId); if (!node){ closeConversation(); return; }
+  const prof:any = profileFor(_conv.npc) || { displayName:_conv.npc, occupation:'', portrait:'💬' };
+  const ctx = _convCtx();
+  _socShowNode(_conv.npc, node);
+  const rel = _socRel(_conv.npc);
+  const ts = _dialogTextScale();
+  const expr = (node.expression && prof.expressions && prof.expressions[node.expression]) || prof.portrait;
+  const fullText = socText(node, ctx);
+  const method = _lastInput === 'keyboard' ? 'kbd' : _lastInput === 'gamepad' ? 'pad' : 'ptr';
+  // header
+  const header = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+    <div style="font-size:${Math.round(54*ts)}px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.6))">${expr}</div>
+    <div style="min-width:0">
+      <div style="font-size:${(1.15*ts).toFixed(2)}rem;font-weight:800;color:var(--text)">${esc(prof.displayName)}</div>
+      <div style="font-size:${(0.8*ts).toFixed(2)}rem;color:var(--dim)">${esc(prof.occupation)}${prof.organisation?` · ${esc(prof.organisation)}`:''}</div>
+      <div style="font-size:${(0.75*ts).toFixed(2)}rem;color:var(--amber);margin-top:2px">${esc(relMood(rel))}</div>
+    </div>
+  </div>`;
+  const chips = _convContextChips(ctx);
+  const chipRow = chips.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips.map(c=>`<span style="font-size:${(0.72*ts).toFixed(2)}rem;background:rgba(255,255,255,.06);border:1px solid var(--edge);border-radius:12px;padding:2px 9px;color:var(--dim)">${c}</span>`).join('')}</div>` : '';
+  let body = '';
+  if (_conv.panel === 'history'){
+    const rows = _conv.beats.length ? _conv.beats.map((b:any)=>`<div style="margin-bottom:6px;font-size:${(0.85*ts).toFixed(2)}rem"><b style="color:${b.speaker==='You'?'var(--mint)':'var(--amber)'}">${esc(b.speaker)}:</b> ${esc(b.text)}</div>`).join('') : `<div style="color:var(--dim)">This is the start of the conversation.</div>`;
+    body = `<div style="max-height:34vh;overflow:auto">${rows}</div><button data-conv="back" class="btn" style="margin-top:10px">◀ Back</button>`;
+  } else if (_conv.panel === 'profile'){
+    const dim = (l,v)=>`<div style="display:flex;justify-content:space-between;font-size:${(0.85*ts).toFixed(2)}rem;padding:2px 0"><span style="color:var(--dim)">${l}</span><b>${v}</b></div>`;
+    const mems = recallMemories(_socMem(_conv.npc)).slice(0,4).map((m:any)=>`<div style="font-size:${(0.78*ts).toFixed(2)}rem;color:var(--dim);padding:1px 0">• ${esc(m.summaryKey)}</div>`).join('') || `<div style="font-size:${(0.78*ts).toFixed(2)}rem;color:var(--dim)">No strong memories yet.</div>`;
+    body = `<div style="max-height:34vh;overflow:auto">
+      ${dim('Warmth', rel.warmth)}${dim('Trust', rel.trust)}${dim('Respect', rel.respect)}${dim('Suspicion', rel.suspicion)}
+      <div style="font-size:${(0.75*ts).toFixed(2)}rem;color:var(--amber);margin:8px 0 3px;text-transform:uppercase;letter-spacing:.5px">What they remember</div>${mems}
+      <div style="font-size:${(0.78*ts).toFixed(2)}rem;color:var(--dim);margin-top:8px">${esc((prof.voice&&prof.voice.ambition)?('Wants: '+prof.voice.ambition):'')}</div>
+    </div><button data-conv="back" class="btn" style="margin-top:10px">◀ Back</button>`;
+  } else if (_conv.panel === 'summary'){
+    const before = _conv.relBefore, r = rel;
+    const deltas = (['warmth','trust','respect','suspicion'] as const).map(d=>({ d, v: r[d]-before[d] })).filter(x=>x.v!==0);
+    const rows = deltas.length ? deltas.map(x=>`<span style="font-size:${(0.85*ts).toFixed(2)}rem;color:${x.v>0?(x.d==='suspicion'?'#e8a04a':'var(--mint)'):(x.d==='suspicion'?'var(--mint)':'#e0705a')};margin-right:12px">${x.d[0].toUpperCase()+x.d.slice(1)} ${x.v>0?'+':''}${x.v}</span>`).join('') : `<span style="color:var(--dim)">No change.</span>`;
+    const noteRow = _conv.notes.length ? `<div style="font-size:${(0.8*ts).toFixed(2)}rem;color:var(--mint);margin-top:6px">${_conv.notes.map((n:string)=>'✓ '+esc(n)).join(' · ')}</div>` : '';
+    body = `<div style="text-align:center;padding:4px 0">
+      <div style="font-size:${(0.95*ts).toFixed(2)}rem;margin-bottom:6px">${rows}</div>${noteRow}
+      <button data-conv="close" data-primary class="btn" style="margin-top:10px;min-width:160px">Done ▶</button>
+    </div>`;
+  } else {
+    // main beat
+    const shown = _conv.textDone ? fullText : '';
+    const choicesR = node.choices ? socChoices(node, ctx) : [];
+    const choiceBtns = _conv.textDone ? choicesR.map((c:any,i:number)=>`
+      <button data-conv="choice" data-ci="${i}" ${i===0&&c.available?'data-primary':''} ${c.available?'':'disabled'} class="btn ${c.available?'':'alt'}" style="display:block;width:100%;text-align:left;margin-bottom:6px;font-size:${(0.95*ts).toFixed(2)}rem;opacity:${c.available?1:.55}">
+        <span style="color:var(--dim);font-size:.8em">${i+1}.</span> ${esc(c.text)}${c.available?'':` <span style="font-size:.72em;color:#e8a04a">(${esc(c.reason||'')})</span>`}</button>`).join('') : '';
+    const cont = (_conv.textDone && !(node.choices && node.choices.length)) ? `<button data-conv="advance" data-primary class="btn" style="margin-top:6px">Continue ▶</button>` : '';
+    body = `<div id="conv-text" style="font-size:${(1.02*ts).toFixed(2)}rem;line-height:1.5;color:var(--text);max-width:62ch;margin:0 auto 10px;min-height:2.6em">${esc(shown)}</div>
+      <div style="max-width:62ch;margin:0 auto">${choiceBtns}${cont}</div>`;
+    // choice index cache
+    _conv._choices = choicesR;
+  }
+  const prompts = `<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:10px;font-size:${(0.72*ts).toFixed(2)}rem;color:var(--dim)">
+    <span><span class="gp-btn">Ⓐ</span> Select</span><span><span class="gp-btn">Ⓑ</span> ${_conv.panel==='main'?'Leave':'Back'}</span>
+    <span><span class="gp-btn">Ⓧ</span> History</span><span><span class="gp-btn">Ⓨ</span> Profile</span></div>`;
+  el.innerHTML = `<div class="panel" style="border-radius:16px 16px 0 0;border-top:3px solid var(--amber);max-width:min(920px,100%);width:100%;margin:0 auto;padding:18px clamp(14px,4vw,40px);max-height:74vh;overflow:auto">
+    ${header}${chipRow}${body}${prompts}</div>`;
+  // wire
+  el.querySelectorAll('[data-conv]').forEach(b=> (b as HTMLElement).onclick = ()=>{
+    const a = (b as HTMLElement).dataset.conv;
+    if (a === 'close'){ closeConversation(); return; }
+    if (a === 'back'){ _conv.panel = 'main'; _renderConversation(); return; }
+    if (a === 'advance'){ _advanceNode(); return; }
+    if (a === 'choice'){ const i = +(b as HTMLElement).dataset.ci!; const c = (_conv._choices||[])[i]; if (c) _convChoose(c); return; }
+  });
+  // controller/keyboard focus → primary action (recommended choice / continue / done)
+  if (_lastInput !== 'pointer'){ const pf = (el.querySelector('[data-primary]') as HTMLElement) || (el.querySelector('[data-conv]') as HTMLElement); if (pf) try{ _setUiFocus(pf); }catch(e){} }
+  // typewriter (skippable, reduced-motion instant)
+  if (!_conv.textDone && _conv.panel === 'main'){
+    if (_convReducedMotion()){ _conv.textDone = true; _renderConversation(); return; }
+    const target = document.getElementById('conv-text'); let i = 0;
+    if (_convTyper) clearInterval(_convTyper);
+    _convTyper = setInterval(()=>{
+      i += 2; if (target) target.textContent = fullText.slice(0, i);
+      if (i >= fullText.length){ clearInterval(_convTyper); _convTyper = null; _conv.textDone = true; _renderConversation(); }
+    }, 16);
+  }
+}
+
 // ============ Back on Shift — returning-player briefing ============
 // A concise, skippable summary after a meaningful absence, built from REAL state.
 // The pure decision of WHAT to show lives in data/shiftBriefing.ts.
@@ -13021,7 +13314,10 @@ function renderTrade(){
 
   // ---- the active trader panel ----
   html += `<div class="panel">
-    <h2>${active.ic} ${esc(active.n)} — ${esc(active.title)}<small class="tr-sub">"${esc(active.quip)}"</small></h2>`;
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <h2 style="flex:1">${active.ic} ${esc(active.n)} — ${esc(active.title)}<small class="tr-sub">"${esc(active.quip)}"</small></h2>
+      ${profileFor(active.id)?`<button data-talk="${active.id}" class="btn alt" style="flex:0 0 auto;white-space:nowrap">💬 Talk</button>`:''}
+    </div>`;
   // category filter (only the classes this trader actually stocks)
   const classes = new Set(active.stock.map(_itemClass));
   if (classes.size > 1){
@@ -15654,6 +15950,7 @@ function bindMain(){
   document.querySelectorAll(".job-btn[data-jobstop]").forEach(b=> (b as HTMLElement).onclick = ()=>{ S.action = null; renderMain(); renderNav(); save(); });
   document.querySelectorAll("[data-approach]").forEach(b=> (b as HTMLElement).onclick = ()=>{ const [sk,id]=(b as HTMLElement).dataset.approach!.split('|'); (window as any).setSkillApproach(sk, id); });
   document.querySelectorAll(".job-btn[data-jobreel]").forEach(b=> (b as HTMLElement).onclick = ()=> reelFish());
+  document.querySelectorAll("[data-talk]").forEach(b=> (b as HTMLElement).onclick = ()=>{ const id=(b as HTMLElement).dataset.talk!; if(!openConversation(id)) toast('Nothing to talk about right now.'); });
   document.querySelectorAll("[data-trade]").forEach(b=> b.onclick = ()=>{
     const [npc, it, q, mode] = b.dataset.trade.split("|");
     doTrade(npc, it, q==="max" ? "max" : +q, mode);
@@ -16995,6 +17292,7 @@ setInterval(()=>{
   checkDistrictUnlocks();   // announce a district the moment its level gate is crossed
   checkWelcome();           // M15: auto-grant the Getting Started starter ladder
   checkJourney();           // nudge when a Founder's Journey milestone becomes claimable
+  try{ socDailyTick(); }catch(e){}   // decay flavour memories once per game-day (keeps saves lean)
   checkStory();             // nudge when a Founder's Trail chapter becomes readable
   checkLore();              // reveal a Valley Lore waystone when the player reaches it
   syncTabUnlocks(false);    // reveal advanced tabs as the player earns them
@@ -17369,6 +17667,21 @@ if (import.meta.env.DEV) {
     uiSetLastSeen(msAgo:number){ S.lastSeen = Date.now() - (msAgo|0); return { lastSeen:S.lastSeen }; },
     uiShiftPreview(){ try{ return buildShift(_buildShiftInput(), { skipShort:_briefSkipShort() }); }catch(e){ return { err:String(e) }; } },
     uiShiftSkipShort(){ return _briefSkipShort(); },
+    // ---- Social / dialogue probes (this milestone) ----
+    socOpen(npc:string, graphId?:string){ return { ok: openConversation(npc, graphId?{graphId}:{}), graph: _conv?_conv.graphId:null, node: _conv?_conv.nodeId:null }; },
+    socState(){ if(!_conv) return null; const g=_convGraph(); const node=g&&socNode(g,_conv.nodeId); const ctx=_convCtx(); return { npc:_conv.npc, graph:_conv.graphId, node:_conv.nodeId, panel:_conv.panel, textDone:!!_conv.textDone, text: node?socText(node,ctx):'', choices:(node?socChoices(node,ctx):[]).map((c:any)=>({id:c.id,text:c.text,available:c.available})), rel: JSON.parse(JSON.stringify(_socRel(_conv.npc))) }; },
+    socChoose(choiceId:string){ if(!_conv) return {err:'no_conv'}; const g=_convGraph(); const node=g&&socNode(g,_conv.nodeId); const ctx=_convCtx(); const ch=(node?socChoices(node,ctx):[]).find((c:any)=>c.id===choiceId); if(!ch) return {err:'no_choice'}; _convChoose(ch); return { panel:_conv?_conv.panel:'closed', node:_conv?_conv.nodeId:null }; },
+    socComplete(){ if(_conv) _completeTyper(); return { textDone:_conv?!!_conv.textDone:false }; },
+    socAdvance(){ if(_conv) _advanceNode(); return { node:_conv?_conv.nodeId:null, open:!!_conv }; },
+    socClose(){ closeConversation(); return { open:!!document.getElementById('conv-modal') }; },
+    socRel(npc:string){ return JSON.parse(JSON.stringify(_socRel(npc))); },
+    socMem(npc:string){ return (_socMem(npc)||[]).map((m:any)=>({id:m.id,category:m.category,tag:m.tags,summary:m.summaryKey,strength:m.strength})); },
+    socFlag(key:string){ return !!(S.social&&S.social.flags&&S.social.flags[key]); },
+    socSetExpired(){ if(S.counters) S.counters.contractsExpired=(S.counters.contractsExpired||0)+1; return { expired:S.counters.contractsExpired }; },
+    socGiveItem(id:string,n:number){ addItem(id,n|0); return { have:itemCount(id) }; },
+    socHistory(){ return (S.social&&S.social.history)||[]; },
+    socOpenModal(){ return !!document.getElementById('conv-modal'); },
+    socWitnessCrime(npc:string){ const day=_gameDay(); S.social.mem[npc]=writeMemory(_socMem(npc), makeMemory(npc,day,{id:'crime:test:'+npc,category:'crime',subject:'player',summaryKey:'saw you take something',emotion:-40,strength:80,source:'witnessed',confidence:90,tags:['suspicion']})); const r=relApplyDeltas(_socRel(npc),[{dim:'suspicion',delta:25}]); S.social.rel[npc]=r.rel; return { susp:_socRel(npc).suspicion, hasCrime: memHas(_socMem(npc),{category:'crime'}) }; },
     // Starter-skill differentiation probes (this milestone).
     uiApproaches(skill:string){ return isStarterSkill(skill) ? APPROACHES[skill].map((a:any)=>a.id) : []; },
     uiRunSkill(skill:string, approachId:string){
