@@ -5830,9 +5830,18 @@ function _bldPersonality(ctx, o, r, cat, t, P){
     const bl=0.5+0.5*Math.sin(t*4); ctx.fillStyle=`rgba(70,120,255,${(0.5+0.5*bl).toFixed(2)})`; ctx.fillRect(cxm-3, wallY-5, 6, 3);
     for (let i=0;i<Math.floor(w/6);i++){ ctx.fillStyle=i%2?'#2a4a8a':'#e8ecf4'; ctx.fillRect(x+3+i*6, y+h-9, 6, 3); }
   } else if (cat==='home'){
-    // cosy home — chimney with a wisp of smoke + a window flower box
-    const chX=x+w-13; ctx.fillStyle=_shade(roof,-0.2); ctx.fillRect(chX, y-2, 6, 9); ctx.fillStyle=_shade(roof,-0.4); ctx.fillRect(chX-1, y-3, 8, 2);
-    for (let p=0;p<2;p++){ const ph=((t*0.35+p*0.5+(x%5)*0.1)%1); ctx.fillStyle=`rgba(190,190,196,${(0.20*(1-ph)).toFixed(2)})`; ctx.beginPath(); ctx.arc(chX+3+Math.sin(ph*6)*2, y-4-ph*12, 1.4+ph*2, 0,7); ctx.fill(); }
+    // cosy home — a brick chimney that sits ON the roof slope (its base embedded in
+    // the tiles, not floating), with a wisp of smoke + a window flower box.
+    const eave=5, chW=6, chH=9;
+    const chX=Math.round(cxm + w*0.22);                                   // right of the ridge
+    const rf=(chX - cxm) / ((x+w+eave) - cxm);                             // 0 at ridge → 1 at right eave
+    const roofYat=(y-2) + rf*((wallY+2) - (y-2));                          // roof surface y under the stack
+    const chTop=Math.round(roofYat - chH);
+    ctx.fillStyle=_shade(roof,-0.2); ctx.fillRect(chX, chTop, chW, Math.round(roofYat - chTop + 3));   // stack down into the tiles
+    ctx.fillStyle=_shade(roof,-0.35); ctx.fillRect(chX, chTop, 2, Math.round(roofYat - chTop + 3));     // shaded left face
+    ctx.fillStyle=_shade(roof,-0.4); ctx.fillRect(chX-1, chTop-2, chW+2, 3);                            // chimney rim/cap
+    const smokeX=chX+chW/2;
+    for (let p=0;p<2;p++){ const ph=((t*0.35+p*0.5+(x%5)*0.1)%1); ctx.fillStyle=`rgba(190,190,196,${(0.20*(1-ph)).toFixed(2)})`; ctx.beginPath(); ctx.arc(smokeX+Math.sin(ph*6)*2, chTop-2-ph*12, 1.4+ph*2, 0,7); ctx.fill(); }
     const wh=Math.max(7,Math.round(wallH*0.34)), ww=Math.max(8,Math.round(w*0.20)), bxy=wallY+6+wh;
     ctx.fillStyle='#7a4a28'; ctx.fillRect(x+4, bxy, ww+2, 3);
     for (let f=0;f<3;f++){ ctx.fillStyle=['#e05a80','#ffd666','#f86040'][f]; ctx.fillRect(x+6+f*4, bxy-3, 2, 3); }
@@ -6339,8 +6348,8 @@ function drawExtras(ctx, t){
     ctx.fillStyle="#f0d880"; ctx.fillRect(sbX+4,sbY+4,32,22);
     ctx.fillStyle="#c8a030"; ctx.fillRect(sbX+6,sbY+10,12,3); ctx.fillRect(sbX+6,sbY+16,18,3);
     drawEmojiC(ctx,"🪣",sbX+28,sbY+16,10);
-    // slide (east side, north-to-south)
-    const slX=pkX+154, slY=pkY+8;
+    // slide (west-of-centre — clear of the central flower bed, was overlapping it)
+    const slX=pkX+95, slY=pkY+8;
     ctx.fillStyle="#4a3010"; ctx.fillRect(slX-8,slY,4,pkH-26); ctx.fillRect(slX,slY,4,pkH-26);
     for(let rs=slY+5;rs<pkY+pkH-28;rs+=5){ ctx.fillStyle="#6a4818"; ctx.fillRect(slX-8,rs,12,2); }
     ctx.fillStyle="#c02848";
@@ -6349,8 +6358,8 @@ function drawExtras(ctx, t){
     ctx.beginPath(); ctx.moveTo(slX+8,slY+5); ctx.lineTo(slX+24,pkY+pkH-22); ctx.lineTo(slX+24,pkY+pkH-20); ctx.lineTo(slX+9,slY+5); ctx.closePath(); ctx.fill();
     ctx.fillStyle="#a02040"; ctx.fillRect(slX+4,slY,26,7);
     ctx.fillStyle="#c83060"; ctx.fillRect(slX+6,slY+1,22,4);
-    // swings (far east, animated arc)
-    const swX=pkX+194, swY=pkY+8;
+    // swings (east side — well clear of the slide and the NE flower patch)
+    const swX=pkX+250, swY=pkY+8;
     ctx.fillStyle="#4a3010"; ctx.fillRect(swX,swY,4,pkH-26); ctx.fillRect(swX+28,swY,4,pkH-26);
     ctx.fillStyle="#382008"; ctx.fillRect(swX-2,swY,36,5);
     const sa=Math.sin(t*1.4)*13;
