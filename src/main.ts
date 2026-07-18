@@ -1253,7 +1253,7 @@ function tutBannerHtml(){
 function firstRunHintHtml(){
   if (S.tab !== "village" || !S.tut || S.tut.done || S.tut.step > 0) return "";
   if ((S.prod.iron_ore||0) >= (TUTORIAL_TARGETS.iron_ore || 6)) return "";
-  return `<div class="firstrun-hint">🎮 Move with <b>WASD</b> / arrow keys — or <b>tap</b> where to go. Head <b>west ◀</b> to the quarry ⛏️ and tap the Iron Rock.</div>`;
+  return `<div class="firstrun-hint">🎮 Move with <b>WASD</b> / arrow keys — or <b>tap</b> where to go. The quarry ⛏️ is just <b>west ◀</b> — walk over and tap the Iron Rock.</div>`;
 }
 // Task 4: a quest marker guiding the player to the CURRENT objective's location —
 // a floating label when it's on screen, or an edge arrow pointing toward it when not.
@@ -3686,6 +3686,7 @@ function drawInteractHighlights(ctx: any, t: number){
 function villageClick(e){
   const cv = document.getElementById("village");
   if (!cv) return;
+  if (_arrival.active){ _skipArrival(); return; }   // tap to skip the drop-off cinematic
   const rect = cv.getBoundingClientRect();
   const wx = (e.clientX-rect.left)*(cv.width/rect.width) + CAM.x;
   const wy = (e.clientY-rect.top)*(cv.height/rect.height) + CAM.y;
@@ -6712,6 +6713,118 @@ function drawMinimap(ctx){
   ctx.fillStyle="#bfe8f7"; const fr=WANDERERS[0]; ctx.fillRect(mx+Math.round(fr.x/TILE)-1, my+Math.round(fr.y/TILE)-1, 2, 2);
   ctx.fillStyle="#fff"; ctx.fillRect(mx+Math.round(VP.x/TILE)-1, my+Math.round(VP.y/TILE)-1, 2, 2);
 }
+// ============================================================================
+// NEW-ARRIVAL CINEMATIC — the founder is dropped off by the valley bus at the quarry
+// clearing (right by the first Iron Rock), an electronic site gate closes behind it,
+// and Frosty walks over to say hello. Purely presentational, fully skippable, and it
+// only ever plays once, on a brand-new game (never for returning founders or the
+// pres=off e2e/quick fast path). All world-space, anchored at the drop-off spot.
+// ============================================================================
+let _presForcedOff = false;
+const _arrival = { active:false, t:0, ax:0, ay:0, greeted:false } as any;
+// Phase boundaries in seconds from the start of the cinematic.
+const ARR = { BUS_STOP:1.7, STEP_DONE:3.0, BUS_LEAVE:3.3, GATE_START:4.3, GATE_DONE:5.1, FROSTY_START:4.9, FROSTY_DONE:6.7, END:9.0 };
+function _startArrival(){
+  if (S.arrival && S.arrival.done && !_arrival.active){ /* fresh cinematic below sets done */ }
+  // Stand the founder at the clearing beside the quarry — a couple of tiles from the
+  // very first objective (rock_iron4), where Frosty already patrols.
+  VP.x = 18*TILE; VP.y = 29*TILE; VP.tx = null; VP.ty = null; VP.pending = null;
+  VP.moving = false; VP.facing = -1; VP.dir = "left";
+  CAM.x = Math.max(0, Math.min(VCOLS*TILE-VIEW_W, VP.x - VIEW_W/2));
+  CAM.y = Math.max(0, Math.min(VROWS*TILE-VIEW_H, VP.y - VIEW_H/2));
+  _arrival.active = true; _arrival.t = 0; _arrival.ax = VP.x; _arrival.ay = VP.y; _arrival.greeted = false;
+  if (!S.arrival) S.arrival = {}; S.arrival.done = true;   // never replays
+  try{ save(); }catch(e){}
+}
+function _endArrival(){
+  if (!_arrival.active) return;
+  _arrival.active = false;
+  VP.x = _arrival.ax; VP.y = _arrival.ay; VP.moving = false; VP.facing = -1; VP.dir = "left";
+  try{ save(); }catch(e){}
+  try{ maybeShowPlayHint(); }catch(e){}   // the "How to Play" card, once the drop-off is done
+}
+function _skipArrival(){ if (_arrival.active) _endArrival(); }
+function _arrivalHidesPlayer(){ return _arrival.active && _arrival.t < ARR.BUS_STOP; }   // still aboard the bus
+const _ease = { out:(u)=>1-(1-u)*(1-u), in:(u)=>u*u, io:(u)=>u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2 };
+function _updateArrival(dt){
+  // Any controller button also skips the cinematic.
+  try{
+    const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
+    for (const p of pads){ if (p && p.buttons && p.buttons.some(b => b && b.pressed)){ _skipArrival(); return; } }
+  }catch(e){}
+  _arrival.t += dt;
+  const t = _arrival.t, ax = _arrival.ax, ay = _arrival.ay;
+  // Player: aboard the bus, then steps off from the door to the anchor.
+  if (t < ARR.BUS_STOP){ VP.x = ax; VP.y = ay; VP.moving = false; }
+  else if (t < ARR.STEP_DONE){
+    const u = _ease.io(Math.min(1, (t - ARR.BUS_STOP)/(ARR.STEP_DONE - ARR.BUS_STOP)));
+    const doorX = ax + 44;
+    VP.x = doorX + (ax - doorX)*u; VP.y = ay; VP.moving = u < 0.97; VP.facing = -1; VP.dir = "left";
+  } else { VP.x = ax; VP.y = ay; VP.moving = false; VP.facing = -1; VP.dir = "left"; }
+  // Frosty's hello (crisp toast/log, fired once as he arrives).
+  if (!_arrival.greeted && t >= ARR.FROSTY_DONE){
+    _arrival.greeted = true;
+    toast(`❄️ Frosty: "Welcome to Featherstone, ${pName()}!"`);
+    log(`❄️ Frosty walks over: "Hey ${pName()}! Frosty here. That Iron Rock just west is where every founder starts — give it a tap."`, "good");
+  }
+  if (t >= ARR.END) _endArrival();
+}
+// The incoming/departing bus, world-space, centred on (x,y) (wheels at y).
+function _drawArrivalBus(ctx, x, y){
+  ctx.fillStyle="#e8c14a"; ctx.fillRect(x-38, y-26, 76, 24);            // body
+  ctx.fillStyle="#f6dc7c"; ctx.fillRect(x-38, y-26, 76, 4);            // roof highlight
+  ctx.fillStyle="#c99a2c"; ctx.fillRect(x-38, y-6, 76, 4);             // lower shade
+  ctx.fillStyle="#2a6ad0"; ctx.fillRect(x-38, y-13, 76, 4);            // livery stripe
+  ctx.fillStyle="#bfe8f7";
+  for (let i=0;i<4;i++) ctx.fillRect(x-32+i*15, y-23, 12, 9);          // windows
+  ctx.fillStyle="#2a3440"; ctx.fillRect(x+24, y-23, 11, 17);          // door
+  ctx.fillStyle="#4a5460"; ctx.fillRect(x+29, y-23, 1, 17);
+  ctx.fillStyle="#1a1a1e"; ctx.beginPath(); ctx.arc(x-22, y+1, 6, 0, 7); ctx.arc(x+26, y+1, 6, 0, 7); ctx.fill();
+  ctx.fillStyle="#4a4a52"; ctx.beginPath(); ctx.arc(x-22, y+1, 2.4, 0, 7); ctx.arc(x+26, y+1, 2.4, 0, 7); ctx.fill();
+  ctx.fillStyle="#1c3f7a"; ctx.font="700 6px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+  ctx.fillText("BUYR LINES", x-6, y-8); ctx.textAlign="left";
+}
+// The electronic site barrier: closed = 0 (arm up/open) … 1 (arm horizontal/shut).
+function _drawArrivalGate(ctx, x, y, closed){
+  ctx.fillStyle="#3a4048"; ctx.fillRect(x-3, y-30, 6, 34);
+  ctx.fillStyle="#2a2e34"; ctx.fillRect(x-3, y-30, 2, 34);
+  const ang = -Math.PI/2 * (1-closed);   // -90° when open (arm up), 0° when shut (arm east)
+  ctx.save(); ctx.translate(x, y-28); ctx.rotate(ang);
+  ctx.fillStyle="#d83a3a"; ctx.fillRect(0, -3, 48, 6);
+  ctx.fillStyle="#f4f4f4"; for (let i=0;i<3;i++) ctx.fillRect(7+i*15, -3, 7, 6);
+  ctx.restore();
+  ctx.fillStyle="#22262c"; ctx.fillRect(x-11, y-11, 7, 11);
+  ctx.fillStyle = closed>0.9 ? "#ff5040" : "#40e070"; ctx.fillRect(x-9, y-9, 4, 3);
+}
+function _drawArrival(ctx, t){
+  if (!_arrival.active) return;
+  const at = _arrival.t, ax = _arrival.ax, ay = _arrival.ay;
+  const busY = ay + 15, gateX = ax + 150;
+  // Bus: drives in from the right, parks, then drives back off through the gate.
+  let busX = null;
+  if (at < ARR.BUS_STOP){ busX = (ax+70) + (ax+430 - (ax+70)) * (1-_ease.out(at/ARR.BUS_STOP)); }
+  else if (at < ARR.BUS_LEAVE){ busX = ax+70; }
+  else { const u = _ease.in(Math.min(1, (at-ARR.BUS_LEAVE)/1.6)); busX = (ax+70) + (ax+520 - (ax+70))*u; if (u>=1) busX = null; }
+  // Gate: open while the bus passes, then it lowers shut behind it.
+  const closed = at < ARR.GATE_START ? 0 : Math.min(1, (at-ARR.GATE_START)/(ARR.GATE_DONE-ARR.GATE_START));
+  _drawArrivalGate(ctx, gateX, ay, closed);
+  if (busX !== null) _drawArrivalBus(ctx, busX, busY);
+  // Frosty walks in from the west and stops beside the founder.
+  if (at >= ARR.FROSTY_START){
+    const u = _ease.io(Math.min(1, (at-ARR.FROSTY_START)/(ARR.FROSTY_DONE-ARR.FROSTY_START)));
+    const fStart = ax - 220, fEnd = ax - 34;
+    const fx = fStart + (fEnd-fStart)*u, fy = ay;
+    const fMoving = u < 0.98;
+    drawPerson(ctx, fx, fy, "#17161a", "#bfe8f7", t, fMoving, 1, null, "right", "#eef4f8", "#3a4a6a", null, false, WORLD_PPL, 'beanie', '#2a4a8a', { scarf:'#d84040' });
+    if (!fMoving){ drawEmojiC(ctx, "❄️", fx, fy-24, 12); }
+  }
+  // A "skip" hint pinned near the bottom of the view. We're inside the translate(-CAM)
+  // context, so drawing at (CAM + view offset) lands at a fixed screen spot.
+  const hx = Math.round(CAM.x) + VIEW_W/2, hy = Math.round(CAM.y) + VIEW_H - 14;
+  ctx.fillStyle="rgba(0,0,0,.45)"; ctx.fillRect(hx-66, hy-9, 132, 15);
+  ctx.fillStyle="#eaf0f8"; ctx.font="700 8px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+  ctx.fillText("press any key to skip ▸", hx, hy+1); ctx.textAlign="left";
+}
 function drawVillage(t){
   const cv = document.getElementById("village");
   if (!cv || S.tab!=="village") return;
@@ -6744,6 +6857,7 @@ function drawVillage(t){
   drawWP(ctx, t, 0);   // ground-layer particles (walking dust, falling leaves) under people
   const playerTool = drawWorkerAndVfx(ctx, t);
   for (const w of WANDERERS){
+    if (_arrival.active && w.id === 'frost') continue;   // the scripted arrival-Frosty stands in during the drop-off
     drawPerson(ctx, w.x, w.y, w.hair, w.shirt, t, w.moving, w.facing, null, w.dir, null, w.trouser||null, null, !!w.female, WORLD_PPL, 'none', '#2a1a0a', { shoes: w.shoes || '#2a2a30' });
   }
   for (const v of VILLAGER_STATE){
@@ -6756,6 +6870,7 @@ function drawVillage(t){
     const _csz = c.age<=6?0:c.age<=10?1:2;
     drawChild(ctx, c.x, c.y+10, c.hair, c.shirt, t, c.moving, c.dir, c.trouser, c.female, _csz);
   }
+  _drawArrival(ctx, t);   // bus / gate / Frosty walkover (new-game drop-off cinematic)
   if (VP.tx!==null && VP.tx!==undefined){
     ctx.strokeStyle="rgba(255,248,230,.8)"; ctx.lineWidth=2;
     const rad = 6+Math.sin(t*8)*2;
@@ -6777,8 +6892,9 @@ function drawVillage(t){
     ctx.beginPath(); ctx.moveTo(_bx+10,_by-3); ctx.lineTo(_bx+14,_by-3); ctx.lineTo(_bx+14,_by-7); ctx.stroke();
     ctx.restore();
   }
-  drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', WORLD_PPL, plHat(), plHatColor(), plOpts());
-  drawInteractHighlights(ctx, t);   // hover/focus outlines on the highlighted target
+  if (!_arrivalHidesPlayer())   // still aboard the incoming bus → don't draw them stood at the clearing yet
+    drawPerson(ctx, VP.x, VP.y, plHair(), plShirt(), t, VP.moving, VP.facing, playerTool, playerTool ? (VP.facing>=0?"right":"left") : VP.dir, plSkin(), plTrousers(), playerTool ? toolTierColor() : null, plGender()==='female', WORLD_PPL, plHat(), plHatColor(), plOpts());
+  if (!_arrival.active) drawInteractHighlights(ctx, t);   // hover/focus outlines on the highlighted target
   drawWP(ctx, t, 1);   // air-layer particles (steam, smoke, coins, xp, sparkles) over people
   ctx.restore();
   drawWorldDepth(ctx, t);    // screen-space atmosphere: far haze up top, foreground vignette below
@@ -9778,6 +9894,11 @@ function villageFrame(ts){
   const tl = document.getElementById("title");
   if (tl && tl.style.display !== "none"){
     drawTitleFX(t);
+  } else if (S.tab==="village" && _arrival.active){
+    // Drop-off cinematic: the founder is scripted; ambient life keeps moving behind it.
+    _updateArrival(dt);
+    updateWanderers(dt); updateBeachBirds(); updateVillagers(dt); updateChildren(dt); updateNightWildlife(dt);
+    drawVillage(t);
   } else if (S.tab==="village"){
     moveActor(VP, dt, 104 * bikeSpeedMult());
     // degrade bike condition when riding (faster in forest)
@@ -10213,7 +10334,10 @@ function showTitle(){
       log(`❄️ Frosty: "Welcome to Featherstone Valley, <b>${pName()}</b>! Follow my lead and you'll be running this valley by teatime."`, "good");
       updateHud(); renderNav(); renderMain(); save();
       focusGameInput();   // Task 3: keyboard works the moment you land in the village
-      maybeShowPlayHint();   // M1: one-time "How to Play" card for brand-new players
+      // New founders get the bus drop-off cinematic (Frosty walks over at the quarry);
+      // returning founders and the pres=off e2e/quick fast path skip straight to play.
+      if (!_presForcedOff && !(S.arrival && S.arrival.done)){ try{ _startArrival(); }catch(e){} }
+      else maybeShowPlayHint();   // M1: one-time "How to Play" card for brand-new players
     }, delay);
   };
   _btnStart.onclick = () => {
@@ -10387,6 +10511,7 @@ function freshState(){
     trespass: { active: false, homeId: null as string|null },
     stolen: false,
     fleeUntil: 0,
+    arrival: { done: false },   // the one-time bus drop-off cinematic (new games only)
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -10624,6 +10749,7 @@ function load(){
       if (!("trespass" in parsed)) S.trespass = { active: false, homeId: null };
       if (!("stolen" in parsed)) S.stolen = false;
       if (!("fleeUntil" in parsed)) S.fleeUntil = 0;
+      if (!("arrival" in parsed)) S.arrival = { done: true };   // existing founders never replay the drop-off intro
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -16701,7 +16827,7 @@ function startPresentation(){
   // creator when no save); ?pres=full|short|reduced forces an intro variant.
   let forced: string | null = null;
   try{ forced = new URLSearchParams(location.search).get('pres'); }catch(e){}
-  if (forced === 'off'){ _presStartCreator(); return; }   // straight to the creator (legacy/e2e fast path)
+  if (forced === 'off'){ _presForcedOff = true; _presStartCreator(); return; }   // straight to the creator (legacy/e2e fast path)
   const p = _PEL('presentation'); if (p){ p.classList.add('on'); p.setAttribute('aria-hidden', 'false'); }
   ['press-ver', 'menu-ver'].forEach(id => { const e = _PEL(id); if (e) e.textContent = 'v0.10'; });
   _pres.variant = (forced === 'full' || forced === 'short' || forced === 'reduced') ? forced
@@ -17033,6 +17159,8 @@ document.getElementById("version-label")?.addEventListener("keydown", (e:any) =>
 syncJourneyBtn(); syncJournalBtn();
 window.addEventListener("keydown", e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as any)?.tagName||"");
+  // Any key skips the new-arrival drop-off cinematic.
+  if (_arrival.active && !typing){ e.preventDefault(); _skipArrival(); return; }
   if (!typing) setInputMethod('keyboard');   // keyboard is now the active input (req 11)
   // ---- controller-equivalent keyboard nav (works everywhere, incl. modals) ----
   if (!typing){
