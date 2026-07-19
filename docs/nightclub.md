@@ -3,6 +3,29 @@
 A wide 16:9 industrial-warehouse nightclub, rebuilt to translate
 `references/nightclub/nightclub-final-reference.png` into BuyrWorld's canvas engine.
 
+## Environment plate (hybrid 2.5D)
+The venue's environment is the **high-res reference render** used as a crisp `<img>`
+plate (`public/assets/interior/nightclub-base.png`, copied from `references/…`, original
+preserved) behind a **transparent** pixel-sprite canvas. `image-rendering:auto` on the
+plate keeps it smooth (not blocky); the canvas keeps `pixelated` for the player sprite.
+`drawNightclub` detects the plate (`_clubPlateReady()`): in **plate mode** it clears the
+canvas and draws only the dynamic layer (beat-driven light washes, a player floor marker,
+the theme pill + reveal); if the image fails to load the `<img>` removes itself and the
+full **procedural scene** renders as fallback (no broken-image icon). The 480×270 canvas
+fills the same 16:9 box as the plate, so interaction anchors map straight onto the art.
+
+⚠️ Not visually verified — a background agent can't render/screenshot. Plate/sprite
+alignment, scale integration of pixel characters over the detailed plate, and lighting
+crispness need a human QA pass.
+
+## Interactions & events
+Contextual anchors (`_clubInteractPOIs`): DJ/Frosty (track request, remembers rapport),
+backstage supply micro-contract, bar, Roxy, VIP staircase (rep-gated), photo booth
+(keepsake), bouncer. Plus the **backstage supply micro-contract** and **dynamic event
+pool** in `src/data/clubEvents.ts` — deterministic, idempotent per game-day/visit,
+save-safe (`S.club`). Tests: `tests/clubEvents.test.ts`, anchor reachability in
+`tests/publicInteriors.test.ts`.
+
 ## Rendering
 - Canvas interior at **480×270** (`ROOM_DIMS.nightclub` in `src/data/interiorCollision.ts`),
   ~2× the standard 320×200 interior. The size is shared by art, collision and clicks via

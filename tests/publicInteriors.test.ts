@@ -133,7 +133,8 @@ describe('Club Featherstone — every essential zone is reachable, décor never 
   // Contextual interaction anchors (mirror _clubInteractPOIs in main.ts). Each must be a
   // spot the player can actually stand — reachable from the door and not inside a solid.
   const INTERACT_ANCHORS: Record<string, [number, number]> = {
-    dj: [240, 118], bar: [82, 178], roxy: [344, 150], bouncer: [210, 242],
+    dj: [240, 132], backstage: [182, 120], bar: [96, 182], roxy: [334, 150],
+    vip: [350, 114], photo: [104, 214], bouncer: [214, 242],
   };
   for (const [id, [ax, ay]] of Object.entries(INTERACT_ANCHORS)) {
     it(`the "${id}" interaction anchor is standable (clear + reachable)`, () => {

@@ -20,6 +20,7 @@ import { VILLAGERS } from './data/villagers.ts';
 import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRects } from './data/homeInteriors.ts';
 import { PUBLIC_COLS, ROOM_DIMS } from './data/interiorCollision.ts';
 import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme, nextClubTheme, clubThemeById } from './data/clubThemes.ts';
+import { CLUB_INCIDENTS, clubIncidentFor, clubIncidentIndex, clubChoiceById, resolveClubChoice, CLUB_EVENTS, clubEventForVisit, clubEventById } from './data/clubEvents.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery, TUTORIAL_STAGES, TUTORIAL_GUIDE, TUTORIAL_COMPLETE_BONUS, NAV_HINT, fillTemplate } from './data/tutorial.ts';
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
@@ -3485,7 +3486,8 @@ function interactObj(o){
     S.trespass = { active: false, homeId: null };
     S.fleeUntil = 0;
   }
-  if (o.tab === "nightclub"){ try{ _clubStartReveal(); }catch(e){} }   // themed-night entry reveal
+  if (o.tab === "nightclub"){ try{ _clubStartReveal(); }catch(e){}   // themed-night entry reveal
+    setTimeout(()=>{ try{ if (S.tab==="nightclub") _maybeClubEvent(); }catch(e){} }, 2400); }   // occasional dynamic event, after the reveal
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
 // Map a world NPC id to its social/dialogue profile id (Frosty wanders as "frost").
@@ -7403,14 +7405,47 @@ function _clubRevealActive(){
   if (now - _clubRevealAt > CLUB_REVEAL_MS){ _clubRevealAt = 0; return false; }
   return true;
 }
+// The high-res reference render is used as the environment PLATE (an <img> behind the
+// transparent sprite canvas). Ready = the image element exists and finished loading; on
+// error the element removes itself and we fall back to the procedural scene.
+function _clubPlateReady(){
+  try{ const im = document.getElementById('club-plate') as HTMLImageElement | null;
+       return !!(im && im.complete && im.naturalWidth > 0); }catch(e){ return false; }
+}
+// Theme pill (top) + skippable entry-reveal card — shared by plate + procedural modes.
+function _clubPillAndReveal(ctx, t, W, H, _th, neon, neon2){
+  const pill=_th.emoji+" "+_th.name.toUpperCase();
+  ctx.font="700 8px 'IBM Plex Mono',monospace"; const pw=ctx.measureText(pill).width+16;
+  ctx.fillStyle="rgba(6,6,14,.7)"; ctx.fillRect(W/2-pw/2,4,pw,14); ctx.strokeStyle=neon; ctx.lineWidth=1; ctx.strokeRect(W/2-pw/2,4,pw,14);
+  ctx.fillStyle=neon; ctx.textAlign="center"; ctx.fillText(pill,W/2,14); ctx.textAlign="left";
+  if(_clubRevealActive()){
+    const now=(typeof performance!=='undefined'?performance.now():Date.now());
+    const p=(now-_clubRevealAt)/CLUB_REVEAL_MS;
+    const alpha = p<0.15 ? p/0.15 : p>0.75 ? Math.max(0,(1-p)/0.25) : 1;
+    ctx.globalAlpha=alpha*0.85; ctx.fillStyle="#05050c"; ctx.fillRect(0,0,W,H); ctx.globalAlpha=alpha;
+    ctx.fillStyle=neon; ctx.font="700 16px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+    ctx.fillText(_th.emoji+"  CLUB FEATHERSTONE", W/2, H/2-16);
+    ctx.fillStyle="#eef2ff"; ctx.font="700 13px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight: "+_th.name, W/2, H/2+4);
+    ctx.fillStyle=neon2; ctx.font="9px 'IBM Plex Mono',monospace"; ctx.fillText(_th.tag, W/2, H/2+20);
+    ctx.fillStyle="#ffd23c"; ctx.font="700 9px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight's bonus: dance for action speed +15%", W/2, H/2+34);
+    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.font="8px 'IBM Plex Mono',monospace"; ctx.fillText("tap / press to enter", W/2, H/2+48);
+    ctx.textAlign="left"; ctx.globalAlpha=1;
+  }
+}
 // ---- Contextual interactions (no permanent button row) --------------------------
 // Interaction anchors: the player walks up to a zone and ONE compact prompt appears.
+// Interaction anchors, placed to line up with the reference plate's zones (stage rear-
+// centre, bar left, booths/VIP right, entrance foreground). Canvas is 480×270 and fills
+// the same 16:9 box as the plate, so these positions map straight onto the artwork.
 function _clubInteractPOIs(){
   return [
-    { id:'dj',      label:'Talk to Frosty', ic:'🎧', x:240, y:118, r:46 },
-    { id:'bar',     label:'Order a drink',  ic:'🍸', x:82,  y:178, r:46 },
-    { id:'roxy',    label:'Talk to Roxy',   ic:'💬', x:344, y:150, r:48 },
-    { id:'bouncer', label:'Ask the bouncer',ic:'🕶️', x:210, y:242, r:40 },
+    { id:'dj',       label:'Talk to Frosty',   ic:'🎧', x:240, y:132, r:46 },  // front of stage
+    { id:'backstage',label:'Backstage supply', ic:'📦', x:182, y:120, r:34 },  // stage-left service
+    { id:'bar',      label:'Order a drink',    ic:'🍸', x:96,  y:182, r:48 },  // in front of the bar
+    { id:'roxy',     label:'Talk to Roxy',     ic:'💬', x:334, y:150, r:46 },  // lounge edge (right)
+    { id:'vip',      label:'VIP staircase',    ic:'⭐', x:350, y:114, r:32 },  // foot of the VIP stairs
+    { id:'photo',    label:'Photo booth',      ic:'📸', x:104, y:214, r:32 },  // bottom-left booth
+    { id:'bouncer',  label:'Ask the bouncer',  ic:'🕶️', x:214, y:242, r:40 },  // entrance/security
   ];
 }
 let _clubActivePOIId = null;
@@ -7440,9 +7475,35 @@ function _clubDo(id){
     toast(`🍸 The bartender slides you a "${_th.name}" — actions 10% faster for 3 min.`);
     log(`🍸 Ordered a themed cocktail at Club Featherstone (−${_cost} coins).`, "");
   } else if (id==='dj'){
+    if (!S.club) S.club = {};
     const _tracks = _th.eligibleTracks.map(x => (MUSIC_MANIFEST.find(m=>m.id===x)?.title)||x);
-    toast(`🎧 Frosty: "Tonight's ${_th.name}! Spinning ${_tracks[0]||'the hits'} — stay frosty!"`);
-    log(`🎧 Frosty (DJ) is running ${_th.name}. On the decks: ${_tracks.join(', ')}.`, "good");
+    // request a track — cycles his eligible set; Frosty remembers + warms up a touch.
+    const _prev = S.club.lastTrack;
+    const _pick = _tracks[( (_prev ? _tracks.indexOf(_prev)+1 : 0) ) % _tracks.length] || _tracks[0];
+    S.club.lastTrack = _pick;
+    S.club.frostyRel = Math.min(100, (S.club.frostyRel||0) + 1);
+    toast(`🎧 Frosty: "Tonight's ${_th.name}! Dropping ${_pick} for you — stay frosty!"`);
+    log(`🎧 You asked Frosty for a track. Now playing: ${_pick}. (Frosty rapport ${S.club.frostyRel})`, "good");
+  } else if (id==='backstage'){
+    _openClubBackstage(); return;
+  } else if (id==='vip'){
+    if (!S.club) S.club = {};
+    const _rep = (S.club.eventRep||0) + (S.club.frostyRel||0);
+    if (S.club.vip || _rep >= 8){ S.club.vip = true;
+      toast(`⭐ The bouncer lifts the rope — welcome to VIP. ${_th.name} looks even better from up here.`);
+      log(`⭐ VIP access granted (event rapport ${_rep}). Named guests + business leads await — more soon.`, "good");
+    } else {
+      toast(`⭐ Bouncer: "VIP's members-only tonight. Build a bit more of a name first, yeah?"`);
+      log(`⭐ VIP denied — earn more club rapport (${_rep}/8) via events, Frosty and helping out.`, "");
+    }
+  } else if (id==='photo'){
+    if (!S.club) S.club = {};
+    S.club.photos = (S.club.photos||0) + 1;
+    S.club.eventRep = (S.club.eventRep||0) + 1;
+    if (!S.keepsakes) S.keepsakes = [];
+    try{ S.keepsakes.push({ id:'club_photo_'+Date.now(), n:`Photo at ${_th.name}`, ic:'📸', day:_gameDay() }); }catch(e){}
+    toast(`📸 Snap! A memory from ${_th.name} saved to your keepsakes.`);
+    log(`📸 Photo booth: a ${_th.name} memento (#${S.club.photos}). Local only — nothing is shared.`, "good");
   } else if (id==='roxy'){
     if (!S.npcMet) S.npcMet = true;
     const _lines = [
@@ -7461,6 +7522,66 @@ function _clubDo(id){
 (globalThis as any)._clubDo = _clubDo;
 // Keyboard E / controller A while in the club: fire the current contextual action.
 function _clubActivateCurrent(){ const p = _clubActivePOI(); if (p){ _clubDo(p.id); return true; } return false; }
+// Backstage supply micro-contract — the BuyrWorld supply-chain beat, once per game day.
+function _openClubBackstage(){
+  const inc = clubIncidentFor();
+  const day = _gameDay();
+  if (!S.club) S.club = {};
+  const _th = clubTheme();
+  const done = () => S.club.incidentDay === day && S.club.incidentDone;
+  const inner = () => `<div class="panel" style="padding:14px;max-width:420px;width:100%;border-color:${_th.neon}66">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0;font-size:15px;color:${_th.neon}">📦 Backstage — ${inc.title}</h2><button id="bs-close" aria-label="Close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
+    <p style="font-size:12px;color:var(--dim);margin:0 0 10px">${inc.problem}</p>
+    ${done()
+      ? `<div style="background:rgba(74,255,136,.1);border:1px solid rgba(74,255,136,.3);border-radius:6px;padding:8px;font-size:12px;color:#8affb0">✔ Handled for tonight. Come back tomorrow for the next backstage call.</div>`
+      : inc.choices.map(c=>`<button data-bs="${c.id}" style="display:block;width:100%;text-align:left;background:#231d33;color:#e8ecfb;border:1px solid #3a3454;border-radius:6px;padding:8px 10px;margin-bottom:6px;cursor:pointer;font-size:12px"><b>${c.label}</b>${c.cost?` <span style="color:#ffd23c">· ${c.cost}c</span>`:' <span style="color:#8affb0">· free</span>'}${c.risk?` <span style="color:#ff9a6a">· risky</span>`:''}</button>`).join('')}
+    <p style="font-size:10px;color:var(--dim);margin:8px 0 0">Supply calls shape the night's atmosphere, event reputation and Frosty's trust.</p>
+  </div>`;
+  const wire = (el) => {
+    (el.querySelector('#bs-close') as HTMLElement).onclick = () => closeModal('club-backstage');
+    el.querySelectorAll('[data-bs]').forEach(b=>(b as HTMLElement).onclick=()=>{
+      if (done()){ toast('Already handled tonight.'); return; }
+      const cid = (b as HTMLElement).dataset.bs!;
+      const c = clubChoiceById(inc, cid); if (!c) return;
+      if (c.cost > S.coins){ toast(`Need ${c.cost} coins for that option.`); return; }
+      if (c.cost) debit(c.cost, 'purchase', 'club_backstage:'+inc.id+':'+cid);
+      const res = resolveClubChoice(inc, cid, Math.random());
+      S.club.incidentDay = day; S.club.incidentDone = true;
+      S.club.eventRep = Math.max(0, (S.club.eventRep||0) + res.rep);
+      S.club.frostyRel = Math.max(0, Math.min(100, (S.club.frostyRel||0) + res.frosty));
+      toast((res.failed?'⚠️ ':'✅ ') + res.message);
+      log(`📦 Backstage (${inc.title}): ${res.message} (event rep ${res.rep>=0?'+':''}${res.rep}, Frosty ${res.frosty>=0?'+':''}${res.frosty})`, res.failed?'bad':'good');
+      save(); el.innerHTML = inner(); wire(el);
+    });
+  };
+  openModal('club-backstage', inner, { label:'Backstage supply', initialFocus:'#bs-close', wire });
+}
+// A small rotating dynamic event, shown at most once per club visit and idempotent on
+// reload (keyed by visit index). Deliberately infrequent (every 3rd visit).
+function _maybeClubEvent(){
+  if (!S.club) S.club = {};
+  S.club.visits = (S.club.visits||0) + 1;
+  if (S.club.visits % 3 !== 0) return;                 // infrequent
+  if (S.club.eventVisit === S.club.visits) return;     // already shown for this visit
+  const ev = clubEventForVisit(Math.floor(S.club.visits/3));
+  S.club.eventVisit = S.club.visits; S.club.eventDone = false;
+  const inner = () => `<div class="panel" style="padding:14px;max-width:400px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0;font-size:15px">✨ ${ev.title}</h2><button id="ev-close" aria-label="Close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
+    <p style="font-size:12px;color:var(--dim);margin:0 0 10px">${ev.prompt}</p>
+    ${ev.responses.map(r=>`<button data-ev="${r.id}" style="display:block;width:100%;text-align:left;background:#231d33;color:#e8ecfb;border:1px solid #3a3454;border-radius:6px;padding:7px 10px;margin-bottom:6px;cursor:pointer;font-size:12px">${r.label}</button>`).join('')}</div>`;
+  const wire = (el) => {
+    (el.querySelector('#ev-close') as HTMLElement).onclick = () => { S.club.eventDone = true; save(); closeModal('club-event'); };
+    el.querySelectorAll('[data-ev]').forEach(b=>(b as HTMLElement).onclick=()=>{
+      if (S.club.eventDone){ closeModal('club-event'); return; }
+      const r = ev.responses.find(x=>x.id===(b as HTMLElement).dataset.ev); if (!r) return;
+      S.club.eventDone = true;
+      S.club.eventRep = Math.max(0, (S.club.eventRep||0) + r.rep);
+      toast(`✨ ${ev.title}: ${r.rep>0?`nicely handled (+${r.rep} rapport)`:'noted'}.`);
+      save(); closeModal('club-event');
+    });
+  };
+  openModal('club-event', inner, { label:ev.title, initialFocus:'#ev-close', wire });
+}
 // The rebuilt Club Featherstone — a wide 16:9 industrial-warehouse venue with distinct
 // zones (entrance, dance floor, DJ stage, bar, lounge, VIP), theme-driven lighting, a
 // pooled crowd and a skippable entry reveal. Drawn in the 480×270 club canvas.
@@ -7472,7 +7593,26 @@ function drawNightclub(ctx, t, W, H){
   const neon = _th.neon, neon2 = _th.neon2, warm = "#ffb24a";
   const P = _clubPOI();
 
-  // ---- 0. base + reflective floor ------------------------------------------
+  // ---- PLATE MODE: the high-res reference render IS the environment (crisp <img>
+  // behind this transparent canvas). We only draw the dynamic layer: subtle beat-driven
+  // light washes over the baked scene, a player floor marker, and the pill/reveal. The
+  // player + contextual prompt are drawn elsewhere. Falls through to the procedural
+  // scene below only when the plate image failed to load.
+  if (_clubPlateReady()){
+    ctx.clearRect(0,0,W,H);
+    if(!calm){
+      ctx.fillStyle=neon+aa(9+beat*13);  ctx.fillRect(Math.round(W*0.30),Math.round(H*0.42),Math.round(W*0.40),Math.round(H*0.34)); // dance-floor pulse
+      ctx.fillStyle=neon2+aa(6+beat*9);  ctx.fillRect(Math.round(W*0.34),Math.round(H*0.06),Math.round(W*0.32),Math.round(H*0.24)); // stage wash
+    }
+    // player floor marker so the founder stays identifiable over the busy baked crowd
+    ctx.fillStyle="rgba(120,220,255,"+(calm?0.30:(0.22+beat*0.18)).toFixed(2)+")";
+    ctx.beginPath(); ctx.ellipse(Math.round(IP.x), Math.round(IP.y+8), 8, 3.2, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle="rgba(180,240,255,.6)"; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(Math.round(IP.x), Math.round(IP.y+8), 9, 3.6, 0, 0, 7); ctx.stroke();
+    _clubPillAndReveal(ctx, t, W, H, _th, neon, neon2);
+    return;
+  }
+
+  // ---- 0. base + reflective floor (PROCEDURAL FALLBACK) --------------------
   ctx.fillStyle="#0a0812"; ctx.fillRect(0,0,W,H);
   ctx.fillStyle="#0c0a18"; ctx.fillRect(0,108,W,H-108);                 // floor
   // gentle floor sheen graded toward the stage
@@ -10844,6 +10984,7 @@ function freshState(){
     stolen: false,
     fleeUntil: 0,
     arrival: { done: false },   // the one-time bus drop-off cinematic (new games only)
+    club: { frostyRel: 0, eventRep: 0, incidentDay: -1, incidentDone: false, photos: 0, visits: 0, vip: false, lastTrack: null, eventVisit: -1, eventDone: false },
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -11082,6 +11223,7 @@ function load(){
       if (!("stolen" in parsed)) S.stolen = false;
       if (!("fleeUntil" in parsed)) S.fleeUntil = 0;
       if (!("arrival" in parsed)) S.arrival = { done: true };   // existing founders never replay the drop-off intro
+      if (!("club" in parsed)) S.club = { frostyRel:0, eventRep:0, incidentDay:-1, incidentDone:false, photos:0, visits:0, vip:false, lastTrack:null, eventVisit:-1, eventDone:false };
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -16037,8 +16179,14 @@ function interiorHtml(title){
   // The nightclub is a full-viewport venue — let it fill the content width (no 2× cap).
   const _mw = S.tab==="nightclub" ? "100%" : `${cw*2}px`;
   const _panelPad = S.tab==="nightclub" ? "0" : "8px";
+  // Nightclub: a crisp high-res reference render sits BEHIND the (transparent) sprite
+  // canvas as the environment plate. image-rendering:auto keeps it smooth (not blocky);
+  // on load error it removes itself and the canvas draws the procedural scene instead.
+  const _clubPlate = S.tab==="nightclub"
+    ? `<img id="club-plate" src="/assets/interior/nightclub-base.png" alt="" aria-hidden="true" onerror="this.remove()" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill;image-rendering:auto;border-radius:4px;z-index:1;pointer-events:none;display:block">`
+    : "";
   return `<div class="panel" style="padding:${_panelPad};background:${S.tab==="nightclub"?"#070510":"var(--panel)"};border-color:${S.tab==="nightclub"?"#1a1428":"var(--edge)"}"><div class="int-canvas-wrap" style="max-width:${_mw};margin:0 auto;position:relative;">
-    <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${_mw};"></canvas>
+    ${_clubPlate}<canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${_mw};position:relative;z-index:2;background:transparent;"></canvas>
     ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><button type="button" class="ilbl-exit" data-gpfocus aria-label="Leave building" onclick="leaveInterior()">🚪 Exit ↓</button>
     <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
     <div id="interior-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
