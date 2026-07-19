@@ -3,20 +3,20 @@
 A wide 16:9 industrial-warehouse nightclub, rebuilt to translate
 `references/nightclub/nightclub-final-reference.png` into BuyrWorld's canvas engine.
 
-## Environment plate (hybrid 2.5D)
-The venue's environment is the **high-res reference render** used as a crisp `<img>`
-plate (`public/assets/interior/nightclub-base.png`, copied from `references/…`, original
-preserved) behind a **transparent** pixel-sprite canvas. `image-rendering:auto` on the
-plate keeps it smooth (not blocky); the canvas keeps `pixelated` for the player sprite.
-`drawNightclub` detects the plate (`_clubPlateReady()`): in **plate mode** it clears the
-canvas and draws only the dynamic layer (beat-driven light washes, a player floor marker,
-the theme pill + reveal); if the image fails to load the `<img>` removes itself and the
-full **procedural scene** renders as fallback (no broken-image icon). The 480×270 canvas
-fills the same 16:9 box as the plate, so interaction anchors map straight onto the art.
+## Rendering approach — separated entities (NOT a baked plate)
+The reference render is a **development reference only** (`references/nightclub/…`) — it is
+never imported, bundled, converted or drawn at runtime (guarded by
+`tests/nightclubAssets.test.ts`). The scene is a canvas-drawn, separated-entity 2.5D scene
+(`drawNightclub`): architecture, stage, bar, booths, VIP, foreground props, lighting and
+every NPC (human Frosty, bartender, bouncer, Roxy, dancers) are drawn independently, so
+they move/react/change state. See `docs/nightclub-assets.md` for the honest asset manifest
+(current art is placeholder-grade game-style, not final separated artwork).
 
-⚠️ Not visually verified — a background agent can't render/screenshot. Plate/sprite
-alignment, scale integration of pixel characters over the detailed plate, and lighting
-crispness need a human QA pass.
+Visible interaction state changes: requesting a track shows a "now playing" marquee on the
+DJ screen; earning VIP opens the velvet rope (rope down + green posts vs locked 🔒); a
+failed backstage lighting call knocks a spotlight rig dark (⚠) until repaired.
+
+⚠️ Not visually verified — a background agent can't render/screenshot.
 
 ## Interactions & events
 Contextual anchors (`_clubInteractPOIs`): DJ/Frosty (track request, remembers rapport),

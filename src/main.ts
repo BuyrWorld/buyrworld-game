@@ -7405,33 +7405,6 @@ function _clubRevealActive(){
   if (now - _clubRevealAt > CLUB_REVEAL_MS){ _clubRevealAt = 0; return false; }
   return true;
 }
-// The high-res reference render is used as the environment PLATE (an <img> behind the
-// transparent sprite canvas). Ready = the image element exists and finished loading; on
-// error the element removes itself and we fall back to the procedural scene.
-function _clubPlateReady(){
-  try{ const im = document.getElementById('club-plate') as HTMLImageElement | null;
-       return !!(im && im.complete && im.naturalWidth > 0); }catch(e){ return false; }
-}
-// Theme pill (top) + skippable entry-reveal card — shared by plate + procedural modes.
-function _clubPillAndReveal(ctx, t, W, H, _th, neon, neon2){
-  const pill=_th.emoji+" "+_th.name.toUpperCase();
-  ctx.font="700 8px 'IBM Plex Mono',monospace"; const pw=ctx.measureText(pill).width+16;
-  ctx.fillStyle="rgba(6,6,14,.7)"; ctx.fillRect(W/2-pw/2,4,pw,14); ctx.strokeStyle=neon; ctx.lineWidth=1; ctx.strokeRect(W/2-pw/2,4,pw,14);
-  ctx.fillStyle=neon; ctx.textAlign="center"; ctx.fillText(pill,W/2,14); ctx.textAlign="left";
-  if(_clubRevealActive()){
-    const now=(typeof performance!=='undefined'?performance.now():Date.now());
-    const p=(now-_clubRevealAt)/CLUB_REVEAL_MS;
-    const alpha = p<0.15 ? p/0.15 : p>0.75 ? Math.max(0,(1-p)/0.25) : 1;
-    ctx.globalAlpha=alpha*0.85; ctx.fillStyle="#05050c"; ctx.fillRect(0,0,W,H); ctx.globalAlpha=alpha;
-    ctx.fillStyle=neon; ctx.font="700 16px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
-    ctx.fillText(_th.emoji+"  CLUB FEATHERSTONE", W/2, H/2-16);
-    ctx.fillStyle="#eef2ff"; ctx.font="700 13px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight: "+_th.name, W/2, H/2+4);
-    ctx.fillStyle=neon2; ctx.font="9px 'IBM Plex Mono',monospace"; ctx.fillText(_th.tag, W/2, H/2+20);
-    ctx.fillStyle="#ffd23c"; ctx.font="700 9px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight's bonus: dance for action speed +15%", W/2, H/2+34);
-    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.font="8px 'IBM Plex Mono',monospace"; ctx.fillText("tap / press to enter", W/2, H/2+48);
-    ctx.textAlign="left"; ctx.globalAlpha=1;
-  }
-}
 // ---- Contextual interactions (no permanent button row) --------------------------
 // Interaction anchors: the player walks up to a zone and ONE compact prompt appears.
 // Interaction anchors, placed to line up with the reference plate's zones (stage rear-
@@ -7549,6 +7522,10 @@ function _openClubBackstage(){
       S.club.incidentDay = day; S.club.incidentDone = true;
       S.club.eventRep = Math.max(0, (S.club.eventRep||0) + res.rep);
       S.club.frostyRel = Math.max(0, Math.min(100, (S.club.frostyRel||0) + res.frosty));
+      // visible scene change: the lighting-rig incident knocks a light out on failure,
+      // and repairs it on success (drawn in drawNightclub via S.club.lightsOut).
+      if (inc.id === 'light_qc') S.club.lightsOut = res.failed;
+      else if (!res.failed && S.club.lightsOut && (cid==='rework'||cid==='substitute'||cid==='expedite')) S.club.lightsOut = false;
       toast((res.failed?'⚠️ ':'✅ ') + res.message);
       log(`📦 Backstage (${inc.title}): ${res.message} (event rep ${res.rep>=0?'+':''}${res.rep}, Frosty ${res.frosty>=0?'+':''}${res.frosty})`, res.failed?'bad':'good');
       save(); el.innerHTML = inner(); wire(el);
@@ -7593,26 +7570,7 @@ function drawNightclub(ctx, t, W, H){
   const neon = _th.neon, neon2 = _th.neon2, warm = "#ffb24a";
   const P = _clubPOI();
 
-  // ---- PLATE MODE: the high-res reference render IS the environment (crisp <img>
-  // behind this transparent canvas). We only draw the dynamic layer: subtle beat-driven
-  // light washes over the baked scene, a player floor marker, and the pill/reveal. The
-  // player + contextual prompt are drawn elsewhere. Falls through to the procedural
-  // scene below only when the plate image failed to load.
-  if (_clubPlateReady()){
-    ctx.clearRect(0,0,W,H);
-    if(!calm){
-      ctx.fillStyle=neon+aa(9+beat*13);  ctx.fillRect(Math.round(W*0.30),Math.round(H*0.42),Math.round(W*0.40),Math.round(H*0.34)); // dance-floor pulse
-      ctx.fillStyle=neon2+aa(6+beat*9);  ctx.fillRect(Math.round(W*0.34),Math.round(H*0.06),Math.round(W*0.32),Math.round(H*0.24)); // stage wash
-    }
-    // player floor marker so the founder stays identifiable over the busy baked crowd
-    ctx.fillStyle="rgba(120,220,255,"+(calm?0.30:(0.22+beat*0.18)).toFixed(2)+")";
-    ctx.beginPath(); ctx.ellipse(Math.round(IP.x), Math.round(IP.y+8), 8, 3.2, 0, 0, 7); ctx.fill();
-    ctx.strokeStyle="rgba(180,240,255,.6)"; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(Math.round(IP.x), Math.round(IP.y+8), 9, 3.6, 0, 0, 7); ctx.stroke();
-    _clubPillAndReveal(ctx, t, W, H, _th, neon, neon2);
-    return;
-  }
-
-  // ---- 0. base + reflective floor (PROCEDURAL FALLBACK) --------------------
+  // ---- 0. base + reflective floor ------------------------------------------
   ctx.fillStyle="#0a0812"; ctx.fillRect(0,0,W,H);
   ctx.fillStyle="#0c0a18"; ctx.fillRect(0,108,W,H-108);                 // floor
   // gentle floor sheen graded toward the stage
@@ -7627,8 +7585,12 @@ function drawNightclub(ctx, t, W, H){
   heads.forEach((hx,i)=>{ ctx.fillStyle="#2a2036"; ctx.fillRect(hx-5,24,10,6); ctx.fillStyle=(i%2?neon:neon2); ctx.fillRect(hx-3,29,6,2); });
 
   // ---- 2. spotlight beams sweeping to the stage ----------------------------
+  // A failed backstage lighting call knocks one rig out until it's repaired (visible
+  // state change): its head goes dark and its beam disappears.
+  const _lightsOut = !!(S.club && S.club.lightsOut);
   const beamA = calm ? 26 : 24+beat*70;
   heads.forEach((hx,i)=>{
+    if (_lightsOut && i===1){ ctx.fillStyle="#241a22"; ctx.fillRect(hx-5,24,10,6); drawEmojiC(ctx,"⚠️",hx,18,7); return; }
     const sway = calm ? 0 : Math.sin(t*0.7+i*1.3)*22;
     const tipX = 150 + i*60 + sway;
     ctx.fillStyle=(i%2?neon:neon2)+aa(beamA*0.5);
@@ -7641,6 +7603,13 @@ function drawNightclub(ctx, t, W, H){
   ctx.fillStyle="#07070f"; ctx.fillRect(sx-4,sy-4,sw+8,sh+8);
   ctx.fillStyle="#0a0a1c"; ctx.fillRect(sx,sy,sw,sh);
   drawClubScreen(ctx, _th, sx, sy, sw, sh, t, beat, aa);
+  // "now playing" marquee — updates when the player requests a track from Frosty
+  if (S.club && S.club.lastTrack){
+    const _np = "♪ "+String(S.club.lastTrack);
+    ctx.font="700 7px 'IBM Plex Mono',monospace"; const _npw=Math.min(sw, ctx.measureText(_np).width+10);
+    ctx.fillStyle="rgba(4,4,12,.72)"; ctx.fillRect(Math.round(sx+sw/2-_npw/2), sy+sh+3, Math.round(_npw), 10);
+    ctx.fillStyle=neon2; ctx.textAlign="center"; ctx.fillText(_np, sx+sw/2, sy+sh+10); ctx.textAlign="left";
+  }
   // LED columns flanking the screen
   for(const cx of [sx-12, sx+sw+6]){ for(let r=0;r<9;r++){
     const on = calm ? (r%2===0) : ((Math.floor(t*6)+r)%3!==0);
@@ -7685,9 +7654,12 @@ function drawNightclub(ctx, t, W, H){
   // a couple of VIP patrons behind the rail
   drawPerson(ctx,392,64,"#3a2a1a","#c04aff",t,false,1,null,"down",null,"#1a1a2a",null,true,0.82);
   drawPerson(ctx,440,64,"#1a1a1a",warm,t,false,-1,null,"down",null,"#2a2436",null,false,0.82);
-  // velvet-rope stairs teaser (locked)
-  ctx.fillStyle="#0c0a16"; ctx.fillRect(344,84,16,10); ctx.fillStyle=warm+"88"; ctx.fillRect(344,84,16,2);
-  drawEmojiC(ctx,"🔒",352,90,8);
+  // velvet-rope stairs — OPEN once VIP access is earned, roped-off (locked) otherwise.
+  const _vipOpen = !!(S.club && S.club.vip);
+  ctx.fillStyle="#0c0a16"; ctx.fillRect(344,84,16,10);
+  ctx.fillStyle=(_vipOpen?"#3ce07a":warm)+"aa"; ctx.fillRect(344,84,16,2);
+  if (_vipOpen){ ctx.fillStyle="#3ce07a"; ctx.fillRect(344,92,3,6); ctx.fillRect(357,92,3,6); }   // posts, rope down
+  else { ctx.strokeStyle=warm; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(345,88); ctx.lineTo(359,88); ctx.stroke(); drawEmojiC(ctx,"🔒",352,90,8); }
 
   // ---- 6. BAR (left) -------------------------------------------------------
   // back shelf with backlit bottles
@@ -10984,7 +10956,7 @@ function freshState(){
     stolen: false,
     fleeUntil: 0,
     arrival: { done: false },   // the one-time bus drop-off cinematic (new games only)
-    club: { frostyRel: 0, eventRep: 0, incidentDay: -1, incidentDone: false, photos: 0, visits: 0, vip: false, lastTrack: null, eventVisit: -1, eventDone: false },
+    club: { frostyRel: 0, eventRep: 0, incidentDay: -1, incidentDone: false, photos: 0, visits: 0, vip: false, lastTrack: null, eventVisit: -1, eventDone: false, lightsOut: false },
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -11223,7 +11195,7 @@ function load(){
       if (!("stolen" in parsed)) S.stolen = false;
       if (!("fleeUntil" in parsed)) S.fleeUntil = 0;
       if (!("arrival" in parsed)) S.arrival = { done: true };   // existing founders never replay the drop-off intro
-      if (!("club" in parsed)) S.club = { frostyRel:0, eventRep:0, incidentDay:-1, incidentDone:false, photos:0, visits:0, vip:false, lastTrack:null, eventVisit:-1, eventDone:false };
+      if (!("club" in parsed)) S.club = { frostyRel:0, eventRep:0, incidentDay:-1, incidentDone:false, photos:0, visits:0, vip:false, lastTrack:null, eventVisit:-1, eventDone:false, lightsOut:false };
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -16179,14 +16151,8 @@ function interiorHtml(title){
   // The nightclub is a full-viewport venue — let it fill the content width (no 2× cap).
   const _mw = S.tab==="nightclub" ? "100%" : `${cw*2}px`;
   const _panelPad = S.tab==="nightclub" ? "0" : "8px";
-  // Nightclub: a crisp high-res reference render sits BEHIND the (transparent) sprite
-  // canvas as the environment plate. image-rendering:auto keeps it smooth (not blocky);
-  // on load error it removes itself and the canvas draws the procedural scene instead.
-  const _clubPlate = S.tab==="nightclub"
-    ? `<img id="club-plate" src="/assets/interior/nightclub-base.png" alt="" aria-hidden="true" onerror="this.remove()" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill;image-rendering:auto;border-radius:4px;z-index:1;pointer-events:none;display:block">`
-    : "";
   return `<div class="panel" style="padding:${_panelPad};background:${S.tab==="nightclub"?"#070510":"var(--panel)"};border-color:${S.tab==="nightclub"?"#1a1428":"var(--edge)"}"><div class="int-canvas-wrap" style="max-width:${_mw};margin:0 auto;position:relative;">
-    ${_clubPlate}<canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${_mw};position:relative;z-index:2;background:transparent;"></canvas>
+    <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${_mw};"></canvas>
     ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><button type="button" class="ilbl-exit" data-gpfocus aria-label="Leave building" onclick="leaveInterior()">🚪 Exit ↓</button>
     <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
     <div id="interior-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
