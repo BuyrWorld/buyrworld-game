@@ -6054,15 +6054,15 @@ function drawObjects(ctx, t){
       }
       if (o.chimney){
         const _swLvl = skillLvl("steelworks");
-        const _chimW = 8 + Math.min(6, Math.floor(_swLvl/10)*2); // chimney grows with level
-        const _chimX = r.x + r.w - 16;
-        // Extend the stack DOWN to the roof surface under it (+ a few px tuck) so it
-        // rises out of the roof instead of floating above the descended right slope.
+        const _chimW = 6 + Math.min(3, Math.floor(_swLvl/14)); // slimmer stack; grows a little with level
+        const _chimX = r.x + r.w - 20;                         // over a higher part of the roof (shorter stack)
+        // Extend the stack DOWN to the roof surface under it (+ a small tuck) so it rises
+        // out of the roof instead of floating above the descended right slope.
         const _crH = Math.round(r.h*0.44), _cwY = r.y + _crH, _ccx = r.x + r.w/2;
         const _roofUnder = (px)=>{ const rf=(px-_ccx)/((r.x+r.w+5)-_ccx); return (r.y-2)+rf*((_cwY+2)-(r.y-2)); };
-        const _chTop = r.y-10, _chBase = Math.round(Math.max(_roofUnder(_chimX), _roofUnder(_chimX+_chimW)) + 4);
+        const _chTop = r.y-6, _chBase = Math.round(Math.max(_roofUnder(_chimX), _roofUnder(_chimX+_chimW)) + 2);
         ctx.fillStyle="#7a5a45"; ctx.fillRect(_chimX, _chTop, _chimW, _chBase-_chTop);
-        ctx.fillStyle="#6a4a35"; ctx.fillRect(_chimX, _chTop-2, _chimW, 4); // chimney rim
+        ctx.fillStyle="#6a4a35"; ctx.fillRect(_chimX, _chTop-2, _chimW, 3); // chimney rim (slimmer cap)
         // smoke — always drifts, denser when active or high level
         const _smokePuffs = S.action && S.action.skill==="steelworks" ? Math.min(6, 3+Math.floor(_swLvl/15)) : Math.max(0, Math.floor(_swLvl/20));
         const _smokeAlpha = S.action && S.action.skill==="steelworks" ? 0.55 : 0.25;
@@ -6070,7 +6070,7 @@ function drawObjects(ctx, t){
           const p=((t*0.5+i/_smokePuffs)%1);
           const _sa = (_smokeAlpha*(1-p)).toFixed(2);
           ctx.fillStyle=`rgba(110,110,120,${_sa})`;
-          ctx.beginPath(); ctx.arc(_chimX+_chimW/2+Math.sin(p*5+i)*4, r.y-14-p*28, 3+p*5, 0, 7); ctx.fill();
+          ctx.beginPath(); ctx.arc(_chimX+_chimW/2+Math.sin(p*5+i)*4, r.y-9-p*28, 2.5+p*4, 0, 7); ctx.fill();
         }
       }
       if (o.id==="workshop" && S.action && S.action.skill==="manufacturing" && Math.floor(t*4)%2)
@@ -6756,9 +6756,10 @@ const _arrival = { active:false, t:0, ax:0, ay:0, greeted:false } as any;
 const ARR = { BUS_STOP:1.7, STEP_DONE:3.0, BUS_LEAVE:3.3, GATE_START:4.3, GATE_DONE:5.1, FROSTY_START:4.9, FROSTY_DONE:6.7, END:9.0 };
 function _startArrival(){
   if (S.arrival && S.arrival.done && !_arrival.active){ /* fresh cinematic below sets done */ }
-  // Stand the founder at the clearing beside the quarry — a couple of tiles from the
-  // very first objective (rock_iron4), where Frosty already patrols.
-  VP.x = 18*TILE; VP.y = 29*TILE; VP.tx = null; VP.ty = null; VP.pending = null;
+  // Drop-off clearing at the bottom-LEFT of the valley, on grass just inside the tree
+  // border (row 34 — above the sand at row 37 and the sea at 39, never on either). The
+  // bus arrives out of the trees on the left; the quarry (first objective) is up-west.
+  VP.x = 11*TILE; VP.y = 34*TILE; VP.tx = null; VP.ty = null; VP.pending = null;
   VP.moving = false; VP.facing = -1; VP.dir = "left";
   CAM.x = Math.max(0, Math.min(VCOLS*TILE-VIEW_W, VP.x - VIEW_W/2));
   CAM.y = Math.max(0, Math.min(VROWS*TILE-VIEW_H, VP.y - VIEW_H/2));
@@ -6784,12 +6785,12 @@ function _updateArrival(dt){
   }catch(e){}
   _arrival.t += dt;
   const t = _arrival.t, ax = _arrival.ax, ay = _arrival.ay;
-  // Player: aboard the bus, then steps off from the door to the anchor.
+  // Player: aboard the bus (on the left), then steps off to the RIGHT into the clearing.
   if (t < ARR.BUS_STOP){ VP.x = ax; VP.y = ay; VP.moving = false; }
   else if (t < ARR.STEP_DONE){
     const u = _ease.io(Math.min(1, (t - ARR.BUS_STOP)/(ARR.STEP_DONE - ARR.BUS_STOP)));
-    const doorX = ax + 44;
-    VP.x = doorX + (ax - doorX)*u; VP.y = ay; VP.moving = u < 0.97; VP.facing = -1; VP.dir = "left";
+    const doorX = ax - 44;
+    VP.x = doorX + (ax - doorX)*u; VP.y = ay; VP.moving = u < 0.97; VP.facing = 1; VP.dir = "right";
   } else { VP.x = ax; VP.y = ay; VP.moving = false; VP.facing = -1; VP.dir = "left"; }
   // Frosty's hello (crisp toast/log, fired once as he arrives).
   if (!_arrival.greeted && t >= ARR.FROSTY_DONE){
@@ -6826,26 +6827,39 @@ function _drawArrivalGate(ctx, x, y, closed){
   ctx.fillStyle="#22262c"; ctx.fillRect(x-11, y-11, 7, 11);
   ctx.fillStyle = closed>0.9 ? "#ff5040" : "#40e070"; ctx.fillRect(x-9, y-9, 4, 3);
 }
+// A simple framing pine (world space, base at x, groundY).
+function _drawArrivalPine(ctx, x, groundY, s=1){
+  ctx.fillStyle="rgba(20,40,22,.22)"; ctx.beginPath(); ctx.ellipse(x, groundY, 9*s, 3, 0, 0, 7); ctx.fill();
+  ctx.fillStyle="#5a3a1e"; ctx.fillRect(x-2*s, groundY-10*s, 4*s, 11*s);
+  const lay=(cy,w,col)=>{ ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(x, groundY-cy-14*s); ctx.lineTo(x-w, groundY-cy); ctx.lineTo(x+w, groundY-cy); ctx.closePath(); ctx.fill(); };
+  lay(8*s, 13*s, "#25612b"); lay(18*s, 10*s, "#2f7a34"); lay(28*s, 7*s, "#3a8a3e");
+}
 function _drawArrival(ctx, t){
   if (!_arrival.active) return;
   const at = _arrival.t, ax = _arrival.ax, ay = _arrival.ay;
-  const busY = ay + 15, gateX = ax + 150;
-  // Bus: drives in from the right, parks, then drives back off through the gate.
+  const busY = ay + 15, gateX = ax - 150;
+  // Tree line the bus emerges from — pines framing the left/foreground of the clearing.
+  _drawArrivalPine(ctx, ax-232, ay-24, 1.15);
+  _drawArrivalPine(ctx, ax-206, ay+34, 0.95);
+  _drawArrivalPine(ctx, ax-250, ay+18, 1.05);
+  _drawArrivalPine(ctx, ax+150, ay-30, 0.9);
+  // Bus: drives IN from the left (out of the trees), parks, then reverses back into them.
   let busX = null;
-  if (at < ARR.BUS_STOP){ busX = (ax+70) + (ax+430 - (ax+70)) * (1-_ease.out(at/ARR.BUS_STOP)); }
-  else if (at < ARR.BUS_LEAVE){ busX = ax+70; }
-  else { const u = _ease.in(Math.min(1, (at-ARR.BUS_LEAVE)/1.6)); busX = (ax+70) + (ax+520 - (ax+70))*u; if (u>=1) busX = null; }
-  // Gate: open while the bus passes, then it lowers shut behind it.
+  if (at < ARR.BUS_STOP){ busX = (ax-70) + (ax-460 - (ax-70)) * (1-_ease.out(at/ARR.BUS_STOP)); }
+  else if (at < ARR.BUS_LEAVE){ busX = ax-70; }
+  else { const u = _ease.in(Math.min(1, (at-ARR.BUS_LEAVE)/1.6)); busX = (ax-70) + (ax-520 - (ax-70))*u; if (u>=1) busX = null; }
+  // Gate: open while the bus passes, then it lowers shut behind it (blocks the way back
+  // out into the trees).
   const closed = at < ARR.GATE_START ? 0 : Math.min(1, (at-ARR.GATE_START)/(ARR.GATE_DONE-ARR.GATE_START));
   _drawArrivalGate(ctx, gateX, ay, closed);
   if (busX !== null) _drawArrivalBus(ctx, busX, busY);
-  // Frosty walks in from the west and stops beside the founder.
+  // Frosty walks in from the village side (right) and stops beside the founder.
   if (at >= ARR.FROSTY_START){
     const u = _ease.io(Math.min(1, (at-ARR.FROSTY_START)/(ARR.FROSTY_DONE-ARR.FROSTY_START)));
-    const fStart = ax - 220, fEnd = ax - 34;
+    const fStart = ax + 220, fEnd = ax + 34;
     const fx = fStart + (fEnd-fStart)*u, fy = ay;
     const fMoving = u < 0.98;
-    drawPerson(ctx, fx, fy, "#17161a", "#bfe8f7", t, fMoving, 1, null, "right", "#eef4f8", "#3a4a6a", null, false, WORLD_PPL, 'beanie', '#2a4a8a', { scarf:'#d84040' });
+    drawPerson(ctx, fx, fy, "#1a1712", "#bfe8f7", t, fMoving, -1, null, "left", "#f0c9a6", "#3a4a6a", null, false, WORLD_PPL, 'beanie', '#2a4a8a', { facialHair:'stubble', accessory:'scarf', scarfColor:'#d84040' });
     if (!fMoving){ drawEmojiC(ctx, "❄️", fx, fy-24, 12); }
   }
   // A "skip" hint pinned near the bottom of the view. We're inside the translate(-CAM)
@@ -7383,23 +7397,43 @@ function _clubDensity(){
   const d = (S.settings && S.settings.crowd) || 'standard';
   return d === 'low' ? 14 : d === 'high' ? 40 : 26;    // dancers on the floor
 }
+// Broad, varied clubwear palettes so no two dancers read the same. Theme colours are
+// mixed in so the floor still reads "on theme" without everyone being identical.
+const _CLUB_SKINS   = ["#f2c49a","#e8a87c","#c8814a","#a06030","#6b3a22","#4a2515"];
+const _CLUB_HAIRS   = ["#6a4a2f","#e8c860","#c84820","#17161a","#b0aab8","#f2f0f8","#2a8a9a","#d04080","#3a2a1a","#8a5a3a"];
+const _CLUB_SHIRTS  = ["#ff8a5c","#6fb7d9","#3aa66a","#e8961e","#8a4a8a","#c04040","#5a6a7a","#f2e8d0","#d06070","#8070c0","#20222e","#e8e8f0"];
+const _CLUB_TROUS   = ["#4a5a8a","#5a6a30","#7a5a3a","#2a2a32","#1a1a2a","#2a1a3a","#3a3a4a","#14141f"];
+const _CLUB_HATS    = ["none","none","none","none","flat_cap","beanie"];   // most bare-headed
+const _CLUB_HATCOL  = ["#2a1a0a","#1a2a5a","#4a5a20","#8a3010","#6a6a7a"];
+const _CLUB_ACC     = ["none","none","none","glasses","earrings","scarf"];
+const _CLUB_SHOES   = ["#2a2a32","#7a5030","#e8e8e8","#aa2020","#2a4a8a"];
+const _CLUB_SCARF   = ["#c04040","#2a5aaa","#2a7a3a","#d0a020","#7a3a9a"];
 function _clubCrowdList(theme){
   const key = theme.id + ':' + _clubDensity();
   if (_clubCrowd && _clubCrowdKey === key) return _clubCrowd;
   // Deterministic PRNG so the crowd is stable within a visit (no per-frame churn).
   let seed = 0; for (let i=0;i<key.length;i++) seed = (seed*31 + key.charCodeAt(i)) & 0x7fffffff;
   const rnd = () => { seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pick = (a) => a[Math.floor(rnd()*a.length)];
   const n = _clubDensity();
-  const hairs = ["#2a1a0a","#6a4a2a","#c9a24b","#3a2a1a","#1a1a1a","#8a5a3a","#c86a4a","#e0d0b0"];
   const arr = [];
   // Dance floor bounds (kept off the essential edge corridors).
   const X0=168, X1=312, Y0=118, Y1=212;
   for (let i=0;i<n;i++){
-    const o = theme.outfit[i % theme.outfit.length];
+    const female = rnd() < 0.5;
+    // ~40% wear a theme-coloured top so the night still reads on-theme; the rest are varied.
+    const shirt = rnd() < 0.4 ? theme.outfit[Math.floor(rnd()*theme.outfit.length)][0] : pick(_CLUB_SHIRTS);
+    const hat = pick(_CLUB_HATS);
+    const acc = female ? pick(_CLUB_ACC) : (rnd()<0.5 ? 'glasses' : pick(_CLUB_ACC));
+    const hx = X0 + rnd()*(X1-X0), hy = Y0 + rnd()*(Y1-Y0);
     arr.push({
-      x: X0 + rnd()*(X1-X0), y: Y0 + rnd()*(Y1-Y0),
-      shirt: o[0], trouser: o[1], hair: hairs[(i*3+Math.floor(rnd()*8))%hairs.length],
-      female: rnd() < 0.5, phase: rnd()*Math.PI*2, style: Math.floor(rnd()*3), face: rnd()<0.5?1:-1,
+      hx, hy, x: hx, y: hy, dx:0, dy:0,          // home + live position + avoidance offset
+      shirt, trouser: pick(_CLUB_TROUS), hair: pick(_CLUB_HAIRS), skin: pick(_CLUB_SKINS),
+      female, hat, hatColor: pick(_CLUB_HATCOL),
+      scale: 0.74 + rnd()*0.16,                   // varied heights
+      phase: rnd()*Math.PI*2, face: rnd()<0.5?1:-1,
+      opts: { hairStyle: Math.floor(rnd()*8), shoes: pick(_CLUB_SHOES), accessory: acc,
+              scarfColor: pick(_CLUB_SCARF), facialHair: female ? 'none' : pick(['none','none','stubble','short']) },
     });
   }
   _clubCrowd = arr; _clubCrowdKey = key; return arr;
@@ -7721,14 +7755,26 @@ function drawNightclub(ctx, t, W, H){
   ctx.globalAlpha=1;
   ctx.strokeStyle=neon+aa(120+ (calm?0:beat*80)); ctx.lineWidth=1; ctx.strokeRect(fx0,fy0,fw,fh);
 
-  // ---- 9. CROWD (pooled, deterministic, non-blocking) ----------------------
+  // ---- 9. CROWD (pooled, varied, non-blocking but reactive) ----------------
+  // Dancers step aside when the player walks into them (soft avoidance) and drift back
+  // to their spot afterwards, so the crowd never forms a wall yet feels alive.
   const crowd=_clubCrowdList(_th);
   const bobAmp = calm ? 0.6 : (1.5 + _th.crowdEnergy*3);
+  const AVOID_R = 22;
   for(const d of crowd){
+    const pdx = d.x - IP.x, pdy = d.y - IP.y, pd = Math.hypot(pdx, pdy) || 1;
+    if (pd < AVOID_R){                                   // push away from the player
+      const push = (AVOID_R - pd) * 0.5;
+      d.dx += (pdx/pd) * push * 0.25; d.dy += (pdy/pd) * push * 0.25;
+      d.face = pdx >= 0 ? 1 : -1;                        // turn to face the way they step
+    }
+    d.dx *= 0.86; d.dy *= 0.86;                          // spring the offset back toward home
+    d.x = Math.max(160, Math.min(320, d.hx + d.dx));
+    d.y = Math.max(112, Math.min(216, d.hy + d.dy));
+    const moving = !calm || Math.hypot(d.dx, d.dy) > 0.4;
     const bob = Math.sin(t*(calm?2:8)*_th.crowdEnergy + d.phase)*bobAmp;
-    // soft shadow
-    ctx.fillStyle="rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(d.x, d.y+9, 5, 2, 0, 0, 7); ctx.fill();
-    drawPerson(ctx, d.x, d.y+bob, d.hair, d.shirt, t, !calm, d.face, null, "down", null, d.trouser, null, d.female, 0.82);
+    ctx.fillStyle="rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(Math.round(d.x), Math.round(d.y+9), 5, 2, 0, 0, 7); ctx.fill();
+    drawPerson(ctx, Math.round(d.x), Math.round(d.y+bob), d.hair, d.shirt, t, moving, d.face, null, "down", d.skin, d.trouser, null, d.female, d.scale, d.hat, d.hatColor, d.opts);
   }
 
   // ---- 10. ENTRANCE framing (bottom) ---------------------------------------
