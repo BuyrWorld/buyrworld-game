@@ -129,7 +129,7 @@ export function isSoundtrackMode(v: any): v is SoundtrackMode { return SOUNDTRAC
 // Off / Low / Medium / Loud — genuinely distinct gains, defaulting to Low.
 export const VOLUME_STEPS = ['off', 'low', 'med', 'loud'] as const;
 export type VolumeStep = typeof VOLUME_STEPS[number];
-export const VOLUME_GAINS: Record<VolumeStep, number> = { off: 0, low: 0.15, med: 0.42, loud: 0.85 };
+export const VOLUME_GAINS: Record<VolumeStep, number> = { off: 0, low: 0.22, med: 0.55, loud: 0.9 };
 export const DEFAULT_VOLUME: VolumeStep = 'low';
 export function volumeGain(step: string): number {
   return (VOLUME_GAINS as any)[step] != null ? (VOLUME_GAINS as any)[step] : VOLUME_GAINS.low;
