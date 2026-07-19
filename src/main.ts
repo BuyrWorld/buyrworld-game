@@ -61,6 +61,7 @@ import { AUTOMATONS, SKILL_GROUP, automatonById, automatonsForSkill, autoSpeedMu
 import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage, canClaim, earnedTitle, isJourneyComplete } from './data/journey.ts';
 import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBeat, allWelcomeDone, welcomeTopLevel } from './data/welcome.ts';
 import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, reliabilityLabel, reliabilityStars } from './data/suppliers.ts';
+import { COMPANIES, companyById, companiesForLevel, dailyPnL as companyPnL, hireCost as companyHireCost, accrueCompany, paybackDays as companyPayback } from './data/company.ts';
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
@@ -1925,6 +1926,8 @@ const ACH = [
   { id:"full_honours", ic:"📜", n:"Full Honours",       ds:"Complete all university degrees.",   r:2000, c:()=>(S.degrees?.length||0)>=7 },
   { id:"landlord",     ic:"🏡", n:"Landlord",           ds:"Buy your first property.",           r:100,  c:()=>(S.properties?.length||0)>=1 },
   { id:"mogul",        ic:"🏰", n:"Property Mogul",     ds:"Own all three properties.",          r:500,  c:()=>(S.properties?.length||0)>=3 },
+  { id:"entrepreneur", ic:"🏢", n:"Entrepreneur",       ds:"Buy your first business licence.",   r:250,  c:()=>Object.keys(S.companies?.owned||{}).length>=1 },
+  { id:"conglomerate", ic:"🏙️", n:"Conglomerate",       ds:"Own all four businesses.",           r:2500, c:()=>Object.keys(S.companies?.owned||{}).length>=COMPANIES.length },
   { id:"home_t1",      ic:"🛋️", n:"Moving In",          ds:"Upgrade your cottage for the first time.",    r:50,   c:()=>(S.homeTier||0)>=1 },
   { id:"home_t4",      ic:"🎹", n:"Dream Cottage",      ds:"Reach the highest home tier.",       r:500,  c:()=>(S.homeTier||0)>=4 },
   { id:"first_loan",   ic:"💳", n:"In the Red",         ds:"Take your first bank loan.",         r:15,   c:()=>(S.counters?.loansTotal||0)>=1 },
@@ -11013,6 +11016,7 @@ function freshState(){
     fleeUntil: 0,
     arrival: { done: false },   // the one-time bus drop-off cinematic (new games only)
     club: { frostyRel: 0, eventRep: 0, incidentDay: -1, incidentDone: false, photos: 0, visits: 0, vip: false, lastTrack: null, eventVisit: -1, eventDone: false, lightsOut: false },
+    companies: { owned: {} },   // M21 — owned businesses: id → { staff, since, lastAccrual, cumProfit }
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -11252,6 +11256,7 @@ function load(){
       if (!("fleeUntil" in parsed)) S.fleeUntil = 0;
       if (!("arrival" in parsed)) S.arrival = { done: true };   // existing founders never replay the drop-off intro
       if (!("club" in parsed)) S.club = { frostyRel:0, eventRep:0, incidentDay:-1, incidentDone:false, photos:0, visits:0, vip:false, lastTrack:null, eventVisit:-1, eventDone:false, lightsOut:false };
+      if (!("companies" in parsed) || !S.companies || typeof S.companies !== "object" || !S.companies.owned) S.companies = { owned: {} };   // M21
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -11504,6 +11509,70 @@ function renderPurchasingDesk(){
   </div>`;
 }
 
+/* ---------- M21: Company Ownership (Town Hall — Business Registry) ---------- */
+// Deterministic per-game-day "market conditions" (±10%) — a light, read-only nudge so
+// company revenue breathes without coupling to the economy engine.
+function _companyDemandMult(){
+  const day = _gameDay();
+  const r = ((day * 2654435761) >>> 0) % 1000 / 1000;
+  return 0.9 + r * 0.2;
+}
+// Accrue each owned company's net profit into the wallet (timestamp-based → idle/offline
+// safe). Losses never drain the wallet (an idle/under-staffed company simply banks
+// nothing); the dashboard shows the true P&L so staffing is a real decision.
+function updateCompanies(now){
+  const owned = S.companies && S.companies.owned;
+  if (!owned) return;
+  const dmult = _companyDemandMult();
+  let changed = false;
+  for (const id in owned){
+    const c = owned[id], def = companyById(id);
+    if (!c || !def) continue;
+    if (!c.lastAccrual) c.lastAccrual = now;
+    const net = companyPnL(def, c.staff || 0, dmult).net;
+    if (net <= 0){ c.lastAccrual = now; continue; }
+    const acc = accrueCompany(net, now - c.lastAccrual);
+    if (acc.coins > 0){
+      credit(acc.coins, 'company', 'company:' + id);
+      c.cumProfit = (c.cumProfit || 0) + acc.coins;
+      c.lastAccrual += acc.consumedMs;
+      changed = true;
+    }
+  }
+  if (changed){ updateHud(); if (S.tab === "upgrades") renderMain(); save(); }
+}
+function buyLicence(id){
+  const def = companyById(id); if (!def) return;
+  if (!S.companies) S.companies = { owned:{} };
+  if (S.companies.owned[id]){ toast("You already own that business."); return; }
+  if (totalLvl() < def.unlockLvl){ toast(`${def.n} unlocks at total level ${def.unlockLvl}.`); return; }
+  if (S.coins < def.licence){ toast(`Need ${fmt(def.licence)} coins for the licence.`); return; }
+  debit(def.licence, 'purchase', 'company_licence:'+id);
+  const now = Date.now();
+  S.companies.owned[id] = { staff:1, since:now, lastAccrual:now, cumProfit:0 };   // opens with one hire
+  toast(`🏢 Licence acquired: ${def.n}! You're the owner — hire staff to grow it.`);
+  log(`🏢 Bought a business licence: <b>${def.n}</b> (−${fmt(def.licence)} coins). One staff hired to start.`, "good");
+  achCheck(); renderMain(); updateHud(); save();
+}
+function hireStaff(id){
+  const def = companyById(id), c = S.companies?.owned?.[id];
+  if (!def || !c) return;
+  if (c.staff >= def.slots){ toast(`${def.n} is fully staffed (${def.slots}).`); return; }
+  const fee = companyHireCost(def);
+  if (S.coins < fee){ toast(`Need ${fmt(fee)} coins to hire.`); return; }
+  debit(fee, 'purchase', 'company_hire:'+id);
+  c.staff++;
+  log(`👷 Hired staff at ${def.n} — now ${c.staff}/${def.slots} (−${fmt(fee)} coins).`, "");
+  toast(`👷 Hired at ${def.n} · now ${c.staff}/${def.slots} · −${fmt(fee)}c`);
+  achCheck(); renderMain(); updateHud(); save();
+}
+function fireStaff(id){
+  const def = companyById(id), c = S.companies?.owned?.[id];
+  if (!def || !c || c.staff <= 0) return;
+  c.staff--;
+  toast(`👋 Let a staff member go at ${def.n} · now ${c.staff}/${def.slots}`);
+  renderMain(); updateHud(); save();
+}
 /* ---------- M18: Quality Control bench (Manufacturing panel) ---------- */
 function qcState(){
   if (!S.qc) S.qc = { rating:50, tier:0, pending:null, nextInspect:0, inspected:0, reworked:0, scrapped:0 };
@@ -14045,7 +14114,47 @@ function renderUpgrades(){
     </div>`;
   });
   html += `</div>`;
+  html += renderBusinessRegistry();
   return html;
+}
+// M21 — Business Registry: buy a licence, hire staff, run a business for a visible P&L.
+function renderBusinessRegistry(){
+  const tl = totalLvl();
+  const dmult = _companyDemandMult();
+  const owned = (S.companies && S.companies.owned) || {};
+  const signed = (n)=>`${n>=0?'+':'−'}${fmt(Math.abs(n))}`;
+  const ownedCards = COMPANIES.filter(c=>owned[c.id]).map(def=>{
+    const c = owned[def.id];
+    const pl = companyPnL(def, c.staff, dmult);
+    const netCol = pl.net>0?'#8affb0':pl.net<0?'#ff8870':'var(--dim)';
+    return `<div class="card" style="flex-direction:column;align-items:stretch;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:700;font-size:13px">${def.ic} ${def.n}</span><span style="font-size:11px;color:var(--dim)">👷 ${c.staff}/${def.slots} staff</span></div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:1px 14px;font-size:11px;color:var(--dim);margin:6px 0">
+        <span>Revenue</span><span style="text-align:right;color:#8affb0">+${fmt(pl.revenue)}/day</span>
+        <span>Wages</span><span style="text-align:right;color:#ff9a6a">−${fmt(pl.wages)}/day</span>
+        <span>Upkeep</span><span style="text-align:right;color:#ff9a6a">−${fmt(pl.upkeep)}/day</span>
+        <span style="font-weight:700;color:var(--text);border-top:1px solid rgba(255,255,255,.1);padding-top:2px">Net profit</span><span style="text-align:right;font-weight:700;color:${netCol};border-top:1px solid rgba(255,255,255,.1);padding-top:2px">${signed(pl.net)}/day</span>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:7px">📈 Lifetime profit: <b style="color:#8affb0">${fmt(c.cumProfit||0)}</b> coins · market conditions ${Math.round(dmult*100)}%</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn" data-hire="${def.id}" ${(c.staff>=def.slots||S.coins<def.hireFee)?'disabled':''}>👷 Hire · ${fmt(def.hireFee)}c</button>
+        <button class="btn alt" data-fire="${def.id}" ${c.staff<=0?'disabled':''}>👋 Lay off</button>
+      </div>
+    </div>`;
+  }).join("");
+  const buyCards = COMPANIES.filter(c=>!owned[c.id] && tl>=c.unlockLvl).map(def=>{
+    const full = companyPnL(def, def.slots, dmult);
+    return `<div class="card" style="flex-direction:column;align-items:stretch;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:700;font-size:13px">${def.ic} ${def.n}</span><span style="font-size:11px;color:var(--dim)">up to ${def.slots} staff</span></div>
+      <div style="font-size:11px;color:var(--dim);margin:3px 0 6px">${def.blurb}</div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:7px">At full staff ≈ <b style="color:#8affb0">+${fmt(full.net)}/day</b> net · licence pays back in ~${companyPayback(def)} game-days</div>
+      <button class="btn" data-buy-licence="${def.id}" ${S.coins<def.licence?'disabled':''}>🏢 Buy licence · ${fmt(def.licence)}c</button>
+    </div>`;
+  }).join("");
+  const locked = COMPANIES.filter(c=>!owned[c.id] && tl<c.unlockLvl);
+  const lockedNote = locked.length ? `<div style="font-size:10px;color:var(--dim);margin-top:2px">🔒 ${locked.map(c=>`${c.n} (Lv ${c.unlockLvl})`).join(" · ")}</div>` : "";
+  const empty = (!ownedCards && !buyCards) ? `<div style="font-size:12px;color:var(--dim);padding:4px 0">No businesses available yet — keep levelling up. Your first licence unlocks at total level ${COMPANIES[0].unlockLvl}.</div>` : "";
+  return `<div class="panel" style="margin-top:10px"><h2>🏢 Business Registry<small>Own a business, hire staff, run it for a real P&amp;L. Profit banks to your wallet over time — even while you're away.</small></h2>${ownedCards}${buyCards}${empty}${lockedNote}</div>`;
 }
 // ---- Artisan Commissions — crafting orders at the Artisan's Shed ----
 function checkCommissions(){
@@ -17189,6 +17298,10 @@ function bindMain(){
     if (!sel || !qin) return;
     placeOrder(sid, sel.value, qin.value);
   });
+  // M21 — Business Registry (Town Hall): own/hire/fire companies
+  document.querySelectorAll("[data-buy-licence]").forEach(b=> (b as HTMLElement).onclick = ()=> buyLicence((b as HTMLElement).dataset.buyLicence));
+  document.querySelectorAll("[data-hire]").forEach(b=> (b as HTMLElement).onclick = ()=> hireStaff((b as HTMLElement).dataset.hire));
+  document.querySelectorAll("[data-fire]").forEach(b=> (b as HTMLElement).onclick = ()=> fireStaff((b as HTMLElement).dataset.fire));
   // M18 — Quality Control bench
   const _qcInspect = document.querySelector("[data-qc-inspect]");
   if (_qcInspect) _qcInspect.onclick = ()=>{
@@ -18368,6 +18481,7 @@ setInterval(()=>{
   sweepContracts();         // lapse any contract past its deadline (idle/offline-safe)
   c2cTick();                // Contract-to-Cash: advance any time-driven pipeline stage
   updateProcurement(now);   // M17: land any supplier deliveries whose ETA has passed
+  updateCompanies(now);     // M21: accrue owned-company profit into the wallet (offline-safe)
   collectBinIfDue();        // M3: weekly bin collection + evening reminder
   updateGarden(now);
   checkRadioUnlocks();      // Frosty's Radio — announce newly-earned exclusive tracks
