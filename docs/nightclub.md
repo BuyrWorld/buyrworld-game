@@ -48,14 +48,29 @@ future variants but only the standard venue is exposed (no adult content).
 - Volume steps (`VOLUME_GAINS`): Off 0 · Low 0.22 · Med 0.55 · Loud 0.90, default **Low**.
 - Entry never depends on audio loading; a failed MP3 falls back to chiptune.
 
-## Interactions (panel-driven, controller-focusable)
-Dance (short, non-locking buff) · Bartender (themed drink → action buff) · Frosty DJ
-(tonight's set) · Bouncer (rules + VIP teaser) · Roxy the promoter (supplier/contract lead
-hook) · crowd-density + reduced-lighting controls.
+## Layout — full-viewport, no dashboard
+The nightclub renders through `_withRoomFull` (a full-width `.int-fullwidth` interior
+layout) — the canvas fills the content area with **no right-hand panel**. The old
+`renderNightclub()` dashboard is retired. Venue controls (crowd density, reduced
+lighting) live in **Settings**, not the venue. The exit is an integrated corner EXIT
+sign (`.int-left-full .ilbl-exit`), plus walk-south and Esc/Back.
+
+## Interactions — contextual, not a button row
+`_clubInteractPOIs()` defines interaction anchors (DJ, bar, Roxy, bouncer); the dance
+floor itself is the Dance anchor. `_clubActivePOI()` picks the nearest in-range one from
+the player's position and the interior overlay shows a **single compact prompt** (icon +
+label + `E`/`Ⓐ` glyph) near the bottom. `_clubDo(id)` runs it — fired by tapping the
+prompt, keyboard **E/Enter**, or controller **A** (via `gpInteract`). Anchors are guarded
+reachable/clear by `tests/publicInteriors.test.ts`.
+
+## Frosty
+The DJ is Frosty's **canonical human** appearance (white, ~34, short black hair, dark
+stubble) via `drawPerson(..., { facialHair:'stubble' })` — not a snowman.
 
 ## Entry reveal
 `_clubStartReveal()` on entry shows a skippable themed-night card (`_clubRevealActive()`,
-~2.2s, tap/key to skip), fading in and out over the scene.
+~2.2s, tap/key to skip) with the theme name, tag and tonight's bonus, fading over the
+scene.
 
 ## Known limitations / next
 - Music swap on entry/exit is an instant hard-cut (FILEMUSIC), not a crossfade — a smooth

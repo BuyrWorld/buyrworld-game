@@ -1721,6 +1721,8 @@ function openSettings(){
     ${seg('Sound effects', [{v:'on',l:'On'},{v:'off',l:'Off'}], st.sfx===false?'off':'on', 'sfx')}
     ${seg('Text size', [{v:'small',l:'A'},{v:'normal',l:'A'},{v:'large',l:'A'}], st.textScale||'normal', 'text')}
     ${seg('Reduced motion', [{v:'off',l:'On anim'},{v:'on',l:'Reduced'}], st.motion===false?'on':'off', 'motion')}
+    ${seg('Nightclub lighting', [{v:'full',l:'Full'},{v:'reduced',l:'Reduced'}], st.clubLights===false?'reduced':'full', 'clublights')}
+    ${seg('Nightclub crowd', [{v:'low',l:'Low'},{v:'standard',l:'Std'},{v:'high',l:'High'}], st.crowd||'standard', 'crowd')}
     ${seg('Couch / TV mode', [{v:'off',l:'Off'},{v:'on',l:'On'}], st.couch?'on':'off', 'couch')}
     ${seg('Assisted mode', [{v:'off',l:'Off'},{v:'on',l:'On'}], st.assisted?'on':'off', 'assisted')}
     <div style="font-size:10px;color:var(--dim);margin:-3px 0 4px">Assisted mode adds a recommended choice on order decisions — gentler for newcomers.</div>
@@ -1738,6 +1740,8 @@ function openSettings(){
       else if(k==='sfx') st.sfx=(v==='on');
       else if(k==='text'){ st.textScale=v; applyTextScale(); }
       else if(k==='motion'){ st.motion=(v==='off'); }   // 'on' = reduced → motion:false
+      else if(k==='clublights'){ st.clubLights=(v==='full'); }   // Reduced → clubLights:false (calm)
+      else if(k==='crowd'){ st.crowd=v; try{ _clubCrowd=null; }catch(e){} }   // invalidate the crowd pool
       else if(k==='couch'){ st.couch=(v==='on'); applyCouchMode(); }
       else if(k==='assisted'){ st.assisted=(v==='on'); }
       save();
@@ -7399,6 +7403,64 @@ function _clubRevealActive(){
   if (now - _clubRevealAt > CLUB_REVEAL_MS){ _clubRevealAt = 0; return false; }
   return true;
 }
+// ---- Contextual interactions (no permanent button row) --------------------------
+// Interaction anchors: the player walks up to a zone and ONE compact prompt appears.
+function _clubInteractPOIs(){
+  return [
+    { id:'dj',      label:'Talk to Frosty', ic:'🎧', x:240, y:118, r:46 },
+    { id:'bar',     label:'Order a drink',  ic:'🍸', x:82,  y:178, r:46 },
+    { id:'roxy',    label:'Talk to Roxy',   ic:'💬', x:344, y:150, r:48 },
+    { id:'bouncer', label:'Ask the bouncer',ic:'🕶️', x:210, y:242, r:40 },
+  ];
+}
+let _clubActivePOIId = null;
+// The nearest in-range interaction, or a Dance prompt when out on the floor.
+function _clubActivePOI(){
+  if (S.tab !== 'nightclub' || _clubRevealActive()) return null;
+  let best=null, bestD=1e9;
+  for (const p of _clubInteractPOIs()){ const d=Math.hypot(IP.x-p.x, IP.y-p.y); if (d<p.r && d<bestD){ bestD=d; best=p; } }
+  if (best) return best;
+  if (IP.x>=160 && IP.x<=320 && IP.y>=112 && IP.y<=218) return { id:'dance', label:'Dance', ic:'💃' };
+  return null;
+}
+// Run an interaction (shared by the tap prompt, keyboard E and controller A).
+function _clubDo(id){
+  _clubSkipReveal();
+  const _th = clubTheme();
+  MUSIC.unlocked = true;
+  if (id==='dance'){
+    S.danceBuff = Date.now() + 5*60000;
+    const _moves = ['bust a move','throw some shapes','find the groove','own the floor'];
+    toast(`💃 You ${_moves[Math.floor(Math.random()*_moves.length)]} — ${_th.name}! (+15% speed, 5 min)`);
+  } else if (id==='bar'){
+    const _cost = 10;
+    if (S.coins < _cost){ toast("Not enough coins for a drink (10)."); return; }
+    debit(_cost, 'purchase', 'club_drink');
+    S.pintBuff = Math.max(S.pintBuff||0, Date.now()) + 3*60000;
+    toast(`🍸 The bartender slides you a "${_th.name}" — actions 10% faster for 3 min.`);
+    log(`🍸 Ordered a themed cocktail at Club Featherstone (−${_cost} coins).`, "");
+  } else if (id==='dj'){
+    const _tracks = _th.eligibleTracks.map(x => (MUSIC_MANIFEST.find(m=>m.id===x)?.title)||x);
+    toast(`🎧 Frosty: "Tonight's ${_th.name}! Spinning ${_tracks[0]||'the hits'} — stay frosty!"`);
+    log(`🎧 Frosty (DJ) is running ${_th.name}. On the decks: ${_tracks.join(', ')}.`, "good");
+  } else if (id==='roxy'){
+    if (!S.npcMet) S.npcMet = true;
+    const _lines = [
+      '"Love this crowd tonight. Running a business? I know people who need suppliers."',
+      '"Stick around — deals get made on this floor. I\'ll keep an ear out for a lead."',
+      '"Frosty\'s sets pull the right people. Networking\'s half the game, love."',
+    ];
+    toast('💬 Roxy: ' + _lines[Math.floor(Date.now()/9000) % _lines.length]);
+    log('💬 Roxy (promoter): '+_lines[Math.floor(Date.now()/9000) % _lines.length]+' (Supplier/contract leads — coming soon.)', "");
+  } else if (id==='bouncer'){
+    toast(`🕶️ Bouncer: "${_th.name} tonight. Keep it civil. VIP's members-only — earn your rep."`);
+    log(`🕶️ The bouncer nods you through. VIP access is a future progression perk.`, "");
+  } else return;
+  try{ renderMain(); updateHud(); save(); }catch(e){}
+}
+(globalThis as any)._clubDo = _clubDo;
+// Keyboard E / controller A while in the club: fire the current contextual action.
+function _clubActivateCurrent(){ const p = _clubActivePOI(); if (p){ _clubDo(p.id); return true; } return false; }
 // The rebuilt Club Featherstone — a wide 16:9 industrial-warehouse venue with distinct
 // zones (entrance, dance floor, DJ stage, bar, lounge, VIP), theme-driven lighting, a
 // pooled crowd and a skippable entry reveal. Drawn in the 480×270 club canvas.
@@ -7453,17 +7515,17 @@ function drawNightclub(ctx, t, W, H){
   for(const spx of [140,316]){ ctx.fillStyle="#0d0a16"; ctx.fillRect(spx,44,24,64);
     ctx.fillStyle="#070510"; for(const spy of [56,84]){ const r=6+(calm?1:beat*4); ctx.beginPath(); ctx.arc(spx+12,spy,r,0,7); ctx.fill(); }
     ctx.fillStyle=neon+"55"; ctx.fillRect(spx,44,24,2); ctx.fillStyle="#1a1428"; ctx.fillRect(spx,70,24,2); }
-  // DJ booth + Frosty (snowman DJ)
-  ctx.fillStyle="#171029"; ctx.fillRect(216,74,48,16); ctx.fillStyle=neon2+aa(140); ctx.fillRect(216,74,48,2);
-  for(const cd of [228,252]){ ctx.fillStyle="#0a0a12"; ctx.beginPath(); ctx.arc(cd,82,5,0,7); ctx.fill();
-    ctx.strokeStyle=neon2; ctx.lineWidth=1; const a=t*8; ctx.beginPath(); ctx.moveTo(cd,82); ctx.lineTo(cd+Math.cos(a)*3.5,82+Math.sin(a)*3.5); ctx.stroke(); }
-  // Frosty the snowman DJ
-  const fbx=P.dj.x, fby=P.dj.y-4;
-  ctx.fillStyle="#eef4ff"; ctx.beginPath(); ctx.arc(fbx,fby,7,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(fbx,fby-8,5,0,7); ctx.fill();
-  ctx.fillStyle="#17161a"; ctx.fillRect(fbx-5,fby-14,10,4); ctx.fillRect(fbx-6,fby-11,12,2);   // beanie
-  ctx.fillStyle="#1a1a22"; ctx.fillRect(fbx-2,fby-9,1.5,1.5); ctx.fillRect(fbx+1,fby-9,1.5,1.5);
-  ctx.fillStyle="#ff8a3a"; ctx.fillRect(fbx+2,fby-8,3,1.5);   // carrot nose
-  drawEmojiC(ctx,"🎧",fbx,fby-16,9);
+  // DJ booth (desk + decks) with Frosty behind it — his CANONICAL HUMAN look:
+  // white, ~34, short black hair, dark stubble (not a snowman).
+  const fbx=P.dj.x, fby=P.dj.y+4;
+  drawPerson(ctx, fbx, fby, "#1a1712", "#20233a", t, !calm, 1, null, "down", "#f0c9a6", "#14141f", null, false, 0.95,
+    'none', '#1a1712', { facialHair:'stubble', eyeColor:'#241a12' });
+  drawEmojiC(ctx,"🎧",fbx,fby-15,10);
+  // desk in front of him + spinning decks (drawn over so he stands behind the booth)
+  ctx.fillStyle="#171029"; ctx.fillRect(216,80,48,14); ctx.fillStyle=neon2+aa(160); ctx.fillRect(216,80,48,2);
+  for(const cd of [228,252]){ ctx.fillStyle="#0a0a12"; ctx.beginPath(); ctx.arc(cd,87,5,0,7); ctx.fill();
+    ctx.strokeStyle=neon2; ctx.lineWidth=1; const a=t*8; ctx.beginPath(); ctx.moveTo(cd,87); ctx.lineTo(cd+Math.cos(a)*3.5,87+Math.sin(a)*3.5); ctx.stroke(); }
+  ctx.fillStyle=neon+aa(120+ (calm?0:beat*80)); ctx.fillRect(220,84,6,2); ctx.fillRect(246,84,6,2);   // mixer LEDs
 
   // ---- 4. STAY FROSTY neon (left back wall) --------------------------------
   { const nx=16,ny=30; const glow = calm?0.7:(0.6+beat*0.4);
@@ -7564,11 +7626,8 @@ function drawNightclub(ctx, t, W, H){
     drawEmojiC(ctx,"🕶️",bx,224,8);
   }
 
-  // ---- 11. atmosphere: haze wash + interaction hint glyphs ------------------
+  // ---- 11. atmosphere: haze wash ------------------------------------------
   if(!calm){ ctx.fillStyle=neon+aa(6+beat*10); ctx.fillRect(150,30,180,90); }
-  // small ambient POI markers so players see where to interact (panel drives action)
-  ctx.font="8px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
-  ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillText("🎧", P.dj.x, P.dj.y+18);
 
   // ---- 12. persistent theme pill (top-centre, unobtrusive) -----------------
   const pill=_th.emoji+" "+_th.name.toUpperCase();
@@ -7584,9 +7643,10 @@ function drawNightclub(ctx, t, W, H){
     ctx.globalAlpha=alpha*0.85; ctx.fillStyle="#05050c"; ctx.fillRect(0,0,W,H); ctx.globalAlpha=alpha;
     ctx.fillStyle=neon; ctx.font="700 16px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
     ctx.fillText(_th.emoji+"  CLUB FEATHERSTONE", W/2, H/2-16);
-    ctx.fillStyle="#eef2ff"; ctx.font="700 13px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight: "+_th.name, W/2, H/2+6);
-    ctx.fillStyle=neon2; ctx.font="9px 'IBM Plex Mono',monospace"; ctx.fillText(_th.tag, W/2, H/2+22);
-    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.font="8px 'IBM Plex Mono',monospace"; ctx.fillText("tap / press to enter", W/2, H/2+40);
+    ctx.fillStyle="#eef2ff"; ctx.font="700 13px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight: "+_th.name, W/2, H/2+4);
+    ctx.fillStyle=neon2; ctx.font="9px 'IBM Plex Mono',monospace"; ctx.fillText(_th.tag, W/2, H/2+20);
+    ctx.fillStyle="#ffd23c"; ctx.font="700 9px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight's bonus: dance for action speed +15%", W/2, H/2+34);
+    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.font="8px 'IBM Plex Mono',monospace"; ctx.fillText("tap / press to enter", W/2, H/2+48);
     ctx.textAlign="left"; ctx.globalAlpha=1;
   }
 }
@@ -9605,6 +9665,17 @@ function drawInterior(t){
       const _pct = (_rem / 10000) * 100;
       _iHtml += `<div style="position:absolute;top:4px;left:50%;transform:translateX(-50%);background:rgba(180,20,20,.92);color:#fff;font:700 10px 'IBM Plex Mono',monospace;padding:4px 14px 6px;border-radius:4px;pointer-events:none;text-align:center;white-space:nowrap">🚨 FLEE! ${_sec}s<div style="height:4px;background:rgba(255,255,255,.25);border-radius:2px;margin-top:3px"><div style="height:4px;background:#ff4040;border-radius:2px;width:${_pct.toFixed(1)}%;transition:width .2s"></div></div></div>`;
     }
+    // Nightclub: contextual interaction prompt (replaces the old permanent button row).
+    if (S.tab==="nightclub"){
+      const _poi = _clubActivePOI();
+      _clubActivePOIId = _poi ? _poi.id : null;
+      if (_poi){
+        const _th = clubTheme();
+        const _gp = (()=>{ try{ const ps=navigator.getGamepads&&navigator.getGamepads(); for(const p of (ps||[])) if(p) return true; }catch(e){} return false; })();
+        const _key = _gp ? 'Ⓐ' : 'E';
+        _iHtml += `<div onclick="_clubDo('${_poi.id}')" style="position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(8,6,16,.86);border:1.5px solid ${_th.neon};border-radius:8px;padding:6px 14px;font:700 12px 'IBM Plex Mono',monospace;color:#eef2ff;pointer-events:auto;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.5);z-index:12;white-space:nowrap"><span style="font-size:15px">${_poi.ic}</span><span>${_poi.label}</span><span style="background:${_th.neon};color:#08060f;border-radius:4px;padding:1px 6px;font-size:11px">${_key}</span></div>`;
+      }
+    }
     _iOverlay.innerHTML = _iHtml;
   }
 }
@@ -10674,7 +10745,18 @@ if (typeof document !== 'undefined'){
     .int-left{flex:0 0 auto;width:min(660px,46%)}
     .int-left .int-canvas-wrap{margin:0}
     .int-right{flex:1;min-width:0}
+    /* Full-viewport interiors (nightclub): the environment fills the content area, no
+       side dashboard panel. Overrides the two-column split above. */
+    .int-layout.int-fullwidth{flex-direction:column}
+    .int-fullwidth .int-left, .int-left-full{flex:1 1 100%;width:100%;max-width:100%}
   }
+  .int-left-full{width:100%}
+  .int-left-full .int-canvas-wrap{max-width:100% !important}
+  .int-left-full canvas{max-width:100% !important}
+  /* Nightclub exit: integrated EXIT sign in the corner, not a big pulsing centre button. */
+  .int-left-full .ilbl-exit{left:auto;right:10px;bottom:10px;transform:none;background:rgba(8,6,16,.86);border:1.5px solid #5a6472;color:#dfe6ef;font-size:11px;padding:4px 10px;animation:none;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+  .int-left-full .ilbl-exit:hover{background:rgba(20,16,32,.95);border-color:#8a94a8}
+  .int-left-full .vhint{color:#7a84a0;font-size:11px}
   .int-right .panel{margin-bottom:14px}
   .ilbl-room{position:absolute;left:6px;bottom:6px;background:rgba(69,52,35,.9);color:#ffd666;font:700 11px 'IBM Plex Mono',monospace;padding:2px 9px;border-radius:4px;pointer-events:none;letter-spacing:.5px}
   #hud-time{font:700 12px 'IBM Plex Mono',monospace;color:#e8961e;background:rgba(69,52,35,.08);border:2px solid #8c694733;border-radius:6px;padding:4px 9px;white-space:nowrap}
@@ -15952,8 +16034,11 @@ function interiorHtml(title){
         return `<div class="ilbl" style="left:${(st.fx*100).toFixed(1)}%;top:${topPct}%">${st.ic} ${st.lbl}${locked?` <span class="ilbl-lock">Lv${lvl}</span>`:''}</div>`;
       }).join('');
   const depotLbl = S.tab==="contracts" ? `<div class="ilbl" style="left:73%;top:5%;background:rgba(255,248,230,.96);color:#453423;font:700 9px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;pointer-events:none">BUYR FREIGHT</div>` : "";
-  return `<div class="panel" style="padding:8px;"><div class="int-canvas-wrap" style="max-width:${cw*2}px;margin:0 auto;position:relative;">
-    <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${cw*2}px;"></canvas>
+  // The nightclub is a full-viewport venue — let it fill the content width (no 2× cap).
+  const _mw = S.tab==="nightclub" ? "100%" : `${cw*2}px`;
+  const _panelPad = S.tab==="nightclub" ? "0" : "8px";
+  return `<div class="panel" style="padding:${_panelPad};background:${S.tab==="nightclub"?"#070510":"var(--panel)"};border-color:${S.tab==="nightclub"?"#1a1428":"var(--edge)"}"><div class="int-canvas-wrap" style="max-width:${_mw};margin:0 auto;position:relative;">
+    <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${_mw};"></canvas>
     ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><button type="button" class="ilbl-exit" data-gpfocus aria-label="Leave building" onclick="leaveInterior()">🚪 Exit ↓</button>
     <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
     <div id="interior-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
@@ -16018,6 +16103,8 @@ function renderMain(){
   else if (S.tab==="settings") m.innerHTML = banner + renderSettings();
   else {
     const _withRoom = (title, body) => banner + `<div class="int-layout"><div class="int-left">${interiorHtml(title)}</div><div class="int-right">${body}</div></div>`;
+    // Full-viewport interior (no right-hand dashboard panel) — the venue IS the screen.
+    const _withRoomFull = (title) => banner + `<div class="int-layout int-fullwidth"><div class="int-left int-left-full">${interiorHtml(title)}</div></div>`;
     if (S.tab==="contracts") m.innerHTML = _withRoom("📦 Inside the Depot — shelves fill up as your warehouse does", renderContracts());
     else if (S.tab==="trade") m.innerHTML = _withRoom("⚖️ Inside the Market Hall", renderTrade());
     else if (S.tab==="upgrades") m.innerHTML = _withRoom("🛒 Inside the Town Hall — CapEx office", renderUpgrades());
@@ -16032,7 +16119,7 @@ function renderMain(){
     else if (S.tab==="bike_shop") m.innerHTML = _withRoom("🚲 Featherstone Cycle Shop", renderBikeShop());
     else if (S.tab==="furniture_shop") m.innerHTML = _withRoom("🛋️ Nell's Home Store", renderFurnitureShop());
     else if (S.tab==="pub") m.innerHTML = _withRoom("🍺 The Rose & Pallet", renderPub());
-    else if (S.tab==="nightclub") m.innerHTML = _withRoom("🪩 Club Featherstone", renderNightclub());
+    else if (S.tab==="nightclub") m.innerHTML = _withRoomFull("🪩 Club Featherstone");
     else if (S.tab==="robotics_lab") m.innerHTML = _withRoom("🤖 Automation Lab", renderRoboticsLab());
     else if (S.tab==="data_centre") m.innerHTML = _withRoom("🖥️ Data Centre", renderDataCentre());
     else if (S.tab==="police_station") m.innerHTML = _withRoom("🚔 Featherstone Police Station", renderPoliceStationPanel());
@@ -18033,6 +18120,8 @@ function pollGamepad(){
 }
 function gpInteract(){
   if (CHAT_NPC){ CHAT_NPC.quipIdx=(CHAT_NPC.quipIdx+1)%CHAT_NPC.quips.length; CHAT_NPC=null; renderMain(); return; }
+  // Nightclub: E / Enter / controller-A fires the current contextual interaction.
+  if (S.tab==="nightclub"){ if (_clubRevealActive()){ _clubSkipReveal(); return; } if (_clubActivateCurrent()) return; }
   if (INTERIOR_TABS.has(S.tab)){
     const workers = VILLAGER_STATE.filter(v=>v.indoor && v.workTab===S.tab);
     const nearest = workers.sort((a,b)=>Math.hypot(IP.x-a.iwx,IP.y-a.iwy)-Math.hypot(IP.x-b.iwx,IP.y-b.iwy))[0];

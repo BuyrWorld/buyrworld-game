@@ -129,4 +129,16 @@ describe('Club Featherstone — every essential zone is reachable, décor never 
     expect(W * H).toBeGreaterThan(320 * 200);
     expect(W).toBe(480); expect(H).toBe(270);
   });
+
+  // Contextual interaction anchors (mirror _clubInteractPOIs in main.ts). Each must be a
+  // spot the player can actually stand — reachable from the door and not inside a solid.
+  const INTERACT_ANCHORS: Record<string, [number, number]> = {
+    dj: [240, 118], bar: [82, 178], roxy: [344, 150], bouncer: [210, 242],
+  };
+  for (const [id, [ax, ay]] of Object.entries(INTERACT_ANCHORS)) {
+    it(`the "${id}" interaction anchor is standable (clear + reachable)`, () => {
+      expect(inSolid(ax, ay, PUBLIC_COLS.nightclub), `${id} inside a solid`).toBe(false);
+      expect(can(ax - 4, ay - 4, ax + 4, ay + 4), `${id} unreachable`).toBe(true);
+    });
+  }
 });
