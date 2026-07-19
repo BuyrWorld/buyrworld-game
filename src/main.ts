@@ -2739,6 +2739,16 @@ const INT_SIZES = ROOM_DIMS;   // per-room canvas sizes (mining, nightclub) — 
 // Returns the current interior canvas logical dimensions
 function icanvasW(){ return (INT_SIZES[S.tab] && INT_SIZES[S.tab].w) || INT_W; }
 function icanvasH(){ return (INT_SIZES[S.tab] && INT_SIZES[S.tab].h) || INT_H; }
+// Canvas BACKING-resolution multiplier. Logical coords stay 480×270, but the nightclub
+// fills the whole viewport, so at the normal 1× ratio it'd be a 480px image stretched ~4×
+// (blurry). Render it at a much higher backing (≈1920–2880px wide) so it displays near
+// 1:1 and stays crisp. Other interiors keep the standard HiDPI ratio.
+function _interiorBacking(){
+  // 480×270 logical × 4 = a 1920×1080 backing — displays near 1:1 at full width, so the
+  // scene stays sharp instead of a 480px image stretched ~4×. Fixed (not DPR-scaled) to
+  // bound the per-frame fill cost.
+  return S.tab==="nightclub" ? 4 : pixelScale();
+}
 
 const ZONE_TIPS = {
   mining:        { ic:"⛏️", n:"The Quarry",         tip:"Strike the vein to collect ore." },
@@ -7793,7 +7803,7 @@ function drawClubScreen(ctx, th, x, y, w, h, t, beat, aa){
 function drawInterior(t){
   const cv = document.getElementById("interior");
   if (!cv) return;
-  const ratio = pixelScale();
+  const ratio = _interiorBacking();
   const ctx = cv.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -16136,7 +16146,7 @@ function renderCharacterCustomisation(){
   </div>`;
 }
 function interiorHtml(title){
-  const cw = icanvasW(), ch = icanvasH(), r = pixelScale();
+  const cw = icanvasW(), ch = icanvasH(), r = _interiorBacking();
   const stations = STATION_DEFS[S.tab] || [];
   // fishing has no deck node — a single hint to cast on the water instead of station labels
   const lbls = S.tab==="fishing"
@@ -16151,8 +16161,11 @@ function interiorHtml(title){
   // The nightclub is a full-viewport venue — let it fill the content width (no 2× cap).
   const _mw = S.tab==="nightclub" ? "100%" : `${cw*2}px`;
   const _panelPad = S.tab==="nightclub" ? "0" : "8px";
+  // Nightclub is high-res backing → smooth CSS scaling (crisp, not blocky). Pixel-art
+  // interiors keep nearest-neighbour so their sprites stay sharp.
+  const _imgRender = S.tab==="nightclub" ? "auto" : "pixelated";
   return `<div class="panel" style="padding:${_panelPad};background:${S.tab==="nightclub"?"#070510":"var(--panel)"};border-color:${S.tab==="nightclub"?"#1a1428":"var(--edge)"}"><div class="int-canvas-wrap" style="max-width:${_mw};margin:0 auto;position:relative;">
-    <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:pixelated;display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${_mw};"></canvas>
+    <canvas id="interior" width="${cw*r}" height="${ch*r}" style="image-rendering:${_imgRender};display:block;width:100%;aspect-ratio:${cw}/${ch};max-width:${_mw};"></canvas>
     ${lbls}${depotLbl}<div class="ilbl-room">${title.split("·")[0].split("—")[0].trim()}</div><button type="button" class="ilbl-exit" data-gpfocus aria-label="Leave building" onclick="leaveInterior()">🚪 Exit ↓</button>
     <div id="zone-card-canvas" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,22,14,.92);border:2px solid #ffd666;color:#ffd666;font:700 13px/1.5 'IBM Plex Mono',monospace;padding:8px 20px;border-radius:5px;text-align:center;pointer-events:none;white-space:nowrap;z-index:10;transition:opacity .5s"></div>
     <div id="interior-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
