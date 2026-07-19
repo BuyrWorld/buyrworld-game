@@ -5869,15 +5869,20 @@ function _bldPersonality(ctx, o, r, cat, t, P){
     const bl=0.5+0.5*Math.sin(t*4); ctx.fillStyle=`rgba(70,120,255,${(0.5+0.5*bl).toFixed(2)})`; ctx.fillRect(cxm-3, wallY-5, 6, 3);
     for (let i=0;i<Math.floor(w/6);i++){ ctx.fillStyle=i%2?'#2a4a8a':'#e8ecf4'; ctx.fillRect(x+3+i*6, y+h-9, 6, 3); }
   } else if (cat==='home'){
-    // cosy home — a brick chimney that sits ON the roof slope (its base embedded in
-    // the tiles, not floating), with a wisp of smoke + a window flower box.
-    const eave=5, chW=6, chH=9;
+    // cosy home — a brick chimney whose base follows the roof SLOPE and tucks a few
+    // pixels UNDER the tiles on both edges, so it reads as planted on the roof rather
+    // than floating on a flat line. Plus a wisp of smoke + a window flower box.
+    const eave=5, chW=6, chH=9, embed=4;
     const chX=Math.round(cxm + w*0.22);                                   // right of the ridge
-    const rf=(chX - cxm) / ((x+w+eave) - cxm);                             // 0 at ridge → 1 at right eave
-    const roofYat=(y-2) + rf*((wallY+2) - (y-2));                          // roof surface y under the stack
-    const chTop=Math.round(roofYat - chH);
-    ctx.fillStyle=_shade(roof,-0.2); ctx.fillRect(chX, chTop, chW, Math.round(roofYat - chTop + 3));   // stack down into the tiles
-    ctx.fillStyle=_shade(roof,-0.35); ctx.fillRect(chX, chTop, 2, Math.round(roofYat - chTop + 3));     // shaded left face
+    const roofYatX=(px)=>{ const rf=(px - cxm)/((x+w+eave) - cxm); return (y-2) + rf*((wallY+2) - (y-2)); };
+    const roofL=roofYatX(chX), roofR=roofYatX(chX+chW);                    // roof surface under each edge
+    const baseL=Math.round(roofL+embed), baseR=Math.round(roofR+embed);   // base tucks below the tiles
+    const chTop=Math.round(roofL - chH);
+    // stack — bottom edge parallel to the roof slope (a quad, not a flat rect)
+    ctx.fillStyle=_shade(roof,-0.2);
+    ctx.beginPath(); ctx.moveTo(chX,chTop); ctx.lineTo(chX+chW,chTop); ctx.lineTo(chX+chW,baseR); ctx.lineTo(chX,baseL); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=_shade(roof,-0.35);                                     // shaded left face
+    ctx.beginPath(); ctx.moveTo(chX,chTop); ctx.lineTo(chX+2,chTop); ctx.lineTo(chX+2,baseL); ctx.lineTo(chX,baseL); ctx.closePath(); ctx.fill();
     ctx.fillStyle=_shade(roof,-0.4); ctx.fillRect(chX-1, chTop-2, chW+2, 3);                            // chimney rim/cap
     const smokeX=chX+chW/2;
     for (let p=0;p<2;p++){ const ph=((t*0.35+p*0.5+(x%5)*0.1)%1); ctx.fillStyle=`rgba(190,190,196,${(0.20*(1-ph)).toFixed(2)})`; ctx.beginPath(); ctx.arc(smokeX+Math.sin(ph*6)*2, chTop-2-ph*12, 1.4+ph*2, 0,7); ctx.fill(); }
@@ -6035,8 +6040,13 @@ function drawObjects(ctx, t){
         const _swLvl = skillLvl("steelworks");
         const _chimW = 8 + Math.min(6, Math.floor(_swLvl/10)*2); // chimney grows with level
         const _chimX = r.x + r.w - 16;
-        ctx.fillStyle="#7a5a45"; ctx.fillRect(_chimX, r.y-10, _chimW, 14);
-        ctx.fillStyle="#6a4a35"; ctx.fillRect(_chimX, r.y-12, _chimW, 4); // chimney rim
+        // Extend the stack DOWN to the roof surface under it (+ a few px tuck) so it
+        // rises out of the roof instead of floating above the descended right slope.
+        const _crH = Math.round(r.h*0.44), _cwY = r.y + _crH, _ccx = r.x + r.w/2;
+        const _roofUnder = (px)=>{ const rf=(px-_ccx)/((r.x+r.w+5)-_ccx); return (r.y-2)+rf*((_cwY+2)-(r.y-2)); };
+        const _chTop = r.y-10, _chBase = Math.round(Math.max(_roofUnder(_chimX), _roofUnder(_chimX+_chimW)) + 4);
+        ctx.fillStyle="#7a5a45"; ctx.fillRect(_chimX, _chTop, _chimW, _chBase-_chTop);
+        ctx.fillStyle="#6a4a35"; ctx.fillRect(_chimX, _chTop-2, _chimW, 4); // chimney rim
         // smoke — always drifts, denser when active or high level
         const _smokePuffs = S.action && S.action.skill==="steelworks" ? Math.min(6, 3+Math.floor(_swLvl/15)) : Math.max(0, Math.floor(_swLvl/20));
         const _smokeAlpha = S.action && S.action.skill==="steelworks" ? 0.55 : 0.25;
@@ -6109,8 +6119,9 @@ function drawObjects(ctx, t){
         ctx.fillStyle=rl3; ctx.beginPath(); ctx.arc(cx+sway*0.8, r.y+r.h-38, 8, 0, Math.PI*2); ctx.fill();
         if (!locked && Math.floor(Date.now()/700)%3===0) drawEmojiC(ctx,"✨", cx+sway*2, r.y+r.h-44, 8);
       } else if (o.ore==="pine"){
-        // tall narrow triangular layered silhouette
-        ctx.fillStyle=bark; ctx.fillRect(cx-2, r.y+r.h-6, 4, 7);
+        // tall narrow triangular layered silhouette. Trunk runs UP behind the lowest
+        // foliage (base ~-12) so the canopy never floats above a gap.
+        ctx.fillStyle=bark; ctx.fillRect(cx-2, r.y+r.h-14, 4, 15);
         ctx.fillStyle=l1; ctx.beginPath(); ctx.moveTo(cx+sway*1.5, r.y+r.h-30); ctx.lineTo(cx-13+sway, r.y+r.h-12); ctx.lineTo(cx+13+sway, r.y+r.h-12); ctx.closePath(); ctx.fill();
         ctx.fillStyle=l2; ctx.beginPath(); ctx.moveTo(cx+sway, r.y+r.h-40); ctx.lineTo(cx-9+sway*0.7, r.y+r.h-24); ctx.lineTo(cx+9+sway*0.7, r.y+r.h-24); ctx.closePath(); ctx.fill();
         ctx.fillStyle=l3; ctx.beginPath(); ctx.moveTo(cx+sway*0.5, r.y+r.h-48); ctx.lineTo(cx-5+sway*0.4, r.y+r.h-34); ctx.lineTo(cx+5+sway*0.4, r.y+r.h-34); ctx.closePath(); ctx.fill();
