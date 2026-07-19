@@ -1411,9 +1411,6 @@ function currentScenario(){
   if (S.tab === "police_cell") c.push('holding');
   if (S.tab === "nightclub") c.push('nightclub');
   if (S.tab === "woodcutting" || S.tab === "foraging" || S.tab === "lore_stone") c.push('forest');
-  // Actively chopping/foraging out in the village (trees are world objects) → the forest
-  // soundtrack too, so the "wrong song" doesn't play while you're at a tree.
-  else if (S.action && (S.action.skill === "woodcutting" || S.action.skill === "foraging")) c.push('forest');
   c.push('general');
   return resolveScenario(c);
 }
@@ -3434,7 +3431,6 @@ function interactObj(o){
     S.action = { skill:"woodcutting", id:o.ore, objId:o.id, progress:0 };
     toast(`🪓 ${act ? act.n : "Chopping"}...`);
     log(`▶ Started: ${act ? act.n : "Chop Tree"}`);
-    try{ updateMusicZone(); }catch(e){}   // forest soundtrack while chopping in the village
     renderNav(); save(); return;
   }
   if (o.kind==="rock"){
@@ -3727,14 +3723,20 @@ function drawSwingTool(ctx, type, color){
     ctx.beginPath(); ctx.moveTo(6,12);  ctx.lineTo(10,15);  ctx.lineTo(6,16);  ctx.closePath(); ctx.fill();  // right point
     ctx.fillStyle = "#ffffff66"; ctx.fillRect(-5, 13, 10, 1);   // top highlight
   } else if (type === "axe"){
-    // A felling-axe head crowning the handle tip: the poll sits on the shaft and the
-    // bit flares OUT to +x, so after the facing-mirror the cutting edge always leads
-    // into the tree (never trailing "the wrong way").
-    ctx.fillRect(0, 12, 4, 7);               // poll (back of the head, on the shaft)
-    ctx.beginPath();                         // bit — a wedge flaring out to the sharp edge
-    ctx.moveTo(4, 12); ctx.lineTo(11, 13); ctx.lineTo(11, 18); ctx.lineTo(4, 19); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = "#dfe6ef"; ctx.fillRect(10, 13, 1, 5);     // edge shine at the cutting edge
-    ctx.fillStyle = "#00000033"; ctx.fillRect(0, 18, 4, 1);    // underside shade
+    // Axe head crowning the handle tip, with the cutting edge along the BOTTOM so it
+    // leads the downswing. Symmetric about the shaft, so it reads as a proper axe from
+    // either side and can never look "backwards" whichever way the founder faces.
+    ctx.beginPath();
+    ctx.moveTo(-3, 11);
+    ctx.lineTo(3, 11);
+    ctx.lineTo(7, 18);              // flare out to the wide bit
+    ctx.lineTo(4, 21);
+    ctx.lineTo(-4, 21);
+    ctx.lineTo(-7, 18);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#dfe6ef"; ctx.fillRect(-4, 20, 8, 1);     // bright cutting edge (leads the swing)
+    ctx.fillStyle = "#ffffff33"; ctx.fillRect(-2, 12, 4, 1);   // eye/cheek highlight
+    ctx.fillStyle = "#00000033"; ctx.fillRect(-6, 17, 12, 1);  // cheek shade
   } else { // hammer
     ctx.fillRect(-4, 11, 8, 6);              // block head
     ctx.fillStyle = "#dfe6ef"; ctx.fillRect(-4, 11, 8, 1);      // shine
@@ -12170,7 +12172,6 @@ function completeAction(act, skill, silent){
     if (!S.treeRespawn) S.treeRespawn = {};
     S.treeRespawn[S.action.objId] = { choppedAt: Date.now() };
     S.action = null;
-    try{ updateMusicZone(); }catch(e){}   // restore village soundtrack once the tree's down
   }
   // Tutorial auto-stop: the moment the exact tutorial amount is in hand, stop the
   // job so no delayed/idle/swing cycle produces a surplus.
