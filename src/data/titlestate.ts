@@ -43,4 +43,4 @@ export function textScaleValue(scale: string): number {
   return scale === 'small' ? 0.9 : scale === 'large' ? 1.15 : 1.0;
 }
 // Defaults for a NEW/unset save: Frosty Original soundtrack, everything at Low.
-export const DEFAULT_SETTINGS = { music: true, vol: 'low', sfx: true, sfxVol: 'low', soundtrack: 'frosty', motion: true, textScale: 'normal' as TextScale, couch: false };
+export const DEFAULT_SETTINGS = { music: true, vol: 'low', sfx: true, sfxVol: 'low', soundtrack: 'frosty', motion: true, textScale: 'normal' as TextScale, couch: false, clubLights: true, crowd: 'standard' };

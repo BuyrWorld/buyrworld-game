@@ -18,8 +18,8 @@ import { pixelScale } from './world/renderer.ts';
 import { DEFAULT_APPEARANCE, SKIN_TONES, HAIR_COLOURS, HAIR_STYLE_LABELS, SHIRT_COLOURS, TROUSER_COLOURS, FACIAL_HAIR_STYLES, EYE_COLOURS, JACKET_COLOURS, SHOE_COLOURS, ACCESSORY_STYLES, SCARF_COLOURS, HAT_STYLES, HAT_COLOURS } from './player/customisation.ts';
 import { VILLAGERS } from './data/villagers.ts';
 import { HOME_INTERIORS, DEFAULT_THEME, BED_CONFIG, buildLayout, homeCollisionRects } from './data/homeInteriors.ts';
-import { PUBLIC_COLS } from './data/interiorCollision.ts';
-import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme } from './data/clubThemes.ts';
+import { PUBLIC_COLS, ROOM_DIMS } from './data/interiorCollision.ts';
+import { CLUB_THEMES, clubTheme, clubThemeIndex, msToNextTheme, nextClubTheme, clubThemeById } from './data/clubThemes.ts';
 import { SWING_SKILLS, SWING_FRAC, SWING_COOLDOWN_MS, swingClicks } from './data/swing.ts';
 import { TUTORIAL_TARGETS, TUTORIAL_STEPS, TUTORIAL_CONTRACT, tutorialShouldStop, isTutorialItem, tutorialRecovery, TUTORIAL_STAGES, TUTORIAL_GUIDE, TUTORIAL_COMPLETE_BONUS, NAV_HINT, fillTemplate } from './data/tutorial.ts';
 import { GRID as FGRID, FURNITURE, furnitureDef, defaultColor, rotatedSize, footprintCells, canPlace as canPlaceFurn, PLACE_REASONS, slotToGrid, migratePlacement } from './data/furniture.ts';
@@ -2730,7 +2730,7 @@ const INT_W = 320;
 const INT_H = 200;
 // A few interiors get a roomier canvas so there's space to move around. Stations
 // are fractional and collisions/clicks all read these, so everything scales.
-const INT_SIZES = { mining: { w: 448, h: 288 } };
+const INT_SIZES = ROOM_DIMS;   // per-room canvas sizes (mining, nightclub) — shared with collision
 // Returns the current interior canvas logical dimensions
 function icanvasW(){ return (INT_SIZES[S.tab] && INT_SIZES[S.tab].w) || INT_W; }
 function icanvasH(){ return (INT_SIZES[S.tab] && INT_SIZES[S.tab].h) || INT_H; }
@@ -3481,6 +3481,7 @@ function interactObj(o){
     S.trespass = { active: false, homeId: null };
     S.fleeUntil = 0;
   }
+  if (o.tab === "nightclub"){ try{ _clubStartReveal(); }catch(e){} }   // themed-night entry reveal
   renderNav(); renderMain(); showZoneCard(o.tab);
 }
 // Map a world NPC id to its social/dialogue profile id (Frosty wanders as "frost").
@@ -7322,6 +7323,290 @@ function updateWanderers(dt){
     moveActor(w, dt, night ? 20 : 30);
   }
 }
+// ============================================================================
+// CLUB FEATHERSTONE — nightclub subsystem (lighting, crowd, reveal, POIs)
+// A shared, deterministic, reduced-motion-aware set of helpers for the rebuilt
+// nightclub. No dependency on audio loading: the "beat" is a deterministic clock, so
+// the venue is always alive even when audio is suspended/muted. All positions are in
+// the 480×270 club canvas (ROOM_DIMS.nightclub).
+// ============================================================================
+const CLUB_BPM = 124;                                  // deterministic simulated tempo
+// Named interaction points (drawn + surfaced as panel buttons). In canvas coords.
+function _clubPOI(){
+  return {
+    bouncerL: { x:196, y:236 }, bouncerR: { x:284, y:236 },
+    bartender:{ x:82,  y:140 }, dj:{ x:240, y:92 },
+    roxy:     { x:410, y:150 },                        // named social NPC (lounge promoter)
+  };
+}
+// Reduced lighting effects when the player asks for calm, or reduced-motion is set.
+function _clubCalm(){ return _reducedMotion() || (S.settings && S.settings.clubLights === false); }
+// A deterministic beat envelope 0..1 (sharp attack, smooth decay). Calm → gentle, slow
+// breathing so nothing pulses hard. Never a rapid strobe. `t` is seconds.
+function _clubBeat(t){
+  if (_clubCalm()) return 0.45 + 0.15*Math.sin(t*1.6);
+  const beats = t * (CLUB_BPM/60);
+  const ph = beats - Math.floor(beats);                // 0..1 within the beat
+  const env = Math.pow(1 - ph, 1.7);                   // attack on the beat, decay after
+  return 0.35 + 0.65*env;
+}
+// Crowd pool — deterministic positions on the dance floor, sized by density tier.
+let _clubCrowd = null, _clubCrowdKey = "";
+function _clubDensity(){
+  const d = (S.settings && S.settings.crowd) || 'standard';
+  return d === 'low' ? 14 : d === 'high' ? 40 : 26;    // dancers on the floor
+}
+function _clubCrowdList(theme){
+  const key = theme.id + ':' + _clubDensity();
+  if (_clubCrowd && _clubCrowdKey === key) return _clubCrowd;
+  // Deterministic PRNG so the crowd is stable within a visit (no per-frame churn).
+  let seed = 0; for (let i=0;i<key.length;i++) seed = (seed*31 + key.charCodeAt(i)) & 0x7fffffff;
+  const rnd = () => { seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const n = _clubDensity();
+  const hairs = ["#2a1a0a","#6a4a2a","#c9a24b","#3a2a1a","#1a1a1a","#8a5a3a","#c86a4a","#e0d0b0"];
+  const arr = [];
+  // Dance floor bounds (kept off the essential edge corridors).
+  const X0=168, X1=312, Y0=118, Y1=212;
+  for (let i=0;i<n;i++){
+    const o = theme.outfit[i % theme.outfit.length];
+    arr.push({
+      x: X0 + rnd()*(X1-X0), y: Y0 + rnd()*(Y1-Y0),
+      shirt: o[0], trouser: o[1], hair: hairs[(i*3+Math.floor(rnd()*8))%hairs.length],
+      female: rnd() < 0.5, phase: rnd()*Math.PI*2, style: Math.floor(rnd()*3), face: rnd()<0.5?1:-1,
+    });
+  }
+  _clubCrowd = arr; _clubCrowdKey = key; return arr;
+}
+// One-time entry reveal (per visit). performance.now() timestamp; cleared on skip.
+let _clubRevealAt = 0;
+function _clubStartReveal(){ _clubRevealAt = (typeof performance!=='undefined'?performance.now():Date.now()); }
+function _clubSkipReveal(){ _clubRevealAt = 0; }
+const CLUB_REVEAL_MS = 2200;
+function _clubRevealActive(){
+  if (!_clubRevealAt) return false;
+  const now = (typeof performance!=='undefined'?performance.now():Date.now());
+  if (now - _clubRevealAt > CLUB_REVEAL_MS){ _clubRevealAt = 0; return false; }
+  return true;
+}
+// The rebuilt Club Featherstone — a wide 16:9 industrial-warehouse venue with distinct
+// zones (entrance, dance floor, DJ stage, bar, lounge, VIP), theme-driven lighting, a
+// pooled crowd and a skippable entry reveal. Drawn in the 480×270 club canvas.
+function drawNightclub(ctx, t, W, H){
+  const _th = clubTheme();
+  const beat = _clubBeat(t);                 // 0..1 deterministic (audio-independent)
+  const calm = _clubCalm();
+  const aa = (v)=>{ const n=Math.max(0,Math.min(255,Math.round(v))); return n.toString(16).padStart(2,'0'); };
+  const neon = _th.neon, neon2 = _th.neon2, warm = "#ffb24a";
+  const P = _clubPOI();
+
+  // ---- 0. base + reflective floor ------------------------------------------
+  ctx.fillStyle="#0a0812"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#0c0a18"; ctx.fillRect(0,108,W,H-108);                 // floor
+  // gentle floor sheen graded toward the stage
+  ctx.fillStyle="rgba(120,120,200,0.05)"; ctx.fillRect(120,108,W-240,60);
+
+  // ---- 1. ceiling trusses + moving-head fixtures ---------------------------
+  ctx.fillStyle="#0f0a1a"; ctx.fillRect(0,0,W,26);
+  ctx.fillStyle="#1c1730"; ctx.fillRect(0,22,W,4);                       // truss chord
+  for(let x=20;x<W;x+=48){ ctx.fillStyle="#181228"; ctx.fillRect(x,6,3,18); ctx.fillRect(x+22,6,3,18);
+    ctx.strokeStyle="#221a38"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x,8); ctx.lineTo(x+24,20); ctx.moveTo(x+24,8); ctx.lineTo(x,20); ctx.stroke(); }
+  const heads=[110,190,290,370];
+  heads.forEach((hx,i)=>{ ctx.fillStyle="#2a2036"; ctx.fillRect(hx-5,24,10,6); ctx.fillStyle=(i%2?neon:neon2); ctx.fillRect(hx-3,29,6,2); });
+
+  // ---- 2. spotlight beams sweeping to the stage ----------------------------
+  const beamA = calm ? 26 : 24+beat*70;
+  heads.forEach((hx,i)=>{
+    const sway = calm ? 0 : Math.sin(t*0.7+i*1.3)*22;
+    const tipX = 150 + i*60 + sway;
+    ctx.fillStyle=(i%2?neon:neon2)+aa(beamA*0.5);
+    ctx.beginPath(); ctx.moveTo(hx-4,30); ctx.lineTo(hx+4,30); ctx.lineTo(tipX+16,150); ctx.lineTo(tipX-16,150); ctx.closePath(); ctx.fill();
+  });
+
+  // ---- 3. DJ stage ---------------------------------------------------------
+  // back screen
+  const sx=180, sy=30, sw=120, sh=56;
+  ctx.fillStyle="#07070f"; ctx.fillRect(sx-4,sy-4,sw+8,sh+8);
+  ctx.fillStyle="#0a0a1c"; ctx.fillRect(sx,sy,sw,sh);
+  drawClubScreen(ctx, _th, sx, sy, sw, sh, t, beat, aa);
+  // LED columns flanking the screen
+  for(const cx of [sx-12, sx+sw+6]){ for(let r=0;r<9;r++){
+    const on = calm ? (r%2===0) : ((Math.floor(t*6)+r)%3!==0);
+    ctx.fillStyle = on ? (r%2?neon:neon2) : "#161226"; ctx.fillRect(cx,sy+r*6,6,4); } }
+  // stage platform
+  ctx.fillStyle="#141020"; ctx.fillRect(168,90,144,20);                 // platform front face
+  ctx.fillStyle="#1b1530"; ctx.fillRect(168,86,144,6);                  // platform top edge
+  ctx.fillStyle=neon+aa(120+beat*100); ctx.fillRect(168,88,144,2);      // LED trim (beat)
+  // steps down to the floor
+  ctx.fillStyle="#100c1c"; ctx.fillRect(222,110,36,6); ctx.fillRect(214,116,52,5);
+  // speaker stacks
+  for(const spx of [140,316]){ ctx.fillStyle="#0d0a16"; ctx.fillRect(spx,44,24,64);
+    ctx.fillStyle="#070510"; for(const spy of [56,84]){ const r=6+(calm?1:beat*4); ctx.beginPath(); ctx.arc(spx+12,spy,r,0,7); ctx.fill(); }
+    ctx.fillStyle=neon+"55"; ctx.fillRect(spx,44,24,2); ctx.fillStyle="#1a1428"; ctx.fillRect(spx,70,24,2); }
+  // DJ booth + Frosty (snowman DJ)
+  ctx.fillStyle="#171029"; ctx.fillRect(216,74,48,16); ctx.fillStyle=neon2+aa(140); ctx.fillRect(216,74,48,2);
+  for(const cd of [228,252]){ ctx.fillStyle="#0a0a12"; ctx.beginPath(); ctx.arc(cd,82,5,0,7); ctx.fill();
+    ctx.strokeStyle=neon2; ctx.lineWidth=1; const a=t*8; ctx.beginPath(); ctx.moveTo(cd,82); ctx.lineTo(cd+Math.cos(a)*3.5,82+Math.sin(a)*3.5); ctx.stroke(); }
+  // Frosty the snowman DJ
+  const fbx=P.dj.x, fby=P.dj.y-4;
+  ctx.fillStyle="#eef4ff"; ctx.beginPath(); ctx.arc(fbx,fby,7,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(fbx,fby-8,5,0,7); ctx.fill();
+  ctx.fillStyle="#17161a"; ctx.fillRect(fbx-5,fby-14,10,4); ctx.fillRect(fbx-6,fby-11,12,2);   // beanie
+  ctx.fillStyle="#1a1a22"; ctx.fillRect(fbx-2,fby-9,1.5,1.5); ctx.fillRect(fbx+1,fby-9,1.5,1.5);
+  ctx.fillStyle="#ff8a3a"; ctx.fillRect(fbx+2,fby-8,3,1.5);   // carrot nose
+  drawEmojiC(ctx,"🎧",fbx,fby-16,9);
+
+  // ---- 4. STAY FROSTY neon (left back wall) --------------------------------
+  { const nx=16,ny=30; const glow = calm?0.7:(0.6+beat*0.4);
+    ctx.fillStyle="rgba(90,209,255,"+(0.10*glow).toFixed(2)+")"; ctx.fillRect(nx-3,ny-4,84,22);
+    drawEmojiC(ctx,"❄️",nx+6,ny+7,11);
+    ctx.fillStyle="#5ad1ff"; ctx.font="700 8px 'IBM Plex Mono',monospace"; ctx.textAlign="left";
+    ctx.globalAlpha=glow; ctx.fillText("STAY FROSTY", nx+16, ny+10); ctx.globalAlpha=1; }
+
+  // ---- 5. VIP (top-right, gated) -------------------------------------------
+  ctx.fillStyle="#100e1a"; ctx.fillRect(360,26,120,58);                 // raised platform
+  ctx.fillStyle="#181528"; ctx.fillRect(360,26,120,4);
+  // green VIP neon
+  ctx.fillStyle="rgba(60,224,122,0.14)"; ctx.fillRect(398,30,54,16);
+  ctx.fillStyle="#3ce07a"; ctx.font="700 10px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.fillText("VIP", 425, 42); ctx.textAlign="left";
+  // railing
+  ctx.fillStyle="#2a2440"; ctx.fillRect(360,70,112,3); for(let rx=364;rx<472;rx+=12){ ctx.fillStyle="#3a3454"; ctx.fillRect(rx,70,2,10); }
+  // a couple of VIP patrons behind the rail
+  drawPerson(ctx,392,64,"#3a2a1a","#c04aff",t,false,1,null,"down",null,"#1a1a2a",null,true,0.82);
+  drawPerson(ctx,440,64,"#1a1a1a",warm,t,false,-1,null,"down",null,"#2a2436",null,false,0.82);
+  // velvet-rope stairs teaser (locked)
+  ctx.fillStyle="#0c0a16"; ctx.fillRect(344,84,16,10); ctx.fillStyle=warm+"88"; ctx.fillRect(344,84,16,2);
+  drawEmojiC(ctx,"🔒",352,90,8);
+
+  // ---- 6. BAR (left) -------------------------------------------------------
+  // back shelf with backlit bottles
+  ctx.fillStyle="#120e1e"; ctx.fillRect(16,120,132,26);
+  ctx.fillStyle="rgba(255,178,74,0.16)"; ctx.fillRect(18,122,128,22);
+  const bottleCol=["#7ad1ff","#ff8a5c","#8affb0","#ffe15a","#c88aff","#ff6a9a"];
+  for(let i=0;i<14;i++){ ctx.fillStyle=bottleCol[i%bottleCol.length]; ctx.fillRect(22+i*9,124+(i%2?2:0),4,10); ctx.fillStyle="rgba(255,255,255,.4)"; ctx.fillRect(23+i*9,125,1,3); }
+  // BAR vertical sign
+  ctx.fillStyle="rgba(255,178,74,0.18)"; ctx.fillRect(14,98,14,20);
+  ctx.fillStyle=warm; ctx.font="700 8px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+  "BAR".split("").forEach((ch,i)=> ctx.fillText(ch, 21, 106+i*4)); ctx.textAlign="left";
+  // counter
+  ctx.fillStyle="#241a12"; ctx.fillRect(16,150,132,22); ctx.fillStyle="#3a2a1c"; ctx.fillRect(16,150,132,4);
+  ctx.fillStyle=warm+aa(110+ (calm?20:beat*60)); ctx.fillRect(16,171,132,2);   // warm under-glow
+  // stools + bartender + patrons
+  for(const stx of [40,74,108]){ ctx.fillStyle="#1a1420"; ctx.beginPath(); ctx.arc(stx,180,4,0,7); ctx.fill(); }
+  drawPerson(ctx,P.bartender.x,P.bartender.y,"#2a1a10","#e8e2d0",t,false,1,null,"down",null,"#3a2a18",null,false,0.9);
+  drawEmojiC(ctx,"🍸",P.bartender.x+16,P.bartender.y-6,9);
+  drawPerson(ctx,52,178,"#6a4a2a",_th.outfit[1][0],t,false,1,null,"down",null,_th.outfit[1][1],null,true,0.86);
+  drawPerson(ctx,112,178,"#2a1a0a",_th.outfit[0][0],t,false,-1,null,"down",null,_th.outfit[0][1],null,false,0.86);
+
+  // ---- 7. LOUNGE booths (right) --------------------------------------------
+  const booths=[124,170,216];
+  booths.forEach((by,i)=>{
+    ctx.fillStyle="#161020"; ctx.fillRect(356,by,112,30);                // booth back
+    ctx.fillStyle=(i%2?neon2:neon)+"33"; ctx.fillRect(356,by,112,3);     // neon trim
+    ctx.fillStyle="#20182e"; ctx.fillRect(360,by+6,104,18);             // sofa
+    ctx.fillStyle="#2a2038"; ctx.fillRect(398,by+12,28,10);             // table
+    // lantern (warm) + plant
+    ctx.fillStyle="rgba(255,180,90,"+(0.5+ (calm?0:Math.sin(t*2+i)*0.2)).toFixed(2)+")"; ctx.beginPath(); ctx.arc(412,by+14,3,0,7); ctx.fill();
+    ctx.fillStyle="#173a20"; ctx.beginPath(); ctx.arc(458,by+8,5,0,7); ctx.fill();
+  });
+  // seated NPCs (partly behind sofas)
+  drawPerson(ctx,378,booths[0]+10,"#3a2a1a",_th.outfit[2][0],t,false,1,null,"down",null,_th.outfit[2][1],null,true,0.8);
+  drawPerson(ctx,442,booths[1]+10,"#1a1a1a",_th.outfit[0][0],t,false,-1,null,"down",null,_th.outfit[0][1],null,false,0.8);
+  drawPerson(ctx,382,booths[2]+10,"#6a4a2a",_th.outfit[3?3:0]?.[0]||_th.outfit[0][0],t,false,1,null,"down",null,_th.outfit[0][1],null,true,0.8);
+  // Roxy — named promoter (upper booth), with a chat tag
+  drawPerson(ctx,P.roxy.x,P.roxy.y,"#c04a6a",_th.neon,t,false,-1,null,"down","#f2c49a","#2a1a2a",null,true,0.9);
+  drawEmojiC(ctx,"💬",P.roxy.x,P.roxy.y-16,9);
+
+  // ---- 8. DANCE FLOOR (centre) ---------------------------------------------
+  const fx0=168, fy0=112, fw=144, fh=102, cs=18;
+  for(let gy=fy0; gy<fy0+fh; gy+=cs) for(let gx=fx0; gx<fx0+fw; gx+=cs){
+    const ci=(Math.floor(gx/cs)+Math.floor(gy/cs)+ (calm?0:Math.floor(t*3)))%_th.floor.length;
+    const lit = ((Math.floor(gx/cs)+Math.floor(gy/cs)) % 2)===0;
+    ctx.globalAlpha = (lit ? 0.5 : 0.22) * (calm?0.8:(0.6+beat*0.6));
+    ctx.fillStyle=_th.floor[ci]; ctx.fillRect(gx+1,gy+1,cs-2,cs-2);
+  }
+  ctx.globalAlpha=1;
+  ctx.strokeStyle=neon+aa(120+ (calm?0:beat*80)); ctx.lineWidth=1; ctx.strokeRect(fx0,fy0,fw,fh);
+
+  // ---- 9. CROWD (pooled, deterministic, non-blocking) ----------------------
+  const crowd=_clubCrowdList(_th);
+  const bobAmp = calm ? 0.6 : (1.5 + _th.crowdEnergy*3);
+  for(const d of crowd){
+    const bob = Math.sin(t*(calm?2:8)*_th.crowdEnergy + d.phase)*bobAmp;
+    // soft shadow
+    ctx.fillStyle="rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(d.x, d.y+9, 5, 2, 0, 0, 7); ctx.fill();
+    drawPerson(ctx, d.x, d.y+bob, d.hair, d.shirt, t, !calm, d.face, null, "down", null, d.trouser, null, d.female, 0.82);
+  }
+
+  // ---- 10. ENTRANCE framing (bottom) ---------------------------------------
+  // BW crates (bottom-left)
+  for(const [cx,cy] of [[26,228],[64,236],[30,254]]){ ctx.fillStyle="#2a2620"; ctx.fillRect(cx,cy,30,22); ctx.fillStyle="#3a352c"; ctx.fillRect(cx,cy,30,3);
+    ctx.strokeStyle="#4a4438"; ctx.lineWidth=1; ctx.strokeRect(cx+1,cy+1,28,20); ctx.fillStyle="#8a8270"; ctx.font="700 7px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.fillText("BW",cx+15,cy+15); ctx.textAlign="left"; }
+  // planter + conveyor chevrons (bottom-right)
+  ctx.fillStyle="#241c14"; ctx.fillRect(396,230,26,30); ctx.fillStyle="#1a5a28"; ctx.beginPath(); ctx.arc(409,228,9,0,7); ctx.fill(); ctx.fillStyle="#2a7a38"; ctx.beginPath(); ctx.arc(403,224,5,0,7); ctx.arc(415,224,5,0,7); ctx.fill();
+  for(let cyc=0;cyc<4;cyc++){ const yy=232+cyc*8; ctx.fillStyle=warm+aa(calm?120:(90+((Math.floor(t*4)+cyc)%2)*120)); ctx.beginPath(); ctx.moveTo(432,yy); ctx.lineTo(440,yy+3); ctx.lineTo(432,yy+6); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(444,yy); ctx.lineTo(452,yy+3); ctx.lineTo(444,yy+6); ctx.closePath(); ctx.fill(); }
+  // BUYRWORLD floor mat
+  ctx.fillStyle="#0e0c16"; ctx.fillRect(212,240,56,22); ctx.strokeStyle="#2a2640"; ctx.lineWidth=1; ctx.strokeRect(212,240,56,22);
+  drawEmojiC(ctx,"🌐",240,247,9); ctx.fillStyle="#9aa0c0"; ctx.font="700 6px 'IBM Plex Mono',monospace"; ctx.textAlign="center"; ctx.fillText("BUYRWORLD",240,258);
+  for(let i=0;i<11;i++){ ctx.fillStyle=i%2?"#2a2640":"#4a4670"; ctx.fillRect(220+i*3,260,2,1); } ctx.textAlign="left";
+  // bouncers (flank the mat; never in the exit lane)
+  for(const bx of [P.bouncerL.x, P.bouncerR.x]){
+    drawPerson(ctx,bx,236,"#141414","#20202a",t,false, bx<240?1:-1,null,"down","#d8b088","#111119",null,false,1.02);
+    drawEmojiC(ctx,"🕶️",bx,224,8);
+  }
+
+  // ---- 11. atmosphere: haze wash + interaction hint glyphs ------------------
+  if(!calm){ ctx.fillStyle=neon+aa(6+beat*10); ctx.fillRect(150,30,180,90); }
+  // small ambient POI markers so players see where to interact (panel drives action)
+  ctx.font="8px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+  ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fillText("🎧", P.dj.x, P.dj.y+18);
+
+  // ---- 12. persistent theme pill (top-centre, unobtrusive) -----------------
+  const pill=_th.emoji+" "+_th.name.toUpperCase();
+  ctx.font="700 8px 'IBM Plex Mono',monospace"; const pw=ctx.measureText(pill).width+16;
+  ctx.fillStyle="rgba(6,6,14,.7)"; ctx.fillRect(W/2-pw/2,4,pw,14); ctx.strokeStyle=neon; ctx.lineWidth=1; ctx.strokeRect(W/2-pw/2,4,pw,14);
+  ctx.fillStyle=neon; ctx.textAlign="center"; ctx.fillText(pill,W/2,14); ctx.textAlign="left";
+
+  // ---- 13. entry reveal card (per visit, skippable) ------------------------
+  if(_clubRevealActive()){
+    const now=(typeof performance!=='undefined'?performance.now():Date.now());
+    const p=(now-_clubRevealAt)/CLUB_REVEAL_MS;                 // 0..1
+    const alpha = p<0.15 ? p/0.15 : p>0.75 ? Math.max(0,(1-p)/0.25) : 1;
+    ctx.globalAlpha=alpha*0.85; ctx.fillStyle="#05050c"; ctx.fillRect(0,0,W,H); ctx.globalAlpha=alpha;
+    ctx.fillStyle=neon; ctx.font="700 16px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+    ctx.fillText(_th.emoji+"  CLUB FEATHERSTONE", W/2, H/2-16);
+    ctx.fillStyle="#eef2ff"; ctx.font="700 13px 'IBM Plex Mono',monospace"; ctx.fillText("Tonight: "+_th.name, W/2, H/2+6);
+    ctx.fillStyle=neon2; ctx.font="9px 'IBM Plex Mono',monospace"; ctx.fillText(_th.tag, W/2, H/2+22);
+    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.font="8px 'IBM Plex Mono',monospace"; ctx.fillText("tap / press to enter", W/2, H/2+40);
+    ctx.textAlign="left"; ctx.globalAlpha=1;
+  }
+}
+// The DJ back-screen visual, chosen by the theme (globe/barcode, conveyor, QC scan,
+// arcade, freight). Small + cheap; branding text is always legible.
+function drawClubScreen(ctx, th, x, y, w, h, t, beat, aa){
+  ctx.save(); ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
+  const cx=x+w/2, neon=th.neon, neon2=th.neon2;
+  ctx.fillStyle="#0a0a1e"; ctx.fillRect(x,y,w,h);
+  if (th.screenVisual==='conveyor'){
+    for(let i=0;i<5;i++){ const bx=x+((i*30 + Math.floor(t*24))%(w+24))-12; ctx.fillStyle=i%2?neon:neon2; ctx.fillRect(bx,y+h-20,14,10); }
+    ctx.fillStyle="#2a2440"; ctx.fillRect(x,y+h-8,w,3);
+  } else if (th.screenVisual==='qc_scan'){
+    ctx.fillStyle="#3a1414"; ctx.fillRect(x,y,w/2,h); ctx.fillStyle="#143a1e"; ctx.fillRect(x+w/2,y,w/2,h);
+    const lx=x+((Math.sin(t*1.5)*0.5+0.5)*w); ctx.fillStyle="#eaffea"; ctx.fillRect(lx-1,y,2,h);
+  } else if (th.screenVisual==='arcade'){
+    for(let gy=y;gy<y+h;gy+=8) for(let gx=x;gx<x+w;gx+=8){ ctx.fillStyle=((gx+gy+Math.floor(t*6)*8)%24===0)?neon:((gx+gy)%16===0?neon2:"#12122a"); ctx.fillRect(gx,gy,7,7); }
+  } else if (th.screenVisual==='freight'){
+    ctx.fillStyle="#1a2436"; ctx.fillRect(x+10,y+18,w-20,h-30);
+    for(let i=0;i<4;i++){ const ax=x+14+((i*24+Math.floor(t*20))%(w-24)); ctx.fillStyle="#ff8a1e"; ctx.beginPath(); ctx.moveTo(ax,y+h-14); ctx.lineTo(ax+8,y+h-10); ctx.lineTo(ax,y+h-6); ctx.closePath(); ctx.fill(); }
+  } else { // globe_barcode (default / Frosty)
+    ctx.strokeStyle=neon2+aa(160); ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,y+16,9,0,7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-9,y+16); ctx.lineTo(cx+9,y+16); ctx.moveTo(cx,y+7); ctx.lineTo(cx,y+25); ctx.stroke();
+    for(let i=0;i<20;i++){ ctx.fillStyle=i%3?"#dfe6ff":"#5a5a8a"; ctx.fillRect(x+8+i*((w-16)/20), y+h-12, ((i*7)%3)+1, 8); }
+  }
+  // branding text (always readable over the visual)
+  ctx.fillStyle="rgba(4,4,12,.5)"; ctx.fillRect(x, y+h/2-8, w, 16);
+  ctx.fillStyle="#eef2ff"; ctx.font="700 11px 'IBM Plex Mono',monospace"; ctx.textAlign="center";
+  ctx.fillText(th.branding || "BUYRWORLD", cx, y+h/2+4); ctx.textAlign="left";
+  ctx.restore();
+}
 function drawInterior(t){
   const cv = document.getElementById("interior");
   if (!cv) return;
@@ -9046,56 +9331,7 @@ function drawInterior(t){
     ctx.fillStyle="#1a5a28"; ctx.beginPath(); ctx.arc(W-20,H-46,10,0,7); ctx.fill();
     ctx.fillStyle="#2a7a38"; ctx.beginPath(); ctx.arc(W-26,H-50,7,0,7); ctx.arc(W-14,H-50,7,0,7); ctx.fill();
   }
-  if (S.tab==="nightclub"){
-    // Club Featherstone — dark venue, themed night (M11)
-    const _th = clubTheme();
-    const _pulse = 0.5 + 0.5*Math.sin(t*6);
-    ctx.fillStyle="#0e0a16"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#160e22"; ctx.fillRect(0,0,W,46);                 // back wall
-    ctx.fillStyle=_th.neon;  ctx.fillRect(0,44,W,2);                 // neon wall strips
-    ctx.fillStyle=_th.neon2; ctx.fillRect(0,H-3,W,3);
-    // disco ball + light rays
-    const _dbx=W/2, _dby=30;
-    for(let r=0;r<8;r++){ const a=t*0.6+r*Math.PI/4; ctx.strokeStyle=(r%2?_th.neon:_th.neon2)+"44"; ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(_dbx,_dby); ctx.lineTo(_dbx+Math.cos(a)*190,_dby+Math.sin(a)*190); ctx.stroke(); }
-    ctx.fillStyle="#c8c8d8"; ctx.beginPath(); ctx.arc(_dbx,_dby,7,0,7); ctx.fill();
-    for(let i=0;i<6;i++){ ctx.fillStyle=i%2?"#fff":"#8a8aa0"; ctx.fillRect(_dbx-6+i*2,_dby-6,2,12); }
-    // dance-floor grid (theme palette, pulsing)
-    const _fx0=70,_fy0=72,_cols=8,_rows=5,_cs=22;
-    for(let r=0;r<_rows;r++) for(let c=0;c<_cols;c++){
-      const idx=(r+c+Math.floor(t*3))%_th.floor.length;
-      ctx.globalAlpha=(((c+r+Math.floor(t*2))%2)===0)?0.85:0.4; ctx.fillStyle=_th.floor[idx];
-      ctx.fillRect(_fx0+c*_cs,_fy0+r*_cs,_cs-2,_cs-2);
-    }
-    ctx.globalAlpha=1;
-    // DJ booth (back centre)
-    ctx.fillStyle="#1a1226"; ctx.fillRect(120,10,80,28); ctx.fillStyle=_th.neon+"aa"; ctx.fillRect(120,10,80,3);
-    for(const _tx of [138,182]){ ctx.fillStyle="#2a2a32"; ctx.beginPath(); ctx.arc(_tx,26,8,0,7); ctx.fill();
-      ctx.fillStyle="#0a0a0a"; ctx.beginPath(); ctx.arc(_tx,26,6,0,7); ctx.fill();
-      ctx.strokeStyle=_th.neon2; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(_tx,26); ctx.lineTo(_tx+Math.cos(t*8)*5,26+Math.sin(t*8)*5); ctx.stroke(); }
-    drawPerson(ctx,160,20,"#1a1a1a",_th.neon,t,false,1,null,"down",null,"#0a0a0a",null,false);
-    drawEmojiC(ctx,"🎧",160,9,10);
-    // speaker stacks
-    for(const _sx of [10,286]){ ctx.fillStyle="#14101c"; ctx.fillRect(_sx,10,24,34);
-      ctx.fillStyle="#0a0810"; for(const _sy of [17,31]){ ctx.beginPath(); ctx.arc(_sx+12,_sy,6+_pulse*2,0,7); ctx.fill(); }
-      ctx.fillStyle=_th.neon+"66"; ctx.fillRect(_sx,10,24,2); }
-    // bar (right)
-    ctx.fillStyle="#1c1428"; ctx.fillRect(250,96,60,20); ctx.fillStyle=_th.neon2+"88"; ctx.fillRect(250,96,60,3);
-    drawEmojiC(ctx,"🍹",266,104,10); drawEmojiC(ctx,"🥤",292,104,9);
-    drawPerson(ctx,280,92,"#2a1a2a","#e0e0e8",t,false,-1,null,"down",null,"#1a1a20",null,true);
-    // dancing crowd (theme outfits, bobbing)
-    const _dancers=[[100,152],[150,162],[200,152],[128,126],[184,128]];
-    _dancers.forEach((p,i)=>{ const o=_th.outfit[i%_th.outfit.length]; const bob=Math.sin(t*8+i*1.3)*3;
-      drawPerson(ctx,p[0],p[1]+bob,(["#2a1a0a","#6a4a2a","#c9a24b"] as string[])[i%3],o[0],t,true,i%2?1:-1,null,"down",null,o[1],null,i%2===0); });
-    // bouncer by the door
-    drawPerson(ctx,W/2+42,H-30,"#1a1a1a","#2a2a2a",t,false,-1,null,"down",null,"#111111",null,false);
-    drawEmojiC(ctx,"🕶️",W/2+42,H-40,8);
-    // theme banner (drawn last, on top)
-    ctx.fillStyle="rgba(0,0,0,.55)"; ctx.fillRect(W/2-72,4,144,15);
-    ctx.strokeStyle=_th.neon; ctx.lineWidth=1; ctx.strokeRect(W/2-72,4,144,15);
-    ctx.fillStyle=_th.neon; ctx.font="bold 8px monospace"; ctx.textAlign="center";
-    ctx.fillText(_th.emoji+" "+_th.name.toUpperCase(), W/2, 14); ctx.textAlign="left"; ctx.font="10px monospace";
-  }
+  if (S.tab==="nightclub"){ drawNightclub(ctx, t, W, H); }
   if (S.tab==="robotics_lab"){
     // Automation Lab — server racks, robot arm, charging bots
     room("#3a4a5a","#7a8a9a","#c0c8d0","#b4bcc6","#2a3440");
@@ -10036,6 +10272,7 @@ function setupVillage(){
 function interiorClick(e){
   const cv = document.getElementById("interior");
   if (!cv) return;
+  if (S.tab==="nightclub" && _clubRevealActive()){ _clubSkipReveal(); return; }   // tap to skip the club reveal
   const rect = cv.getBoundingClientRect();
   const cx = (e.clientX - rect.left) * (icanvasW() / rect.width);
   const cy = (e.clientY - rect.top) * (icanvasH() / rect.height);
@@ -14329,20 +14566,42 @@ function renderRoboticsLab(): string {
 }
 function renderNightclub(): string {
   const _th = clubTheme();
+  const _next = nextClubTheme();
   const _mins = Math.max(1, Math.ceil(msToNextTheme()/60000));
   const _danceMs = (S.danceBuff||0) - Date.now();
   const _line = _th.lines[Math.floor(Date.now()/6000) % _th.lines.length];
+  const _n = _th.neon, _n2 = _th.neon2;
   const _buff = _danceMs > 0
-    ? `<div style="background:rgba(255,255,255,.06);border:1px solid ${_th.neon}66;border-radius:4px;padding:6px 10px;font-size:12px;color:${_th.neon};margin-bottom:8px">💃 On the floor! All action speed +15% for ${Math.ceil(_danceMs/60000)} more min.</div>`
+    ? `<div style="background:rgba(255,255,255,.06);border:1px solid ${_n}66;border-radius:4px;padding:6px 10px;font-size:12px;color:${_n};margin-bottom:8px">💃 On the floor! All action speed +15% for ${Math.ceil(_danceMs/60000)} more min.</div>`
     : "";
-  const _rotation = CLUB_THEMES.map(x => x.id===_th.id ? `<b style="color:${_th.neon}">${x.name}</b>` : x.name).join(" · ");
-  return `<div class="panel" style="padding:10px">
-    <h3 style="margin:0 0 4px;color:${_th.neon}">${_th.emoji} ${_th.name}</h3>
-    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_th.tag} · next night in ~${_mins} min</p>
+  const _rotation = CLUB_THEMES.map(x => x.id===_th.id ? `<b style="color:${_n}">${x.name}</b>` : x.name).join(" · ");
+  const _btn = (attr, label, bg) => `<button ${attr} style="background:${bg};color:#0a0810;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700;margin:0 6px 6px 0">${label}</button>`;
+  const _calm = (S.settings && S.settings.clubLights === false);
+  const _crowd = (S.settings && S.settings.crowd) || 'standard';
+  const _crowdOpt = (v,lbl) => `<button data-club-crowd="${v}" style="background:${_crowd===v?_n:'#231d33'};color:${_crowd===v?'#0a0810':'#cdd3e6'};border:none;padding:3px 9px;border-radius:3px;cursor:pointer;font-size:11px">${lbl}</button>`;
+  return `<div class="panel" style="padding:10px;border-color:${_n}55">
+    <h3 style="margin:0 0 4px;color:${_n}">${_th.emoji} ${_th.name}</h3>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 6px">${_th.tag}</p>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 8px">${_th.description}</p>
     <p style="font-size:12px;margin:0 0 10px"><i>"${_line}"</i></p>
     ${_buff}
-    <button data-dance style="background:${_th.neon};color:#160a12;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:700">💃 Hit the dance floor</button>
-    <p style="font-size:10px;color:var(--dim);margin:12px 0 0">Themed nights rotate every 7 game days:<br>${_rotation}</p>
+    <div style="margin-bottom:6px">
+      ${_btn('data-dance', '💃 Dance', _n)}
+      ${_btn('data-club-bar', '🍸 Order a drink', '#ffb24a')}
+      ${_btn('data-club-dj', '🎧 Talk to Frosty (DJ)', _n2)}
+    </div>
+    <div style="margin-bottom:8px">
+      ${_btn('data-club-bouncer', '🕶️ Ask the bouncer', '#9aa0c0')}
+      ${_btn('data-club-roxy', '💬 Chat with Roxy', '#e06aa0')}
+    </div>
+    <div style="border-top:1px solid #2a2440;padding-top:8px;margin-top:2px">
+      <p style="font-size:10px;color:var(--dim);margin:0 0 4px">Crowd density</p>
+      <div style="margin-bottom:8px">${_crowdOpt('low','Low')} ${_crowdOpt('standard','Standard')} ${_crowdOpt('high','High')}</div>
+      <label style="font-size:11px;color:var(--dim);display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" data-club-calm ${_calm?'checked':''}> Reduced lighting effects (calmer strobes/sweeps)
+      </label>
+    </div>
+    <p style="font-size:10px;color:var(--dim);margin:10px 0 0">Next night in ~${_mins} min → <b style="color:${_n2}">${_next.emoji} ${_next.name}</b>. Rotation:<br>${_rotation}</p>
   </div>`;
 }
 function renderPub(): string {
@@ -16470,12 +16729,72 @@ function bindMain(){
     const sk = (b as HTMLElement).dataset.autoscrap;
     if (S.automatons?.[sk]){ delete S.automatons[sk]; toast("Automaton dismantled."); renderMain(); updateHud(); save(); }
   });
-  // nightclub — hit the dance floor
+  // nightclub — hit the dance floor (short, non-locking; refreshes the buff)
   document.querySelectorAll("[data-dance]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    _clubSkipReveal();
     S.danceBuff = Date.now() + 5*60000;
     MUSIC.unlocked = true;
-    toast("💃 You hit the dance floor — buzzing! (+15% speed, 5 min)");
+    const _th = clubTheme();
+    const _moves = ['bust a move', 'throw some shapes', 'find the groove', 'own the floor'];
+    toast(`💃 You ${_moves[Math.floor(Math.random()*_moves.length)]} — ${_th.name}! (+15% speed, 5 min)`);
     renderMain(); updateHud(); save();
+  });
+  // nightclub — bartender (theme cocktail → a short buff; reuses the drink economy)
+  document.querySelectorAll("[data-club-bar]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    _clubSkipReveal();
+    const _cost = 10;
+    if (S.coins < _cost){ toast("Not enough coins for a drink (10)."); return; }
+    debit(_cost, 'purchase', 'club_drink');
+    S.pintBuff = Math.max(S.pintBuff||0, Date.now()) + 3*60000;   // 3-min action buff (shared drink buff)
+    MUSIC.unlocked = true;
+    const _th = clubTheme();
+    toast(`🍸 The bartender slides you a "${_th.name}" — actions 10% faster for 3 min.`);
+    log(`🍸 Ordered a themed cocktail at Club Featherstone (−${_cost} coins).`, "");
+    renderMain(); updateHud(); save();
+  });
+  // nightclub — DJ (Frosty): what's on tonight + a track shout-out
+  document.querySelectorAll("[data-club-dj]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    _clubSkipReveal();
+    const _th = clubTheme();
+    const _tracks = _th.eligibleTracks.map(id => (MUSIC_MANIFEST.find(m=>m.id===id)?.title)||id);
+    toast(`🎧 Frosty: "Tonight's ${_th.name}! Spinning ${_tracks[0]||'the hits'} — stay frosty!"`);
+    log(`🎧 Frosty (DJ) is running ${_th.name}. On the decks: ${_tracks.join(', ')}.`, "good");
+    renderMain();
+  });
+  // nightclub — bouncer: theme + house rules + a subtle VIP progression teaser
+  document.querySelectorAll("[data-club-bouncer]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    _clubSkipReveal();
+    const _th = clubTheme();
+    toast(`🕶️ Bouncer: "${_th.name} tonight. Keep it civil. VIP's members-only — earn your rep."`);
+    log(`🕶️ The bouncer nods you through. VIP access is a future progression perk.`, "");
+    renderMain();
+  });
+  // nightclub — Roxy (named promoter): friendly chatter + a supplier/contract lead hook
+  document.querySelectorAll("[data-club-roxy]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    _clubSkipReveal();
+    if (!S.npcMet) S.npcMet = true;
+    const _lines = [
+      'Roxy: "Love this crowd tonight. You running a business? I know people who need suppliers."',
+      'Roxy: "Stick around — deals get made on this floor. I\'ll keep an ear out for a lead for you."',
+      'Roxy: "Frosty\'s sets pull the right people. Networking\'s half the game, love."',
+    ];
+    toast('💬 ' + _lines[Math.floor(Date.now()/9000) % _lines.length].replace(/^Roxy: /, ''));
+    log(_lines[Math.floor(Date.now()/9000) % _lines.length] + ' (Supplier/contract leads — coming soon.)', "");
+    renderMain();
+  });
+  // nightclub — crowd density + reduced-lighting settings (persist immediately)
+  document.querySelectorAll("[data-club-crowd]").forEach(b=> (b as HTMLElement).onclick = ()=>{
+    if (!S.settings) S.settings = Object.assign({}, DEFAULT_SETTINGS);
+    S.settings.crowd = (b as HTMLElement).dataset.clubCrowd;
+    _clubCrowd = null;   // invalidate the pool so the new density takes effect
+    renderMain(); save();
+  });
+  document.querySelectorAll("[data-club-calm]").forEach(b=> (b as HTMLElement).onchange = ()=>{
+    if (!S.settings) S.settings = Object.assign({}, DEFAULT_SETTINGS);
+    // Checkbox "Reduced lighting effects" ON → clubLights=false (calmer strobes/sweeps).
+    S.settings.clubLights = !(b as HTMLInputElement).checked;
+    toast((b as HTMLInputElement).checked ? "🔅 Reduced lighting effects on." : "🔆 Full club lighting on.");
+    renderMain(); save();
   });
   // village beautification purchases
   document.querySelectorAll("[data-beautify]").forEach(b=>{
@@ -17162,6 +17481,8 @@ window.addEventListener("keydown", e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as any)?.tagName||"");
   // Any key skips the new-arrival drop-off cinematic.
   if (_arrival.active && !typing){ e.preventDefault(); _skipArrival(); return; }
+  // Any key skips the nightclub entry reveal.
+  if (S.tab==="nightclub" && !typing && typeof _clubRevealActive==='function' && _clubRevealActive()){ e.preventDefault(); _clubSkipReveal(); return; }
   if (!typing) setInputMethod('keyboard');   // keyboard is now the active input (req 11)
   // ---- controller-equivalent keyboard nav (works everywhere, incl. modals) ----
   if (!typing){

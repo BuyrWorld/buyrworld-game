@@ -1,8 +1,17 @@
 // @ts-nocheck
-// HX4 — collision rects for the core public interiors (320×200 canvas).
+// HX4 — collision rects for the core public interiors.
 // Matched to the furniture drawn in drawInterior() so counters/bars/tables are
 // solid instead of walk-through. Merged into INTERIOR_COLS in main.ts and guarded
 // by tests/publicInteriors.test.ts. Nothing sits in the bottom-centre exit lane.
+//
+// Most rooms use the default 320×200 canvas; a few get a roomier canvas (see
+// ROOM_DIMS) and their collision is authored in that larger coordinate space. main.ts
+// reads ROOM_DIMS as its INT_SIZES so art, collision, clicks and stations all agree.
+
+export const ROOM_DIMS: Record<string, { w: number; h: number }> = {
+  mining:    { w: 448, h: 288 },
+  nightclub: { w: 480, h: 270 },   // wide 16:9 club — larger, multi-zone venue
+};
 
 export const PUBLIC_COLS: Record<string, {x:number;y:number;w:number;h:number}[]> = {
   pub: [
@@ -39,11 +48,22 @@ export const PUBLIC_COLS: Record<string, {x:number;y:number;w:number;h:number}[]
   estateagent: [
     { x:124, y:52,  w:72,  h:20 },  // agent desk
   ],
+  // Club Featherstone — authored in the 480×270 canvas (ROOM_DIMS.nightclub). Zones:
+  // DJ stage (back centre), bar (left), VIP + booths (right), dance floor (centre,
+  // open/walkable), entrance framing (bottom). The bottom-centre exit lane and the
+  // approaches to the bar/DJ/booths are kept clear.
   nightclub: [
-    { x:120, y:8,   w:80,  h:30 },  // DJ booth (back centre)
-    { x:8,   y:10,  w:26,  h:34 },  // speaker stack (left)
-    { x:286, y:10,  w:26,  h:34 },  // speaker stack (right)
-    { x:250, y:96,  w:60,  h:20 },  // bar (right)
+    { x:168, y:40,  w:144, h:70 },  // DJ stage platform (approach from the front)
+    { x:140, y:44,  w:24,  h:66 },  // speaker stack (stage-left)
+    { x:316, y:44,  w:24,  h:66 },  // speaker stack (stage-right)
+    { x:16,  y:120, w:132, h:26 },  // bar back-shelf (left)
+    { x:16,  y:150, w:132, h:22 },  // bar counter (left)
+    { x:360, y:70,  w:112, h:12 },  // VIP railing (top-right, gated area behind)
+    { x:356, y:120, w:112, h:34 },  // lounge booth (right, upper)
+    { x:356, y:166, w:112, h:34 },  // lounge booth (right, middle)
+    { x:356, y:212, w:112, h:30 },  // lounge booth (right, lower)
+    { x:18,  y:224, w:76,  h:40 },  // BW crates (bottom-left entrance framing)
+    { x:392, y:226, w:70,  h:38 },  // planter + conveyor (bottom-right framing)
   ],
   robotics_lab: [
     { x:12,  y:50,  w:80,  h:82 },  // server racks (back-left)
