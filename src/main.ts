@@ -65,6 +65,7 @@ import { COMPANIES, companyById, companiesForLevel, dailyPnL as companyPnL, hire
 import { NEWS_MASTHEAD, compileEdition as compileNewsEdition } from './data/news.ts';
 import { LOGISTICS_METHODS, DEFAULT_LOGISTICS, logisticsMethod, resolveShipment, quotedPayout as logisticsQuoted } from './data/logistics.ts';
 import { TOWN_TIERS, townTier, townTierIndex, nextTownTier, tierUnlocks, townHasDecor, townProgress } from './data/townEvolution.ts';
+import { CAREERS, careerById, careerScore, careerRank, rankTitle, careerXpPct, nextRankAt, careerProgress } from './data/careers.ts';
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
@@ -1683,7 +1684,7 @@ function maybeShowPlayHint(){ if (!S.seenControls && S.tut && !S.tut.done) showP
 // Hide advanced HUD buttons until Frosty's tutorial is done, to declutter the opening.
 function syncOnboardingUI(){
   const done = !!(S.tut && S.tut.done);
-  ["btn-journey","btn-ledger","btn-districts","btn-news"].forEach(id=>{
+  ["btn-journey","btn-ledger","btn-districts","btn-news","btn-careers"].forEach(id=>{
     const el = document.getElementById(id);
     if (el) el.style.display = done ? "" : "none";
   });
@@ -1929,6 +1930,8 @@ const ACH = [
   { id:"full_honours", ic:"📜", n:"Full Honours",       ds:"Complete all university degrees.",   r:2000, c:()=>(S.degrees?.length||0)>=7 },
   { id:"landlord",     ic:"🏡", n:"Landlord",           ds:"Buy your first property.",           r:100,  c:()=>(S.properties?.length||0)>=1 },
   { id:"mogul",        ic:"🏰", n:"Property Mogul",     ds:"Own all three properties.",          r:500,  c:()=>(S.properties?.length||0)>=3 },
+  { id:"career_focus", ic:"💼", n:"Career Ladder",       ds:"Focus a career path.",                r:100,  c:()=>!!(S.career && S.career.active) },
+  { id:"top_of_field", ic:"🎓", n:"Top of the Field",   ds:"Reach the top rank in any career.",    r:1500, c:()=>CAREERS.some(cc=>careerRankOf(cc.id)>=5) },
   { id:"entrepreneur", ic:"🏢", n:"Entrepreneur",       ds:"Buy your first business licence.",   r:250,  c:()=>Object.keys(S.companies?.owned||{}).length>=1 },
   { id:"conglomerate", ic:"🏙️", n:"Conglomerate",       ds:"Own all four businesses.",           r:2500, c:()=>Object.keys(S.companies?.owned||{}).length>=COMPANIES.length },
   { id:"home_t1",      ic:"🛋️", n:"Moving In",          ds:"Upgrade your cottage for the first time.",    r:50,   c:()=>(S.homeTier||0)>=1 },
@@ -4267,6 +4270,59 @@ function visitDistrict(id){
   try{ save(); }catch(e){}
   toast(`${d.ic} Arrived at ${d.name}.`);
 }
+// M22 — Careers track: derived ranks across all four careers + a focus choice.
+function renderCareers(){
+  const act = (S.career && S.career.active) || null;
+  const cards = CAREERS.map(c=>{
+    const score = careerScore(c, _careerLevelOf);
+    const rank = careerRank(score);
+    const focused = act === c.id;
+    const nxt = nextRankAt(rank);
+    const pct = Math.round(careerProgress(score)*100);
+    const skillsLine = c.skills.map(s=>`${SKILLS[s]?.n||s} ${_careerLevelOf(s)}`).join(' · ');
+    const perkPct = Math.round(careerXpPct(rank)*100);
+    const bar = nxt!=null
+      ? `<div style="height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin:5px 0 3px;overflow:hidden"><div style="height:6px;width:${pct}%;background:linear-gradient(90deg,#5a9adc,#8affb0);border-radius:3px"></div></div>
+         <div style="font-size:10px;color:var(--dim)">Lane avg ${score} · next rank at ${nxt} (${pct}%)</div>`
+      : `<div style="font-size:10px;color:var(--mint);margin-top:3px">🏆 Top rank reached.</div>`;
+    return `<div class="card" style="flex-direction:column;align-items:stretch;padding:10px 12px;margin-bottom:8px;border:1.5px solid ${focused?'var(--amber)':'var(--edge)'}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-weight:700;font-size:13px">${c.ic} ${c.n}${focused?' <span style="font-size:9px;background:var(--amber);color:#12240f;border-radius:8px;padding:1px 7px">FOCUSED</span>':''}</span>
+        <span style="font-size:11px;color:#8ec8ff">${rankTitle(c, rank)}${rank>0?` · Rk ${rank}`:''}</span>
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin:2px 0 4px">${c.blurb}</div>
+      <div style="font-size:10px;color:var(--dim)">Skills: ${skillsLine}</div>
+      ${bar}
+      <div style="font-size:11px;margin-top:5px;color:${rank>0?'#8affb0':'var(--dim)'}">Perk: ${rank>0?`+${perkPct}% XP in this career's skills`:'reach rank 1 to unlock a lane XP perk'}${focused?' <b>(active)</b>':''}</div>
+      <button class="btn" data-career-focus="${c.id}" ${focused?'disabled':''} style="margin-top:7px">${focused?'✓ Focused':'Focus this career'}</button>
+    </div>`;
+  }).join('');
+  return `<div class="panel" style="padding:12px;max-width:460px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><h2 style="margin:0;font-size:16px">💼 Careers</h2><button id="career-close" aria-label="Close" style="background:#333;color:#fff;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button></div>
+    <p style="font-size:11px;color:var(--dim);margin:0 0 10px">Your rank in each career rises with its skills — no extra grind. <b>Focus</b> one to make its lane XP perk active; you can re-focus any time.</p>
+    ${cards}
+  </div>`;
+}
+function focusCareer(id){
+  const c = careerById(id); if (!c) return;
+  if (!S.career) S.career = { active:null };
+  S.career.active = c.id;
+  const rank = careerRankOf(c.id);
+  toast(`💼 Focused: ${c.ic} ${c.n}${rank>0?` — +${Math.round(careerXpPct(rank)*100)}% XP in its skills`:' (reach rank 1 for its perk)'}.`);
+  log(`💼 Career focus set to <b>${c.n}</b> (${rankTitle(c, rank)}). Its lane XP perk is now active.`, "good");
+  const el = document.getElementById('careers-modal');
+  if (el){ el.innerHTML = renderCareers(); _wireCareersModal(); }   // re-render the modal in place
+  save();
+}
+function _wireCareersModal(){
+  const el = document.getElementById('careers-modal'); if (!el) return;
+  const cl = el.querySelector('#career-close'); if (cl) (cl as HTMLElement).onclick = ()=> closeModal('careers-modal');
+  el.querySelectorAll('[data-career-focus]').forEach(b=> (b as HTMLElement).onclick = ()=> focusCareer((b as HTMLElement).dataset.careerFocus));
+}
+function openCareers(){
+  openModal('careers-modal', ()=>renderCareers(), { label:'Careers', initialFocus:'#career-close', wire:()=>_wireCareersModal() });
+}
+(globalThis as any).openCareers = openCareers;
 // M24 — town-evolution status banner (current stage + progress to the next).
 function renderTownStatus(){
   const nw = netWorth();
@@ -11094,6 +11150,7 @@ function freshState(){
     news: { day: -1, headlines: [], seenDay: -1 },   // M23 — the Featherstone Chronicle (daily paper)
     logistics: { method: DEFAULT_LOGISTICS },        // M20 — chosen delivery method (default)
     town: { seenTier: 0 },                            // M24 — highest town-evolution tier celebrated
+    career: { active: null },                         // M22 — focused career (its lane perk is live)
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -11339,6 +11396,7 @@ function load(){
       // M24 — default an existing save's seenTier to its CURRENT tier so loading never
       // fires a spurious "town evolved!" celebration for progress already made.
       if (!("town" in parsed) || !S.town || typeof S.town !== "object" || typeof S.town.seenTier !== "number") S.town = { seenTier: townTierIndex(netWorth()) };
+      if (!("career" in parsed) || !S.career || typeof S.career !== "object" || !("active" in S.career)) S.career = { active: null };   // M22
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -11492,6 +11550,16 @@ const $ = sel => document.querySelector(sel);
 function fmt(n){ return n >= 1e6 ? (n/1e6).toFixed(2)+"M" : n >= 1e4 ? (n/1e3).toFixed(1)+"k" : Math.floor(n).toLocaleString(); }
 function skillLvl(k){ return levelFromXp(S.skills[k].xp); }
 function totalLvl(){ return Object.keys(S.skills).reduce((a,k)=>a+skillLvl(k),0); }
+// M22 — careers. Rank is DERIVED from the lane's average skill level (no separate grind).
+function _careerLevelOf(sk){ return S.skills[sk] ? skillLvl(sk) : 0; }
+function careerRankOf(id){ const c = careerById(id); return c ? careerRank(careerScore(c, _careerLevelOf)) : 0; }
+function activeCareer(){ return (S.career && S.career.active) ? careerById(S.career.active) : null; }
+// The lane XP bonus from the FOCUSED career, applied only to that career's skills.
+function careerXpBonus(skill){
+  const c = activeCareer();
+  if (!c || !c.skills.includes(skill)) return 0;
+  return careerXpPct(careerRankOf(c.id));
+}
 function itemCount(id){ return S.items[id] || 0; }
 function addItem(id, q){ S.items[id] = (S.items[id]||0) + q; }
 function findAction(skill, id){ return SKILLS[skill].actions.find(a=>a.id===id); }
@@ -12762,6 +12830,7 @@ function grantXp(skill, xp){
   { const _rxm = renownXpMult(S.renown?.bought); if (_rxm > 1) xp = Math.round(xp * _rxm); }   // Hall of Renown: Diligent Hands
   const _xpBonus = skillXpBonus(skill); if (_xpBonus > 0) xp = Math.round(xp * (1 + _xpBonus));
   const _kxp = keepsakeXpBonus(skill); if (_kxp > 0) xp = Math.round(xp * (1 + _kxp));
+  const _cxp = careerXpBonus(skill); if (_cxp > 0) xp = Math.round(xp * (1 + _cxp));   // M22: focused career lane perk
   const before = skillLvl(skill);
   S.skills[skill].xp += xp;
   const after = skillLvl(skill);
@@ -18062,6 +18131,7 @@ document.getElementById("btn-fullscreen").onclick = () => toggleFullscreen();
 document.getElementById("btn-districts")?.addEventListener("click", () => openDistricts());
 document.getElementById("btn-ledger")?.addEventListener("click", () => openLedger());
 document.getElementById("btn-news")?.addEventListener("click", () => openChronicle());
+document.getElementById("btn-careers")?.addEventListener("click", () => openCareers());
 document.getElementById("btn-inv")?.addEventListener("click", () => toggleInventory());
 document.getElementById("btn-journey")?.addEventListener("click", () => openJourney());
 document.getElementById("btn-journal")?.addEventListener("click", () => openJournalPanel());
