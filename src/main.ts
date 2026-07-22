@@ -64,6 +64,7 @@ import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, rel
 import { COMPANIES, companyById, companiesForLevel, dailyPnL as companyPnL, hireCost as companyHireCost, accrueCompany, paybackDays as companyPayback } from './data/company.ts';
 import { NEWS_MASTHEAD, compileEdition as compileNewsEdition } from './data/news.ts';
 import { LOGISTICS_METHODS, DEFAULT_LOGISTICS, logisticsMethod, resolveShipment, quotedPayout as logisticsQuoted } from './data/logistics.ts';
+import { TOWN_TIERS, townTier, townTierIndex, nextTownTier, tierUnlocks, townHasDecor, townProgress } from './data/townEvolution.ts';
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
@@ -4266,6 +4267,21 @@ function visitDistrict(id){
   try{ save(); }catch(e){}
   toast(`${d.ic} Arrived at ${d.name}.`);
 }
+// M24 — town-evolution status banner (current stage + progress to the next).
+function renderTownStatus(){
+  const nw = netWorth();
+  const t = townTier(nw), nxt = nextTownTier(nw);
+  const pct = Math.round(townProgress(nw)*100);
+  const bar = `<div style="height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin-top:5px;overflow:hidden"><div style="height:6px;width:${pct}%;background:linear-gradient(90deg,#5a9adc,#8affb0);border-radius:3px"></div></div>`;
+  const nextLine = nxt
+    ? `<div style="font-size:10px;color:var(--dim);margin-top:4px">Next: <b>${nxt.name}</b> at ${fmt(nxt.at)} net worth · you're at <b>${fmt(nw)}</b> (${pct}%)</div>`
+    : `<div style="font-size:10px;color:var(--mint);margin-top:4px">🏆 Featherstone has reached its grandest stage.</div>`;
+  return `<div style="background:rgba(90,154,220,.10);border:1px solid rgba(90,154,220,.35);border-radius:8px;padding:8px 10px;margin:6px 0 10px">
+    <div style="font-size:12px;font-weight:700">🏙️ Featherstone — <span style="color:#8ec8ff">${t.name}</span></div>
+    <div style="font-size:11px;color:var(--dim);margin-top:1px">${t.blurb}</div>
+    ${nxt?bar:''}${nextLine}
+  </div>`;
+}
 function openDistricts(){
   closeDistricts();
   tipOnce("_districts", SYSTEM_TUTORIAL._districts);
@@ -4290,6 +4306,7 @@ function openDistricts(){
   el.innerHTML=`<div class="dd-card"><button class="vp-close" onclick="document.getElementById('districts-modal').remove()">✕</button>
     <div class="dd-title">🗺️ Town Directory</div>
     <div class="dd-sub">Featherstone's districts — visit any open one to travel there instantly.</div>
+    ${renderTownStatus()}
     <div>${cards}</div></div>`;
   document.body.appendChild(el);
   el.querySelectorAll("[data-dvisit]").forEach(b=>(b as HTMLElement).onclick=()=>visitDistrict((b as HTMLElement).dataset.dvisit));
@@ -6213,8 +6230,62 @@ function drawSeasonalBillboard(ctx, t){
   ctx.fillStyle = th.fg;  fitText(ctx, th.title, cx, _billY+3,  bw-8, 8, { weight:"bold" });
   ctx.fillStyle = th.sub; fitText(ctx, th.dates, cx, _billY+13, bw-8, 7);
 }
+// M24 — ambient town-evolution decorations, gated on net-worth tier. Purely decorative
+// (no collision/interaction), reduced-motion-safe, anchored over the market plaza so the
+// valley visibly gets grander as the player succeeds.
+function _drawTownDecor(ctx, t){
+  const nw = netWorth();
+  const calm = _reducedMotion();
+  // Bunting — a string of triangular flags arcing above the market plaza (row ~30).
+  if (townHasDecor(nw, 'bunting')){
+    const x0 = 15*TILE, x1 = 29*TILE, y0 = 29.4*TILE, sag = 16;
+    const cols = ['#e05a6a','#ffd24a','#5ad1ff','#8affb0','#c08aff'];
+    const n = 20;
+    ctx.save(); ctx.strokeStyle = 'rgba(40,30,20,.5)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i=0;i<=n;i++){ const u=i/n, x=x0+(x1-x0)*u, y=y0 + Math.sin(u*Math.PI)*sag; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+    ctx.stroke();
+    for (let i=0;i<n;i++){ const u=(i+0.5)/n, x=x0+(x1-x0)*u, y=y0 + Math.sin(u*Math.PI)*sag;
+      const sway = calm ? 0 : Math.sin(t*2 + i)*0.6;
+      ctx.fillStyle = cols[i%cols.length];
+      ctx.beginPath(); ctx.moveTo(x-3, y); ctx.lineTo(x+3, y); ctx.lineTo(x+sway, y+6); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // Extra market stalls — striped canopies flanking the plaza.
+  if (townHasDecor(nw, 'extra_stalls')){
+    for (const [tx, awn] of [[13.5, '#4aa6c8'], [28.5, '#c86a4a']]){
+      const x = tx*TILE, y = 31*TILE;
+      ctx.fillStyle = '#6a4a2c'; ctx.fillRect(x, y+8, 28, 14);                 // stall body
+      ctx.fillStyle = '#7c5a38'; ctx.fillRect(x, y+6, 28, 3);
+      for (let s=0;s<4;s++){ ctx.fillStyle = s%2 ? awn : '#f2e8d0'; ctx.fillRect(x+s*7, y, 7, 6); }  // striped awning
+      ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(x+14, y+23, 15, 3, 0, 0, 7); ctx.fill();
+    }
+  }
+  // Banners — tall festive banners on posts either side of the plaza.
+  if (townHasDecor(nw, 'banners')){
+    for (const [tx, col] of [[16, '#c0402a'], [28, '#2a5a9a']]){
+      const x = tx*TILE, y = 27*TILE;
+      ctx.fillStyle = '#3a2a1a'; ctx.fillRect(x, y, 2, 40);                     // pole
+      ctx.fillStyle = col; ctx.fillRect(x+2, y+2, 12, 22);                      // banner
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(x+6, y+8, 4, 4); ctx.fillRect(x+6, y+14, 4, 4);  // motif
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x+2, y+24); ctx.lineTo(x+8, y+29); ctx.lineTo(x+14, y+24); ctx.closePath(); ctx.fill();  // swallowtail
+    }
+  }
+  // Street lamps — warm pooled glow along the plaza after dark (Boomtown).
+  if (townHasDecor(nw, 'street_lamps') && isNight()){
+    for (const tx of [17, 21, 25]){
+      const x = tx*TILE + TILE/2, y = 30*TILE;
+      ctx.fillStyle = '#2a2620'; ctx.fillRect(x-1, y-16, 2, 16);               // post
+      const g = calm ? 0.5 : 0.42 + 0.12*Math.abs(Math.sin(t*1.3 + tx));
+      ctx.fillStyle = `rgba(255,206,120,${g.toFixed(2)})`; ctx.beginPath(); ctx.arc(x, y-17, 9, 0, 7); ctx.fill();
+      ctx.fillStyle = '#ffe6a8'; ctx.fillRect(x-2, y-19, 4, 4);
+    }
+  }
+}
 function drawExtras(ctx, t){
   const tier = villageTierLvl();
+  _drawTownDecor(ctx, t);   // M24 — net-worth-gated ambient town decorations
   // Valley Lore waystones — a mossy standing stone at each spot; undiscovered
   // ones give off a soft glow + sparkle to reward exploration.
   for (const id in LORE_STONES){
@@ -11022,6 +11093,7 @@ function freshState(){
     companies: { owned: {} },   // M21 — owned businesses: id → { staff, since, lastAccrual, cumProfit }
     news: { day: -1, headlines: [], seenDay: -1 },   // M23 — the Featherstone Chronicle (daily paper)
     logistics: { method: DEFAULT_LOGISTICS },        // M20 — chosen delivery method (default)
+    town: { seenTier: 0 },                            // M24 — highest town-evolution tier celebrated
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -11264,6 +11336,9 @@ function load(){
       if (!("companies" in parsed) || !S.companies || typeof S.companies !== "object" || !S.companies.owned) S.companies = { owned: {} };   // M21
       if (!("news" in parsed) || !S.news || typeof S.news !== "object" || !Array.isArray(S.news.headlines)) S.news = { day: -1, headlines: [], seenDay: -1 };   // M23
       if (!("logistics" in parsed) || !S.logistics || typeof S.logistics !== "object" || !S.logistics.method) S.logistics = { method: DEFAULT_LOGISTICS };   // M20
+      // M24 — default an existing save's seenTier to its CURRENT tier so loading never
+      // fires a spurious "town evolved!" celebration for progress already made.
+      if (!("town" in parsed) || !S.town || typeof S.town !== "object" || typeof S.town.seenTier !== "number") S.town = { seenTier: townTierIndex(netWorth()) };
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -11545,6 +11620,8 @@ function currentEdition(){
   const ph = macroPhase();
   const fst = isFestivalActive();
   const valley = [];
+  const _tt = townTier(netWorth());
+  valley.push(`Featherstone is a thriving ${_tt.name}. ${_tt.blurb}`);
   valley.push(`It's ${getSeason()} in Featherstone.`);
   if (fst) valley.push(`${fst.ic} The ${fst.n} is on — ${daysLeftInFestival()} day(s) left.`);
   const _mins = Math.max(1, Math.ceil(msToNextPhase()/60000));
@@ -12072,6 +12149,22 @@ function sampleNetWorth(force){
   S.netWorth.last = now;
   S.netWorth.history.push({ t:now, v:netWorth() });
   if (S.netWorth.history.length > 60) S.netWorth.history.shift();
+}
+// M24 — the town's current evolution tier (driven by net worth).
+function townTierLvl(){ return townTierIndex(netWorth()); }
+// Celebrate crossing into a new town tier, once. Idle/offline-safe (fires on the next
+// tick after the threshold is met, whenever that is).
+function updateTownEvolution(){
+  if (!S.town || typeof S.town.seenTier !== "number") S.town = { seenTier: townTierLvl() };
+  const cur = townTierLvl();
+  if (cur <= S.town.seenTier) { if (cur < S.town.seenTier) S.town.seenTier = cur; return; }
+  const t = TOWN_TIERS[cur];
+  S.town.seenTier = cur;
+  toast(`🏙️ Featherstone has grown into a ${t.name}!`);
+  log(`🏙️ <b>Town evolved:</b> Featherstone is now a <b>${t.name}</b> — ${t.blurb} (your success is reshaping the valley).`, "rare");
+  try{ pushHeadline('🏙️', `Featherstone rises to ${t.name} — ${t.blurb}`); }catch(e){}
+  try{ SFX.fanfare && SFX.fanfare(); }catch(e){}
+  updateHud(); save();
 }
 function _sparkline(hist, w=240, h=40){
   const pts = (hist||[]).filter(p=>typeof p?.v==="number");
@@ -18626,6 +18719,7 @@ setInterval(()=>{
   c2cTick();                // Contract-to-Cash: advance any time-driven pipeline stage
   updateProcurement(now);   // M17: land any supplier deliveries whose ETA has passed
   updateCompanies(now);     // M21: accrue owned-company profit into the wallet (offline-safe)
+  updateTownEvolution();    // M24: celebrate crossing a net-worth town tier (once)
   collectBinIfDue();        // M3: weekly bin collection + evening reminder
   updateGarden(now);
   checkRadioUnlocks();      // Frosty's Radio — announce newly-earned exclusive tracks
