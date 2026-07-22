@@ -63,6 +63,7 @@ import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBea
 import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, reliabilityLabel, reliabilityStars } from './data/suppliers.ts';
 import { COMPANIES, companyById, companiesForLevel, dailyPnL as companyPnL, hireCost as companyHireCost, accrueCompany, paybackDays as companyPayback } from './data/company.ts';
 import { NEWS_MASTHEAD, compileEdition as compileNewsEdition } from './data/news.ts';
+import { LOGISTICS_METHODS, DEFAULT_LOGISTICS, logisticsMethod, resolveShipment, quotedPayout as logisticsQuoted } from './data/logistics.ts';
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
@@ -11020,6 +11021,7 @@ function freshState(){
     club: { frostyRel: 0, eventRep: 0, incidentDay: -1, incidentDone: false, photos: 0, visits: 0, vip: false, lastTrack: null, eventVisit: -1, eventDone: false, lightsOut: false },
     companies: { owned: {} },   // M21 — owned businesses: id → { staff, since, lastAccrual, cumProfit }
     news: { day: -1, headlines: [], seenDay: -1 },   // M23 — the Featherstone Chronicle (daily paper)
+    logistics: { method: DEFAULT_LOGISTICS },        // M20 — chosen delivery method (default)
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -11261,6 +11263,7 @@ function load(){
       if (!("club" in parsed)) S.club = { frostyRel:0, eventRep:0, incidentDay:-1, incidentDone:false, photos:0, visits:0, vip:false, lastTrack:null, eventVisit:-1, eventDone:false, lightsOut:false };
       if (!("companies" in parsed) || !S.companies || typeof S.companies !== "object" || !S.companies.owned) S.companies = { owned: {} };   // M21
       if (!("news" in parsed) || !S.news || typeof S.news !== "object" || !Array.isArray(S.news.headlines)) S.news = { day: -1, headlines: [], seenDay: -1 };   // M23
+      if (!("logistics" in parsed) || !S.logistics || typeof S.logistics !== "object" || !S.logistics.method) S.logistics = { method: DEFAULT_LOGISTICS };   // M20
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -13131,7 +13134,12 @@ function deliverContract(i){
   const c = S.contracts[i];
   if (!c || itemCount(c.item) < c.qty) return;
   S.items[c.item] -= c.qty;
-  const payout = Math.round(c.coins * payMult() * qcContractMult());
+  const basePayout = Math.round(c.coins * payMult() * qcContractMult());
+  // M20 — apply the chosen delivery method (Express safe-but-less / Freight bonus-but-risky).
+  // The tutorial order always ships Standard (predictable amount for the summary).
+  const _method = c.tutorial ? 'standard' : ((S.logistics && S.logistics.method) || DEFAULT_LOGISTICS);
+  const _ship = resolveShipment(_method, basePayout, Math.random);
+  const payout = _ship.payout;
   credit(payout, 'contract', c.tutorial ? 'tutorial_order' : ('contract:'+(c.client||c.item)), c.tutorial ? 'contract:tutorial_order' : null);
   grantXp("logistics", c.xp);
   S.counters.contracts++;
@@ -13146,8 +13154,15 @@ function deliverContract(i){
   rollPet("contract");
   tutCheck();
   achCheck();
-  log(`🚚 Delivered ${c.qty}× ${ITEMS[c.item].n} to ${c.client} → <b>+${fmt(payout)} coins</b>`, "good");
-  if (!c.tutorial && payout >= 400) try{ pushHeadline('🚚', `${pName()} lands a ${fmt(payout)}-coin order for ${c.client} — ${c.qty}× ${ITEMS[c.item].n} delivered.`); }catch(e){}
+  const _mIc = logisticsMethod(_method).ic;
+  if (_ship.mishap){
+    toast(`${_mIc} ${logisticsMethod(_method).label} mishap — payout cut to ${fmt(payout)}c.`);
+    log(`${_mIc} Delivered ${c.qty}× ${ITEMS[c.item].n} to ${c.client} by ${logisticsMethod(_method).label} — <b>shipment delayed/damaged</b>, +${fmt(payout)} coins (was ~${fmt(_ship.basePayout)}).`, "bad");
+    if (!c.tutorial) try{ pushHeadline('📦', `${pName()}'s ${logisticsMethod(_method).label.toLowerCase()} shipment to ${c.client} hit a snag — delivered, but at a loss.`); }catch(e){}
+  } else {
+    log(`${_mIc} Delivered ${c.qty}× ${ITEMS[c.item].n} to ${c.client} by ${logisticsMethod(_method).label} → <b>+${fmt(payout)} coins</b>`, "good");
+    if (!c.tutorial && payout >= 400) try{ pushHeadline('🚚', `${pName()} lands a ${fmt(payout)}-coin order for ${c.client} — ${c.qty}× ${ITEMS[c.item].n} delivered.`); }catch(e){}
+  }
   S.contracts.splice(i,1);
   if (!c.tutorial) try{ maybeShowUnlockGroup(); }catch(e){}   // a real delivery is a calm beat to introduce the next small group
   fillContracts(); renderMain(); updateHud(); save();
@@ -13944,6 +13959,32 @@ var _ctExpanded: Record<string, boolean> = {};
   else { body.setAttribute('hidden',''); head.setAttribute('aria-expanded','false'); }
   _ctExpanded[id] = open;
 };
+// M20 — the shared delivery-method chooser shown on the Contracts board. Sets the
+// default method applied when you deliver; a real recurring cost/payout/risk decision.
+function renderLogisticsPicker(){
+  const cur = (S.logistics && S.logistics.method) || DEFAULT_LOGISTICS;
+  const chips = LOGISTICS_METHODS.map(m=>{
+    const on = m.id === cur;
+    const effPct = Math.round((m.payMult - 1) * 100);
+    const eff = effPct === 0 ? 'full pay' : `${effPct>0?'+':''}${effPct}%`;
+    const riskTxt = m.risk === 0 ? 'no risk' : `${Math.round(m.risk*100)}% risk`;
+    return `<button data-logi="${m.id}" title="${esc(m.blurb)}" aria-pressed="${on}" style="flex:1;min-width:96px;text-align:left;background:${on?'#2a4a6a':'#20242c'};color:${on?'#eaf2ff':'#c8ccd6'};border:1.5px solid ${on?'#5a9adc':'#3a4048'};border-radius:6px;padding:6px 9px;cursor:pointer;font-size:11px">
+      <div style="font-weight:700;font-size:12px">${m.ic} ${m.label}</div>
+      <div style="color:${on?'#bcd6f2':'var(--dim)'};margin-top:1px">${eff} · ${riskTxt}</div>
+    </button>`;
+  }).join('');
+  return `<div style="margin:2px 0 10px">
+    <div style="font-size:10px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">🚚 Delivery method</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
+  </div>`;
+}
+function setLogisticsMethod(id){
+  const m = logisticsMethod(id); if (!m) return;
+  if (!S.logistics) S.logistics = { method: DEFAULT_LOGISTICS };
+  S.logistics.method = m.id;
+  toast(`🚚 Delivery set to ${m.ic} ${m.label} — ${m.blurb}`);
+  renderMain(); save();
+}
 function renderContracts(){
   fillContracts();
   const _mp = macroPhase();
@@ -13951,7 +13992,8 @@ function renderContracts(){
                     : _mp.demand < 0.98 ? `📉 ${_mp.name} — orders pay a little less.`
                     : `📊 ${_mp.name} — orders pay their fair rate.`;
   let html = `<div class="panel"><h2>📋 Open Contracts<small>Deliver on time to build client reputation. Slots: ${contractSlots()}${skillLvl("logistics")<20?" (3rd at Logistics 20)":""}</small></h2>${xpBarHtml("logistics")}
-    <div style="font-size:11px;color:var(--dim);margin:2px 0 8px">${_demandHint}</div>`;
+    <div style="font-size:11px;color:var(--dim);margin:2px 0 8px">${_demandHint}</div>
+    ${renderLogisticsPicker()}`;
   // The authored flagship order — a full source-to-cash order with a real margin.
   if (flagshipAvailable()){
     const _inProg = S.c2c && S.c2c.stage !== 'closed';
@@ -13993,7 +14035,9 @@ function renderContracts(){
     if (_frozen && !c.tutorial){ _heldStandard++; return; }
     const have = itemCount(c.item);
     const ok = have >= c.qty;
-    const payout = Math.round(c.coins * payMult() * qcContractMult());
+    const _basePay = Math.round(c.coins * payMult() * qcContractMult());
+    // Real orders quote the payout for the CHOSEN delivery method (tutorial ships Standard).
+    const payout = c.tutorial ? _basePay : logisticsQuoted((S.logistics && S.logistics.method) || DEFAULT_LOGISTICS, _basePay);
     const t = tierById(c.tier);
     const rank = repRank(clientRep(c.client));
     const stars = rank.stars>0 ? "★".repeat(rank.stars)+"☆".repeat(4-rank.stars) : "☆☆☆☆";
@@ -16886,6 +16930,7 @@ function bindMain(){
     doTrade(npc, it, clampQty(_tradeQty[`${npc}|${it}`] || 1, 9999), mode);
   });
   document.querySelectorAll("[data-deliver]").forEach(b=> b.onclick = ()=> deliverContract(+b.dataset.deliver));
+  document.querySelectorAll("[data-logi]").forEach(b=> (b as HTMLElement).onclick = ()=> setLogisticsMethod((b as HTMLElement).dataset.logi));
   document.querySelectorAll("[data-reroll]").forEach(b=> b.onclick = ()=> rerollContract(+b.dataset.reroll));
   document.querySelectorAll("[data-pipeline]").forEach(b=> b.onclick = ()=> c2cStartForContract(S.contracts[+(b as HTMLElement).dataset.pipeline!]));
   document.querySelectorAll("[data-buy]").forEach(b=> b.onclick = ()=>{
