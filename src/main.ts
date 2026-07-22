@@ -62,6 +62,7 @@ import { JOURNEY, stageComplete, stageProgress, currentStageIndex, currentStage,
 import { WELCOME_BEATS, beatComplete, welcomeProgress, currentBeatIndex, nextBeat, allWelcomeDone, welcomeTopLevel } from './data/welcome.ts';
 import { SUPPLIERS, supplierById, suppliersFor, supplierQuote, rollDelivery, reliabilityLabel, reliabilityStars } from './data/suppliers.ts';
 import { COMPANIES, companyById, companiesForLevel, dailyPnL as companyPnL, hireCost as companyHireCost, accrueCompany, paybackDays as companyPayback } from './data/company.ts';
+import { NEWS_MASTHEAD, compileEdition as compileNewsEdition } from './data/news.ts';
 import { QC_GRADES, gradeById, QC_TIERS, qcTierDef, nextQCTier, baseDefectRate, inspectBatch, reworkCost, scrapRefund, updateRating, ratingSellMult, ratingContractMult, ratingLabel } from './data/qc.ts';
 import { WAREHOUSE_TIERS, warehouseTierDef, warehouseCap, nextWarehouseTier, warehouseFillPct, organisedSpeedFactor, tierForUsage, fillLabel } from './data/warehouse.ts';
 import { CELL_MS_BASE, CELL_MS_STOLEN_EXTRA, cellDuration, remainingMs, isServed, prisonerState, lessonFor, CELL_ACTIVITIES, activityById, activityCut, allActivitiesDone } from './data/cell.ts';
@@ -1680,7 +1681,7 @@ function maybeShowPlayHint(){ if (!S.seenControls && S.tut && !S.tut.done) showP
 // Hide advanced HUD buttons until Frosty's tutorial is done, to declutter the opening.
 function syncOnboardingUI(){
   const done = !!(S.tut && S.tut.done);
-  ["btn-journey","btn-ledger","btn-districts"].forEach(id=>{
+  ["btn-journey","btn-ledger","btn-districts","btn-news"].forEach(id=>{
     const el = document.getElementById(id);
     if (el) el.style.display = done ? "" : "none";
   });
@@ -4406,6 +4407,7 @@ function claimJourneyStage(){
   toast(`👑 ${stage.title} — +${fmt(stage.reward.coins)}c${stage.reward.title ? ` · “${stage.reward.title}”` : ""}`);
   try{ SFX.fanfare(); }catch(e){}
   showJourneyBurst(stage);
+  try{ pushHeadline('👑', `${pName()} reaches a milestone: “${stage.title}”${stage.reward.title?` — hailed as “${stage.reward.title}”`:''}.`); }catch(e){}
   if (isJourneyComplete(S.journey.claimed)){
     setTimeout(()=>{ toast("🏆 Legend of Featherstone — your Founder's Journey is complete!"); }, 1400);
   }
@@ -11017,6 +11019,7 @@ function freshState(){
     arrival: { done: false },   // the one-time bus drop-off cinematic (new games only)
     club: { frostyRel: 0, eventRep: 0, incidentDay: -1, incidentDone: false, photos: 0, visits: 0, vip: false, lastTrack: null, eventVisit: -1, eventDone: false, lightsOut: false },
     companies: { owned: {} },   // M21 — owned businesses: id → { staff, since, lastAccrual, cumProfit }
+    news: { day: -1, headlines: [], seenDay: -1 },   // M23 — the Featherstone Chronicle (daily paper)
     caught: { active: false, cellUntil: 0, maxTime: 0 },
     stolenItem: null,
     tutContractDone: false,
@@ -11257,6 +11260,7 @@ function load(){
       if (!("arrival" in parsed)) S.arrival = { done: true };   // existing founders never replay the drop-off intro
       if (!("club" in parsed)) S.club = { frostyRel:0, eventRep:0, incidentDay:-1, incidentDone:false, photos:0, visits:0, vip:false, lastTrack:null, eventVisit:-1, eventDone:false, lightsOut:false };
       if (!("companies" in parsed) || !S.companies || typeof S.companies !== "object" || !S.companies.owned) S.companies = { owned: {} };   // M21
+      if (!("news" in parsed) || !S.news || typeof S.news !== "object" || !Array.isArray(S.news.headlines)) S.news = { day: -1, headlines: [], seenDay: -1 };   // M23
       if (!("caught" in parsed)) S.caught = { active: false, cellUntil: 0, maxTime: 0 };
       if (S.caught && !("maxTime" in S.caught)) S.caught.maxTime = S.caught.cellUntil > 0 ? DAY_DURATION_MS : 0;
       // Holding Cell V1: crime-specific chat + activity tracking, and cap any legacy
@@ -11509,6 +11513,97 @@ function renderPurchasingDesk(){
   </div>`;
 }
 
+/* ---------- M23: The Featherstone Chronicle (daily business newspaper) ---------- */
+// Capture a player "business headline" for today's edition (bounded, deduped per day).
+function pushHeadline(ic, text){
+  if (!S.news || !Array.isArray(S.news.headlines)) S.news = { day:-1, headlines:[], seenDay:-1 };
+  const day = _gameDay();
+  if (S.news.day !== day){ S.news.day = day; S.news.headlines = []; }   // fresh page each game-day
+  if (S.news.headlines.some(h => h.text === text)) return;             // no dupes within a day
+  S.news.headlines.unshift({ ic: ic || '•', text });
+  if (S.news.headlines.length > 8) S.news.headlines.length = 8;
+}
+// Items to consider for "Movers & Shakers" — tradeable goods with a live pressure.
+function _newsPressures(){
+  const out = [];
+  const seen = S.econ && S.econ.pressure ? S.econ.pressure : {};
+  for (const id in seen){
+    const it = ITEMS[id]; if (!it) continue;
+    out.push({ id, name: it.n, ic: it.ic || '📦', pressure: seen[id] });
+  }
+  return out;
+}
+// Compile today's edition from the live economy + the player's captured headlines.
+// Cached on _newsEditionCache keyed by game-day (re-opening shows the same paper).
+let _newsEditionCache = null, _newsEditionDay = -1;
+function currentEdition(){
+  const day = _gameDay();
+  if (_newsEditionCache && _newsEditionDay === day) return _newsEditionCache;
+  const ph = macroPhase();
+  const fst = isFestivalActive();
+  const valley = [];
+  valley.push(`It's ${getSeason()} in Featherstone.`);
+  if (fst) valley.push(`${fst.ic} The ${fst.n} is on — ${daysLeftInFestival()} day(s) left.`);
+  const _mins = Math.max(1, Math.ceil(msToNextPhase()/60000));
+  valley.push(`Forecasters expect the ${ph.name} to hold for roughly ${_mins} more minute(s).`);
+  const market = (S.econ && Array.isArray(S.econ.news) ? S.econ.news : [])
+    .slice(0, 6).map(n => ({ icon: n.icon || '•', text: n.text, tone: n.tone || '' }));
+  const headlines = (S.news && S.news.day === day && Array.isArray(S.news.headlines)) ? S.news.headlines.slice() : [];
+  const ed = compileNewsEdition({
+    day, dateline: `Featherstone · Day ${day}`,
+    phase: { head: ph.head, tone: ph.tone, flavour: ph.flavour },
+    pressures: _newsPressures(), market, valley, headlines,
+  });
+  _newsEditionCache = ed; _newsEditionDay = day; return ed;
+}
+// Is there an unread edition today? (drives the 📰 HUD button dot)
+function chronicleUnread(){ return !!(S.news && S.news.seenDay !== _gameDay()); }
+function renderChronicle(){
+  const ed = currentEdition();
+  const _tone = (t)=> t==='good' ? '#8affb0' : t==='bad' ? '#ff8870' : 'var(--text)';
+  const mover = (m, up)=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${m.ic} ${esc(m.name)}</span><span style="color:${up?'#8affb0':'#ff8870'};font-variant-numeric:tabular-nums">${m.arrow} ${m.pct>0?'+':''}${m.pct}%</span></div>`;
+  const col = (title, body)=>`<div style="flex:1;min-width:160px"><div style="font:700 11px 'IBM Plex Mono',monospace;letter-spacing:.5px;color:var(--amber);border-bottom:1px solid var(--edge);padding-bottom:3px;margin-bottom:5px;text-transform:uppercase">${title}</div>${body}</div>`;
+  const risers = ed.risers.length ? ed.risers.map(m=>mover(m,true)).join('') : `<div style="font-size:11px;color:var(--dim)">Prices are calm today.</div>`;
+  const fallers = ed.fallers.length ? ed.fallers.map(m=>mover(m,false)).join('') : `<div style="font-size:11px;color:var(--dim)">Nothing in a slump.</div>`;
+  const market = ed.market.length ? ed.market.map(n=>`<div style="font-size:11px;padding:2px 0;color:${_tone(n.tone)}">${n.icon} ${esc(n.text)}</div>`).join('') : `<div style="font-size:11px;color:var(--dim)">A quiet day on the markets.</div>`;
+  const valley = ed.valley.map(v=>`<div style="font-size:11px;padding:2px 0;color:var(--dim)">• ${esc(v)}</div>`).join('');
+  const business = ed.business.length ? ed.business.map(h=>`<div style="font-size:12px;padding:2px 0">${h.ic} ${esc(h.text)}</div>`).join('') : `<div style="font-size:11px;color:var(--dim)">No headlines from your enterprises today — go make some.</div>`;
+  return `<div class="panel" style="padding:0;max-width:560px;width:100%;background:#f3ecd9;color:#231d12;border:2px solid #b9a97e;border-radius:6px;overflow:hidden">
+    <div style="position:relative;text-align:center;padding:12px 14px 8px;border-bottom:3px double #6a5a38">
+      <button id="chron-close" aria-label="Close" style="position:absolute;top:8px;right:10px;background:#6a5a38;color:#f3ecd9;border:none;border-radius:5px;width:26px;height:26px;cursor:pointer">✕</button>
+      <div style="font:800 22px Georgia,'Times New Roman',serif;letter-spacing:1px">${NEWS_MASTHEAD}</div>
+      <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:2px;color:#6a5a38;margin-top:2px;text-transform:uppercase">${esc(ed.dateline)} · Business &amp; Trade</div>
+    </div>
+    <div style="padding:12px 14px">
+      <div style="background:#e7dcc0;border-left:4px solid ${ed.climate.tone==='good'?'#3a8a4a':ed.climate.tone==='bad'?'#b04a2a':'#8a7a4a'};padding:7px 10px;margin-bottom:12px">
+        <div style="font:700 14px Georgia,serif">${esc(ed.climate.head)}</div>
+        ${ed.climate.flavour?`<div style="font-size:12px;color:#5a4e34;margin-top:2px;font-style:italic">${esc(ed.climate.flavour)}</div>`:''}
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        ${col('Movers ▲', risers)}
+        ${col('Fallers ▼', fallers)}
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        ${col('Market Watch', market)}
+        ${col('Around the Valley', valley)}
+      </div>
+      ${col('Your Business', business)}
+      <div style="border-top:1px solid #b9a97e;margin-top:12px;padding-top:8px;font-size:10px;color:#7a6a48;font-style:italic;text-align:center">${esc(ed.filler)}</div>
+    </div>
+  </div>`;
+}
+function openChronicle(){
+  if (S.news){ S.news.seenDay = _gameDay(); try{ save(); }catch(e){} }
+  try{ syncChronicleBtn(); }catch(e){}
+  openModal('chronicle-modal', ()=>renderChronicle(), { label:'The Featherstone Chronicle', initialFocus:'#chron-close',
+    wire:(el)=>{ (el.querySelector('#chron-close') as HTMLElement).onclick = ()=> closeModal('chronicle-modal'); } });
+}
+(globalThis as any).openChronicle = openChronicle;
+// Reflect an unread edition on the 📰 HUD button (a gentle dot).
+function syncChronicleBtn(){
+  const b = document.getElementById("btn-news"); if (!b) return;
+  b.classList.toggle("has-dot", chronicleUnread());
+}
 /* ---------- M21: Company Ownership (Town Hall — Business Registry) ---------- */
 // Deterministic per-game-day "market conditions" (±10%) — a light, read-only nudge so
 // company revenue breathes without coupling to the economy engine.
@@ -11552,6 +11647,7 @@ function buyLicence(id){
   S.companies.owned[id] = { staff:1, since:now, lastAccrual:now, cumProfit:0 };   // opens with one hire
   toast(`🏢 Licence acquired: ${def.n}! You're the owner — hire staff to grow it.`);
   log(`🏢 Bought a business licence: <b>${def.n}</b> (−${fmt(def.licence)} coins). One staff hired to start.`, "good");
+  pushHeadline('🏢', `${pName()} acquires ${def.n} — a new name on the business register.`);
   achCheck(); renderMain(); updateHud(); save();
 }
 function hireStaff(id){
@@ -13051,6 +13147,7 @@ function deliverContract(i){
   tutCheck();
   achCheck();
   log(`🚚 Delivered ${c.qty}× ${ITEMS[c.item].n} to ${c.client} → <b>+${fmt(payout)} coins</b>`, "good");
+  if (!c.tutorial && payout >= 400) try{ pushHeadline('🚚', `${pName()} lands a ${fmt(payout)}-coin order for ${c.client} — ${c.qty}× ${ITEMS[c.item].n} delivered.`); }catch(e){}
   S.contracts.splice(i,1);
   if (!c.tutorial) try{ maybeShowUnlockGroup(); }catch(e){}   // a real delivery is a calm beat to introduce the next small group
   fillContracts(); renderMain(); updateHud(); save();
@@ -17442,6 +17539,7 @@ function bindMain(){
 
 function updateHud(){
   syncOnboardingUI();   // M1: reveal advanced HUD buttons once the tutorial is done
+  try{ syncChronicleBtn(); }catch(e){}   // M23: unread-paper dot
   $("#hud-coins").textContent = fmt(S.coins);
   $("#hud-total").textContent = totalLvl();
   const nameEl = document.getElementById("hud-name");
@@ -17825,6 +17923,7 @@ document.getElementById("btn-music").onclick = () => cycleVolume();
 document.getElementById("btn-fullscreen").onclick = () => toggleFullscreen();
 document.getElementById("btn-districts")?.addEventListener("click", () => openDistricts());
 document.getElementById("btn-ledger")?.addEventListener("click", () => openLedger());
+document.getElementById("btn-news")?.addEventListener("click", () => openChronicle());
 document.getElementById("btn-inv")?.addEventListener("click", () => toggleInventory());
 document.getElementById("btn-journey")?.addEventListener("click", () => openJourney());
 document.getElementById("btn-journal")?.addEventListener("click", () => openJournalPanel());
@@ -17860,7 +17959,7 @@ document.getElementById("btn-about")?.addEventListener("click", () => openRoadma
   }
 })();
 document.getElementById("version-label")?.addEventListener("keydown", (e:any) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openRoadmap(); } });
-syncJourneyBtn(); syncJournalBtn();
+syncJourneyBtn(); syncJournalBtn(); syncChronicleBtn();
 window.addEventListener("keydown", e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as any)?.tagName||"");
   // Any key skips the new-arrival drop-off cinematic.

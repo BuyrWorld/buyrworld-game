@@ -379,6 +379,8 @@ body.fullscreen-mode main{ max-width:100%; padding:10px clamp(8px, 2vw, 28px); }
 .btn:active{ transform:translateY(1px); box-shadow:0 1px 5px rgba(0,0,0,.35); }
 .btn.alt{ background:var(--panel2); color:var(--dim); border:2px solid var(--edge); box-shadow:none; }
 .btn.alt:hover:not(:disabled){ background:var(--panel); }
+.btn.alt.has-dot{ position:relative; }
+.btn.alt.has-dot::after{ content:""; position:absolute; top:2px; right:2px; width:7px; height:7px; border-radius:50%; background:var(--amber); box-shadow:0 0 0 1px var(--panel2); }
 /* Journey button glows + pulses when a milestone is ready to claim */
 #btn-journey.has-claim{ background:var(--amber); color:#1a0d05; border-color:#fff; position:relative; animation:jClaim 1.6s ease-in-out infinite; }
 #btn-journey.has-claim::after{ content:""; position:absolute; top:-2px; right:-2px; width:8px; height:8px; border-radius:50%; background:var(--red); border:1px solid #fff; }
@@ -1035,6 +1037,7 @@ body.couch-mode .tm-item, body.input-gamepad .tm-item{ font-size:18px; padding:1
     <button id="btn-journal" class="btn alt" title="Valley Journal" aria-label="Valley Journal" style="padding:6px 10px;">📔</button>
     <button id="btn-journey" class="btn alt" title="The Founder's Journey (J)" aria-label="Founder's Journey" style="padding:6px 10px;">🧭</button>
     <button id="btn-ledger" class="btn alt" title="Founder's Ledger" aria-label="Founder's Ledger" style="padding:6px 10px;">📖</button>
+    <button id="btn-news" class="btn alt" title="The Featherstone Chronicle" aria-label="Daily newspaper" style="padding:6px 10px;">📰</button>
     <button id="btn-districts" class="btn alt" title="Town Directory" aria-label="Town Directory" style="padding:6px 10px;">🗺️</button>
     <button id="btn-fullscreen" class="btn alt" title="Fullscreen (F11)" aria-label="Toggle fullscreen" style="padding:6px 10px;">⛶</button>
     <button id="btn-settings-hud" class="btn alt" title="Settings" aria-label="Settings" style="padding:6px 10px;">⚙️</button>
